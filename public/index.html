@@ -264,7 +264,7 @@
           <button type="button" id="recheck-env">重新檢查</button>
         </div>
         <p id="install-status" class="install-status" hidden>
-          安裝完成。請關掉這個嚮導、重新開啟後再按重新檢查。
+          安裝完成。按「重新檢查」更新狀態；若仍顯示未安裝，關掉嚮導重開一次。
         </p>
         <div
           id="env-results"
@@ -507,7 +507,8 @@
           events.addEventListener("done", (event) => {
             done = true;
             const result = JSON.parse(event.data);
-            const succeeded = result.exitCode === 0;
+            // benign：安裝器回報「已經裝好了／沒有可用更新」，那不是失敗。
+            const succeeded = result.exitCode === 0 || result.benign === true;
             const summary =
               result.signal === null
                 ? `exit code: ${result.exitCode}`
@@ -520,7 +521,9 @@
             if (activeInstallButton !== null) {
               showInstallStatus(
                 succeeded
-                  ? "安裝完成。請關掉這個嚮導、重新開啟後再按重新檢查。"
+                  ? (result.benign === true
+                      ? "這個項目本來就已經裝好了。按「重新檢查」更新狀態。"
+                      : "安裝完成。按「重新檢查」更新狀態；若仍顯示未安裝，關掉嚮導重開一次。")
                   : "安裝失敗，請看下方輸出",
                 !succeeded,
               );

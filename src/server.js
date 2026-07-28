@@ -5,6 +5,7 @@ import http from "node:http";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { actions, buildAgentCommand } from "./actions.js";
+import { isBenignExit } from "./installers.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir } from "./paths.js";
 import { resolveSpawn } from "./spawn-command.js";
@@ -176,7 +177,11 @@ function runAction(
     flushStdout();
     flushStderr();
     runs.delete(runId);
-    writeEvent(response, "done", { exitCode, signal });
+    writeEvent(response, "done", {
+      exitCode,
+      signal,
+      benign: isBenignExit(command.cmd, exitCode),
+    });
     response.end();
   };
 

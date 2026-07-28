@@ -148,7 +148,7 @@ try {
   ok("首頁包含環境檢查結果區與重新檢查按鈕");
 
   assert.match(page, /安裝/);
-  assert.match(page, /請關掉這個嚮導/);
+  assert.match(page, /按「重新檢查」更新狀態/);
   ok("首頁包含安裝按鈕與重開嚮導提示");
 
   const unauthorized = await fetch(`${baseUrl}/run`, {

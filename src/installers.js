@@ -45,6 +45,27 @@ export const INSTALLERS = {
   },
 };
 
+// winget 在「已經裝好、沒有可用更新」時會回非零 exit code，那不是失敗。
+// 實測：安裝已存在的 Git 得到 2316632107（0x8A15002B，UPDATE_NOT_APPLICABLE）。
+export function isBenignExit(cmd, exitCode) {
+  if (typeof exitCode !== "number") {
+    return false;
+  }
+
+  // winget 的錯誤碼是 32-bit unsigned，Node 拿到的是同一個數值。
+  const WINGET_ALREADY_INSTALLED = 0x8a150061;
+  const WINGET_NO_APPLICABLE_UPDATE = 0x8a15002b;
+
+  if (cmd === "winget") {
+    return (
+      exitCode === WINGET_ALREADY_INSTALLED ||
+      exitCode === WINGET_NO_APPLICABLE_UPDATE
+    );
+  }
+
+  return false;
+}
+
 export function resolveInstaller(id, platform) {
   return INSTALLERS[id]?.[platform] ?? null;
 }

@@ -4,6 +4,7 @@ import {actions } from "../src/actions.js";
 import {
   INSTALLERS,
   installActionId,
+  isBenignExit,
   resolveInstaller,
 } from "../src/installers.js";
 
@@ -28,6 +29,14 @@ for (const platform of ["win32", "darwin"]) {
   assert(installer.args.includes("@openai/codex"));
 }
 ok("Codex 在 win32 用 npm.cmd、darwin 用 npm");
+
+// 迴歸：winget 裝一個已存在的套件會回 2316632107（0x8A15002B），那不是失敗。
+assert.equal(isBenignExit("winget", 2316632107), true);
+assert.equal(isBenignExit("winget", 0x8a150061), true);
+assert.equal(isBenignExit("winget", 1), false);
+assert.equal(isBenignExit("npm.cmd", 2316632107), false);
+assert.equal(isBenignExit("winget", null), false);
+ok("winget 的「已安裝／無可用更新」不算失敗");
 
 const gitWindows = resolveInstaller("git", "win32");
 assert.equal(gitWindows.cmd, "winget");
