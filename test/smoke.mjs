@@ -138,6 +138,9 @@ try {
   );
   ok("GET /env 的每筆 check 都包含 installAction");
 
+  assert(env.checks.every((check) => Object.hasOwn(check, "fixAction")));
+  ok("GET /env 的每筆 check 都包含 fixAction");
+
   const pageResponse = await fetch(
     `${baseUrl}/?t=${encodeURIComponent(token)}`,
   );

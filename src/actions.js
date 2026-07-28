@@ -1,4 +1,6 @@
+import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
 import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
+import { buildTerminalLaunch } from "./terminal-launch.js";
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -80,6 +82,54 @@ for (const id of Object.keys(INSTALLERS)) {
       cmd: installer.cmd,
       args: installer.args,
       description: `安裝 ${name}。完成後需重新開啟嚮導。`,
+    };
+  }
+}
+
+if (process.platform === "win32") {
+  actions["fix-execution-policy"] = {
+    kind: "fixed",
+    label: "修正執行原則",
+    cmd: EXECUTION_POLICY_FIX.cmd,
+    args: EXECUTION_POLICY_FIX.args,
+    description: "將目前使用者的 PowerShell 執行原則改為 RemoteSigned。",
+  };
+}
+
+const loginActions = [
+  {
+    key: "login-claude",
+    label: "登入 Claude Code",
+    commandLine: "claude auth login",
+    description: "開啟終端機視窗登入 Claude Code。",
+  },
+  {
+    key: "login-codex",
+    label: "登入 Codex",
+    commandLine: "codex login",
+    description: "開啟終端機視窗登入 Codex。",
+  },
+  {
+    key: "login-gh",
+    label: "登入 GitHub CLI",
+    commandLine: "gh auth login",
+    description: "開啟終端機視窗登入 GitHub CLI。",
+  },
+];
+
+for (const loginAction of loginActions) {
+  const command = buildTerminalLaunch(
+    loginAction.commandLine,
+    process.platform,
+  );
+
+  if (command !== null) {
+    actions[loginAction.key] = {
+      kind: "fixed",
+      label: loginAction.label,
+      cmd: command.cmd,
+      args: command.args,
+      description: loginAction.description,
     };
   }
 }

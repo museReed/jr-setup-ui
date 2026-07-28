@@ -95,6 +95,29 @@ for (const check of result.checks) {
 ok("runEnvCheck 回傳 os 與 8 筆固定形狀的檢查結果");
 
 for (const check of result.checks) {
+  assert(Object.hasOwn(check, "fixAction"));
+  assert(
+    typeof check.fixAction === "string" || check.fixAction === null,
+  );
+}
+ok("每筆檢查都有字串或 null 的 fixAction");
+
+if (process.platform === "darwin") {
+  assert(!result.checks.some(({ id }) => id === "execution-policy"));
+  ok("darwin 不包含 PowerShell 執行原則檢查");
+} else {
+  ok("(skipped) 非 darwin 不檢查執行原則項目是否缺席");
+}
+
+for (const id of ["claude", "codex", "git", "gh", "node"]) {
+  assert.equal(
+    result.checks.find((check) => check.id === id).fixAction,
+    null,
+  );
+}
+ok("五個非登入項目都不提供 fixAction");
+
+for (const check of result.checks) {
   assert(Object.hasOwn(check, "installAction"));
   assert(
     typeof check.installAction === "string" ||

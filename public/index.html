@@ -245,7 +245,7 @@
           grid-column: 2;
         }
 
-        .env-install {
+        .env-action {
           grid-column: 2;
           justify-self: start;
         }
@@ -320,7 +320,7 @@
       let activeText = null;
       let currentAgentName = "";
       let currentRunId = null;
-      let activeInstallButton = null;
+      let activeEnvButton = null;
 
       function showInstallStatus(message, failed = false) {
         installStatus.textContent = message;
@@ -372,16 +372,34 @@
 
             row.append(icon, label, detail);
 
-            if (check.installAction !== null) {
-              const installButton = document.createElement("button");
-              installButton.type = "button";
-              installButton.className = "env-install";
-              installButton.dataset.installAction = check.installAction;
-              installButton.textContent = "安裝";
-              installButton.addEventListener("click", () => {
-                run(check.installAction, undefined, installButton);
+            const envActions = [
+              {
+                action: check.installAction,
+                dataName: "installAction",
+                text: "安裝",
+              },
+              {
+                action: check.fixAction,
+                dataName: "fixAction",
+                text: check.id === "execution-policy" ? "修正" : "登入",
+              },
+            ];
+
+            for (const envAction of envActions) {
+              if (envAction.action === null) {
+                continue;
+              }
+
+              const actionButton = document.createElement("button");
+              actionButton.type = "button";
+              actionButton.className = "env-action";
+              actionButton.dataset[envAction.dataName] = envAction.action;
+              actionButton.dataset.idleText = envAction.text;
+              actionButton.textContent = envAction.text;
+              actionButton.addEventListener("click", () => {
+                run(envAction.action, undefined, actionButton);
               });
-              row.append(installButton);
+              row.append(actionButton);
             }
 
             return row;
@@ -404,16 +422,16 @@
           button.disabled = running;
         }
 
-        if (activeInstallButton !== null) {
-          recheckEnvButton.disabled = running;
-        }
+        recheckEnvButton.disabled = running;
 
         for (const button of document.querySelectorAll(
-          "[data-install-action]",
+          "[data-install-action], [data-fix-action]",
         )) {
           button.disabled = running;
           button.textContent =
-            running && button === activeInstallButton ? "安裝中…" : "安裝";
+            running && button === activeEnvButton
+              ? `${button.dataset.idleText}中…`
+              : button.dataset.idleText;
         }
 
         prompt.disabled = running;
@@ -448,12 +466,12 @@
         addLine(agentEvent.text, `agent-${agentEvent.kind}`);
       }
 
-      async function run(action, promptText, installButton = null) {
+      async function run(action, promptText, envButton = null) {
         output.replaceChildren();
         activeText = null;
-        activeInstallButton = installButton;
+        activeEnvButton = envButton;
 
-        if (activeInstallButton !== null) {
+        if (activeEnvButton !== null) {
           installStatus.hidden = true;
         }
 
@@ -518,13 +536,21 @@
               succeeded ? "succeeded" : "failed",
             );
 
-            if (activeInstallButton !== null) {
+            if (activeEnvButton !== null) {
+              const successMessage =
+                action === "fix-execution-policy"
+                  ? "已改為 RemoteSigned。按「重新檢查」更新狀態。"
+                  : action.startsWith("login-")
+                    ? "已開啟終端機視窗，請在那裡完成登入，再回來按「重新檢查」。"
+                    : result.benign === true
+                      ? "這個項目本來就已經裝好了。按「重新檢查」更新狀態。"
+                      : "安裝完成。按「重新檢查」更新狀態；若仍顯示未安裝，關掉嚮導重開一次。";
               showInstallStatus(
                 succeeded
-                  ? (result.benign === true
-                      ? "這個項目本來就已經裝好了。按「重新檢查」更新狀態。"
-                      : "安裝完成。按「重新檢查」更新狀態；若仍顯示未安裝，關掉嚮導重開一次。")
-                  : "安裝失敗，請看下方輸出",
+                  ? successMessage
+                  : action.startsWith("install-")
+                    ? "安裝失敗，請看下方輸出"
+                    : "執行失敗，請看下方輸出",
                 !succeeded,
               );
             }
@@ -532,7 +558,7 @@
             events.close();
             currentRunId = null;
             setRunning(false);
-            activeInstallButton = null;
+            activeEnvButton = null;
           });
 
           events.onerror = () => {
@@ -541,14 +567,14 @@
               events.close();
               currentRunId = null;
               setRunning(false);
-              activeInstallButton = null;
+              activeEnvButton = null;
             }
           };
         } catch (error) {
           addLine(`無法執行：${error.message}`, "failed");
           currentRunId = null;
           setRunning(false);
-          activeInstallButton = null;
+          activeEnvButton = null;
         }
       }
 

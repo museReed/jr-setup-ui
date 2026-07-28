@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
 
+import { actions } from "./actions.js";
+import {
+  EXECUTION_POLICY_PROBE,
+  parseExecutionPolicy,
+} from "./execution-policy.js";
 import { installActionId, resolveInstaller } from "./installers.js";
 import { resolveSpawn } from "./spawn-command.js";
 
@@ -15,6 +20,13 @@ const CHECKS = [
   { id: "gh-auth", label: "GitHub 登入狀態" },
   { id: "node", label: "Node.js" },
 ];
+
+if (process.platform === "win32") {
+  CHECKS.unshift({
+    id: "execution-policy",
+    label: "PowerShell 執行原則",
+  });
+}
 
 export function parseClaudeAuth(stdout) {
   try {
@@ -136,16 +148,58 @@ function spawnProbe(rawCmd, rawArgs) {
   });
 }
 
-function withInstallAction(check) {
+function withActions(check) {
   const installer =
     check.status === "missing"
       ? resolveInstaller(check.id, process.platform)
       : null;
+  const fixActions = {
+    "execution-policy":
+      check.status === "ok" ? null : "fix-execution-policy",
+    "claude-auth": check.status === "warn" ? "login-claude" : null,
+    "codex-auth": check.status === "warn" ? "login-codex" : null,
+    "gh-auth": check.status === "warn" ? "login-gh" : null,
+  };
+  const fixAction = fixActions[check.id] ?? null;
 
   return {
     ...check,
     installAction: installer === null ? null : installActionId(check.id),
+    fixAction:
+      fixAction !== null && Object.hasOwn(actions, fixAction)
+        ? fixAction
+        : null,
   };
+}
+
+async function checkExecutionPolicy() {
+  const id = "execution-policy";
+  const label = "PowerShell 執行原則";
+
+  try {
+    const result = await runProbe(
+      EXECUTION_POLICY_PROBE.cmd,
+      EXECUTION_POLICY_PROBE.args,
+    );
+
+    if (result.type === "timeout") {
+      return { id, label, status: "warn", detail: "檢查逾時" };
+    }
+
+    if (result.type === "error" || result.exitCode !== 0) {
+      return { id, label, status: "warn", detail: "檢查失敗" };
+    }
+
+    const policy = parseExecutionPolicy(result.stdout);
+    return {
+      id,
+      label,
+      status: policy.ok ? "ok" : "warn",
+      detail: policy.detail,
+    };
+  } catch {
+    return { id, label, status: "warn", detail: "檢查失敗" };
+  }
 }
 
 async function checkVersion(id, label, cmd, args) {
@@ -287,7 +341,7 @@ export async function runEnvCheck() {
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
-    const checks = await Promise.all([
+    const checksToRun = [
       claude,
       checkClaudeAuth(claude),
       codex,
@@ -296,11 +350,17 @@ export async function runEnvCheck() {
       gh,
       checkGhAuth(gh),
       node,
-    ]);
+    ];
+
+    if (process.platform === "win32") {
+      checksToRun.unshift(checkExecutionPolicy());
+    }
+
+    const checks = await Promise.all(checksToRun);
 
     return {
       os: { platform: process.platform, arch: process.arch },
-      checks: checks.map(withInstallAction),
+      checks: checks.map(withActions),
     };
   } catch {
     return {
@@ -310,7 +370,7 @@ export async function runEnvCheck() {
         label,
         status: "missing",
         detail: "檢查失敗",
-      })).map(withInstallAction),
+      })).map(withActions),
     };
   }
 }
