@@ -5,6 +5,7 @@ import {
   EXECUTION_POLICY_PROBE,
   parseExecutionPolicy,
 } from "./execution-policy.js";
+import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
 import { resolveSpawn } from "./spawn-command.js";
 
@@ -100,8 +101,9 @@ export function normalizeNotFound(result) {
   return result;
 }
 
-function spawnProbe(rawCmd, rawArgs) {
+async function spawnProbe(rawCmd, rawArgs) {
   const { cmd, args } = resolveSpawn(rawCmd, rawArgs);
+  const env = await spawnEnv();
   return new Promise((resolve) => {
     let child;
     let settled = false;
@@ -122,6 +124,7 @@ function spawnProbe(rawCmd, rawArgs) {
       child = spawn(cmd, args, {
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
+        env,
       });
     } catch (error) {
       resolve({ type: "error", error });

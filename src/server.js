@@ -5,6 +5,7 @@ import http from "node:http";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { actions, buildAgentCommand } from "./actions.js";
+import { spawnEnv } from "./env-path.js";
 import { isBenignExit } from "./installers.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir } from "./paths.js";
@@ -101,7 +102,7 @@ function terminateRun(run) {
   }
 }
 
-function runAction(
+async function runAction(
   run,
   runId,
   runs,
@@ -122,7 +123,14 @@ function runAction(
       : { cmd: action.cmd, args: action.args };
   // stdin 一律關掉：這裡沒有人會餵輸入，留著一根開著的管線會讓
   // 讀 stdin 的 CLI 空等（claude 等 3 秒才放行，codex 直接卡住不動）。
-  const baseOptions = { shell: false, stdio: ["ignore", "pipe", "pipe"] };
+  // Windows 上 winget 裝完會新增 PATH 目錄，但本程序拿的是啟動當下的快照。
+  // 重讀一次，剛裝好的東西才叫得動。
+  const env = await spawnEnv();
+  const baseOptions = {
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+    env,
+  };
   const spawnOptions =
     action.kind === "agent"
       ? { ...baseOptions, cwd: ensureWorkDir() }
@@ -328,13 +336,7 @@ export async function startServer({
       }
 
       run.used = true;
-      runAction(
-        run,
-        runId,
-        runs,
-        response,
-        commandBuilder,
-      );
+      await runAction(run, runId, runs, response, commandBuilder);
       return;
     }
 
