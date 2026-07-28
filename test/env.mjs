@@ -167,13 +167,31 @@ ok("每筆 detail 都只有一行");
 
 // 迴歸：.cmd 退路是交給 cmd.exe 跑，cmd.exe 一定啟動得起來，找不到目標只回 9009。
 // 不還原成 ENOENT 的話，未安裝會被誤報成「檢查失敗」（實測 gh 就是這樣）。
-assert.deepEqual(normalizeNotFound({ type: "close", exitCode: 9009 }), {
-  type: "error",
-  error: { code: "ENOENT" },
-});
+const NOT_FOUND = { type: "error", error: { code: "ENOENT" } };
+
+assert.deepEqual(
+  normalizeNotFound({ type: "close", exitCode: 9009, stdout: "" }),
+  NOT_FOUND,
+);
+// 實測：gh 未安裝時 cmd.exe 回的是 1，不是 9009。
+assert.deepEqual(
+  normalizeNotFound({
+    type: "close",
+    exitCode: 1,
+    stdout: "",
+    stderr: "'gh.cmd' is not recognized as an internal or external command,\r\n",
+  }),
+  NOT_FOUND,
+);
+assert.deepEqual(normalizeNotFound({ type: "close", exitCode: 1 }), NOT_FOUND);
+// 有 stdout 就代表指令真的跑了，非零是它自己的失敗，不能當成未安裝。
 assert.deepEqual(
   normalizeNotFound({ type: "close", exitCode: 1, stdout: "x" }),
   { type: "close", exitCode: 1, stdout: "x" },
 );
+assert.deepEqual(
+  normalizeNotFound({ type: "close", exitCode: 0, stdout: "" }),
+  { type: "close", exitCode: 0, stdout: "" },
+);
 assert.deepEqual(normalizeNotFound({ type: "timeout" }), { type: "timeout" });
-ok("cmd.exe 的 9009 還原成未安裝，其他結果原樣傳回");
+ok("退路沒有 stdout 又非零就還原成未安裝，其他結果原樣傳回");

@@ -82,13 +82,18 @@ export async function runProbe(cmd, args) {
   return first;
 }
 
-// 退路是交給 cmd.exe 跑，而 cmd.exe 一定存在——它自己會啟動成功，
-// 只是找不到目標指令並回 9009。不還原成 ENOENT 的話，「未安裝」會被
-// 誤報成「檢查失敗」（實測 gh 未安裝時就是這樣）。
-const CMD_NOT_FOUND_EXIT_CODE = 9009;
-
+// 退路是交給 cmd.exe 跑，而 cmd.exe 一定存在——它自己會啟動成功，只是找不到
+// 目標指令。不還原成 ENOENT 的話，「未安裝」會被誤報成「檢查失敗」。
+//
+// ⚠️ 不能只認 9009：實測 gh 未安裝時 cmd.exe 回的是 exit code 1
+// （'gh.cmd' is not recognized…）。也不能比對那句話——它會隨 Windows 語系變。
+// 判準改成「完全沒有 stdout 又非零」：真的存在的 CLI 回答 --version 一定會寫 stdout。
 export function normalizeNotFound(result) {
-  if (result.type === "close" && result.exitCode === CMD_NOT_FOUND_EXIT_CODE) {
+  if (
+    result.type === "close" &&
+    result.exitCode !== 0 &&
+    (result.stdout ?? "").trim() === ""
+  ) {
     return { type: "error", error: { code: "ENOENT" } };
   }
 
