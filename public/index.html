@@ -181,6 +181,34 @@
         color: #a32929;
       }
 
+      .login-hints {
+        margin-bottom: 10px;
+        padding: 16px;
+        border: 2px solid #315f86;
+        border-radius: 4px;
+        background: #eaf3fa;
+      }
+
+      .login-hints a {
+        overflow-wrap: anywhere;
+        color: #174f7a;
+        font-weight: 700;
+      }
+
+      .login-code-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      #login-code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 1.8rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
       #output {
         height: 320px;
         overflow-y: auto;
@@ -192,6 +220,22 @@
         color: #e7e7e7;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         white-space: pre-wrap;
+      }
+
+      .run-input {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .run-input input {
+        min-width: 0;
+        flex: 1;
+        box-sizing: border-box;
+        padding: 9px 10px;
+        border: 1px solid #777;
+        border-radius: 4px;
+        font: inherit;
       }
 
       .stderr,
@@ -308,7 +352,29 @@
       <div class="run-controls">
         <button type="button" id="cancel" hidden>取消</button>
       </div>
+      <div id="login-hints" class="login-hints" hidden>
+        <a
+          id="login-url"
+          target="_blank"
+          rel="noopener noreferrer"
+          hidden
+        ></a>
+        <div id="login-code-row" class="login-code-row" hidden>
+          <span id="login-code"></span>
+          <button type="button" id="copy-login-code">複製</button>
+        </div>
+      </div>
       <div id="output" role="log" aria-live="polite"></div>
+      <form id="run-input" class="run-input" hidden>
+        <input
+          id="run-input-text"
+          type="text"
+          maxlength="500"
+          autocomplete="off"
+          aria-label="送給執行中指令的文字"
+        />
+        <button type="submit">送出</button>
+      </form>
     </main>
 
     <script>
@@ -323,6 +389,13 @@
       const recheckEnvButton = document.querySelector("#recheck-env");
       const installStatus = document.querySelector("#install-status");
       const loginWaitStatus = document.querySelector("#login-wait-status");
+      const loginHints = document.querySelector("#login-hints");
+      const loginUrl = document.querySelector("#login-url");
+      const loginCodeRow = document.querySelector("#login-code-row");
+      const loginCode = document.querySelector("#login-code");
+      const copyLoginCodeButton = document.querySelector("#copy-login-code");
+      const runInput = document.querySelector("#run-input");
+      const runInputText = document.querySelector("#run-input-text");
       const loginCheckIds = {
         "login-claude": "claude-auth",
         "login-codex": "codex-auth",
@@ -338,6 +411,49 @@
       let envCheckInProgress = false;
       let loginWait = null;
       let runInProgress = false;
+      let currentAcceptsInput = false;
+
+      function extractLoginHints(text) {
+        if (typeof text !== "string") {
+          return { url: null, code: null };
+        }
+
+        const urlMatch = text.match(/https:\/\/\S+/);
+        const codeMatch = text.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/i);
+
+        return {
+          url:
+            urlMatch === null ? null : urlMatch[0].replace(/[.,)]+$/, ""),
+          code: codeMatch === null ? null : codeMatch[0],
+        };
+      }
+
+      function clearLoginHints() {
+        loginUrl.hidden = true;
+        loginUrl.removeAttribute("href");
+        loginUrl.textContent = "";
+        loginCodeRow.hidden = true;
+        loginCode.textContent = "";
+        copyLoginCodeButton.textContent = "複製";
+        loginHints.hidden = true;
+      }
+
+      function showLoginHints(text) {
+        const hints = extractLoginHints(text);
+
+        if (hints.url !== null) {
+          loginUrl.href = hints.url;
+          loginUrl.textContent = hints.url;
+          loginUrl.hidden = false;
+        }
+
+        if (hints.code !== null) {
+          loginCode.textContent = hints.code;
+          loginCodeRow.hidden = false;
+        }
+
+        loginHints.hidden = loginUrl.hidden && loginCodeRow.hidden;
+      }
 
       function showInstallStatus(message, failed = false) {
         installStatus.textContent = message;
@@ -385,7 +501,7 @@
 
       function showLoginWaitingStatus() {
         const message = document.createTextNode(
-          "已開啟終端機視窗，請在那裡完成登入。完成後這裡會自動更新。",
+          "正在確認登入狀態，完成後這裡會自動更新。",
         );
         const stopButton = document.createElement("button");
         stopButton.type = "button";
@@ -515,7 +631,7 @@
 
         if (Date.now() - wait.startedAt >= loginWaitTimeout) {
           finishLoginWait(
-            "等待逾時，請確認終端機視窗的登入是否完成，或按重新檢查。",
+            "等待逾時，請確認登入是否完成，或按重新檢查。",
             true,
           );
           return;
@@ -564,6 +680,8 @@
         allowWrite.disabled = running;
         cancelButton.hidden = !running;
         cancelButton.disabled = !running || currentRunId === null;
+        runInput.hidden =
+          !running || currentRunId === null || !currentAcceptsInput;
       }
 
       function addLine(text, className = "") {
@@ -598,6 +716,7 @@
         }
 
         output.replaceChildren();
+        clearLoginHints();
         activeText = null;
         activeEnvButton = envButton;
         currentEnvAction = envButton === null ? null : action;
@@ -612,6 +731,7 @@
             ? "Codex"
             : "";
         currentRunId = null;
+        currentAcceptsInput = false;
         setRunning(true);
 
         try {
@@ -635,8 +755,9 @@
             throw new Error(await response.text());
           }
 
-          const { runId } = await response.json();
+          const { runId, acceptsInput } = await response.json();
           currentRunId = runId;
+          currentAcceptsInput = acceptsInput;
           setRunning(true);
           const streamUrl =
             `/stream?runId=${encodeURIComponent(runId)}` +
@@ -646,6 +767,11 @@
 
           events.addEventListener("line", (event) => {
             const line = JSON.parse(event.data);
+
+            if (action.startsWith("login-")) {
+              showLoginHints(line.text);
+            }
+
             addLine(line.text, line.stream === "stderr" ? "stderr" : "");
           });
 
@@ -679,7 +805,9 @@
             }
 
             events.close();
+            clearLoginHints();
             currentRunId = null;
+            currentAcceptsInput = false;
             setRunning(false);
             activeEnvButton = null;
             currentEnvAction = null;
@@ -704,7 +832,9 @@
             if (!done) {
               addLine("串流連線中斷", "failed");
               events.close();
+              clearLoginHints();
               currentRunId = null;
+              currentAcceptsInput = false;
               setRunning(false);
               activeEnvButton = null;
               currentEnvAction = null;
@@ -712,7 +842,9 @@
           };
         } catch (error) {
           addLine(`無法執行：${error.message}`, "failed");
+          clearLoginHints();
           currentRunId = null;
+          currentAcceptsInput = false;
           setRunning(false);
           activeEnvButton = null;
           currentEnvAction = null;
@@ -747,10 +879,48 @@
             throw new Error(await response.text());
           }
 
+          clearLoginHints();
           addLine("正在取消…", "agent-status");
         } catch (error) {
           addLine(`無法取消：${error.message}`, "failed");
           cancelButton.disabled = false;
+        }
+      });
+
+      copyLoginCodeButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(loginCode.textContent);
+          copyLoginCodeButton.textContent = "已複製";
+        } catch (error) {
+          addLine(`無法複製：${error.message}`, "failed");
+        }
+      });
+
+      runInput.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (currentRunId === null || !currentAcceptsInput) {
+          return;
+        }
+
+        const text = runInputText.value;
+        const runId = currentRunId;
+
+        try {
+          const response = await fetch(`/input?t=${encodeURIComponent(token)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runId, text }),
+          });
+
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+
+          addLine(`> ${text}`, "agent-status");
+          runInputText.value = "";
+        } catch (error) {
+          addLine(`無法送出：${error.message}`, "failed");
         }
       });
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import {actions } from "../src/actions.js";
+import { actions } from "../src/actions.js";
 import {
   INSTALLERS,
   installActionId,
@@ -116,3 +116,30 @@ for (const id of Object.keys(INSTALLERS)) {
   }
 }
 ok("目前平台只有受支援的安裝器會進入 fixed action 白名單");
+
+const expectedLoginActions = {
+  "login-claude": { cmd: "claude", args: ["auth", "login"] },
+  "login-codex": { cmd: "codex", args: ["login"] },
+  "login-gh": {
+    cmd: "gh",
+    args: [
+      "auth",
+      "login",
+      "--web",
+      "--hostname",
+      "github.com",
+      "--git-protocol",
+      "https",
+      "--skip-ssh-key",
+    ],
+  },
+};
+
+for (const [actionId, expected] of Object.entries(expectedLoginActions)) {
+  assert.equal(actions[actionId].kind, "fixed");
+  assert.equal(actions[actionId].cmd, expected.cmd);
+  assert.deepEqual(actions[actionId].args, expected.args);
+  assert.equal(actions[actionId].acceptsInput, true);
+  assert.equal(actions[actionId].launchesWindow, undefined);
+}
+ok("三個登入 action 直接執行並接受 stdin");

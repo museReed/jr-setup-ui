@@ -153,8 +153,6 @@ async function runAction(
     action.kind === "agent"
       ? commandBuilder(action.engine, run.prompt, run.permission)
       : { cmd: action.cmd, args: action.args };
-  // stdin 一律關掉：這裡沒有人會餵輸入，留著一根開著的管線會讓
-  // 讀 stdin 的 CLI 空等（claude 等 3 秒才放行，codex 直接卡住不動）。
   // Windows 上 winget 裝完會新增 PATH 目錄，但本程序拿的是啟動當下的快照。
   // 重讀一次，剛裝好的東西才叫得動。
   const env = await spawnEnv();
@@ -169,7 +167,7 @@ async function runAction(
 
   const baseOptions = {
     shell: false,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [action.acceptsInput ? "pipe" : "ignore", "pipe", "pipe"],
     env,
   };
   const spawnOptions =
@@ -339,7 +337,70 @@ export async function startServer({
         prompt: action.acceptsPrompt ? body.prompt : action.prompt,
         used: false,
       });
-      sendJson(response, 200, { runId });
+      sendJson(response, 200, {
+        runId,
+        acceptsInput: action.acceptsInput === true,
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/input") {
+      let body;
+
+      try {
+        body = await readJson(request);
+      } catch {
+        sendText(response, 400, "JSON 格式不正確");
+        return;
+      }
+
+      const runId =
+        body !== null && typeof body === "object" ? body.runId : undefined;
+      const text =
+        body !== null && typeof body === "object" ? body.text : undefined;
+      const run = runs.get(runId);
+
+      if (!run || run.action.acceptsInput !== true) {
+        sendText(response, 400, "Run 不存在或不接受輸入");
+        return;
+      }
+
+      if (typeof text !== "string") {
+        sendText(response, 400, "text 必須是字串");
+        return;
+      }
+
+      if (text.length > 500) {
+        sendText(response, 400, "text 不可超過 500 字元");
+        return;
+      }
+
+      if (
+        !childIsRunning(run.child) ||
+        !run.child.stdin.writable ||
+        run.child.stdin.destroyed ||
+        run.child.stdin.writableEnded
+      ) {
+        sendText(response, 400, "子程序已結束或無法接收輸入");
+        return;
+      }
+
+      try {
+        await new Promise((resolve, reject) => {
+          run.child.stdin.write(`${text}\n`, "utf8", (error) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } catch (error) {
+        sendText(response, 400, `無法送出輸入：${error.message}`);
+        return;
+      }
+
+      sendJson(response, 200, { sent: true });
       return;
     }
 

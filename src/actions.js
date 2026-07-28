@@ -1,6 +1,5 @@
 import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
 import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
-import { buildTerminalLaunch } from "./terminal-launch.js";
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -96,46 +95,41 @@ if (process.platform === "win32") {
   };
 }
 
-const loginActions = [
-  {
-    key: "login-claude",
+Object.assign(actions, {
+  "login-claude": {
+    kind: "fixed",
     label: "登入 Claude Code",
-    commandLine: "claude auth login",
-    description: "開啟終端機視窗登入 Claude Code。",
+    cmd: "claude",
+    args: ["auth", "login"],
+    acceptsInput: true,
+    description: "登入 Claude Code。",
   },
-  {
-    key: "login-codex",
+  "login-codex": {
+    kind: "fixed",
     label: "登入 Codex",
-    commandLine: "codex login",
-    description: "開啟終端機視窗登入 Codex。",
+    cmd: "codex",
+    args: ["login"],
+    acceptsInput: true,
+    description: "登入 Codex。",
   },
-  {
-    key: "login-gh",
+  "login-gh": {
+    kind: "fixed",
     label: "登入 GitHub CLI",
-    commandLine: "gh auth login",
-    description: "開啟終端機視窗登入 GitHub CLI。",
+    cmd: "gh",
+    args: [
+      "auth",
+      "login",
+      "--web",
+      "--hostname",
+      "github.com",
+      "--git-protocol",
+      "https",
+      "--skip-ssh-key",
+    ],
+    acceptsInput: true,
+    description: "登入 GitHub CLI。",
   },
-];
-
-for (const loginAction of loginActions) {
-  const command = buildTerminalLaunch(
-    loginAction.commandLine,
-    process.platform,
-  );
-
-  if (command !== null) {
-    actions[loginAction.key] = {
-      kind: "fixed",
-      label: loginAction.label,
-      cmd: command.cmd,
-      args: command.args,
-      description: loginAction.description,
-      // 這類 action 只負責開一個獨立視窗，沒有輸出可以串。若照一般方式接管線，
-      // 那個視窗會一直握著管線不放，close 事件永遠不來、前端永遠卡在執行中。
-      launchesWindow: true,
-    };
-  }
-}
+});
 
 export function buildAgentCommand(engine, prompt, permission) {
   if (permission !== "read-only" && permission !== "write") {
