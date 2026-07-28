@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>jr-setup-ui 安裝</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, sans-serif;
+        background: #f5f5f5;
+        color: #202020;
+      }
+
+      body {
+        margin: 0;
+        padding: 40px 20px;
+      }
+
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin-bottom: 6px;
+      }
+
+      .lede {
+        margin-top: 0;
+        color: #4d5963;
+      }
+
+      section {
+        margin: 28px 0;
+        padding: 20px;
+        border: 1px solid #b8c3cc;
+        border-top: 4px solid #315f86;
+        border-radius: 6px;
+        background: #fff;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+      }
+
+      .command {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+
+      code {
+        display: block;
+        flex: 1;
+        overflow-x: auto;
+        padding: 12px 14px;
+        border-radius: 4px;
+        background: #171717;
+        color: #e7e7e7;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre;
+      }
+
+      button {
+        padding: 11px 14px;
+        border: 1px solid #777;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      ol {
+        margin: 14px 0 0;
+        padding-left: 20px;
+        color: #4d5963;
+      }
+
+      li {
+        margin: 5px 0;
+      }
+
+      footer {
+        margin-top: 32px;
+        color: #4d5963;
+        font-size: 0.9rem;
+      }
+
+      a {
+        color: #315f86;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>jr-setup-ui</h1>
+      <p class="lede">
+        一行指令裝好工作坊需要的環境。不需要先裝任何東西。
+      </p>
+
+      <section>
+        <h2>macOS</h2>
+        <p>打開「終端機」（Terminal），貼上這一行，按 Enter：</p>
+        <div class="command">
+          <code id="mac-command">curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | bash</code>
+          <button type="button" data-copy="mac-command">複製</button>
+        </div>
+        <ol>
+          <li>沒有 Node.js 就自動安裝（會要你的 Mac 密碼）</li>
+          <li>沒有 Homebrew 就自動安裝（要跑幾分鐘）</li>
+          <li>裝完自動打開嚮導網頁</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Windows</h2>
+        <p>打開「PowerShell」，貼上這一行，按 Enter：</p>
+        <div class="command">
+          <code id="win-command">irm https://musereed.github.io/jr-setup-ui/setup.ps1 | iex</code>
+          <button type="button" data-copy="win-command">複製</button>
+        </div>
+        <ol>
+          <li>沒有 Node.js 就自動安裝（透過 winget）</li>
+          <li>裝完自動啟動嚮導</li>
+          <li>複製終端機印出來的網址，貼到瀏覽器打開</li>
+        </ol>
+      </section>
+
+      <footer>
+        <p>
+          嚮導只跑在你自己的電腦上（只監聽 127.0.0.1），這個網站不會、也沒辦法
+          連到你的電腦。原始碼：<a
+            href="https://github.com/museReed/jr-setup-ui"
+            >github.com/museReed/jr-setup-ui</a
+          >
+        </p>
+      </footer>
+    </main>
+
+    <script>
+      for (const button of document.querySelectorAll("[data-copy]")) {
+        button.addEventListener("click", async () => {
+          const text = document.getElementById(button.dataset.copy).textContent;
+
+          try {
+            await navigator.clipboard.writeText(text);
+            button.textContent = "已複製";
+          } catch {
+            button.textContent = "請手動選取";
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
