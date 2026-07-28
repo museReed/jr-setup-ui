@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 
 import {
+  normalizeNotFound,
   parseClaudeAuth,
   parseCodexAuth,
   runEnvCheck,
   runProbe,
 } from "../src/env-check.js";
+import {
+  installActionId,
+  resolveInstaller,
+} from "../src/installers.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -89,6 +94,58 @@ for (const check of result.checks) {
 
 ok("runEnvCheck 回傳 os 與 8 筆固定形狀的檢查結果");
 
+for (const check of result.checks) {
+  assert(Object.hasOwn(check, "fixAction"));
+  assert(
+    typeof check.fixAction === "string" || check.fixAction === null,
+  );
+}
+ok("每筆檢查都有字串或 null 的 fixAction");
+
+if (process.platform === "darwin") {
+  assert(!result.checks.some(({ id }) => id === "execution-policy"));
+  ok("darwin 不包含 PowerShell 執行原則檢查");
+} else {
+  ok("(skipped) 非 darwin 不檢查執行原則項目是否缺席");
+}
+
+for (const id of ["claude", "codex", "git", "gh", "node"]) {
+  assert.equal(
+    result.checks.find((check) => check.id === id).fixAction,
+    null,
+  );
+}
+ok("五個非登入項目都不提供 fixAction");
+
+for (const check of result.checks) {
+  assert(Object.hasOwn(check, "installAction"));
+  assert(
+    typeof check.installAction === "string" ||
+      check.installAction === null,
+  );
+  const expectedInstallAction =
+    check.status === "missing" &&
+    resolveInstaller(check.id, process.platform) !== null
+      ? installActionId(check.id)
+      : null;
+  assert.equal(check.installAction, expectedInstallAction);
+}
+ok("每筆檢查都有符合狀態與平台的 installAction");
+
+assert.equal(
+  result.checks.find(({ id }) => id === "node").installAction,
+  null,
+);
+ok("Node.js 檢查不提供安裝 action");
+
+for (const id of ["claude-auth", "codex-auth", "gh-auth"]) {
+  assert.equal(
+    result.checks.find((check) => check.id === id).installAction,
+    null,
+  );
+}
+ok("三個登入狀態檢查都不提供安裝 action");
+
 assert(Date.now() - startedAt < 20_000);
 ok("runEnvCheck 在 20 秒內完成");
 
@@ -107,3 +164,46 @@ for (const check of result.checks) {
   assert(!check.detail.includes("\n"), `${check.id} 的 detail 含換行`);
 }
 ok("每筆 detail 都只有一行");
+
+// 迴歸：.cmd 退路是交給 cmd.exe 跑，cmd.exe 一定啟動得起來，找不到目標只回 9009。
+// 不還原成 ENOENT 的話，未安裝會被誤報成「檢查失敗」（實測 gh 就是這樣）。
+const NOT_FOUND = { type: "error", error: { code: "ENOENT" } };
+
+assert.deepEqual(
+  normalizeNotFound({ type: "close", exitCode: 9009, stdout: "" }),
+  NOT_FOUND,
+);
+// 實測：gh 未安裝時 cmd.exe 回的是 1，不是 9009。
+assert.deepEqual(
+  normalizeNotFound({
+    type: "close",
+    exitCode: 1,
+    stdout: "",
+    stderr: "'gh.cmd' is not recognized as an internal or external command,\r\n",
+  }),
+  NOT_FOUND,
+);
+assert.deepEqual(normalizeNotFound({ type: "close", exitCode: 1 }), NOT_FOUND);
+// 有 stdout 就代表指令真的跑了，非零是它自己的失敗，不能當成未安裝。
+assert.deepEqual(
+  normalizeNotFound({ type: "close", exitCode: 1, stdout: "x" }),
+  { type: "close", exitCode: 1, stdout: "x" },
+);
+assert.deepEqual(
+  normalizeNotFound({ type: "close", exitCode: 0, stdout: "" }),
+  { type: "close", exitCode: 0, stdout: "" },
+);
+assert.deepEqual(normalizeNotFound({ type: "timeout" }), { type: "timeout" });
+ok("退路沒有 stdout 又非零就還原成未安裝，其他結果原樣傳回");
+
+// 迴歸：`codex login status` 未登入時是「非零 + 空 stdout + 訊息在 stderr」，
+// 特徵跟指令不存在一模一樣。這個判準只能用在版本探測，登入探測開了會把
+// 「未登入」誤報成「需要先安裝」（實測 Windows 上就是這樣）。
+const notLoggedIn = await runProbe(process.execPath, [
+  "-e",
+  "process.stderr.write('Not logged in'); process.exit(1)",
+]);
+assert.equal(notLoggedIn.type, "close");
+assert.equal(notLoggedIn.exitCode, 1);
+assert.equal(parseCodexAuth(notLoggedIn.output).loggedIn, false);
+ok("登入探測不會把未登入誤判成未安裝");

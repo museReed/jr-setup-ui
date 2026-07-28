@@ -5,8 +5,11 @@ import http from "node:http";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { actions, buildAgentCommand } from "./actions.js";
+import { spawnEnv } from "./env-path.js";
+import { isBenignExit } from "./installers.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir } from "./paths.js";
+import { resolveLaunch } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
 
@@ -99,7 +102,39 @@ function terminateRun(run) {
   }
 }
 
-function runAction(
+function launchWindow(command, env, runId, runs, response) {
+  const spawnable = resolveLaunch(command.cmd, command.args, { env });
+
+  try {
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      shell: false,
+      stdio: "ignore",
+      detached: true,
+      env,
+    });
+    child.unref();
+    writeEvent(response, "line", {
+      stream: "stdout",
+      text: "已開啟終端機視窗。",
+    });
+    writeEvent(response, "done", { exitCode: 0, signal: null, benign: false });
+  } catch (error) {
+    writeEvent(response, "agent", {
+      kind: "error",
+      text: `無法開啟終端機視窗：${error.message}`,
+    });
+    writeEvent(response, "done", {
+      exitCode: null,
+      signal: null,
+      benign: false,
+    });
+  }
+
+  runs.delete(runId);
+  response.end();
+}
+
+async function runAction(
   run,
   runId,
   runs,
@@ -118,16 +153,47 @@ function runAction(
     action.kind === "agent"
       ? commandBuilder(action.engine, run.prompt, run.permission)
       : { cmd: action.cmd, args: action.args };
-  // stdin 一律關掉：這裡沒有人會餵輸入，留著一根開著的管線會讓
-  // 讀 stdin 的 CLI 空等（claude 等 3 秒才放行，codex 直接卡住不動）。
-  const baseOptions = { shell: false, stdio: ["ignore", "pipe", "pipe"] };
+  // Windows 上 winget 裝完會新增 PATH 目錄，但本程序拿的是啟動當下的快照。
+  // 重讀一次，剛裝好的東西才叫得動。
+  const env = await spawnEnv();
+
+  // 只負責開視窗的 action 走另一條路：不接管線、不等它結束。
+  // 那個新視窗會繼承管線並一直握著，close 事件永遠不會來（實測登入按鈕就是
+  // 卡在這裡，整個畫面的按鈕全部鎖死）。
+  if (action.launchesWindow) {
+    launchWindow(command, env, runId, runs, response);
+    return;
+  }
+
+  const baseOptions = {
+    shell: false,
+    stdio: [action.acceptsInput ? "pipe" : "ignore", "pipe", "pipe"],
+    env,
+  };
   const spawnOptions =
     action.kind === "agent"
       ? { ...baseOptions, cwd: ensureWorkDir() }
       : baseOptions;
   const parser =
     action.engine === "claude" ? parseClaudeLine : parseCodexLine;
-  const child = spawn(command.cmd, command.args, spawnOptions);
+  // Windows 的 .cmd 包裝檔不能直接 spawn（Node 會丟 EINVAL），要繞 cmd.exe；
+  // 裸指令（claude / codex / gh）在 Windows 也要先查出實際檔名才叫得動。
+  const spawnable = resolveLaunch(command.cmd, command.args, { env });
+  let child;
+
+  try {
+    child = spawn(spawnable.cmd, spawnable.args, spawnOptions);
+  } catch (error) {
+    writeEvent(response, "agent", {
+      kind: "error",
+      text: `無法啟動 ${command.cmd}：${error.message}`,
+    });
+    writeEvent(response, "done", { exitCode: null, signal: null });
+    runs.delete(runId);
+    response.end();
+    return;
+  }
+
   run.child = child;
 
   const flushStdout = streamLines(child.stdout, (line) => {
@@ -159,7 +225,11 @@ function runAction(
     flushStdout();
     flushStderr();
     runs.delete(runId);
-    writeEvent(response, "done", { exitCode, signal });
+    writeEvent(response, "done", {
+      exitCode,
+      signal,
+      benign: isBenignExit(command.cmd, exitCode),
+    });
     response.end();
   };
 
@@ -268,7 +338,70 @@ export async function startServer({
         prompt: action.acceptsPrompt ? body.prompt : action.prompt,
         used: false,
       });
-      sendJson(response, 200, { runId });
+      sendJson(response, 200, {
+        runId,
+        acceptsInput: action.acceptsInput === true,
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/input") {
+      let body;
+
+      try {
+        body = await readJson(request);
+      } catch {
+        sendText(response, 400, "JSON 格式不正確");
+        return;
+      }
+
+      const runId =
+        body !== null && typeof body === "object" ? body.runId : undefined;
+      const text =
+        body !== null && typeof body === "object" ? body.text : undefined;
+      const run = runs.get(runId);
+
+      if (!run || run.action.acceptsInput !== true) {
+        sendText(response, 400, "Run 不存在或不接受輸入");
+        return;
+      }
+
+      if (typeof text !== "string") {
+        sendText(response, 400, "text 必須是字串");
+        return;
+      }
+
+      if (text.length > 500) {
+        sendText(response, 400, "text 不可超過 500 字元");
+        return;
+      }
+
+      if (
+        !childIsRunning(run.child) ||
+        !run.child.stdin.writable ||
+        run.child.stdin.destroyed ||
+        run.child.stdin.writableEnded
+      ) {
+        sendText(response, 400, "子程序已結束或無法接收輸入");
+        return;
+      }
+
+      try {
+        await new Promise((resolve, reject) => {
+          run.child.stdin.write(`${text}\n`, "utf8", (error) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } catch (error) {
+        sendText(response, 400, `無法送出輸入：${error.message}`);
+        return;
+      }
+
+      sendJson(response, 200, { sent: true });
       return;
     }
 
@@ -306,13 +439,7 @@ export async function startServer({
       }
 
       run.used = true;
-      runAction(
-        run,
-        runId,
-        runs,
-        response,
-        commandBuilder,
-      );
+      await runAction(run, runId, runs, response, commandBuilder);
       return;
     }
 

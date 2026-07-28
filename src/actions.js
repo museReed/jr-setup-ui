@@ -1,3 +1,6 @@
+import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
+import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
+
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
 export const actions = {
@@ -59,6 +62,74 @@ export const actions = {
     description: "把輸入內容送給 Codex。",
   },
 };
+
+const installerNames = {
+  claude: "Claude Code",
+  codex: "Codex",
+  git: "Git",
+  gh: "GitHub CLI",
+};
+
+for (const id of Object.keys(INSTALLERS)) {
+  const installer = resolveInstaller(id, process.platform);
+
+  if (installer !== null) {
+    const name = installerNames[id];
+    actions[installActionId(id)] = {
+      kind: "fixed",
+      label: `安裝 ${name}`,
+      cmd: installer.cmd,
+      args: installer.args,
+      description: `安裝 ${name}。完成後需重新開啟嚮導。`,
+    };
+  }
+}
+
+if (process.platform === "win32") {
+  actions["fix-execution-policy"] = {
+    kind: "fixed",
+    label: "修正執行原則",
+    cmd: EXECUTION_POLICY_FIX.cmd,
+    args: EXECUTION_POLICY_FIX.args,
+    description: "將目前使用者的 PowerShell 執行原則改為 RemoteSigned。",
+  };
+}
+
+Object.assign(actions, {
+  "login-claude": {
+    kind: "fixed",
+    label: "登入 Claude Code",
+    cmd: "claude",
+    args: ["auth", "login"],
+    acceptsInput: true,
+    description: "登入 Claude Code。",
+  },
+  "login-codex": {
+    kind: "fixed",
+    label: "登入 Codex",
+    cmd: "codex",
+    args: ["login"],
+    acceptsInput: true,
+    description: "登入 Codex。",
+  },
+  "login-gh": {
+    kind: "fixed",
+    label: "登入 GitHub CLI",
+    cmd: "gh",
+    args: [
+      "auth",
+      "login",
+      "--web",
+      "--hostname",
+      "github.com",
+      "--git-protocol",
+      "https",
+      "--skip-ssh-key",
+    ],
+    acceptsInput: true,
+    description: "登入 GitHub CLI。",
+  },
+});
 
 export function buildAgentCommand(engine, prompt, permission) {
   if (permission !== "read-only" && permission !== "write") {

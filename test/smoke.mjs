@@ -16,6 +16,14 @@ async function postRun(baseUrl, token, body) {
   });
 }
 
+async function postInput(baseUrl, token, body) {
+  return fetch(`${baseUrl}/input?t=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 async function createRun(baseUrl, token, action, prompt) {
   const body = { action };
 
@@ -86,6 +94,23 @@ try {
       prompt: "missing-command-test",
       permission: "read-only",
     },
+    "launch-window-test": {
+      kind: "fixed",
+      label: "開視窗測試",
+      cmd: process.execPath,
+      args: ["--version"],
+      launchesWindow: true,
+    },
+    "input-echo-test": {
+      kind: "fixed",
+      label: "stdin 測試",
+      cmd: process.execPath,
+      args: [
+        "-e",
+        "process.stdout.write('ready\\n'); process.stdin.setEncoding('utf8'); process.stdin.once('data', (data) => process.stdout.write(data, () => process.exit(0)));",
+      ],
+      acceptsInput: true,
+    },
   };
   started = await startServer({
     port: 0,
@@ -133,6 +158,14 @@ try {
   assert.equal(env.checks.length, 8);
   ok("正確 token 的 GET /env 回傳 os 與 8 筆 checks");
 
+  assert(
+    env.checks.every((check) => Object.hasOwn(check, "installAction")),
+  );
+  ok("GET /env 的每筆 check 都包含 installAction");
+
+  assert(env.checks.every((check) => Object.hasOwn(check, "fixAction")));
+  ok("GET /env 的每筆 check 都包含 fixAction");
+
   const pageResponse = await fetch(
     `${baseUrl}/?t=${encodeURIComponent(token)}`,
   );
@@ -142,6 +175,39 @@ try {
   assert.match(page, /重新檢查/);
   ok("首頁包含環境檢查結果區與重新檢查按鈕");
 
+  assert.match(page, /安裝/);
+  ok("首頁包含安裝按鈕");
+
+  assert(page.includes("狀態已更新"));
+  ok("首頁包含動作完成後自動更新狀態的提示");
+
+  assert(page.includes("完成後這裡會自動更新"));
+  assert(page.includes("停止等待"));
+  ok("首頁包含登入自動更新與停止等待提示");
+
+  assert.match(page, /id="login-hints"/);
+  assert.match(page, /target="_blank"/);
+  assert.match(page, /rel="noopener noreferrer"/);
+  assert.match(page, /id="run-input"/);
+  // 那格原本只有 aria-label，同學看到的是一個空白框，不知道要貼什麼。
+  assert(page.includes("把授權代碼貼在這裡"));
+  assert(!page.includes("終端機視窗"));
+  ok("首頁包含登入提示與輸入列且移除終端機視窗文案");
+
+  assert(!page.includes("關掉嚮導"));
+  assert(!page.includes("按「重新檢查」更新狀態"));
+  ok("首頁不再包含手動更新與重開嚮導的舊提示");
+
+  // 迴歸：開視窗的 action 不能接管線——新視窗會一直握著，close 事件永遠不來，
+  // 前端會永遠卡在「登入中…」而且所有按鈕鎖死（實測登入按鈕就是這樣）。
+  const windowRunId = await createRun(baseUrl, token, "launch-window-test");
+  const windowEvents = await readSse(baseUrl, token, windowRunId);
+  assert.equal(
+    windowEvents.find(({ event }) => event === "done")?.data.exitCode,
+    0,
+  );
+  ok("開視窗的 action 立刻回 done，不等視窗關閉");
+
   const unauthorized = await fetch(`${baseUrl}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -150,7 +216,35 @@ try {
   assert.equal(unauthorized.status, 401);
   ok("缺少 token 的 POST /run 回傳 401");
 
-  const helloRunId = await createRun(baseUrl, token, "hello");
+  const unauthorizedInput = await fetch(`${baseUrl}/input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ runId: "missing", text: "hello" }),
+  });
+  assert.equal(unauthorizedInput.status, 401);
+  ok("缺少 token 的 POST /input 回傳 401");
+
+  const missingInputRun = await postInput(baseUrl, token, {
+    runId: "missing",
+    text: "hello",
+  });
+  assert.equal(missingInputRun.status, 400);
+  ok("POST /input 的 runId 不存在時回傳 400");
+
+  const helloRunResponse = await postRun(baseUrl, token, { action: "hello" });
+  assert.equal(helloRunResponse.status, 200);
+  const helloRun = await helloRunResponse.json();
+  assert.equal(helloRun.acceptsInput, false);
+  ok("POST /run 回應包含 acceptsInput");
+
+  const rejectedHelloInput = await postInput(baseUrl, token, {
+    runId: helloRun.runId,
+    text: "hello",
+  });
+  assert.equal(rejectedHelloInput.status, 400);
+  ok("不接受輸入的 action 收到 POST /input 時回傳 400");
+
+  const helloRunId = helloRun.runId;
   const helloEvents = await readSse(baseUrl, token, helloRunId);
   assert(
     helloEvents.some(
@@ -163,6 +257,58 @@ try {
     0,
   );
   ok("hello 串流 stdout 並以 exit code 0 結束");
+
+  const inputRunResponse = await postRun(baseUrl, token, {
+    action: "input-echo-test",
+  });
+  assert.equal(inputRunResponse.status, 200);
+  const inputRun = await inputRunResponse.json();
+  assert.equal(inputRun.acceptsInput, true);
+
+  const invalidInputText = await postInput(baseUrl, token, {
+    runId: inputRun.runId,
+    text: 123,
+  });
+  assert.equal(invalidInputText.status, 400);
+  ok("POST /input 拒絕非字串 text");
+
+  const longInput = await postInput(baseUrl, token, {
+    runId: inputRun.runId,
+    text: "x".repeat(501),
+  });
+  assert.equal(longInput.status, 400);
+  ok("POST /input 拒絕超過 500 字元的文字");
+
+  const inputBeforeSpawn = await postInput(baseUrl, token, {
+    runId: inputRun.runId,
+    text: "too early",
+  });
+  assert.equal(inputBeforeSpawn.status, 400);
+  ok("POST /input 在子程序尚未啟動時回傳 400");
+
+  const inputText = "raw; $HOME && echo untouched";
+  let inputResponseStatus = null;
+  const inputEvents = await readSse(
+    baseUrl,
+    token,
+    inputRun.runId,
+    async ({ event, data }) => {
+      if (event === "line" && data.text === "ready") {
+        const inputResponse = await postInput(baseUrl, token, {
+          runId: inputRun.runId,
+          text: inputText,
+        });
+        inputResponseStatus = inputResponse.status;
+      }
+    },
+  );
+  assert.equal(inputResponseStatus, 200);
+  assert(
+    inputEvents.some(
+      ({ event, data }) => event === "line" && data.text === inputText,
+    ),
+  );
+  ok("POST /input 將文字原樣寫入子程序 stdin");
 
   const failRunId = await createRun(baseUrl, token, "fail-demo");
   const failEvents = await readSse(baseUrl, token, failRunId);
