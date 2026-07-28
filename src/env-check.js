@@ -9,7 +9,16 @@ import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
 import { resolveSpawn } from "./spawn-command.js";
 
-const TIMEOUT_MS = 5000;
+// 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
+// 但同學撞到的是「剛裝完的第一次啟動」——npm 剛寫完檔案、Defender 正在掃、
+// node 第一次載入整包 bundle，那一次會破 5 秒，而且裝完自動重查一定撞得到。
+const TIMEOUT_MS = 15000;
+
+// 逾時只代表「這次沒問到」，不代表沒裝。歸成 missing 會長出安裝按鈕，
+// 等於叫同學去重裝一個已經裝好的東西（實測 Codex CLI 就被這樣誤報）。
+function timedOut(id, label) {
+  return { id, label, status: "warn", detail: "檢查逾時，請再按一次重新檢查" };
+}
 
 const CHECKS = [
   { id: "claude", label: "Claude Code CLI" },
@@ -196,7 +205,7 @@ async function checkExecutionPolicy() {
     );
 
     if (result.type === "timeout") {
-      return { id, label, status: "warn", detail: "檢查逾時" };
+      return timedOut(id, label);
     }
 
     if (result.type === "error" || result.exitCode !== 0) {
@@ -222,7 +231,7 @@ async function checkVersion(id, label, cmd, args) {
     });
 
     if (result.type === "timeout") {
-      return { id, label, status: "missing", detail: "檢查逾時" };
+      return timedOut(id, label);
     }
 
     if (result.type === "error") {
@@ -255,14 +264,19 @@ async function checkClaudeAuth(installed) {
   const label = "Claude Code 登入狀態";
 
   try {
-    if ((await installed).status !== "ok") {
-      return { id, label, status: "missing", detail: "需要先安裝" };
+    const cli = await installed;
+
+    if (cli.status !== "ok") {
+      // CLI 那項自己逾時的話，這裡跟著說「需要先安裝」是二次誤導。
+      return cli.status === "warn"
+        ? timedOut(id, label)
+        : { id, label, status: "missing", detail: "需要先安裝" };
     }
 
     const result = await runProbe("claude", ["auth", "status"]);
 
     if (result.type === "timeout") {
-      return { id, label, status: "missing", detail: "檢查逾時" };
+      return timedOut(id, label);
     }
 
     // 走到這裡代表版本探測已經成功，CLI 一定在——探測失敗只能是判讀不出來，
@@ -288,14 +302,19 @@ async function checkCodexAuth(installed) {
   const label = "Codex 登入狀態";
 
   try {
-    if ((await installed).status !== "ok") {
-      return { id, label, status: "missing", detail: "需要先安裝" };
+    const cli = await installed;
+
+    if (cli.status !== "ok") {
+      // CLI 那項自己逾時的話，這裡跟著說「需要先安裝」是二次誤導。
+      return cli.status === "warn"
+        ? timedOut(id, label)
+        : { id, label, status: "missing", detail: "需要先安裝" };
     }
 
     const result = await runProbe("codex", ["login", "status"]);
 
     if (result.type === "timeout") {
-      return { id, label, status: "missing", detail: "檢查逾時" };
+      return timedOut(id, label);
     }
 
     if (result.type === "error") {
@@ -320,14 +339,19 @@ async function checkGhAuth(installed) {
   const label = "GitHub 登入狀態";
 
   try {
-    if ((await installed).status !== "ok") {
-      return { id, label, status: "missing", detail: "需要先安裝" };
+    const cli = await installed;
+
+    if (cli.status !== "ok") {
+      // CLI 那項自己逾時的話，這裡跟著說「需要先安裝」是二次誤導。
+      return cli.status === "warn"
+        ? timedOut(id, label)
+        : { id, label, status: "missing", detail: "需要先安裝" };
     }
 
     const result = await runProbe("gh", ["auth", "status"]);
 
     if (result.type === "timeout") {
-      return { id, label, status: "missing", detail: "檢查逾時" };
+      return timedOut(id, label);
     }
 
     if (result.type === "error") {
