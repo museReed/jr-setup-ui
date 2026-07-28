@@ -9,7 +9,7 @@ import { spawnEnv } from "./env-path.js";
 import { isBenignExit } from "./installers.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir } from "./paths.js";
-import { resolveSpawn } from "./spawn-command.js";
+import { resolveLaunch } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
 
@@ -103,7 +103,7 @@ function terminateRun(run) {
 }
 
 function launchWindow(command, env, runId, runs, response) {
-  const spawnable = resolveSpawn(command.cmd, command.args);
+  const spawnable = resolveLaunch(command.cmd, command.args, { env });
 
   try {
     const child = spawn(spawnable.cmd, spawnable.args, {
@@ -176,8 +176,9 @@ async function runAction(
       : baseOptions;
   const parser =
     action.engine === "claude" ? parseClaudeLine : parseCodexLine;
-  // Windows 的 .cmd 包裝檔不能直接 spawn（Node 會丟 EINVAL），要繞 cmd.exe。
-  const spawnable = resolveSpawn(command.cmd, command.args);
+  // Windows 的 .cmd 包裝檔不能直接 spawn（Node 會丟 EINVAL），要繞 cmd.exe；
+  // 裸指令（claude / codex / gh）在 Windows 也要先查出實際檔名才叫得動。
+  const spawnable = resolveLaunch(command.cmd, command.args, { env });
   let child;
 
   try {
