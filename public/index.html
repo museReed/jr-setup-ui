@@ -54,9 +54,25 @@
         border-top: 1px solid #d8dee3;
       }
 
+      .install-status {
+        margin: 0 20px 16px;
+        padding: 12px 14px;
+        border: 1px solid #4d7a58;
+        border-radius: 4px;
+        background: #e5f3e8;
+        color: #174f25;
+        font-weight: 700;
+      }
+
+      .install-status.failed {
+        border-color: #a94a4a;
+        background: #fae8e8;
+        color: #8b2020;
+      }
+
       .env-row {
         display: grid;
-        grid-template-columns: 26px minmax(170px, 0.8fr) 1fr;
+        grid-template-columns: 26px minmax(170px, 0.8fr) 1fr auto;
         align-items: center;
         gap: 10px;
         min-height: 42px;
@@ -228,6 +244,11 @@
         .env-detail {
           grid-column: 2;
         }
+
+        .env-install {
+          grid-column: 2;
+          justify-self: start;
+        }
       }
     </style>
   </head>
@@ -242,6 +263,9 @@
           </div>
           <button type="button" id="recheck-env">重新檢查</button>
         </div>
+        <p id="install-status" class="install-status" hidden>
+          安裝完成。請關掉這個嚮導、重新開啟後再按重新檢查。
+        </p>
         <div
           id="env-results"
           class="env-results"
@@ -292,9 +316,17 @@
       const envOs = document.querySelector("#env-os");
       const envResults = document.querySelector("#env-results");
       const recheckEnvButton = document.querySelector("#recheck-env");
+      const installStatus = document.querySelector("#install-status");
       let activeText = null;
       let currentAgentName = "";
       let currentRunId = null;
+      let activeInstallButton = null;
+
+      function showInstallStatus(message, failed = false) {
+        installStatus.textContent = message;
+        installStatus.classList.toggle("failed", failed);
+        installStatus.hidden = false;
+      }
 
       async function checkEnvironment() {
         recheckEnvButton.disabled = true;
@@ -339,6 +371,19 @@
             detail.textContent = check.detail;
 
             row.append(icon, label, detail);
+
+            if (check.installAction !== null) {
+              const installButton = document.createElement("button");
+              installButton.type = "button";
+              installButton.className = "env-install";
+              installButton.dataset.installAction = check.installAction;
+              installButton.textContent = "安裝";
+              installButton.addEventListener("click", () => {
+                run(check.installAction, undefined, installButton);
+              });
+              row.append(installButton);
+            }
+
             return row;
           });
           envResults.replaceChildren(...rows);
@@ -357,6 +402,18 @@
       function setRunning(running) {
         for (const button of buttons) {
           button.disabled = running;
+        }
+
+        if (activeInstallButton !== null) {
+          recheckEnvButton.disabled = running;
+        }
+
+        for (const button of document.querySelectorAll(
+          "[data-install-action]",
+        )) {
+          button.disabled = running;
+          button.textContent =
+            running && button === activeInstallButton ? "安裝中…" : "安裝";
         }
 
         prompt.disabled = running;
@@ -391,9 +448,15 @@
         addLine(agentEvent.text, `agent-${agentEvent.kind}`);
       }
 
-      async function run(action, promptText) {
+      async function run(action, promptText, installButton = null) {
         output.replaceChildren();
         activeText = null;
+        activeInstallButton = installButton;
+
+        if (activeInstallButton !== null) {
+          installStatus.hidden = true;
+        }
+
         currentAgentName = action.startsWith("claude")
           ? "Claude"
           : action.startsWith("codex")
@@ -453,9 +516,20 @@
               summary,
               succeeded ? "succeeded" : "failed",
             );
+
+            if (activeInstallButton !== null) {
+              showInstallStatus(
+                succeeded
+                  ? "安裝完成。請關掉這個嚮導、重新開啟後再按重新檢查。"
+                  : "安裝失敗，請看下方輸出",
+                !succeeded,
+              );
+            }
+
             events.close();
             currentRunId = null;
             setRunning(false);
+            activeInstallButton = null;
           });
 
           events.onerror = () => {
@@ -464,12 +538,14 @@
               events.close();
               currentRunId = null;
               setRunning(false);
+              activeInstallButton = null;
             }
           };
         } catch (error) {
           addLine(`無法執行：${error.message}`, "failed");
           currentRunId = null;
           setRunning(false);
+          activeInstallButton = null;
         }
       }
 

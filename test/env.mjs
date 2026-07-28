@@ -6,6 +6,10 @@ import {
   runEnvCheck,
   runProbe,
 } from "../src/env-check.js";
+import {
+  installActionId,
+  resolveInstaller,
+} from "../src/installers.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -88,6 +92,35 @@ for (const check of result.checks) {
 }
 
 ok("runEnvCheck 回傳 os 與 8 筆固定形狀的檢查結果");
+
+for (const check of result.checks) {
+  assert(Object.hasOwn(check, "installAction"));
+  assert(
+    typeof check.installAction === "string" ||
+      check.installAction === null,
+  );
+  const expectedInstallAction =
+    check.status === "missing" &&
+    resolveInstaller(check.id, process.platform) !== null
+      ? installActionId(check.id)
+      : null;
+  assert.equal(check.installAction, expectedInstallAction);
+}
+ok("每筆檢查都有符合狀態與平台的 installAction");
+
+assert.equal(
+  result.checks.find(({ id }) => id === "node").installAction,
+  null,
+);
+ok("Node.js 檢查不提供安裝 action");
+
+for (const id of ["claude-auth", "codex-auth", "gh-auth"]) {
+  assert.equal(
+    result.checks.find((check) => check.id === id).installAction,
+    null,
+  );
+}
+ok("三個登入狀態檢查都不提供安裝 action");
 
 assert(Date.now() - startedAt < 20_000);
 ok("runEnvCheck 在 20 秒內完成");

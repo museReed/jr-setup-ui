@@ -1,3 +1,5 @@
+import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
+
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
 export const actions = {
@@ -59,6 +61,28 @@ export const actions = {
     description: "把輸入內容送給 Codex。",
   },
 };
+
+const installerNames = {
+  claude: "Claude Code",
+  codex: "Codex",
+  git: "Git",
+  gh: "GitHub CLI",
+};
+
+for (const id of Object.keys(INSTALLERS)) {
+  const installer = resolveInstaller(id, process.platform);
+
+  if (installer !== null) {
+    const name = installerNames[id];
+    actions[installActionId(id)] = {
+      kind: "fixed",
+      label: `安裝 ${name}`,
+      cmd: installer.cmd,
+      args: installer.args,
+      description: `安裝 ${name}。完成後需重新開啟嚮導。`,
+    };
+  }
+}
 
 export function buildAgentCommand(engine, prompt, permission) {
   if (permission !== "read-only" && permission !== "write") {

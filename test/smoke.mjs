@@ -133,6 +133,11 @@ try {
   assert.equal(env.checks.length, 8);
   ok("正確 token 的 GET /env 回傳 os 與 8 筆 checks");
 
+  assert(
+    env.checks.every((check) => Object.hasOwn(check, "installAction")),
+  );
+  ok("GET /env 的每筆 check 都包含 installAction");
+
   const pageResponse = await fetch(
     `${baseUrl}/?t=${encodeURIComponent(token)}`,
   );
@@ -141,6 +146,10 @@ try {
   assert.match(page, /id="env-results"/);
   assert.match(page, /重新檢查/);
   ok("首頁包含環境檢查結果區與重新檢查按鈕");
+
+  assert.match(page, /安裝/);
+  assert.match(page, /請關掉這個嚮導/);
+  ok("首頁包含安裝按鈕與重開嚮導提示");
 
   const unauthorized = await fetch(`${baseUrl}/run`, {
     method: "POST",

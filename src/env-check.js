@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 
+import { installActionId, resolveInstaller } from "./installers.js";
+
 const TIMEOUT_MS = 5000;
 
 const CHECKS = [
@@ -49,7 +51,25 @@ export function parseCodexAuth(stdout) {
   };
 }
 
-export function runProbe(cmd, args) {
+// Windows 上 npm 安裝的 CLI 是 claude.cmd / codex.cmd 這種包裝檔，沒有同名 .exe。
+// spawn 不開 shell 時找不到裸指令，必須補上 .cmd 再試一次。
+// （實測：PowerShell 直接跑 `claude` 會去找 claude.ps1；spawn 則是整個找不到。）
+export async function runProbe(cmd, args) {
+  const first = await spawnProbe(cmd, args);
+
+  if (
+    process.platform === "win32" &&
+    first.type === "error" &&
+    first.error?.code === "ENOENT" &&
+    !cmd.includes(".")
+  ) {
+    return spawnProbe(`${cmd}.cmd`, args);
+  }
+
+  return first;
+}
+
+function spawnProbe(cmd, args) {
   return new Promise((resolve) => {
     let child;
     let settled = false;
@@ -99,6 +119,18 @@ export function runProbe(cmd, args) {
       finish({ type: "close", exitCode, stdout, stderr, output: stdout + stderr });
     });
   });
+}
+
+function withInstallAction(check) {
+  const installer =
+    check.status === "missing"
+      ? resolveInstaller(check.id, process.platform)
+      : null;
+
+  return {
+    ...check,
+    installAction: installer === null ? null : installActionId(check.id),
+  };
 }
 
 async function checkVersion(id, label, cmd, args) {
@@ -253,7 +285,7 @@ export async function runEnvCheck() {
 
     return {
       os: { platform: process.platform, arch: process.arch },
-      checks,
+      checks: checks.map(withInstallAction),
     };
   } catch {
     return {
@@ -263,7 +295,7 @@ export async function runEnvCheck() {
         label,
         status: "missing",
         detail: "檢查失敗",
-      })),
+      })).map(withInstallAction),
     };
   }
 }
