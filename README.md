@@ -16,7 +16,7 @@ curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | bash
 **Windows**（PowerShell）
 
 ```powershell
-irm https://musereed.github.io/jr-setup-ui/setup.ps1 | iex
+irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 | iex
 ```
 
 腳本會裝好 Node（macOS 另外裝 Homebrew）、抓下嚮導、啟動網頁。
