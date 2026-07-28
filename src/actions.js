@@ -130,6 +130,9 @@ for (const loginAction of loginActions) {
       cmd: command.cmd,
       args: command.args,
       description: loginAction.description,
+      // 這類 action 只負責開一個獨立視窗，沒有輸出可以串。若照一般方式接管線，
+      // 那個視窗會一直握著管線不放，close 事件永遠不來、前端永遠卡在執行中。
+      launchesWindow: true,
     };
   }
 }

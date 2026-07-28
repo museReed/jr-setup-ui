@@ -86,6 +86,15 @@ try {
       prompt: "missing-command-test",
       permission: "read-only",
     },
+    // 模擬「開視窗」：跑一個會賴著不結束的程序。若照一般方式接管線，
+    // 這個測試會直接掛住。
+    "launch-window-test": {
+      kind: "fixed",
+      label: "開視窗測試",
+      cmd: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 60_000)"],
+      launchesWindow: true,
+    },
   };
   started = await startServer({
     port: 0,
@@ -163,6 +172,16 @@ try {
   assert(!page.includes("關掉嚮導"));
   assert(!page.includes("按「重新檢查」更新狀態"));
   ok("首頁不再包含手動更新與重開嚮導的舊提示");
+
+  // 迴歸：開視窗的 action 不能接管線——新視窗會一直握著，close 事件永遠不來，
+  // 前端會永遠卡在「登入中…」而且所有按鈕鎖死（實測登入按鈕就是這樣）。
+  const windowRunId = await createRun(baseUrl, token, "launch-window-test");
+  const windowEvents = await readSse(baseUrl, token, windowRunId);
+  assert.equal(
+    windowEvents.find(({ event }) => event === "done")?.data.exitCode,
+    0,
+  );
+  ok("開視窗的 action 立刻回 done，不等視窗關閉");
 
   const unauthorized = await fetch(`${baseUrl}/run`, {
     method: "POST",

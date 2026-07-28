@@ -102,6 +102,38 @@ function terminateRun(run) {
   }
 }
 
+function launchWindow(command, env, runId, runs, response) {
+  const spawnable = resolveSpawn(command.cmd, command.args);
+
+  try {
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      shell: false,
+      stdio: "ignore",
+      detached: true,
+      env,
+    });
+    child.unref();
+    writeEvent(response, "line", {
+      stream: "stdout",
+      text: "已開啟終端機視窗。",
+    });
+    writeEvent(response, "done", { exitCode: 0, signal: null, benign: false });
+  } catch (error) {
+    writeEvent(response, "agent", {
+      kind: "error",
+      text: `無法開啟終端機視窗：${error.message}`,
+    });
+    writeEvent(response, "done", {
+      exitCode: null,
+      signal: null,
+      benign: false,
+    });
+  }
+
+  runs.delete(runId);
+  response.end();
+}
+
 async function runAction(
   run,
   runId,
@@ -126,6 +158,15 @@ async function runAction(
   // Windows 上 winget 裝完會新增 PATH 目錄，但本程序拿的是啟動當下的快照。
   // 重讀一次，剛裝好的東西才叫得動。
   const env = await spawnEnv();
+
+  // 只負責開視窗的 action 走另一條路：不接管線、不等它結束。
+  // 那個新視窗會繼承管線並一直握著，close 事件永遠不會來（實測登入按鈕就是
+  // 卡在這裡，整個畫面的按鈕全部鎖死）。
+  if (action.launchesWindow) {
+    launchWindow(command, env, runId, runs, response);
+    return;
+  }
+
   const baseOptions = {
     shell: false,
     stdio: ["ignore", "pipe", "pipe"],
