@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { installActionId, resolveInstaller } from "./installers.js";
+import { resolveSpawn } from "./spawn-command.js";
 
 const TIMEOUT_MS = 5000;
 
@@ -69,7 +70,8 @@ export async function runProbe(cmd, args) {
   return first;
 }
 
-function spawnProbe(cmd, args) {
+function spawnProbe(rawCmd, rawArgs) {
+  const { cmd, args } = resolveSpawn(rawCmd, rawArgs);
   return new Promise((resolve) => {
     let child;
     let settled = false;

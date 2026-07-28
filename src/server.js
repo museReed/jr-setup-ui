@@ -7,6 +7,7 @@ import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { actions, buildAgentCommand } from "./actions.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir } from "./paths.js";
+import { resolveSpawn } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
 
@@ -127,7 +128,23 @@ function runAction(
       : baseOptions;
   const parser =
     action.engine === "claude" ? parseClaudeLine : parseCodexLine;
-  const child = spawn(command.cmd, command.args, spawnOptions);
+  // Windows 的 .cmd 包裝檔不能直接 spawn（Node 會丟 EINVAL），要繞 cmd.exe。
+  const spawnable = resolveSpawn(command.cmd, command.args);
+  let child;
+
+  try {
+    child = spawn(spawnable.cmd, spawnable.args, spawnOptions);
+  } catch (error) {
+    writeEvent(response, "agent", {
+      kind: "error",
+      text: `無法啟動 ${command.cmd}：${error.message}`,
+    });
+    writeEvent(response, "done", { exitCode: null, signal: null });
+    runs.delete(runId);
+    response.end();
+    return;
+  }
+
   run.child = child;
 
   const flushStdout = streamLines(child.stdout, (line) => {
