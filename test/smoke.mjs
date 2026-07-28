@@ -175,16 +175,6 @@ try {
   assert.match(page, /重新檢查/);
   ok("首頁包含環境檢查結果區與重新檢查按鈕");
 
-  assert.match(page, /安裝/);
-  ok("首頁包含安裝按鈕");
-
-  assert(page.includes("狀態已更新"));
-  ok("首頁包含動作完成後自動更新狀態的提示");
-
-  assert(page.includes("完成後這裡會自動更新"));
-  assert(page.includes("停止等待"));
-  ok("首頁包含登入自動更新與停止等待提示");
-
   assert.match(page, /id="login-hints"/);
   assert.match(page, /target="_blank"/);
   assert.match(page, /rel="noopener noreferrer"/);
@@ -194,9 +184,37 @@ try {
   assert(!page.includes("終端機視窗"));
   ok("首頁包含登入提示與輸入列且移除終端機視窗文案");
 
-  assert(!page.includes("關掉嚮導"));
-  assert(!page.includes("按「重新檢查」更新狀態"));
-  ok("首頁不再包含手動更新與重開嚮導的舊提示");
+  // 前端拆成 View / ViewModel / Model 之後，首頁只剩標記。
+  assert(!page.includes("<style>"));
+  assert(!page.includes("document.querySelector"));
+  assert.match(page, /<link rel="stylesheet" href="\/styles\.css" \/>/);
+  assert.match(page, /<script type="module" src="\/app\.js"><\/script>/);
+  ok("首頁不再內嵌樣式與腳本，改成外部檔案");
+
+  // <link> 與 import 都由瀏覽器自己發請求，帶不了 token，所以靜態檔不驗 token。
+  for (const [pathname, expectedType] of [
+    ["/styles.css", /^text\/css/],
+    ["/app.js", /^text\/javascript/],
+    ["/view.js", /^text\/javascript/],
+    ["/viewmodel.js", /^text\/javascript/],
+    ["/api.js", /^text\/javascript/],
+  ]) {
+    const assetResponse = await fetch(`${baseUrl}${pathname}`);
+    assert.equal(assetResponse.status, 200, pathname);
+    assert.match(assetResponse.headers.get("content-type"), expectedType);
+    assert((await assetResponse.text()).length > 0, pathname);
+  }
+  ok("樣式與前端模組不帶 token 也取得到");
+
+  const viewSource = await (await fetch(`${baseUrl}/view.js`)).text();
+  assert(viewSource.includes("完成後這裡會自動更新"));
+  assert(viewSource.includes("停止等待"));
+  ok("View 含登入自動更新與停止等待提示");
+
+  const viewModelSource = await (await fetch(`${baseUrl}/viewmodel.js`)).text();
+  assert(viewModelSource.includes("狀態已更新"));
+  assert(!viewModelSource.includes("document."));
+  ok("ViewModel 含狀態更新文案且完全不碰 DOM");
 
   // 迴歸：開視窗的 action 不能接管線——新視窗會一直握著，close 事件永遠不來，
   // 前端會永遠卡在「登入中…」而且所有按鈕鎖死（實測登入按鈕就是這樣）。
