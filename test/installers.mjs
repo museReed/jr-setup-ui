@@ -38,6 +38,17 @@ assert.equal(isBenignExit("npm.cmd", 2316632107), false);
 assert.equal(isBenignExit("winget", null), false);
 ok("winget 的「已安裝／無可用更新」不算失敗");
 
+// 迴歸：不指定 --source 時，msstore 來源憑證驗證失敗的機器會整個裝不了
+// （實測 0x8a15005e，winget 要求你先選一個來源）。
+for (const id of ["git", "gh"]) {
+  const installer = resolveInstaller(id, "win32");
+  const sourceIndex = installer.args.indexOf("--source");
+  assert(sourceIndex !== -1);
+  assert.equal(installer.args[sourceIndex + 1], "winget");
+  assert(installer.args.includes("--accept-source-agreements"));
+}
+ok("winget 安裝指定 --source winget 並自動接受來源條款");
+
 const gitWindows = resolveInstaller("git", "win32");
 assert.equal(gitWindows.cmd, "winget");
 assert(gitWindows.args.includes("Git.Git"));

@@ -26,7 +26,19 @@ export const INSTALLERS = {
   git: {
     win32: {
       cmd: "winget",
-      args: ["install", "--id", "Git.Git", "-e", "--silent"],
+      // 必須指定 --source winget：實測有些機器的 msstore 來源憑證驗證失敗
+      // （0x8a15005e），沒指定來源時 winget 會直接放棄並要求你選一個。
+      args: [
+        "install",
+        "--id",
+        "Git.Git",
+        "-e",
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+      ],
     },
     darwin: {
       cmd: "brew",
@@ -36,7 +48,17 @@ export const INSTALLERS = {
   gh: {
     win32: {
       cmd: "winget",
-      args: ["install", "--id", "GitHub.cli", "-e", "--silent"],
+      args: [
+        "install",
+        "--id",
+        "GitHub.cli",
+        "-e",
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+      ],
     },
     darwin: {
       cmd: "brew",
