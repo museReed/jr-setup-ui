@@ -64,10 +64,23 @@ export async function runProbe(cmd, args) {
     first.error?.code === "ENOENT" &&
     !cmd.includes(".")
   ) {
-    return spawnProbe(`${cmd}.cmd`, args);
+    return normalizeNotFound(await spawnProbe(`${cmd}.cmd`, args));
   }
 
   return first;
+}
+
+// 退路是交給 cmd.exe 跑，而 cmd.exe 一定存在——它自己會啟動成功，
+// 只是找不到目標指令並回 9009。不還原成 ENOENT 的話，「未安裝」會被
+// 誤報成「檢查失敗」（實測 gh 未安裝時就是這樣）。
+const CMD_NOT_FOUND_EXIT_CODE = 9009;
+
+export function normalizeNotFound(result) {
+  if (result.type === "close" && result.exitCode === CMD_NOT_FOUND_EXIT_CODE) {
+    return { type: "error", error: { code: "ENOENT" } };
+  }
+
+  return result;
 }
 
 function spawnProbe(rawCmd, rawArgs) {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  normalizeNotFound,
   parseClaudeAuth,
   parseCodexAuth,
   runEnvCheck,
@@ -140,3 +141,16 @@ for (const check of result.checks) {
   assert(!check.detail.includes("\n"), `${check.id} 的 detail 含換行`);
 }
 ok("每筆 detail 都只有一行");
+
+// 迴歸：.cmd 退路是交給 cmd.exe 跑，cmd.exe 一定啟動得起來，找不到目標只回 9009。
+// 不還原成 ENOENT 的話，未安裝會被誤報成「檢查失敗」（實測 gh 就是這樣）。
+assert.deepEqual(normalizeNotFound({ type: "close", exitCode: 9009 }), {
+  type: "error",
+  error: { code: "ENOENT" },
+});
+assert.deepEqual(
+  normalizeNotFound({ type: "close", exitCode: 1, stdout: "x" }),
+  { type: "close", exitCode: 1, stdout: "x" },
+);
+assert.deepEqual(normalizeNotFound({ type: "timeout" }), { type: "timeout" });
+ok("cmd.exe 的 9009 還原成未安裝，其他結果原樣傳回");
