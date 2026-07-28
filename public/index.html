@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>jr-setup-ui</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, sans-serif;
+        background: #f5f5f5;
+        color: #202020;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px 20px;
+      }
+
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+
+      .env-check {
+        overflow: hidden;
+        margin: 0 0 28px;
+        border: 1px solid #b8c3cc;
+        border-top: 4px solid #315f86;
+        border-radius: 6px;
+        background: #fff;
+      }
+
+      .env-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 18px 20px 16px;
+      }
+
+      .env-heading h2 {
+        margin: 0;
+      }
+
+      #env-os {
+        margin: 6px 0 0;
+        color: #4d5963;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9rem;
+      }
+
+      .env-results {
+        border-top: 1px solid #d8dee3;
+      }
+
+      .env-row {
+        display: grid;
+        grid-template-columns: 26px minmax(170px, 0.8fr) 1fr;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 5px 20px;
+        border-bottom: 1px solid #e5e8eb;
+      }
+
+      .env-row:last-child {
+        border-bottom: 0;
+      }
+
+      .env-icon {
+        display: inline-grid;
+        width: 22px;
+        height: 22px;
+        place-items: center;
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .env-detail {
+        color: #4d5963;
+      }
+
+      .env-row[data-status="ok"] .env-icon {
+        background: #e5f3e8;
+        color: #17652a;
+      }
+
+      .env-row[data-status="missing"] .env-icon {
+        background: #fae8e8;
+        color: #9b2525;
+      }
+
+      .env-row[data-status="warn"] .env-icon {
+        background: #fff2d5;
+        color: #805800;
+      }
+
+      .env-message {
+        margin: 0;
+        padding: 18px 20px;
+        color: #4d5963;
+      }
+
+      .env-message.failed {
+        color: #9b2525;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 12px 0 24px;
+      }
+
+      button {
+        padding: 9px 14px;
+        border: 1px solid #777;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.5;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 110px;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 1px solid #777;
+        border-radius: 4px;
+        font: inherit;
+        resize: vertical;
+      }
+
+      .write-toggle {
+        margin: 10px 0 0;
+      }
+
+      .write-toggle small {
+        display: block;
+        margin-top: 3px;
+        color: #555;
+      }
+
+      .run-controls {
+        display: flex;
+        justify-content: flex-end;
+        min-height: 38px;
+        margin-bottom: 10px;
+      }
+
+      #cancel {
+        border-color: #a32929;
+        color: #a32929;
+      }
+
+      #output {
+        height: 320px;
+        overflow-y: auto;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 14px;
+        border-radius: 4px;
+        background: #171717;
+        color: #e7e7e7;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      .stderr,
+      .failed {
+        color: #ff8a8a;
+      }
+
+      .succeeded {
+        color: #79d68b;
+      }
+
+      .agent-status {
+        color: #a3a3a3;
+      }
+
+      .agent-tool {
+        overflow-x: auto;
+        margin: 5px 0;
+        padding: 5px 8px;
+        border-radius: 3px;
+        background: #303030;
+        white-space: nowrap;
+      }
+
+      .agent-text {
+        margin: 5px 0;
+        color: #fff;
+      }
+
+      .agent-error {
+        color: #ff8a8a;
+      }
+
+      @media (max-width: 560px) {
+        body {
+          padding: 20px 14px;
+        }
+
+        .env-heading {
+          align-items: stretch;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .env-heading button {
+          align-self: flex-start;
+        }
+
+        .env-row {
+          grid-template-columns: 26px 1fr;
+          padding: 9px 16px;
+        }
+
+        .env-detail {
+          grid-column: 2;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>jr-setup-ui</h1>
+      <section class="env-check" aria-labelledby="env-title">
+        <div class="env-heading">
+          <div>
+            <h2 id="env-title">環境檢查</h2>
+            <p id="env-os">作業系統：檢查中…</p>
+          </div>
+          <button type="button" id="recheck-env">重新檢查</button>
+        </div>
+        <div
+          id="env-results"
+          class="env-results"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <p class="env-message">檢查中…</p>
+        </div>
+      </section>
+      <h2>固定步驟</h2>
+      <div class="actions">
+        <button type="button" data-action="hello">顯示問候</button>
+        <button type="button" data-action="slow-count">慢速計數</button>
+        <button type="button" data-action="fail-demo">失敗示範</button>
+        <button type="button" data-action="claude-hello">Claude 問候</button>
+        <button type="button" data-action="codex-hello">Codex 問候</button>
+      </div>
+      <h2>自由輸入</h2>
+      <textarea
+        id="prompt"
+        maxlength="4000"
+        placeholder="輸入要交給代理執行的內容"
+      ></textarea>
+      <div class="write-toggle">
+        <label>
+          <input type="checkbox" id="allow-write" />
+          允許寫檔（預設關閉）
+        </label>
+        <small>關閉時只能讀取與查詢，不能建立或修改檔案。</small>
+      </div>
+      <div class="actions">
+        <button type="button" data-action="claude-free">送給 Claude</button>
+        <button type="button" data-action="codex-free">送給 Codex</button>
+      </div>
+      <div class="run-controls">
+        <button type="button" id="cancel" hidden>取消</button>
+      </div>
+      <div id="output" role="log" aria-live="polite"></div>
+    </main>
+
+    <script>
+      const token = new URLSearchParams(window.location.search).get("t") ?? "";
+      const output = document.querySelector("#output");
+      const buttons = [...document.querySelectorAll("[data-action]")];
+      const prompt = document.querySelector("#prompt");
+      const allowWrite = document.querySelector("#allow-write");
+      const cancelButton = document.querySelector("#cancel");
+      const envOs = document.querySelector("#env-os");
+      const envResults = document.querySelector("#env-results");
+      const recheckEnvButton = document.querySelector("#recheck-env");
+      let activeText = null;
+      let currentAgentName = "";
+      let currentRunId = null;
+
+      async function checkEnvironment() {
+        recheckEnvButton.disabled = true;
+        envResults.setAttribute("aria-busy", "true");
+        const loading = document.createElement("p");
+        loading.className = "env-message";
+        loading.textContent = "檢查中…";
+        envResults.replaceChildren(loading);
+
+        try {
+          const response = await fetch(
+            `/env?t=${encodeURIComponent(token)}`,
+          );
+
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+
+          const { os, checks } = await response.json();
+          envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
+          const statusDisplay = {
+            ok: { symbol: "✓", label: "通過" },
+            missing: { symbol: "✗", label: "缺少" },
+            warn: { symbol: "!", label: "需處理" },
+          };
+          const rows = checks.map((check) => {
+            const row = document.createElement("div");
+            row.className = "env-row";
+            row.dataset.status = check.status;
+
+            const icon = document.createElement("span");
+            const display = statusDisplay[check.status];
+            icon.className = "env-icon";
+            icon.textContent = display.symbol;
+            icon.setAttribute("aria-label", display.label);
+
+            const label = document.createElement("strong");
+            label.textContent = check.label;
+
+            const detail = document.createElement("span");
+            detail.className = "env-detail";
+            detail.textContent = check.detail;
+
+            row.append(icon, label, detail);
+            return row;
+          });
+          envResults.replaceChildren(...rows);
+        } catch (error) {
+          envOs.textContent = "作業系統：無法取得";
+          const message = document.createElement("p");
+          message.className = "env-message failed";
+          message.textContent = `環境檢查失敗：${error.message}`;
+          envResults.replaceChildren(message);
+        } finally {
+          envResults.setAttribute("aria-busy", "false");
+          recheckEnvButton.disabled = false;
+        }
+      }
+
+      function setRunning(running) {
+        for (const button of buttons) {
+          button.disabled = running;
+        }
+
+        prompt.disabled = running;
+        allowWrite.disabled = running;
+        cancelButton.hidden = !running;
+        cancelButton.disabled = !running || currentRunId === null;
+      }
+
+      function addLine(text, className = "") {
+        const line = document.createElement("div");
+        line.textContent = text;
+        line.className = className;
+        output.append(line);
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function addAgentEvent(agentEvent) {
+        if (agentEvent.kind === "text") {
+          if (activeText === null) {
+            activeText = document.createElement("div");
+            activeText.className = "agent-text";
+            activeText.textContent = `${currentAgentName} 回覆：`;
+            output.append(activeText);
+          }
+
+          activeText.append(document.createTextNode(agentEvent.text));
+          output.scrollTop = output.scrollHeight;
+          return;
+        }
+
+        activeText = null;
+        addLine(agentEvent.text, `agent-${agentEvent.kind}`);
+      }
+
+      async function run(action, promptText) {
+        output.replaceChildren();
+        activeText = null;
+        currentAgentName = action.startsWith("claude")
+          ? "Claude"
+          : action.startsWith("codex")
+            ? "Codex"
+            : "";
+        currentRunId = null;
+        setRunning(true);
+
+        try {
+          const body = { action };
+
+          if (promptText !== undefined) {
+            body.prompt = promptText;
+
+            if (allowWrite.checked) {
+              body.allowWrite = true;
+            }
+          }
+
+          const response = await fetch(`/run?t=${encodeURIComponent(token)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+
+          const { runId } = await response.json();
+          currentRunId = runId;
+          setRunning(true);
+          const streamUrl =
+            `/stream?runId=${encodeURIComponent(runId)}` +
+            `&t=${encodeURIComponent(token)}`;
+          const events = new EventSource(streamUrl);
+          let done = false;
+
+          events.addEventListener("line", (event) => {
+            const line = JSON.parse(event.data);
+            addLine(line.text, line.stream === "stderr" ? "stderr" : "");
+          });
+
+          events.addEventListener("agent", (event) => {
+            addAgentEvent(JSON.parse(event.data));
+          });
+
+          events.addEventListener("done", (event) => {
+            done = true;
+            const result = JSON.parse(event.data);
+            const succeeded = result.exitCode === 0;
+            const summary =
+              result.signal === null
+                ? `exit code: ${result.exitCode}`
+                : `已停止：${result.signal}`;
+            addLine(
+              summary,
+              succeeded ? "succeeded" : "failed",
+            );
+            events.close();
+            currentRunId = null;
+            setRunning(false);
+          });
+
+          events.onerror = () => {
+            if (!done) {
+              addLine("串流連線中斷", "failed");
+              events.close();
+              currentRunId = null;
+              setRunning(false);
+            }
+          };
+        } catch (error) {
+          addLine(`無法執行：${error.message}`, "failed");
+          currentRunId = null;
+          setRunning(false);
+        }
+      }
+
+      for (const button of buttons) {
+        button.addEventListener("click", () => {
+          const action = button.dataset.action;
+          run(action, action.endsWith("-free") ? prompt.value : undefined);
+        });
+      }
+
+      cancelButton.addEventListener("click", async () => {
+        if (currentRunId === null) {
+          return;
+        }
+
+        cancelButton.disabled = true;
+
+        try {
+          const response = await fetch(
+            `/cancel?t=${encodeURIComponent(token)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ runId: currentRunId }),
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+
+          addLine("正在取消…", "agent-status");
+        } catch (error) {
+          addLine(`無法取消：${error.message}`, "failed");
+          cancelButton.disabled = false;
+        }
+      });
+
+      recheckEnvButton.addEventListener("click", checkEnvironment);
+      checkEnvironment();
+    </script>
+  </body>
+</html>

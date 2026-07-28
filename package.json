@@ -1,0 +1,15 @@
+{
+  "name": "jr-setup-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "jr-setup-ui": "bin/jr-setup-ui.js"
+  },
+  "scripts": {
+    "test": "node test/parser.mjs && node test/command.mjs && node test/env.mjs && node test/smoke.mjs"
+  }
+}
