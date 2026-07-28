@@ -1,9 +1,14 @@
 # jr-setup-ui bootstrap（Windows）
 #
-#   irm https://musereed.github.io/jr-setup-ui/setup.ps1 | iex
+#   irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 | iex
 #
 # 這支腳本放在 docs/ 而不是 scripts/，因為 GitHub Pages 只能從 repo 根目錄或
-# docs/ 發布。同學貼的那行網址就是指到這裡。
+# docs/ 發布（同一份檔案，說明頁跟它放一起）。
+#
+# ⚠️ 網址故意用 raw.githubusercontent.com 而不是 Pages：Pages 把 .ps1 當成
+# application/octet-stream 送，irm 對非文字型別可能回傳位元組陣列而不是字串，
+# 那樣 iex 就吃不下。raw 送的是 text/plain（實測確認），不會有這個問題。
+# macOS 的 setup.sh 不受影響——curl 不看 content-type。
 $ErrorActionPreference = "Stop"
 
 $appDir = Join-Path $HOME ".jr-setup\app"
