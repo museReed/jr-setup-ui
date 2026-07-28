@@ -1,0 +1,189 @@
+// ViewModel：畫面「該長什麼樣」的所有判斷都在這裡。
+// 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
+// View 只負責把這裡算出來的結果畫出去。
+
+export const LOGIN_CHECK_IDS = {
+  "login-claude": "claude-auth",
+  "login-codex": "codex-auth",
+  "login-gh": "gh-auth",
+};
+
+export const LOGIN_POLL_INTERVAL_MS = 5_000;
+export const LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
+
+const STATUS_DISPLAY = {
+  ok: { symbol: "✓", label: "通過" },
+  missing: { symbol: "✗", label: "缺少" },
+  warn: { symbol: "!", label: "需處理" },
+};
+
+export function isLoginAction(action) {
+  return typeof action === "string" && action.startsWith("login-");
+}
+
+export function agentNameFor(action) {
+  if (typeof action !== "string") {
+    return "";
+  }
+
+  if (action.startsWith("claude")) {
+    return "Claude";
+  }
+
+  return action.startsWith("codex") ? "Codex" : "";
+}
+
+// 登入指令把網址和代碼混在一般輸出裡，要挑出來變成可點的連結與可複製的代碼。
+export function extractLoginHints(text) {
+  if (typeof text !== "string") {
+    return { url: null, code: null };
+  }
+
+  const urlMatch = text.match(/https:\/\/\S+/);
+  const codeMatch = text.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/i);
+
+  return {
+    url: urlMatch === null ? null : urlMatch[0].replace(/[.,)]+$/, ""),
+    code: codeMatch === null ? null : codeMatch[0],
+  };
+}
+
+// 一列環境檢查結果要畫成什麼：圖示、文字、後面掛哪幾顆按鈕。
+export function envRowModel(check) {
+  const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
+  const buttons = [];
+
+  if (check.installAction !== null && check.installAction !== undefined) {
+    buttons.push({
+      action: check.installAction,
+      dataName: "installAction",
+      text: "安裝",
+    });
+  }
+
+  if (check.fixAction !== null && check.fixAction !== undefined) {
+    buttons.push({
+      action: check.fixAction,
+      dataName: "fixAction",
+      text: check.id === "execution-policy" ? "修正" : "登入",
+    });
+  }
+
+  return {
+    status: check.status,
+    symbol: display.symbol,
+    ariaLabel: display.label,
+    label: check.label,
+    detail: check.detail,
+    buttons,
+  };
+}
+
+// 環境檢查那一區的按鈕：跑東西時全部鎖住，正在跑的那顆改成「安裝中…」，
+// 等登入結果的那顆改成「等待登入中…」。
+export function envButtonState({
+  action,
+  idleText,
+  runInProgress,
+  currentEnvAction,
+  waitingAction,
+}) {
+  const waiting = waitingAction === action;
+
+  if (waiting) {
+    return { disabled: true, text: "等待登入中…" };
+  }
+
+  if (runInProgress && action === currentEnvAction) {
+    return { disabled: true, text: `${idleText}中…` };
+  }
+
+  return { disabled: Boolean(runInProgress), text: idleText };
+}
+
+// 執行中／閒置時，畫面上各個控制項的開關。
+export function runControlsState({
+  runInProgress,
+  runId,
+  acceptsInput,
+  envCheckInProgress,
+}) {
+  const hasRun = runId !== null && runId !== undefined;
+
+  return {
+    actionButtonsDisabled: runInProgress,
+    promptDisabled: runInProgress,
+    allowWriteDisabled: runInProgress,
+    recheckDisabled: runInProgress || envCheckInProgress,
+    cancelHidden: !runInProgress,
+    cancelDisabled: !runInProgress || !hasRun,
+    // 只有「會等輸入」的動作才給那格貼代碼的輸入列。
+    inputHidden: !runInProgress || !hasRun || !acceptsInput,
+  };
+}
+
+// benign：安裝器回報「已經裝好了／沒有可用更新」，那不是失敗。
+export function runOutcome(result) {
+  const succeeded = result.exitCode === 0 || result.benign === true;
+
+  return {
+    succeeded,
+    summary:
+      result.signal === null || result.signal === undefined
+        ? `exit code: ${result.exitCode}`
+        : `已停止：${result.signal}`,
+    className: succeeded ? "succeeded" : "failed",
+  };
+}
+
+// 環境檢查那一區的狀態列要說什麼。null 代表不用顯示。
+export function installStatusMessage(action, result) {
+  const { succeeded } = runOutcome(result);
+
+  if (!succeeded) {
+    return {
+      text: action.startsWith("install-")
+        ? "安裝失敗，請看下方輸出"
+        : "執行失敗，請看下方輸出",
+      failed: true,
+    };
+  }
+
+  if (isLoginAction(action)) {
+    // 登入成功不在這裡報告——要等輪詢確認狀態真的變綠。
+    return null;
+  }
+
+  if (action === "fix-execution-policy") {
+    return { text: "已改為 RemoteSigned，狀態已更新。", failed: false };
+  }
+
+  return {
+    text:
+      result.benign === true
+        ? "這個項目本來就已經裝好了，狀態已更新。"
+        : "安裝完成，狀態已更新。",
+    failed: false,
+  };
+}
+
+// 等登入變綠的輪詢：該收工、該再等一輪、還是逾時放棄。
+export function loginWaitStep({ startedAt, now, checks, checkId }) {
+  if (Array.isArray(checks)) {
+    const check = checks.find((candidate) => candidate.id === checkId);
+
+    if (check?.status === "ok") {
+      return { kind: "done", text: "登入成功。", failed: false };
+    }
+  }
+
+  if (now - startedAt >= LOGIN_WAIT_TIMEOUT_MS) {
+    return {
+      kind: "timeout",
+      text: "等待逾時，請確認登入是否完成，或按重新檢查。",
+      failed: true,
+    };
+  }
+
+  return { kind: "pending" };
+}

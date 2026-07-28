@@ -13,6 +13,33 @@ import { resolveLaunch } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
 
+// 前端拆成 View / ViewModel / Model 之後要當成靜態檔送出去。
+// 白名單寫死，不從路徑組檔名，免得變成任意讀檔。
+const ASSETS = [
+  ["/styles.css", "text/css; charset=utf-8"],
+  ["/app.js", "text/javascript; charset=utf-8"],
+  ["/view.js", "text/javascript; charset=utf-8"],
+  ["/viewmodel.js", "text/javascript; charset=utf-8"],
+  ["/api.js", "text/javascript; charset=utf-8"],
+];
+
+async function loadAssets() {
+  const entries = await Promise.all(
+    ASSETS.map(async ([pathname, contentType]) => [
+      pathname,
+      {
+        contentType,
+        body: await readFile(
+          new URL(`../public${pathname}`, import.meta.url),
+          "utf8",
+        ),
+      },
+    ]),
+  );
+
+  return new Map(entries);
+}
+
 function tokenMatches(actual, expected) {
   if (actual === null) {
     return false;
@@ -252,10 +279,22 @@ export async function startServer({
   commandBuilder = buildAgentCommand,
 }) {
   const indexHtml = await readFile(indexPath, "utf8");
+  const assets = await loadAssets();
   const runs = new Map();
 
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
+
+    // 樣式與前端模組不帶 token：<link> 與 import 都由瀏覽器自己發請求，
+    // 沒辦法補上查詢字串。這些檔案本來就是公開的原始碼，沒有機密。
+    // 真正要保護的 /env、/run、/input、/cancel、/stream 仍然一律驗 token。
+    const asset = request.method === "GET" ? assets.get(url.pathname) : null;
+
+    if (asset !== null && asset !== undefined) {
+      response.writeHead(200, { "Content-Type": asset.contentType });
+      response.end(asset.body);
+      return;
+    }
 
     if (!tokenMatches(url.searchParams.get("t"), token)) {
       sendText(response, 401, "Token 不正確或缺少");

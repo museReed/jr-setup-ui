@@ -1,0 +1,293 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  background: #f5f5f5;
+  color: #202020;
+}
+
+body {
+  margin: 0;
+  padding: 32px 20px;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.env-check {
+  overflow: hidden;
+  margin: 0 0 28px;
+  border: 1px solid #b8c3cc;
+  border-top: 4px solid #315f86;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.env-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px 16px;
+}
+
+.env-heading h2 {
+  margin: 0;
+}
+
+#env-os {
+  margin: 6px 0 0;
+  color: #4d5963;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+.env-results {
+  border-top: 1px solid #d8dee3;
+}
+
+.install-status {
+  margin: 0 20px 16px;
+  padding: 12px 14px;
+  border: 1px solid #4d7a58;
+  border-radius: 4px;
+  background: #e5f3e8;
+  color: #174f25;
+  font-weight: 700;
+}
+
+.install-status.failed {
+  border-color: #a94a4a;
+  background: #fae8e8;
+  color: #8b2020;
+}
+
+.install-status button {
+  margin-left: 10px;
+}
+
+.env-row {
+  display: grid;
+  grid-template-columns: 26px minmax(170px, 0.8fr) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 5px 20px;
+  border-bottom: 1px solid #e5e8eb;
+}
+
+.env-row:last-child {
+  border-bottom: 0;
+}
+
+.env-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.env-detail {
+  color: #4d5963;
+}
+
+.env-row[data-status="ok"] .env-icon {
+  background: #e5f3e8;
+  color: #17652a;
+}
+
+.env-row[data-status="missing"] .env-icon {
+  background: #fae8e8;
+  color: #9b2525;
+}
+
+.env-row[data-status="warn"] .env-icon {
+  background: #fff2d5;
+  color: #805800;
+}
+
+.env-message {
+  margin: 0;
+  padding: 18px 20px;
+  color: #4d5963;
+}
+
+.env-message.failed {
+  color: #9b2525;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 24px;
+}
+
+button {
+  padding: 9px 14px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+textarea {
+  width: 100%;
+  min-height: 110px;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  font: inherit;
+  resize: vertical;
+}
+
+.write-toggle {
+  margin: 10px 0 0;
+}
+
+.write-toggle small {
+  display: block;
+  margin-top: 3px;
+  color: #555;
+}
+
+.run-controls {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 38px;
+  margin-bottom: 10px;
+}
+
+#cancel {
+  border-color: #a32929;
+  color: #a32929;
+}
+
+.login-hints {
+  margin-bottom: 10px;
+  padding: 16px;
+  border: 2px solid #315f86;
+  border-radius: 4px;
+  background: #eaf3fa;
+}
+
+.login-hints a {
+  overflow-wrap: anywhere;
+  color: #174f7a;
+  font-weight: 700;
+}
+
+.login-code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+#login-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+#output {
+  height: 320px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 14px;
+  border-radius: 4px;
+  background: #171717;
+  color: #e7e7e7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.run-input {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.run-input input {
+  min-width: 0;
+  flex: 1;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.stderr,
+.failed {
+  color: #ff8a8a;
+}
+
+.succeeded {
+  color: #79d68b;
+}
+
+.agent-status {
+  color: #a3a3a3;
+}
+
+.agent-tool {
+  overflow-x: auto;
+  margin: 5px 0;
+  padding: 5px 8px;
+  border-radius: 3px;
+  background: #303030;
+  white-space: nowrap;
+}
+
+.agent-text {
+  margin: 5px 0;
+  color: #fff;
+}
+
+.agent-error {
+  color: #ff8a8a;
+}
+
+@media (max-width: 560px) {
+  body {
+    padding: 20px 14px;
+  }
+
+  .env-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .env-heading button {
+    align-self: flex-start;
+  }
+
+  .env-row {
+    grid-template-columns: 26px 1fr;
+    padding: 9px 16px;
+  }
+
+  .env-detail {
+    grid-column: 2;
+  }
+
+  .env-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
