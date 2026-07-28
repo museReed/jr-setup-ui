@@ -189,6 +189,8 @@ try {
   assert.match(page, /target="_blank"/);
   assert.match(page, /rel="noopener noreferrer"/);
   assert.match(page, /id="run-input"/);
+  // 那格原本只有 aria-label，同學看到的是一個空白框，不知道要貼什麼。
+  assert(page.includes("把授權代碼貼在這裡"));
   assert(!page.includes("終端機視窗"));
   ok("首頁包含登入提示與輸入列且移除終端機視窗文案");
 
