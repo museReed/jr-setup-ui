@@ -68,7 +68,11 @@ export function parseCodexAuth(stdout) {
 // Windows 上 npm 安裝的 CLI 是 claude.cmd / codex.cmd 這種包裝檔，沒有同名 .exe。
 // spawn 不開 shell 時找不到裸指令，必須補上 .cmd 再試一次。
 // （實測：PowerShell 直接跑 `claude` 會去找 claude.ps1；spawn 則是整個找不到。）
-export async function runProbe(cmd, args) {
+// emptyFailureMeansMissing 只有版本探測能開：真的存在的 CLI 回答 --version
+// 一定會寫 stdout，所以「沒 stdout 又非零」等於沒找到。
+// ⚠️ 登入探測不能開——`codex login status` 未登入時就是「非零 + 空 stdout +
+// 訊息寫在 stderr」，特徵跟指令不存在完全一樣，會被誤判成「需要先安裝」。
+export async function runProbe(cmd, args, { emptyFailureMeansMissing = false } = {}) {
   const first = await spawnProbe(cmd, args);
 
   if (
@@ -77,7 +81,8 @@ export async function runProbe(cmd, args) {
     first.error?.code === "ENOENT" &&
     !cmd.includes(".")
   ) {
-    return normalizeNotFound(await spawnProbe(`${cmd}.cmd`, args));
+    const retried = await spawnProbe(`${cmd}.cmd`, args);
+    return emptyFailureMeansMissing ? normalizeNotFound(retried) : retried;
   }
 
   return first;
@@ -212,7 +217,9 @@ async function checkExecutionPolicy() {
 
 async function checkVersion(id, label, cmd, args) {
   try {
-    const result = await runProbe(cmd, args);
+    const result = await runProbe(cmd, args, {
+      emptyFailureMeansMissing: true,
+    });
 
     if (result.type === "timeout") {
       return { id, label, status: "missing", detail: "檢查逾時" };
@@ -258,8 +265,10 @@ async function checkClaudeAuth(installed) {
       return { id, label, status: "missing", detail: "檢查逾時" };
     }
 
+    // 走到這裡代表版本探測已經成功，CLI 一定在——探測失敗只能是判讀不出來，
+    // 不可以回報「需要先安裝」讓同學去重裝一個已經裝好的東西。
     if (result.type === "error") {
-      return { id, label, status: "missing", detail: "需要先安裝" };
+      return { id, label, status: "warn", detail: "無法判讀登入狀態" };
     }
 
     const auth = parseClaudeAuth(result.stdout);
@@ -290,7 +299,7 @@ async function checkCodexAuth(installed) {
     }
 
     if (result.type === "error") {
-      return { id, label, status: "missing", detail: "需要先安裝" };
+      return { id, label, status: "warn", detail: "無法判讀登入狀態" };
     }
 
     const auth = parseCodexAuth(result.output);
@@ -322,7 +331,7 @@ async function checkGhAuth(installed) {
     }
 
     if (result.type === "error") {
-      return { id, label, status: "missing", detail: "需要先安裝" };
+      return { id, label, status: "warn", detail: "無法判讀登入狀態" };
     }
 
     const loggedIn = result.exitCode === 0;

@@ -195,3 +195,15 @@ assert.deepEqual(
 );
 assert.deepEqual(normalizeNotFound({ type: "timeout" }), { type: "timeout" });
 ok("退路沒有 stdout 又非零就還原成未安裝，其他結果原樣傳回");
+
+// 迴歸：`codex login status` 未登入時是「非零 + 空 stdout + 訊息在 stderr」，
+// 特徵跟指令不存在一模一樣。這個判準只能用在版本探測，登入探測開了會把
+// 「未登入」誤報成「需要先安裝」（實測 Windows 上就是這樣）。
+const notLoggedIn = await runProbe(process.execPath, [
+  "-e",
+  "process.stderr.write('Not logged in'); process.exit(1)",
+]);
+assert.equal(notLoggedIn.type, "close");
+assert.equal(notLoggedIn.exitCode, 1);
+assert.equal(parseCodexAuth(notLoggedIn.output).loggedIn, false);
+ok("登入探測不會把未登入誤判成未安裝");
