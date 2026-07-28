@@ -151,8 +151,18 @@ try {
   ok("首頁包含環境檢查結果區與重新檢查按鈕");
 
   assert.match(page, /安裝/);
-  assert.match(page, /按「重新檢查」更新狀態/);
-  ok("首頁包含安裝按鈕與重開嚮導提示");
+  ok("首頁包含安裝按鈕");
+
+  assert(page.includes("狀態已更新"));
+  ok("首頁包含動作完成後自動更新狀態的提示");
+
+  assert(page.includes("完成後這裡會自動更新"));
+  assert(page.includes("停止等待"));
+  ok("首頁包含登入自動更新與停止等待提示");
+
+  assert(!page.includes("關掉嚮導"));
+  assert(!page.includes("按「重新檢查」更新狀態"));
+  ok("首頁不再包含手動更新與重開嚮導的舊提示");
 
   const unauthorized = await fetch(`${baseUrl}/run`, {
     method: "POST",
