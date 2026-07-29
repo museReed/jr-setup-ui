@@ -51,7 +51,10 @@ export function rowRunOptions({ step, lang, tools, extra = null }) {
 // 假綠燈。
 //
 // 開終端那種不在這裡：按下去只是開了一個視窗，證明什麼要由學生看完再勾。
-export const AUTO_VERIFY_ACTIONS = new Set(["verify-behavior"]);
+export const AUTO_VERIFY_ACTIONS = new Set([
+  "verify-behavior",
+  "verify-in-terminal",
+]);
 
 export function isLoginAction(action) {
   return typeof action === "string" && action.startsWith("login-");

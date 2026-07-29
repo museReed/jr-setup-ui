@@ -23,6 +23,18 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# Validate the emoji: the model sometimes picks one outside the list (VM sighting:
+# 🎯). Rewording the instruction only asks it nicely — this is the last gate.
+# Anything else becomes 🔍; the rest of the name is left alone.
+$allowedEmoji = @([char]::ConvertFromUtf32(0x1F3D7), [char]::ConvertFromUtf32(0x1F527),
+  [char]::ConvertFromUtf32(0x1F41B), [char]::ConvertFromUtf32(0x1F4D0),
+  [char]::ConvertFromUtf32(0x1F4CB), [char]::ConvertFromUtf32(0x1F4AC),
+  [char]::ConvertFromUtf32(0x26F4), [char]::ConvertFromUtf32(0x1F50D))
+if (-not ($allowedEmoji | Where-Object { $Name.StartsWith($_) })) {
+  $rest = if ($Name -match '^\S+\s+(.*)$') { $Matches[1] } else { $Name }
+  $Name = "$([char]::ConvertFromUtf32(0x1F50D)) $rest"
+}
 $utf8 = New-Object System.Text.UTF8Encoding $false
 
 function Get-ParentPid([int]$ProcessId) {

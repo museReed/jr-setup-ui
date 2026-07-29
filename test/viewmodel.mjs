@@ -161,66 +161,55 @@ try {
   }
   ok("會自動標綠的驗證動作跟各列宣告的對得上");
 
-  // 開終端那種驗證，程式判定不了結果——按下去只是開了一個視窗。所以它一定要配一
-  // 段「要看什麼」，否則學生看著視窗不知道該看哪裡，只能亂勾。
+  // 開終端驗證分兩種：抓得到副產物的自動判定，抓不到的才給勾選框。給了勾選框
+  // 就一定要寫明要看什麼，否則學生看著視窗不知道該看哪裡，只能亂勾。
   for (const [step, entry] of Object.entries(VERIFICATION)) {
     if (entry.terminal === undefined) continue;
-    assert(
-      typeof entry.eye === "string" && entry.eye.length > 0,
-      `${step} 是開終端驗證，卻沒寫要看什麼`,
-    );
     assert(
       entry.behavior === undefined,
       `${step} 同時掛了兩種驗證，畫面會冒出兩顆按鈕`,
     );
-  }
-  ok("開終端驗證的列都寫明了要看什麼");
 
-  // 列上的按鈕少帶一個參數，伺服器就回「options.X 不在允許的值裡」，按鈕等於是死
-  // 的——而且畫面上只看得到一行錯誤，看不出少的是哪個。這裡拿 actions 自己宣告的
-  // schema 對賬：列會觸發的每個 action，它要的每個參數都必須被帶到。
-  const rowOptions = rowRunOptions({
-    step: "claude-md",
-    lang: "zh-TW",
-    tools: "claude",
-  });
-  const rowActions = [
-    "install-config-step",
-    "merge-config-step",
-    ...AUTO_VERIFY_ACTIONS,
-  ];
-
-  for (const action of rowActions) {
-    for (const name of Object.keys(ACTIONS[action].options ?? {})) {
+    if (entry.eye !== undefined) {
       assert(
-        rowOptions[name] !== undefined,
-        `列上按 ${action} 時沒帶 options.${name}，伺服器會擋下來`,
+        typeof entry.eye === "string" && entry.eye.length > 0,
+        `${step} 給了勾選框，卻沒寫要看什麼`,
       );
     }
   }
-  ok("列上按鈕帶齊每個 action 宣告要的參數");
+  ok("要學生用眼睛驗的列都寫明了要看什麼");
 
-  // 開終端驗證的參數是逐列不同的（哪個情境、哪個 agent），跟著按鈕走而不是全域，
-  // 所以要驗 extra 真的被合進去、而且值都在 action 宣告的允許清單裡。
-  for (const [step, entry] of Object.entries(VERIFICATION)) {
-    if (entry.terminal === undefined) continue;
+  // 列上的按鈕少帶一個參數，伺服器就回「options.X 不在允許的值裡」，按鈕等於是死
+  // 的——而且畫面上只看得到一行錯誤，看不出少的是哪個。逐列拿 actions 自己宣告的
+  // schema 對賬：那一列會送出的參數，必須覆蓋它要按的 action 所宣告的每一個。
+  const rowSends = [
+    ...Object.entries(VERIFICATION).map(([step, entry]) => ({
+      step,
+      action: entry.behavior ?? "verify-in-terminal",
+      extra: entry.terminal ?? entry.options ?? null,
+    })),
+    { step: "claude-md", action: "install-config-step", extra: null },
+    { step: "claude-md", action: "merge-config-step", extra: null },
+  ];
+
+  for (const { step, action, extra } of rowSends) {
     const options = rowRunOptions({
       step,
       lang: "zh-TW",
       tools: "claude",
-      extra: entry.terminal,
+      extra,
     });
 
     for (const [name, allowed] of Object.entries(
-      ACTIONS["verify-in-terminal"].options,
+      ACTIONS[action].options ?? {},
     )) {
       assert(
         allowed.includes(options[name]),
-        `${step} 的 options.${name} 是「${options[name]}」，不在允許清單裡`,
+        `${step} 按 ${action} 時的 options.${name} 是「${options[name]}」，不在允許清單裡`,
       );
     }
   }
-  ok("開終端驗證帶的情境與 agent 都在允許清單裡");
+  ok("每一列送出的參數都覆蓋且符合該 action 宣告的 schema");
 
   assert.deepEqual(configSummary([]), {
     done: 0,

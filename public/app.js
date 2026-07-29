@@ -34,6 +34,8 @@ const state = {
   // 這一頁開著的期間，哪幾列已經驗過行為了。重新整理就歸零——那是刻意的：
   // 驗證證明的是「那個當下生效」，換一次環境就該重驗。
   verifiedSteps: new Set(),
+  // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
+  lastChecks: [],
 };
 
 function renderControls() {
@@ -153,6 +155,7 @@ async function checkConfigs() {
 
   try {
     const result = await api.fetchConfigs({ tools, lang });
+    state.lastChecks = result.checks;
     view.renderConfigs(
       result.checks,
       (action, button, step, extra) =>
@@ -254,7 +257,18 @@ function handleDone(action, envButton, configAction, result, verifiedStep) {
 
   // 驗證過了才記，而且只記被按的那一列——失敗的話上面就 return 了，這裡不會留下
   // 假的已驗證。
-  if (AUTO_VERIFY_ACTIONS.has(action) && verifiedStep !== undefined) {
+  // 有勾選框的列不自動標綠：那代表程式抓不到證據，只能由學生看完說了算。
+  // 開終端驗證跑完 exit 0 不一定等於「驗過了」——codex 命名那格就是開完視窗
+  // 直接結束，沒有可輪詢的落點。
+  const verifiedCheck = state.lastChecks.find(
+    (check) => check.id === verifiedStep,
+  );
+
+  if (
+    AUTO_VERIFY_ACTIONS.has(action) &&
+    verifiedStep !== undefined &&
+    verifiedCheck?.eyeCheck == null
+  ) {
     state.verifiedSteps.add(verifiedStep);
     checkConfigs();
     return;

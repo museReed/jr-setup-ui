@@ -119,30 +119,19 @@ export const VERIFICATION = {
   "output-style": { behavior: "verify-behavior", options: { tools: "claude" } },
   "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
   "codex-agents": { behavior: "verify-behavior", options: { tools: "codex" } },
-  hook: {
-    terminal: { case: "chained", agent: "claude" },
-    eye: "那個視窗裡出現「一次只跑一個指令」的中文訊息，指令被擋下來",
-  },
+  // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
+  hook: { terminal: { case: "chained", agent: "claude" } },
   "tab-sync": {
     terminal: { case: "naming", agent: "claude" },
     eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
   },
-  "claude-namer": {
-    terminal: { case: "naming", agent: "claude" },
-    eye: "那個視窗的分頁標題變成命名，而且沒有跳出權限詢問",
-  },
-  "claude-monitor": {
-    terminal: { case: "context", agent: "claude" },
-    eye: "工具跑幾次之後跳出 context 用量警告（標著「（測試模式）」）",
-  },
+  "claude-namer": { terminal: { case: "naming", agent: "claude" } },
+  "claude-monitor": { terminal: { case: "context", agent: "claude" } },
   "codex-namer": {
     terminal: { case: "naming", agent: "codex" },
     eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
   },
-  "codex-monitor": {
-    terminal: { case: "context", agent: "codex" },
-    eye: "工具跑幾次之後跳出 context 用量警告（標著「（測試模式）」）",
-  },
+  "codex-monitor": { terminal: { case: "context", agent: "codex" } },
 };
 
 // 跑「settings.json 裡真的那條指令」，而不是我們自己拼一次路徑去跑腳本。

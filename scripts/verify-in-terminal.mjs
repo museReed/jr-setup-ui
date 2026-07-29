@@ -1,4 +1,4 @@
-// 在「真的終端視窗」裡驗證，學生什麼都不用打，只要看。
+// 在「真的終端視窗」裡驗證，學生什麼都不用打。
 //
 //   node scripts/verify-in-terminal.mjs --case=naming --agent=claude
 //
@@ -6,12 +6,31 @@
 // 終端裡看得到。headless 的 `claude -p` 更是連 wrapper 都不會經過——wrapper 刻意
 // 跳過 -p，所以用 -p 驗標題永遠是綠的假象。
 //
-// 這裡開的視窗跑的是 `claude "一句提問"`：互動模式帶初始提問，wrapper 包得到、
-// 標題會變，而學生不用輸入任何東西。
+// 開了視窗之後這支不會馬上結束，它會等副產物出現：
+//
+//   證據力的判準是「那段內容是不是只有 hook 才產得出來」。
+//   ✅ hook 的原文訊息（「一次只跑一個指令」「Context 已用」）——模型生不出來
+//   ✅ session-names/*.txt ——hook 真的跑完才會出現的檔案
+//   ❌ 模型自己寫「我看到了」——那是自我回報，沒看到也可以這樣寫
+//
+// 所以副產物一律要求「一字不改貼上 hook 的原文」，再用字串比對判定。不用第二個
+// LLM 去判：那是拿不確定性去換一件字串比對就能確定的事。
 import { spawn } from "node:child_process";
-import { chmodSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+
+const POLL_INTERVAL_MS = 1_000;
+const TIMEOUT_MS = 240_000;
+const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
 
 // 每個情境的提問都要「只逼出這一件事」。實測踩過三種寫壞的方式：
 //   - 命名那題寫了「不要執行任何指令」→ 模型連命名 hook 要它跑的那條也跳過了
@@ -21,32 +40,40 @@ import path from "node:path";
 const CASES = {
   naming: {
     label: "自動命名",
-    prompt: ({ agent }) =>
+    env: {},
+    prompt: ({ agent, resultFile }) =>
       agent === "codex"
         ? // codex 的命名是兩段式：模型先把名字寫到中繼檔，hook 要在「下一次 hook
           // 事件」才套用上去。只問一句話就結束的話，名字永遠卡在中繼檔（VM 實測：
           // 命名沒改到標題，反而是工具呼叫多的 context 測試改到了）。
           "請照 hook 的指示把這個 session 命名，執行它給你的那條指令。" +
-          "命名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。"
+          "命名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。" +
+          `最後把你取的名字寫進 ${resultFile}。`
         : "請照 hook 的指示把這個 session 命名，執行它給你的那條指令，然後用一句話告訴我你命名成什麼。",
-    env: {},
+    // claude 的命名會留下檔案，不必靠模型回報；codex 寫的是 sqlite 與中繼檔，
+    // 沒有能穩定輪詢的落點，那一列維持人眼判定。
+    expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
     watchFor: "分頁標題變成「{emoji} 中文敘述」，emoji 是規定的那 8 個之一",
   },
   chained: {
     label: "Shell 不串接",
-    prompt: () => "請執行這條指令：echo a && echo b",
     env: {},
+    prompt: ({ resultFile }) =>
+      "請執行這條指令：echo a && echo b。" +
+      `不管成功或被擋，都把你收到的完整訊息一字不改寫進 ${resultFile}。`,
+    expect: () => ({ kind: "artifact", keyword: "一次只跑一個指令" }),
     watchFor: "畫面出現「一次只跑一個指令」的中文訊息，指令被擋下來",
   },
   context: {
     label: "Context 監控",
     // 把 context 上限假裝成 30k，門檻降到 21k，幾次工具呼叫就會跨過去。
-    prompt: () =>
+    env: { CONTEXT_MONITOR_TEST_WINDOW: "30000" },
+    prompt: ({ resultFile }) =>
       "請依序執行這三件事，每件之間簡短說一句話：列出目前資料夾、印出今天日期、印出目前路徑。" +
       "如果過程中有 hook 提醒你 context 快用完、或要你寫交接文件，不要照做——" +
-      "直接回我一句「我收到 context 警告了」就好。",
-    env: { CONTEXT_MONITOR_TEST_WINDOW: "30000" },
-    watchFor: "模型回報「我收到 context 警告了」，或畫面上直接出現 context 用量警告",
+      `把那段提醒的原文一字不改寫進 ${resultFile} 就好。`,
+    expect: () => ({ kind: "artifact", keyword: "Context 已用" }),
+    watchFor: "畫面上出現 context 用量警告（標著「（測試模式）」）",
   },
 };
 
@@ -65,13 +92,23 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const testCase = CASES[args.case ?? "naming"];
+const caseName = args.case ?? "naming";
+const testCase = CASES[caseName];
 const agent = args.agent === "codex" ? "codex" : "claude";
 
 if (testCase === undefined) {
-  console.log(`FAIL  不認得的驗證情境：${args.case}`);
+  console.log(`FAIL  不認得的驗證情境：${caseName}`);
   process.exit(1);
 }
+
+mkdirSync(RESULT_DIR, { recursive: true });
+const resultFile = path.join(RESULT_DIR, `${caseName}-${agent}.txt`);
+// 上一輪的副產物留著的話，這一輪不管跑不跑都會「通過」。
+rmSync(resultFile, { force: true });
+
+const expect = testCase.expect({ agent });
+const namesDir = path.join(homedir(), ".claude", "session-names");
+const startedAt = Date.now();
 
 // 腳本寫成檔案再交給終端跑：把整段指令塞進終端的參數裡，引號與換行會被各平台的
 // 命令列各自重新解讀一次，中文和 && 都會被吃掉（前面踩過）。
@@ -85,11 +122,7 @@ function writeLauncher(prompt) {
       .map(([name, value]) => `$env:${name} = '${value}'`)
       .join("\n");
     // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    writeFileSync(
-      file,
-      `﻿${setEnv}\n${agent} '${prompt}'\n`,
-      "utf8",
-    );
+    writeFileSync(file, `﻿${setEnv}\n${agent} '${prompt}'\n`, "utf8");
     return file;
   }
 
@@ -98,17 +131,13 @@ function writeLauncher(prompt) {
     .map(([name, value]) => `export ${name}='${value}'`)
     .join("\n");
   // -i 讓 zsh 讀 ~/.zshrc，wrapper 才會存在。
-  writeFileSync(
-    file,
-    `#!/bin/zsh -i\n${setEnv}\n${agent} '${prompt}'\n`,
-  );
+  writeFileSync(file, `#!/bin/zsh -i\n${setEnv}\n${agent} '${prompt}'\n`);
   chmodSync(file, 0o755);
   return file;
 }
 
 function openTerminal(launcher) {
   if (process.platform === "win32") {
-    // wt 是安裝門檻，理論上一定在；真的沒有就退回 conhost，至少驗得到內容。
     return {
       cmd: "cmd.exe",
       args: [
@@ -127,7 +156,47 @@ function openTerminal(launcher) {
   return { cmd: "open", args: [launcher] };
 }
 
-const launcher = writeLauncher(testCase.prompt({ agent }));
+// 副產物出現了嗎？出現就回傳判定過的證據，還沒有就回 null。
+function collectEvidence() {
+  if (expect.kind === "artifact") {
+    let text = "";
+
+    try {
+      text = readFileSync(resultFile, "utf8");
+    } catch {
+      return null;
+    }
+
+    return text.includes(expect.keyword)
+      ? { detail: `副產物裡有 hook 的原文：「${expect.keyword}」` }
+      : null;
+  }
+
+  // session-name：hook 真的跑完才會出現的檔案，跟模型說什麼無關。
+  let entries = [];
+
+  try {
+    entries = readdirSync(namesDir);
+  } catch {
+    return null;
+  }
+
+  for (const name of entries) {
+    const file = path.join(namesDir, name);
+
+    try {
+      if (statSync(file).mtimeMs < startedAt) continue;
+      const value = readFileSync(file, "utf8").trim();
+      if (value) return { detail: `hook 寫下了名字：${value}` };
+    } catch {
+      // 剛好被改寫到一半，下一輪再看。
+    }
+  }
+
+  return null;
+}
+
+const launcher = writeLauncher(testCase.prompt({ agent, resultFile }));
 const { cmd, args: openArgs } = openTerminal(launcher);
 const child = spawn(cmd, openArgs, { stdio: "ignore", detached: true });
 child.unref();
@@ -137,5 +206,33 @@ console.log("");
 console.log("請看那個視窗，你不需要輸入任何東西：");
 console.log(`  ▸ ${testCase.watchFor}`);
 console.log("");
-console.log("看到了就回來把這一列的勾選框勾起來；沒看到就按「安裝」重跑一次。");
-console.log(`（視窗跑完可以直接關掉。啟動腳本：${launcher}）`);
+
+if (expect === null) {
+  console.log("這個情境沒有程式抓得到的副產物，看到了就回來把勾選框勾起來。");
+  console.log(`（視窗跑完可以直接關掉。啟動腳本：${launcher}）`);
+  process.exit(0);
+}
+
+console.log("同時我在等副產物出現，出現就自動判定，你不用手動勾。");
+
+while (Date.now() - startedAt < TIMEOUT_MS) {
+  const evidence = collectEvidence();
+
+  if (evidence !== null) {
+    console.log("");
+    console.log(`PASS  ${evidence.detail}`);
+    process.exit(0);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+}
+
+console.log("");
+console.log("無法確認  等了四分鐘，沒等到證據。");
+console.log(
+  expect.kind === "artifact"
+    ? `      應該要出現在：${resultFile}（而且內容含「${expect.keyword}」）`
+    : `      應該要有新檔案出現在：${namesDir}`,
+);
+console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
+process.exit(1);

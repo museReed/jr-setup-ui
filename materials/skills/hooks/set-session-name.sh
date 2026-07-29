@@ -19,6 +19,23 @@
 NAME="$1"
 [ -z "$NAME" ] && { echo "set-session-name: missing name arg" >&2; exit 1; }
 
+# 校驗 emoji：模型有時會挑清單外的（實測看到 🎯）。改指示措辭只是拜託模型，
+# 這裡才是最後一道關卡——不在清單裡就換成 🔍，名字其餘部分原樣保留。
+case "$NAME" in
+  🏗️*|🔧*|🐛*|📐*|📋*|💬*|⛴️*|🔍*) ;;
+  *)
+    # 只有「開頭那個 token 看起來是 emoji」時才把它換掉，否則會把真正的第一個
+    # 詞吃掉（實測：「完全沒有 emoji」變成「🔍 emoji」）。判準用字元數：emoji
+    # 最多兩個字元（本體 + variation selector），中文詞一般更長。
+    first=${NAME%% *}
+    if [ "$first" != "$NAME" ] && [ ${#first} -le 2 ]; then
+      NAME="🔍 ${NAME#* }"
+    else
+      NAME="🔍 $NAME"
+    fi
+    ;;
+esac
+
 CLAUDE_PID="${2:-$PPID}"
 TERMINAL_PID=$(ps -o ppid= -p "$CLAUDE_PID" 2>/dev/null | tr -d ' ')
 
