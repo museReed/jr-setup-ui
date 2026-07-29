@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import { execFileSync } from "node:child_process";
+
 import { actions } from "../src/actions.js";
+import { LANGUAGES, STEP_IDS, describeStep } from "../src/config-install.js";
 import { materialsDir, moduleFile } from "../src/paths.js";
 
 function ok(description) {
@@ -79,6 +82,48 @@ try {
     `這些檔案又用了 .pathname 取路徑（Windows 會炸）：${offenders.join(", ")}`,
   );
   ok("沒有任何檔案用 .pathname 取模組路徑");
+
+  // 每個安裝步驟的素材都要在，而且要被 git 追蹤。
+  // 迴歸：.gitignore 有一條沒錨定的 AGENTS.md，把 materials/codex/*/AGENTS.md
+  // 一起吞掉——本機檔案在、測試也過，但學生抓到的壓縮檔裡沒有那三個檔。
+  const sources = new Set();
+
+  for (const lang of LANGUAGES) {
+    for (const id of STEP_IDS) {
+      const step = describeStep(id, { lang, home: "/tmp/x" });
+
+      if (typeof step.source === "string") {
+        sources.add(step.source);
+      }
+    }
+  }
+
+  for (const source of sources) {
+    assert(
+      existsSync(path.join(materials, source)),
+      `素材少了 ${source}`,
+    );
+  }
+
+  ok(`${sources.size} 個素材檔都在`);
+
+  const tracked = new Set(
+    execFileSync("git", ["ls-files", "materials"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => line.replace(/^materials\//, "")),
+  );
+  const untracked = [...sources].filter((source) => !tracked.has(source));
+
+  assert.deepEqual(
+    untracked,
+    [],
+    `這些素材沒被 git 追蹤，學生抓到的壓縮檔會少檔案：${untracked.join(", ")}`,
+  );
+  ok("每個素材檔都有被 git 追蹤");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

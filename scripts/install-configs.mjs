@@ -52,7 +52,9 @@ function sourcePath(step) {
   const source = path.join(MATERIALS, step.source);
 
   if (!existsSync(source)) {
-    throw new Error(`素材裡找不到 ${step.source}，請先按「下載」`);
+    throw new Error(
+      `嚮導內建的素材少了 ${step.source}——請重新下載嚮導再試一次`,
+    );
   }
 
   return source;

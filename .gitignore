@@ -2,4 +2,7 @@ node_modules/
 .DS_Store
 *.log
 .codex-task/
-AGENTS.md
+# 只擋 repo 根目錄那份（給 codex 讀的工作規則）。
+# 沒有前導斜線的話會比對任何層級，materials/codex/*/AGENTS.md 會被一起吞掉——
+# 結果是本機看得到檔案、學生抓到的壓縮檔裡沒有（實測踩過）。
+/AGENTS.md
