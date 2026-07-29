@@ -1,4 +1,9 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { actions } from "./actions.js";
 import {
@@ -36,6 +41,61 @@ if (process.platform === "win32") {
     id: "execution-policy",
     label: "PowerShell 執行原則",
   });
+  CHECKS.push(
+    {
+      id: "windows-terminal",
+      label: "終端機是 Windows Terminal",
+    },
+    { id: "powershell-version", label: "PowerShell 版本" },
+    { id: "powershell-encoding", label: "PowerShell 中文編碼" },
+  );
+}
+
+if (process.platform === "darwin") {
+  CHECKS.push({ id: "ghostty", label: "Ghostty 終端機" });
+}
+
+export function ghosttyStatus(paths, exists) {
+  const installed = paths.some((path) => exists(path));
+  return {
+    status: installed ? "ok" : "missing",
+    detail: installed ? "已安裝" : "未安裝",
+  };
+}
+
+export function windowsTerminalStatus(env) {
+  const isWindowsTerminal = Boolean(env.WT_SESSION);
+  return {
+    status: isWindowsTerminal ? "ok" : "warn",
+    detail: isWindowsTerminal
+      ? "是"
+      : "不是 Windows Terminal——tab 標題功能不會運作",
+  };
+}
+
+export function parsePowerShellVersion(stdout) {
+  const version = typeof stdout === "string" ? stdout.trim() : "";
+  const match = version.match(/^(\d+)\.(\d+)(?:\.\d+)*$/);
+
+  if (match === null) {
+    return { version: null, supported: false };
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return {
+    version,
+    supported: (major === 5 && minor >= 1) || major >= 7,
+  };
+}
+
+export function encodingProbeSource(text, outputPath = "output.txt") {
+  const escapedPath = outputPath.replaceAll("'", "''");
+  const escapedText = text
+    .replaceAll("`", "``")
+    .replaceAll("$", "`$")
+    .replaceAll('"', '`"');
+  return `\uFEFF$out = '${escapedPath}'\n[System.IO.File]::WriteAllText($out, "${escapedText}", (New-Object System.Text.UTF8Encoding $false))\n`;
 }
 
 export function parseClaudeAuth(stdout) {
@@ -224,6 +284,101 @@ async function checkExecutionPolicy() {
   }
 }
 
+function checkGhostty() {
+  const id = "ghostty";
+  const label = "Ghostty 終端機";
+  const status = ghosttyStatus(
+    [
+      "/Applications/Ghostty.app",
+      join(homedir(), "Applications", "Ghostty.app"),
+    ],
+    existsSync,
+  );
+  return { id, label, ...status };
+}
+
+function checkWindowsTerminal() {
+  const id = "windows-terminal";
+  const label = "終端機是 Windows Terminal";
+  return { id, label, ...windowsTerminalStatus(process.env) };
+}
+
+async function checkPowerShellVersion() {
+  const id = "powershell-version";
+  const label = "PowerShell 版本";
+
+  try {
+    const result = await runProbe("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      "$PSVersionTable.PSVersion.ToString()",
+    ]);
+
+    if (result.type === "timeout") {
+      return timedOut(id, label);
+    }
+
+    const parsed = parsePowerShellVersion(
+      result.type === "close" && result.exitCode === 0 ? result.stdout : "",
+    );
+    return {
+      id,
+      label,
+      status: parsed.supported ? "ok" : "warn",
+      detail: parsed.supported
+        ? parsed.version
+        : `需要 PowerShell 5.1 或 7 以上（目前 ${parsed.version ?? "無法辨識"}）`,
+    };
+  } catch {
+    return {
+      id,
+      label,
+      status: "warn",
+      detail: "需要 PowerShell 5.1 或 7 以上（目前 無法辨識）",
+    };
+  }
+}
+
+async function checkPowerShellEncoding() {
+  const id = "powershell-encoding";
+  const label = "PowerShell 中文編碼";
+  const expected = "中文編碼測試";
+  const token = randomUUID();
+  const sourcePath = join(tmpdir(), `jr-setup-${token}.ps1`);
+  const outputPath = join(tmpdir(), `jr-setup-${token}.txt`);
+
+  try {
+    await writeFile(sourcePath, encodingProbeSource(expected, outputPath), "utf8");
+    const result = await runProbe("powershell.exe", [
+      "-NoProfile",
+      "-File",
+      sourcePath,
+    ]);
+
+    if (result.type !== "close" || result.exitCode !== 0) {
+      return { id, label, status: "warn", detail: "無法確認" };
+    }
+
+    const actual = await readFile(outputPath, "utf8");
+    return {
+      id,
+      label,
+      status: actual === expected ? "ok" : "warn",
+      detail:
+        actual === expected
+          ? "讀得到中文"
+          : "中文會變亂碼——之後裝的腳本會受影響",
+    };
+  } catch {
+    return { id, label, status: "warn", detail: "無法確認" };
+  } finally {
+    await Promise.all([
+      unlink(sourcePath).catch(() => {}),
+      unlink(outputPath).catch(() => {}),
+    ]);
+  }
+}
+
 async function checkVersion(id, label, cmd, args) {
   try {
     const result = await runProbe(cmd, args, {
@@ -395,6 +550,15 @@ export async function runEnvCheck() {
 
     if (process.platform === "win32") {
       checksToRun.unshift(checkExecutionPolicy());
+      checksToRun.push(
+        checkWindowsTerminal(),
+        checkPowerShellVersion(),
+        checkPowerShellEncoding(),
+      );
+    }
+
+    if (process.platform === "darwin") {
+      checksToRun.push(checkGhostty());
     }
 
     const checks = await Promise.all(checksToRun);

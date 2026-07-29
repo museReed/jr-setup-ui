@@ -68,6 +68,14 @@ assert.equal(ghDarwin.cmd, "brew");
 assert(ghDarwin.args.includes("gh"));
 ok("GitHub CLI 在 darwin 使用 brew");
 
+const ghosttyDarwin = resolveInstaller("ghostty", "darwin");
+assert.deepEqual(ghosttyDarwin, {
+  cmd: "brew",
+  args: ["install", "--cask", "ghostty"],
+});
+assert.equal(resolveInstaller("ghostty", "win32"), null);
+ok("Ghostty 只在 darwin 提供 brew cask 安裝器");
+
 assert.equal(resolveInstaller("node", "win32"), null);
 ok("Node.js 不提供安裝器");
 

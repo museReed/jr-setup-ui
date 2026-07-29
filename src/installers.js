@@ -65,6 +65,12 @@ export const INSTALLERS = {
       args: ["install", "gh"],
     },
   },
+  ghostty: {
+    darwin: {
+      cmd: "brew",
+      args: ["install", "--cask", "ghostty"],
+    },
+  },
 };
 
 // winget 在「已經裝好、沒有可用更新」時會回非零 exit code，那不是失敗。
