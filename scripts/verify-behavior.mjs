@@ -30,18 +30,23 @@ const RULES = [
   ["追問清單", "結尾有「你可能會想問」之類的追問清單"],
 ];
 
+// ⚠️ prompt 一律走 stdin，不放進指令參數。
+// 判定那一步要把整篇回答餵回去，裡面有換行、引號、表格的 |——Windows 上指令要繞
+// cmd.exe，這些字元會被 shell 吃掉，AI 收到的就是被截斷的內容（實測：codex 回
+// 「請貼上另一個 AI 的完整回答」）。stdin 沒有跳脫問題。
 const ENGINES = {
   claude: {
     label: "Claude Code",
     cmd: "claude",
-    args: (prompt) => ["-p", "--", prompt],
+    args: () => ["-p"],
     // claude -p 直接把回答印到 stdout。
     extract: (stdout) => stdout.trim(),
   },
   codex: {
     label: "Codex CLI",
     cmd: "codex",
-    args: (prompt) => [
+    // 結尾的 "-" 是「從 stdin 讀 prompt」。
+    args: () => [
       "exec",
       "--json",
       "--color",
@@ -49,8 +54,7 @@ const ENGINES = {
       "--skip-git-repo-check",
       "--sandbox",
       "read-only",
-      "--",
-      prompt,
+      "-",
     ],
     // codex exec --json 是一串事件，回答在 agent_message 裡。
     extract: (stdout) => {
@@ -91,7 +95,7 @@ function judgePrompt(answer) {
 }
 
 function runEngine(engine, prompt, env) {
-  const { cmd, args } = resolveLaunch(engine.cmd, engine.args(prompt), { env });
+  const { cmd, args } = resolveLaunch(engine.cmd, engine.args(), { env });
 
   return new Promise((resolve) => {
     let child;
@@ -99,13 +103,16 @@ function runEngine(engine, prompt, env) {
     try {
       child = spawn(cmd, args, {
         shell: false,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         env,
       });
     } catch (error) {
       resolve({ ok: false, text: error.message });
       return;
     }
+
+    // 寫完就關：stdin 沒關的話 codex 會一直等（之前踩過，它會完全卡死）。
+    child.stdin.end(prompt);
 
     let stdout = "";
     let stderr = "";
