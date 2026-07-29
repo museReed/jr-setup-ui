@@ -104,6 +104,14 @@ try {
     } else {
       console.log("無法確認  sync 檔仍是等待命名。");
       console.log("可能沒有開新 session，或 session-auto-namer hook 尚未註冊。");
+      // 只看 sync 檔的話，失敗時完全不知道卡在哪：hook 沒觸發？模型沒照做？
+      // 指令跑了但失敗？把模型實際說的話印出來，才有東西可查。
+      console.log("");
+      console.log("── Claude 實際的回覆（最後 15 行，用來判斷卡在哪）──");
+
+      for (const line of result.text.trim().split("\n").slice(-15)) {
+        console.log(`  ${line}`);
+      }
     }
   }
 } finally {
