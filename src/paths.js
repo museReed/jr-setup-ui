@@ -7,3 +7,8 @@ export function ensureWorkDir() {
   mkdirSync(workDir, { recursive: true });
   return workDir;
 }
+
+// 從 jr_ai_agent_configs 抓下來的規則檔素材放這裡。
+export function materialsDir() {
+  return resolve(homedir(), ".jr-setup", "configs");
+}

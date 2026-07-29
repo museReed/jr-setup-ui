@@ -1,5 +1,15 @@
+import { LANGUAGES, STEP_IDS } from "./config-install.js";
 import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
 import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
+
+const installConfigsScript = new URL(
+  "../scripts/install-configs.mjs",
+  import.meta.url,
+).pathname;
+const verifyConfigsScript = new URL(
+  "../scripts/verify-configs.mjs",
+  import.meta.url,
+).pathname;
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -96,6 +106,47 @@ if (process.platform === "win32") {
 }
 
 Object.assign(actions, {
+  "install-config-step": {
+    kind: "fixed",
+    label: "安裝這一步",
+    cmd: process.execPath,
+    // 選項的值由 server 比對過白名單才會進到這裡。
+    options: { step: STEP_IDS, lang: LANGUAGES },
+    buildArgs: ({ step, lang }) => [
+      installConfigsScript,
+      `--step=${step}`,
+      `--lang=${lang}`,
+    ],
+    description: "安裝單一個規則檔步驟。",
+  },
+  "verify-configs": {
+    kind: "fixed",
+    label: "驗證安裝",
+    cmd: process.execPath,
+    options: { lang: LANGUAGES, tools: ["claude", "codex", "claude,codex"] },
+    buildArgs: ({ lang, tools }) => [
+      verifyConfigsScript,
+      `--lang=${lang}`,
+      `--tools=${tools}`,
+    ],
+    description: "檢查規則檔是否真的生效，含實際觸發 hook。",
+  },
+  "merge-config-step": {
+    kind: "agent",
+    label: "用 AI 幫我合併",
+    engine: "claude",
+    permission: "write",
+    options: { step: STEP_IDS, lang: LANGUAGES },
+    buildPrompt: ({ step, lang }) =>
+      [
+        `我要把工作坊的設定合併進我已經有的檔案，語言版本是 ${lang}，這一步是 ${step}。`,
+        `新版內容在 ~/.jr-setup/configs/ 底下（claude-code/${lang}/ 與 codex/${lang}/）。`,
+        "請先讀我現有的檔案和新版內容，備份現有檔案（加 .bak.時間戳），",
+        "再把工作坊的規則合併進去——保留我原本的內容，不要整份覆蓋。",
+        "改完告訴我你加了什麼、有沒有衝突。",
+      ].join(""),
+    description: "把工作坊規則合併進使用者已存在的設定檔。",
+  },
   "login-claude": {
     kind: "fixed",
     label: "登入 Claude Code",

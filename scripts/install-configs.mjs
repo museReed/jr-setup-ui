@@ -1,25 +1,34 @@
-// 照 src/config-install.js 算出來的清單，實際把規則檔裝到 User Level。
+// 執行單一個安裝步驟。嚮導每一列的「安裝」按鈕都是叫這支。
 //
-// 用法（嚮導按鈕會這樣叫）：
-//   node scripts/install-configs.mjs --tools=claude,codex --lang=zh-TW
+//   node scripts/install-configs.mjs --step=hook --lang=zh-TW
 //
-// 每做一件事就印一行，讓網頁那邊即時看得到進度。
+// 每做一件事就印一行，讓網頁那邊即時看得到。
 import { spawn } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  describeStep,
   expandAllowRules,
-  mergeClaudeSettings,
-  planInstall,
+  mergeAllowRules,
+  mergeHookRegistration,
 } from "../src/config-install.js";
+import { materialsDir } from "../src/paths.js";
 
 const CONFIGS_TARBALL =
   "https://codeload.github.com/museReed/jr_ai_agent_configs/tar.gz/refs/heads/main";
 const HOME = homedir();
-const MATERIALS_DIR = path.join(HOME, ".jr-setup", "configs");
+const MATERIALS = materialsDir();
 
 function parseArgs(argv) {
   const args = {};
@@ -36,10 +45,7 @@ function parseArgs(argv) {
 }
 
 function stamp() {
-  return new Date()
-    .toISOString()
-    .replace(/[-:T]/g, "")
-    .slice(0, 14);
+  return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
 }
 
 function run(command, args) {
@@ -66,8 +72,42 @@ function run(command, args) {
   });
 }
 
+async function backup(target) {
+  if (!existsSync(target)) {
+    return;
+  }
+
+  const backupPath = `${target}.bak.${stamp()}`;
+  await copyFile(target, backupPath);
+  console.log(`已備份 → ${path.basename(backupPath)}`);
+}
+
+function sourcePath(step) {
+  const source = path.join(MATERIALS, step.source);
+
+  if (!existsSync(source)) {
+    throw new Error(`素材裡找不到 ${step.source}，請先按「下載」`);
+  }
+
+  return source;
+}
+
+async function readSettings(target) {
+  if (!existsSync(target)) {
+    return {};
+  }
+
+  return JSON.parse(await readFile(target, "utf8"));
+}
+
+async function writeSettings(target, settings) {
+  await mkdir(path.dirname(target), { recursive: true });
+  await backup(target);
+  await writeFile(target, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
 // 素材每次都重抓：同學可能在課程中途才更新，舊的留著只會裝到過期的規則。
-async function fetchMaterials() {
+async function downloadMaterials() {
   console.log("下載設定素材…");
   const response = await fetch(CONFIGS_TARBALL);
 
@@ -79,101 +119,80 @@ async function fetchMaterials() {
   const tarball = path.join(temp, "configs.tar.gz");
   await writeFile(tarball, Buffer.from(await response.arrayBuffer()));
 
-  await rm(MATERIALS_DIR, { recursive: true, force: true });
-  await mkdir(MATERIALS_DIR, { recursive: true });
+  await rm(MATERIALS, { recursive: true, force: true });
+  await mkdir(MATERIALS, { recursive: true });
   // tar 在 macOS 內建，Windows 10 1803 之後也內建（bsdtar）。
-  await run("tar", ["-xzf", tarball, "-C", MATERIALS_DIR, "--strip-components=1"]);
+  await run("tar", ["-xzf", tarball, "-C", MATERIALS, "--strip-components=1"]);
   await rm(temp, { recursive: true, force: true });
-  console.log("素材已就緒");
+  console.log("✓ 素材已就緒");
 }
 
-async function backup(target) {
-  if (!existsSync(target)) {
+async function copyStep(step) {
+  // 已經有的東西不蓋掉——那是使用者自己寫的內容，蓋了救不回來。
+  if (step.protectExisting === true && existsSync(step.target)) {
+    console.log(`${step.target} 已經存在，沒有覆蓋。`);
+    console.log("這一列會顯示成「需要合併」，用旁邊的按鈕交給 AI 幫你併。");
     return;
   }
 
-  const backupPath = `${target}.bak.${stamp()}`;
-  await copyFile(target, backupPath);
-  console.log(`已備份 → ${path.basename(backupPath)}`);
-}
-
-async function applyCopy(step) {
-  const source = path.join(MATERIALS_DIR, step.source);
-
-  if (!existsSync(source)) {
-    throw new Error(`素材裡找不到 ${step.source}`);
-  }
-
+  const source = sourcePath(step);
   await mkdir(path.dirname(step.target), { recursive: true });
   await backup(step.target);
   await copyFile(source, step.target);
-
-  if (step.executable === true) {
-    await chmod(step.target, 0o755);
-  }
-
   console.log(`✓ ${step.label} → ${step.target}`);
 }
 
-async function applyClaudeSettings(step) {
-  const allowlistPath = path.join(MATERIALS_DIR, step.allowlistSource);
-
-  if (!existsSync(allowlistPath)) {
-    throw new Error(`素材裡找不到 ${step.allowlistSource}`);
-  }
-
-  const allowlist = JSON.parse(await readFile(allowlistPath, "utf8"));
-  const rules = expandAllowRules(allowlist.permissions.allow, HOME);
-
+async function hookStep(step) {
+  const source = sourcePath(step);
   await mkdir(path.dirname(step.target), { recursive: true });
-  await backup(step.target);
+  await copyFile(source, step.target);
+  await chmod(step.target, 0o755);
+  console.log(`✓ hook 檔案 → ${step.target}`);
 
-  const current = existsSync(step.target)
-    ? JSON.parse(await readFile(step.target, "utf8"))
-    : {};
-  const { settings, addedRules } = mergeClaudeSettings(current, {
-    hookPath: step.hookPath,
-    allowRules: rules,
+  // 只複製檔案不算裝好：沒註冊進 settings.json 的話 hook 不會擋，
+  // 而且不會有任何錯誤訊息。兩件事要一起做完才算數。
+  const settings = mergeHookRegistration(await readSettings(step.settingsTarget), {
+    hookPath: step.target,
   });
+  await writeSettings(step.settingsTarget, settings);
+  console.log("✓ 已註冊到 settings.json 的 PreToolUse");
+}
 
-  await writeFile(step.target, `${JSON.stringify(settings, null, 2)}\n`);
-  console.log(`✓ ${step.label}：新增 ${addedRules} 條白名單規則`);
+async function allowlistStep(step) {
+  const allowlist = JSON.parse(await readFile(sourcePath(step), "utf8"));
+  const rules = expandAllowRules(allowlist.permissions.allow, HOME);
+  const { settings, addedRules } = mergeAllowRules(
+    await readSettings(step.settingsTarget),
+    { allowRules: rules },
+  );
+  await writeSettings(step.settingsTarget, settings);
+  console.log(`✓ ${step.label}：新增 ${addedRules} 條（共 ${rules.length} 條）`);
 }
 
 const args = parseArgs(process.argv.slice(2));
-const tools = (args.tools ?? "").split(",").filter((tool) => tool.length > 0);
-const lang = args.lang ?? "zh-TW";
 
-await fetchMaterials();
+try {
+  const step = describeStep(args.step, {
+    lang: args.lang ?? "zh-TW",
+    home: HOME,
+  });
 
-const { steps, manual } = planInstall({
-  tools,
-  lang,
-  home: HOME,
-  existing: {
-    claudeMd: existsSync(path.join(HOME, ".claude", "CLAUDE.md")),
-    codexConfig: existsSync(path.join(HOME, ".codex", "config.toml")),
-  },
-});
-
-for (const step of steps) {
-  if (step.kind === "copy") {
-    await applyCopy(step);
-  } else if (step.kind === "claude-settings") {
-    await applyClaudeSettings(step);
+  if (step.kind === "download") {
+    await downloadMaterials();
+  } else if (step.kind === "copy") {
+    await copyStep(step);
+  } else if (step.kind === "hook") {
+    await hookStep(step);
+  } else if (step.kind === "allowlist") {
+    await allowlistStep(step);
   } else {
-    throw new Error(`不認得的步驟：${step.kind}`);
+    throw new Error(`不認得的步驟種類：${step.kind}`);
   }
-}
-
-if (manual.length > 0) {
-  console.log("");
-  console.log("以下項目沒有自動處理，因為蓋掉會弄丟你原本的內容：");
-
-  for (const item of manual) {
-    console.log(`• ${item.label}：${item.detail}`);
-  }
+} catch (error) {
+  // 學生看到的是這一行，不是一整串 stack trace。
+  console.error(error.message);
+  process.exit(1);
 }
 
 console.log("");
-console.log("安裝完成。設定要開新的 session 才會生效。");
+console.log("這一步完成。設定要開新的 session 才會生效。");

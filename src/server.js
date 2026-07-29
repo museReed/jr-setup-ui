@@ -7,6 +7,8 @@ import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { actions, buildAgentCommand } from "./actions.js";
 import { spawnEnv } from "./env-path.js";
 import { isBenignExit } from "./installers.js";
+import { runConfigCheck } from "./config-check.js";
+import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir } from "./paths.js";
 import { resolveLaunch } from "./spawn-command.js";
@@ -38,6 +40,38 @@ async function loadAssets() {
   );
 
   return new Map(entries);
+}
+
+// action.options 宣告「這個 action 收哪些選項、每個選項的合法值有哪些」。
+// 值必須落在白名單裡——網路端傳過來的字串永遠不會直接變成指令參數。
+function resolveOptions(action, provided) {
+  const schema = action.options ?? null;
+
+  if (schema === null) {
+    if (provided !== undefined) {
+      throw new Error("這個 Action 不接受 options");
+    }
+
+    return null;
+  }
+
+  if (provided === null || typeof provided !== "object") {
+    throw new Error("options 必須是物件");
+  }
+
+  const resolved = {};
+
+  for (const [name, allowed] of Object.entries(schema)) {
+    const value = provided[name];
+
+    if (!allowed.includes(value)) {
+      throw new Error(`options.${name} 不在允許的值裡`);
+    }
+
+    resolved[name] = value;
+  }
+
+  return resolved;
 }
 
 function tokenMatches(actual, expected) {
@@ -179,7 +213,14 @@ async function runAction(
   const command =
     action.kind === "agent"
       ? commandBuilder(action.engine, run.prompt, run.permission)
-      : { cmd: action.cmd, args: action.args };
+      : {
+          cmd: action.cmd,
+          // 帶選項的 action 由自己組參數；選項的值已經比對過白名單。
+          args:
+            typeof action.buildArgs === "function"
+              ? action.buildArgs(run.options)
+              : action.args,
+        };
   // Windows 上 winget 裝完會新增 PATH 目錄，但本程序拿的是啟動當下的快照。
   // 重讀一次，剛裝好的東西才叫得動。
   const env = await spawnEnv();
@@ -315,6 +356,27 @@ export async function startServer({
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/configs") {
+      const lang = url.searchParams.get("lang") ?? "zh-TW";
+      const tools = (url.searchParams.get("tools") ?? "")
+        .split(",")
+        .filter((tool) => tool.length > 0);
+
+      if (!LANGUAGES.includes(lang) || tools.some((t) => !TOOLS.includes(t))) {
+        sendText(response, 400, "lang 或 tools 不合法");
+        return;
+      }
+
+      if (tools.length === 0) {
+        sendJson(response, 200, { lang, tools, checks: [] });
+        return;
+      }
+
+      response.setHeader("Cache-Control", "no-store");
+      sendJson(response, 200, await runConfigCheck({ tools, lang }));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/run") {
       let body;
 
@@ -367,14 +429,30 @@ export async function startServer({
         return;
       }
 
+      // 有些 action 要帶選項（裝哪一步、哪個語言）。值一律比對白名單，
+      // 不讓自由字串進到指令參數裡。
+      let options;
+
+      try {
+        options = resolveOptions(action, body.options);
+      } catch (error) {
+        sendText(response, 400, error.message);
+        return;
+      }
+
       const runId = randomBytes(16).toString("hex");
       runs.set(runId, {
         action,
+        options,
         child: null,
         finished: false,
         killTimer: null,
         permission: body.allowWrite === true ? "write" : action.permission,
-        prompt: action.acceptsPrompt ? body.prompt : action.prompt,
+        prompt: action.acceptsPrompt
+          ? body.prompt
+          : typeof action.buildPrompt === "function"
+            ? action.buildPrompt(options)
+            : action.prompt,
         used: false,
       });
       sendJson(response, 200, {
