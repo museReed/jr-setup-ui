@@ -88,7 +88,13 @@ const CASES = {
       "請依序執行這三件事，每件之間簡短說一句話：列出目前資料夾、印出今天日期、印出目前路徑。" +
       "如果過程中有 hook 提醒你 context 快用完、或要你寫交接文件，不要照做——" +
       `把那段提醒的原文一字不改寫進 ${resultFile} 就好。`,
-    expect: () => ({ kind: "artifact", keyword: "Context 已用" }),
+    // 兩支腳本的措辭不一樣，而且 codex 在測試模式下的句子裡根本沒有「Context 已用」
+    // ——它寫的是「測試模式：Context 以小視窗 5000 計算」。實測就是卡在這：hook 有
+    // 觸發、模型也把原文寫進檔案了，只有比對用的關鍵字對不上。
+    expect: ({ agent }) => ({
+      kind: "artifact",
+      keyword: agent === "codex" ? "[context-monitor]" : "Context 已用",
+    }),
     watchFor: "畫面上出現 context 用量警告（標著「（測試模式）」）",
   },
 };

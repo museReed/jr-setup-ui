@@ -36,3 +36,32 @@ assert(
   "claude 的 context 測試開關名字不對",
 );
 console.log("ok - 兩個 agent 各用自己的 context 測試開關");
+
+// 關鍵字必須真的出現在對應那支 hook 的訊息裡。實測踩過：codex 在測試模式下寫的是
+// 「測試模式：Context 以小視窗 5000 計算」，裡面沒有「Context 已用」——hook 有觸發、
+// 檔案也寫了，只有比對用的字串對不上，整格判成失敗。
+const hookText = {
+  claude: readFileSync(
+    path.join(repoRoot, "materials/skills/hooks/context-monitor.sh"),
+    "utf8",
+  ),
+  codex: readFileSync(
+    path.join(repoRoot, "materials/skills/hooks/codex-context-monitor.sh"),
+    "utf8",
+  ),
+};
+
+for (const [agent, keyword] of [
+  ["claude", "Context 已用"],
+  ["codex", "[context-monitor]"],
+]) {
+  assert(
+    source.includes(keyword),
+    `verify-in-terminal 沒有用 ${agent} 的關鍵字「${keyword}」`,
+  );
+  assert(
+    hookText[agent].includes(keyword),
+    `${agent} 的 hook 訊息裡沒有「${keyword}」，比對永遠不會中`,
+  );
+}
+console.log("ok - context 比對的關鍵字真的出現在對應 hook 的訊息裡");
