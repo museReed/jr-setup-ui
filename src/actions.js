@@ -166,7 +166,9 @@ Object.assign(actions, {
     label: "驗證自動命名",
     cmd: process.execPath,
     args: [verifyHooksLiveScript],
-    description: "叫真的 Claude 跑一次，確認 session 命名 hook 有被觸發。",
+    description:
+      "叫真的 Claude 跑一次，確認命名 hook 有被觸發、名字有寫進檔案。" +
+      "終端標題那一格 headless 驗不到，輸出會請學生回自己的終端看一眼。",
   },
   "merge-config-step": {
     kind: "agent",
