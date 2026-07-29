@@ -12,8 +12,10 @@ import {
   describeStep,
   expandAllowRules,
   mergeAllowRules,
+  mergeAgentHookRegistrations,
   mergeHookRegistration,
   mergeOutputStyle,
+  upsertBlock,
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
 
@@ -125,6 +127,73 @@ async function allowlistStep(step) {
   console.log(`✓ ${step.label}：新增 ${addedRules} 條（共 ${rules.length} 條）`);
 }
 
+async function tabSyncStep(step) {
+  const source = sourcePath({ source: step.watcherSource });
+  await mkdir(path.dirname(step.target), { recursive: true });
+  await backup(step.target);
+  // PowerShell 5.1 靠 BOM 判讀中文字；二進位複製才不會在安裝時弄丟。
+  await copyFile(source, step.target);
+
+  if (process.platform !== "win32") {
+    await chmod(step.target, 0o755);
+  }
+
+  const current = existsSync(step.rcTarget)
+    ? await readFile(step.rcTarget, "utf8")
+    : "";
+  const next = upsertBlock(current, step.rcMarker, step.rcBlock);
+  await mkdir(path.dirname(step.rcTarget), { recursive: true });
+  await backup(step.rcTarget);
+  // 新建的 Windows PowerShell profile 也要有 BOM，否則 5.1 會讀壞中文名稱。
+  const rcContent =
+    process.platform === "win32"
+      ? `\ufeff${next.replace(/^\ufeff/, "")}`
+      : next;
+  await writeFile(step.rcTarget, rcContent);
+  console.log(`✓ watcher → ${step.target}`);
+  console.log(`✓ shell function → ${step.rcTarget}`);
+}
+
+async function agentHooksStep(step) {
+  for (const file of [...step.hookFiles, ...step.supportFiles]) {
+    const source = sourcePath(file);
+    await mkdir(path.dirname(file.target), { recursive: true });
+    // .ps1 必須保留 UTF-8 BOM，所以所有平台都直接做二進位複製。
+    await backup(file.target);
+    await copyFile(source, file.target);
+
+    if (process.platform !== "win32" && file.base !== undefined) {
+      await chmod(file.target, 0o755);
+    }
+
+    console.log(`✓ hook 檔案 → ${file.target}`);
+  }
+
+  let settings = mergeAgentHookRegistrations(
+    await readSettings(step.settingsTarget),
+    {
+      registrations: step.registrations,
+      hookMarkers: step.hookFiles.map((file) => file.base),
+    },
+  );
+
+  // 命名指令要在白名單裡，否則模型每次要命名都跳權限詢問。
+  // Windows 上跑的是 powershell 指令，跟 starter-allowlist 裡那條 .sh 規則對不上。
+  if (step.namingAllowRule !== undefined) {
+    const merged = mergeAllowRules(settings, {
+      allowRules: [step.namingAllowRule],
+    });
+    settings = merged.settings;
+
+    if (merged.addedRules > 0) {
+      console.log(`✓ 已把命名指令加進白名單`);
+    }
+  }
+
+  await writeSettings(step.settingsTarget, settings);
+  console.log(`✓ 已註冊 3 筆 hook → ${step.settingsTarget}`);
+}
+
 const args = parseArgs(process.argv.slice(2));
 
 try {
@@ -141,6 +210,10 @@ try {
     await hookStep(step);
   } else if (step.kind === "allowlist") {
     await allowlistStep(step);
+  } else if (step.kind === "tab-sync") {
+    await tabSyncStep(step);
+  } else if (step.kind === "agent-hooks") {
+    await agentHooksStep(step);
   } else {
     throw new Error(`不認得的步驟種類：${step.kind}`);
   }

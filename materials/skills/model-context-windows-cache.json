@@ -1,0 +1,7 @@
+{
+  "_comment": "model id (JSONL message.model, bare) -> real contextWindow token, verified via: claude -p \"hi\" --model <alias> --output-format json | jq .modelUsage. Add a new model here when context-monitor.sh reports an unknown/fallback model.",
+  "claude-fable-5": 1000000,
+  "claude-sonnet-5": 1000000,
+  "claude-opus-4-8": 1000000,
+  "claude-haiku-4-5-20251001": 200000
+}

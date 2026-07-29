@@ -1,9 +1,27 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { probeHook } from "../src/config-check.js";
+import {
+  checkAgentHooks,
+  checkTabSync,
+  probeHook,
+} from "../src/config-check.js";
+import {
+  describeStep,
+  mergeAgentHookRegistrations,
+  upsertBlock,
+} from "../src/config-install.js";
+import { materialsDir } from "../src/paths.js";
+
+const MATERIALS = materialsDir();
+
+// 裝進去的內容必須跟 materials 逐字相同，否則會被判成舊版——所以測試也要照真的裝。
+function installFrom(source, target) {
+  mkdirSync(path.dirname(target), { recursive: true });
+  copyFileSync(path.join(MATERIALS, source), target);
+}
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -49,6 +67,81 @@ process.stdin.on("end", () => {
   const missing = await probeHook(path.join(dir, "不存在.js"), "echo a && echo b");
   assert.notEqual(missing.exitCode, 2);
   ok("hook 檔案不存在時不會爆掉，也不會誤判成有擋");
+
+  const tabStep = describeStep("tab-sync", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  mkdirSync(path.dirname(tabStep.target), { recursive: true });
+  writeFileSync(tabStep.target, "watcher");
+  assert.deepEqual(await checkTabSync(tabStep, MATERIALS), {
+    id: "tab-sync",
+    label: "終端機標題同步",
+    status: "warn",
+    detail: "檔案在，但 shell function 沒寫進去",
+  });
+  writeFileSync(
+    tabStep.rcTarget,
+    upsertBlock("", tabStep.rcMarker, tabStep.rcBlock),
+  );
+  // 這裡的 watcher 還是那個假的 "watcher" 字串——內容跟 materials 不同，
+  // 舊版就長這樣：檔案在、標記在，但標題不會變。
+  const staleWatcher = await checkTabSync(tabStep, MATERIALS);
+  assert.equal(staleWatcher.status, "warn");
+  assert.match(staleWatcher.detail, /舊版/);
+  ok("watcher 是舊版時不給綠燈——只看檔案在不在會漏掉");
+
+  installFrom(tabStep.watcherSource, tabStep.target);
+  assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");
+  ok("tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
+
+  const agentStep = describeStep("claude-hooks", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  for (const file of agentStep.hookFiles) {
+    installFrom(file.source, file.target);
+  }
+  assert.deepEqual(await checkAgentHooks(agentStep, MATERIALS), {
+    id: "claude-hooks",
+    label: "Claude Code hooks",
+    status: "warn",
+    detail: "檔案在，但沒註冊——不會被觸發",
+  });
+  const settings = mergeAgentHookRegistrations(
+    {},
+    {
+      registrations: agentStep.registrations,
+      hookMarkers: agentStep.hookFiles.map((file) => file.base),
+    },
+  );
+  writeFileSync(agentStep.settingsTarget, JSON.stringify(settings));
+
+  // 迴歸：白名單也要算進去。少了它模型每次命名都被權限層擋下，功能是死的；
+  // 只驗檔案與註冊的話會給假綠燈，而綠燈就沒有安裝按鈕，學生連重跑都做不到。
+  const withoutRule = await checkAgentHooks(agentStep, MATERIALS);
+  assert.equal(withoutRule.status, "warn");
+  assert.match(withoutRule.detail, /白名單/);
+  ok("命名指令沒進白名單時不給綠燈");
+
+  writeFileSync(
+    agentStep.settingsTarget,
+    JSON.stringify({
+      ...settings,
+      permissions: { allow: [agentStep.namingAllowRule] },
+    }),
+  );
+  assert.equal((await checkAgentHooks(agentStep, MATERIALS)).status, "ok");
+  ok("檔案、註冊、白名單三者都在才算生效");
+
+  // 舊版 hook 檔案：三項全綠，但模型每次命名還是會被權限層擋下。
+  writeFileSync(agentStep.hookFiles[0].target, "舊版內容");
+  const staleHook = await checkAgentHooks(agentStep, MATERIALS);
+  assert.equal(staleHook.status, "warn");
+  assert.match(staleHook.detail, /舊版/);
+  ok("hook 檔案是舊版時不給綠燈——註冊與白名單都對也一樣");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

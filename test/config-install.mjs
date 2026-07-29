@@ -5,7 +5,10 @@ import {
   describeStep,
   expandAllowRules,
   findHookRegistration,
+  hasAgentHookRegistrations,
+  hookFileName,
   mergeAllowRules,
+  mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
 } from "../src/config-install.js";
@@ -23,15 +26,34 @@ try {
     "output-style",
     "hook",
     "allowlist",
+    "tab-sync",
+    "claude-hooks",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
     "codex-config",
     "codex-agents",
+    "tab-sync",
+    "codex-hooks",
   ]);
-  assert.equal(stepsForTools(["claude", "codex"]).length, 6);
+  assert.deepEqual(stepsForTools(["claude", "codex"]), [
+    "claude-md",
+    "output-style",
+    "hook",
+    "allowlist",
+    "codex-config",
+    "codex-agents",
+    "tab-sync",
+    "claude-hooks",
+    "codex-hooks",
+  ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
-  ok("步驟清單跟著選的工具走，沒選工具就報錯");
+  ok("既有規則之後才出現共用 tab sync 與各工具的 hooks");
+
+  assert.equal(hookFileName("context-monitor", "linux"), "context-monitor.sh");
+  assert.equal(hookFileName("context-monitor", "darwin"), "context-monitor.sh");
+  assert.equal(hookFileName("context-monitor", "win32"), "context-monitor.ps1");
+  ok("hook 副檔名會依平台選 sh 或 ps1");
 
   assert.equal(
     describeStep("claude-md", AT).target,
@@ -45,6 +67,50 @@ try {
   assert.equal(describeStep("codex-config", AT).protectExisting, true);
   assert.equal(describeStep("codex-agents", AT).protectExisting, undefined);
   ok("每步知道自己的來源與目標，會蓋掉使用者內容的步驟有標記");
+
+  const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
+  assert.equal(tabSync.kind, "tab-sync");
+  assert.equal(tabSync.watcherSource, "skills/bin/ai-tab-sync.sh");
+  assert.equal(tabSync.target, `${HOME}/.local/bin/ai-tab-sync.sh`);
+  assert.equal(tabSync.rcTarget, `${HOME}/.zshrc`);
+  assert.match(tabSync.rcBlock, /command claude "\$@"/);
+  assert.match(tabSync.rcBlock, /command codex "\$@"/);
+
+  const windowsTabSync = describeStep("tab-sync", {
+    ...AT,
+    platform: "win32",
+  });
+  assert.equal(windowsTabSync.watcherSource, "skills/bin/ai-tab-sync.ps1");
+  assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
+  assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
+  ok("tab sync 會描述 watcher、rc 檔與跳過函式的真正指令");
+
+  // watcher 用 [Console]::Title 改標題，那個 API 只作用在自己所在的 console。
+  // -WindowStyle Hidden 會開一個新的 console，watcher 就改到自己的標題、碰不到
+  // 學生的分頁——全綠但標題不動（VM 實測）。共用 console 的是 -NoNewWindow。
+  assert(
+    !windowsTabSync.rcBlock.includes("-WindowStyle Hidden"),
+    "watcher 不能用 -WindowStyle Hidden 起，那會開新的 console",
+  );
+  assert.match(windowsTabSync.rcBlock, /-NoNewWindow/);
+  ok("Windows watcher 用 -NoNewWindow 起，跟終端共用同一個 console");
+
+  const claudeHooks = describeStep("claude-hooks", {
+    ...AT,
+    platform: "linux",
+  });
+  const codexHooks = describeStep("codex-hooks", {
+    ...AT,
+    platform: "win32",
+  });
+  assert.equal(claudeHooks.hookFiles.length, 3);
+  assert.equal(claudeHooks.registrations.length, 3);
+  assert.equal(claudeHooks.settingsTarget, `${HOME}/.claude/settings.json`);
+  assert.equal(codexHooks.hookFiles.length, 2);
+  assert.equal(codexHooks.registrations.length, 3);
+  assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
+  assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
+  ok("Claude 與 Codex hooks 各自帶齊檔案、三筆註冊與設定目標");
 
   assert.throws(() => describeStep("claude-md", { ...AT, lang: "ja" }));
   assert.throws(() => describeStep("不存在的步驟", AT));
@@ -65,10 +131,28 @@ try {
   assert.deepEqual(registered.hooks.PreToolUse, [
     {
       matcher: "Bash",
-      hooks: [{ type: "command", command: `node ${hookPath}`, timeout: 5 }],
+      hooks: [{ type: "command", command: `node "${hookPath}"`, timeout: 5 }],
     },
   ]);
   ok("空的 settings.json 會長出 hook 註冊，指令是 node 不是 python3");
+
+  // Windows 路徑不處理的話，bash 會把 C:\Users\Reed 的 \U \R 當跳脫序列吃掉，
+  // 路徑變成 C:UsersReed → node 找不到檔案 → exit 1 → PreToolUse 當成「hook
+  // 出錯，放行」，串接指令一路暢通。這條在 macOS 上就會紅，不用等 VM。
+  const windowsHook = mergeHookRegistration(
+    {},
+    { hookPath: "C:\\Users\\Reed/.claude/hooks/block-chained-bash.js" },
+  );
+  const windowsCommand = windowsHook.hooks.PreToolUse[0].hooks[0].command;
+  assert(
+    !windowsCommand.includes("\\"),
+    `註冊指令不能留反斜線，實際是：${windowsCommand}`,
+  );
+  assert.equal(
+    windowsCommand,
+    'node "C:/Users/Reed/.claude/hooks/block-chained-bash.js"',
+  );
+  ok("Windows 路徑轉正斜線並加引號，bash 不會把它吃掉");
 
   // 重跑安裝不能疊出兩份，也不能把別人的 hook 掃掉。
   const rerun = mergeHookRegistration(registered, { hookPath });
@@ -95,6 +179,34 @@ try {
   assert.equal(withOthers.model, "opus");
   ok("不動使用者原本的其他 hook 與設定");
 
+  const agentRegistered = mergeAgentHookRegistrations(
+    {
+      hooks: {
+        PostToolUse: [
+          { hooks: [{ type: "command", command: "bash /別人的.sh" }] },
+        ],
+        Stop: [{ hooks: [{ type: "command", command: "echo bye" }] }],
+      },
+      model: "opus",
+    },
+    {
+      registrations: claudeHooks.registrations,
+      hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
+    },
+  );
+  assert.equal(hasAgentHookRegistrations(agentRegistered, claudeHooks.registrations), true);
+  assert.equal(agentRegistered.hooks.PostToolUse.length, 3);
+  assert.equal(agentRegistered.hooks.Stop.length, 1);
+  assert.equal(agentRegistered.model, "opus");
+
+  const agentRerun = mergeAgentHookRegistrations(agentRegistered, {
+    registrations: claudeHooks.registrations,
+    hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
+  });
+  assert.equal(agentRerun.hooks.PostToolUse.length, 3);
+  assert.equal(agentRerun.hooks.UserPromptSubmit.length, 1);
+  ok("三筆 agent hook 註冊可重跑，且不動使用者原本的 hook");
+
   const allow = mergeAllowRules(
     { permissions: { allow: ["Bash(ls)"], deny: ["Bash(rm)"] } },
     { allowRules: ["Bash(ls)", "Bash(git status)"] },
@@ -118,7 +230,7 @@ try {
   );
   assert.deepEqual(findHookRegistration(registered), {
     matcher: "Bash",
-    command: `node ${hookPath}`,
+    command: `node "${hookPath}"`,
   });
   ok("找得出 settings.json 裡的 hook 註冊，別人的 hook 不會誤判成有裝");
 

@@ -195,6 +195,17 @@ try {
   assert.match(page, /重新檢查/);
   ok("首頁包含環境檢查、規則檔安裝結果區與重新檢查按鈕");
 
+  // 每個驗證腳本都要有自己的按鈕——寫了腳本卻忘了接按鈕，網頁上就叫不到。
+  for (const id of [
+    "verify-configs",
+    "verify-behavior",
+    "verify-hook-live",
+    "verify-naming",
+  ]) {
+    assert.match(page, new RegExp(`id="${id}"`), `首頁少了 ${id} 按鈕`);
+  }
+  ok("四顆驗證按鈕都在首頁上");
+
   assert.match(page, /<div\s+id="behavior-fallback"[^>]*\shidden(?:\s|>)/);
   ok("首頁包含預設隱藏的行為驗證手動退路");
 

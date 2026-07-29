@@ -11,6 +11,8 @@ import {
   describeStep,
   expandAllowRules,
   findHookRegistration,
+  hasAgentHookRegistrations,
+  hasMarkedBlock,
   stepsForTools,
 } from "./config-install.js";
 import { materialsDir } from "./paths.js";
@@ -41,6 +43,33 @@ async function sameAsSource(materials, step) {
     readFile(step.target, "utf8"),
   ]);
   return a === b;
+}
+
+// 「檔案在」不等於「檔案是對的」。hook 與 watcher 的內容改過之後，已經裝過的人
+// 手上是舊版——嚮導若只看存在與否，會告訴他一切正常。這輪五個斷點的修正全都落在
+// 這些檔案裡，所以逐字比對是必要的。
+async function staleTargets(materials, files) {
+  const stale = [];
+
+  for (const file of files) {
+    const source = path.join(materials, file.source);
+
+    // 材料本身缺了是我們的問題，不是學生的——不要報成他裝錯。
+    if (!existsSync(source) || !existsSync(file.target)) {
+      continue;
+    }
+
+    const [expected, actual] = await Promise.all([
+      readFile(source, "utf8"),
+      readFile(file.target, "utf8"),
+    ]);
+
+    if (expected !== actual) {
+      stale.push(file.target);
+    }
+  }
+
+  return stale;
 }
 
 async function checkCopyStep(materials, step) {
@@ -78,6 +107,59 @@ async function checkCopyStep(materials, step) {
   }
 
   return { id: step.id, label: step.label, status: "ok", detail: "已安裝" };
+}
+
+// 每一列除了「結構齊全」還要驗什麼，見 docs/wizard-verification-design.md。
+// behavior = 程式跑得出結果的行為驗證；eye = 只有真終端看得到、得由學生回報。
+// 兩者都沒有的列（例如白名單）結構對了就是真的對了，直接綠燈。
+export const VERIFICATION = {
+  "claude-md": { behavior: "verify-behavior" },
+  "output-style": { behavior: "verify-behavior" },
+  "codex-config": { behavior: "verify-behavior" },
+  "codex-agents": { behavior: "verify-behavior" },
+  hook: { behavior: "verify-hook-live" },
+  "claude-hooks": { behavior: "verify-hooks-live" },
+  "codex-hooks": {
+    eye: "開一個新的終端分頁跑 codex，問一句話，看分頁標題有沒有變成命名（第一次會問你要不要信任 hook，要接受）",
+  },
+  "tab-sync": {
+    eye: "關掉分頁重開一個，跑 claude 問一句話，看分頁標題有沒有變成「{emoji} 中文敘述」",
+  },
+};
+
+// 跑「settings.json 裡真的那條指令」，而不是我們自己拼一次路徑去跑腳本。
+// 差別很致命：VM 上腳本本身完全正常、直接跑必過，但註冊的指令路徑沒加引號，
+// bash 把 C:\Users\Reed 的 \U \R 當跳脫吃掉 → node 找不到檔案 → exit 1 →
+// PreToolUse 把 exit 1 當「hook 出錯，放行」，串接指令一路暢通。只驗腳本的話
+// 這一格永遠是綠的。
+export function probeRegisteredHook(registeredCommand, command) {
+  return new Promise((resolve) => {
+    let child;
+
+    try {
+      // Claude Code 是把 hook 指令交給 bash 跑的，這裡照做才會踩到同一個坑。
+      child = spawn("bash", ["-c", registeredCommand], {
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      resolve({ exitCode: null, stderr: error.message });
+      return;
+    }
+
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) =>
+      resolve({ exitCode: null, stderr: error.message }),
+    );
+    child.once("close", (exitCode) => resolve({ exitCode, stderr }));
+    child.stdin.end(
+      JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
+    );
+  });
 }
 
 // 真的把一段指令餵給 hook，看它擋不擋。這是唯一「結構對了但行為可能還是不對」
@@ -139,13 +221,27 @@ async function checkOutputStyle(materials, step) {
   };
 }
 
-async function checkHook(step) {
+async function checkHook(step, materials) {
   const fileExists = existsSync(step.target);
   const settings = await readJsonOrNull(step.settingsTarget);
   const registration = findHookRegistration(settings ?? {});
 
+  if (fileExists && (await staleTargets(materials, [step])).length > 0) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "裝的是舊版——重跑安裝",
+    };
+  }
+
   if (fileExists && registration !== null) {
-    const probe = await probeHook(step.target, "echo a && echo b");
+    // 跑註冊的那條指令，不是自己拼路徑去跑腳本。腳本幾乎永遠是好的，壞的是它被
+    // 怎麼叫——Windows 上就是註冊路徑沒加引號，這一格卻一直給綠燈。
+    const probe = await probeRegisteredHook(
+      registration.command,
+      "echo a && echo b",
+    );
 
     if (probe.exitCode !== 2) {
       return {
@@ -216,6 +312,110 @@ async function checkAllowlist(materials, step) {
   };
 }
 
+export async function checkTabSync(step, materials) {
+  if (!existsSync(step.target)) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "missing",
+      detail: "尚未安裝",
+    };
+  }
+
+  const rcContent = existsSync(step.rcTarget)
+    ? await readFile(step.rcTarget, "utf8")
+    : "";
+
+  if (!hasMarkedBlock(rcContent, step.rcMarker)) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "檔案在，但 shell function 沒寫進去",
+    };
+  }
+
+  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow）。
+  // 舊版兩者都是「檔案在、標記在」，只看存在與否會給綠燈，但標題不會變。
+  const staleWatcher = await staleTargets(materials, [
+    { source: step.watcherSource, target: step.target },
+  ]);
+
+  if (staleWatcher.length > 0 || !rcContent.includes(step.rcBlock.trim())) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "裝的是舊版——重跑安裝，然後開新的終端分頁",
+    };
+  }
+
+  return { id: step.id, label: step.label, status: "ok", detail: "已啟用" };
+}
+
+export async function checkAgentHooks(step, materials) {
+  const filesExist = step.hookFiles.every((file) => existsSync(file.target));
+
+  // 命名 hook 的內容改過（改叫薄殼、含空白的路徑加引號）。舊版一樣是「檔案在、
+  // 註冊在、白名單在」，三項全綠，但模型每次命名還是會被權限層擋下。
+  if (filesExist && (await staleTargets(materials, step.hookFiles)).length > 0) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "裝的是舊版——重跑安裝，然後開新的 session",
+    };
+  }
+
+  const settings = await readJsonOrNull(step.settingsTarget);
+  const registered = hasAgentHookRegistrations(
+    settings ?? {},
+    step.registrations,
+  );
+
+  // 命名指令沒進白名單的話，模型每次要命名都會被權限層擋下——檔案在、註冊也在，
+  // 但功能是死的。只驗前兩項的話這一列會給假綠燈，而且綠燈就沒有安裝按鈕，
+  // 學生連重跑的機會都沒有（實測就是卡在這）。
+  const allowRuleNeeded = step.namingAllowRule !== undefined;
+  const allowRuleInstalled =
+    !allowRuleNeeded ||
+    (settings?.permissions?.allow ?? []).includes(step.namingAllowRule);
+
+  if (filesExist && registered && allowRuleInstalled) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "ok",
+      detail: "hook 檔案與 3 筆註冊都已生效",
+    };
+  }
+
+  if (filesExist && registered) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "已註冊，但命名指令不在白名單——模型會被權限層擋下",
+    };
+  }
+
+  if (filesExist) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "檔案在，但沒註冊——不會被觸發",
+    };
+  }
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: "missing",
+    detail: registered ? "已註冊但 hook 檔案不完整" : "尚未安裝",
+  };
+}
+
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
@@ -227,9 +427,13 @@ export async function runConfigCheck({ tools, lang }) {
     if (step.kind === "output-style") {
       checks.push(await checkOutputStyle(materials, step));
     } else if (step.kind === "hook") {
-      checks.push(await checkHook(step));
+      checks.push(await checkHook(step, materials));
     } else if (step.kind === "allowlist") {
       checks.push(await checkAllowlist(materials, step));
+    } else if (step.kind === "tab-sync") {
+      checks.push(await checkTabSync(step, materials));
+    } else if (step.kind === "agent-hooks") {
+      checks.push(await checkAgentHooks(step, materials));
     } else {
       checks.push(await checkCopyStep(materials, step));
     }
@@ -242,6 +446,8 @@ export async function runConfigCheck({ tools, lang }) {
       ...check,
       installAction: check.status === "ok" ? null : "install-config-step",
       mergeAction: check.needsMerge === true ? "merge-config-step" : null,
+      verifyAction: VERIFICATION[check.id]?.behavior ?? null,
+      eyeCheck: VERIFICATION[check.id]?.eye ?? null,
     })),
   };
 }

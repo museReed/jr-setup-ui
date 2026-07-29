@@ -6,6 +6,7 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_WAIT_TIMEOUT_MS,
+  VERIFIED_BY_ACTION,
   agentNameFor,
   behaviorFallbackState,
   configQuery,
@@ -20,6 +21,7 @@ import {
   runControlsState,
   runOutcome,
 } from "../public/viewmodel.js";
+import { VERIFICATION } from "../src/config-check.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -89,6 +91,86 @@ try {
     },
   ]);
   ok("規則檔同時可安裝與合併時安裝按鈕在前");
+
+  // 結構齊全不等於生效。實測踩過四次「裝好了、綠燈、就是不生效」，所以還沒驗過
+  // 行為的列不能是綠的，而且要留著安裝按鈕讓學生能重跑。
+  const pending = configRowModel({
+    id: "hook",
+    label: "Shell 不串接 hook",
+    status: "ok",
+    detail: "已安裝",
+    installAction: null,
+    mergeAction: null,
+    verifyAction: "verify-hook-live",
+    eyeCheck: null,
+  });
+  assert.equal(pending.status, "unverified");
+  assert.match(pending.detail, /尚未驗證/);
+  assert.deepEqual(
+    pending.buttons.map((button) => button.text),
+    ["安裝", "驗證"],
+  );
+  ok("結構齊全但沒驗過行為的列不給綠燈，安裝與驗證按鈕都在");
+
+  const verified = configRowModel(
+    {
+      id: "hook",
+      label: "Shell 不串接 hook",
+      status: "ok",
+      detail: "已安裝",
+      installAction: null,
+      mergeAction: null,
+      verifyAction: "verify-hook-live",
+      eyeCheck: null,
+    },
+    true,
+  );
+  assert.equal(verified.status, "ok");
+  assert.deepEqual(verified.buttons, []);
+  ok("驗過之後才變綠，按鈕收起來");
+
+  // 程式驗不到的那一格要明講看什麼，不能只留一個空的勾選框。
+  const eyeOnly = configRowModel({
+    id: "tab-sync",
+    label: "終端機標題同步",
+    status: "ok",
+    detail: "已安裝",
+    installAction: null,
+    mergeAction: null,
+    verifyAction: null,
+    eyeCheck: "看分頁標題有沒有變",
+  });
+  assert.equal(eyeOnly.status, "unverified");
+  assert.equal(eyeOnly.eyeCheck, "看分頁標題有沒有變");
+  assert(
+    !eyeOnly.buttons.some((button) => button.text === "驗證"),
+    "驗不到的列不該給一顆按了也證明不了什麼的驗證按鈕",
+  );
+  ok("只能靠眼睛的列附上要看什麼，且不給驗證按鈕");
+
+  // 兩張表分別住在 src/config-check.js 與 public/viewmodel.js，對不上的話那一列
+  // 永遠停在待驗證——沒有錯誤訊息，只是永遠不會變綠。
+  const behaviorActions = new Set(
+    Object.values(VERIFICATION)
+      .map((entry) => entry.behavior)
+      .filter(Boolean),
+  );
+  for (const action of behaviorActions) {
+    assert(
+      Array.isArray(VERIFIED_BY_ACTION[action]),
+      `${action} 沒有對應的已驗證列，那一列永遠不會變綠`,
+    );
+  }
+  for (const [action, steps] of Object.entries(VERIFIED_BY_ACTION)) {
+    for (const step of steps) {
+      assert.equal(
+        VERIFICATION[step]?.behavior,
+        action,
+        `${step} 說要由 ${action} 驗，但 VERIFICATION 裡對不上`,
+      );
+    }
+  }
+  ok("驗證按鈕與待驗證列兩張表對得上");
 
   assert.deepEqual(configSummary([]), {
     done: 0,

@@ -145,6 +145,23 @@ main {
   color: #805800;
 }
 
+/* 結構齊全但沒驗過生效——刻意不給綠燈，也刻意不用警告色：它不是壞了，是還沒證明。 */
+.env-row[data-status="unverified"] .env-icon {
+  background: #e7ecf2;
+  color: #3d5468;
+}
+
+/* 只有真終端看得到的那一格，佔滿一整行，才有空間寫清楚要看什麼。 */
+.env-eye-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0 6px 36px;
+  color: #4d5963;
+  font-size: 0.92em;
+}
+
 .env-message {
   margin: 0;
   padding: 18px 20px;

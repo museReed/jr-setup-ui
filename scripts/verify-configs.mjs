@@ -2,16 +2,26 @@
 //
 //   node scripts/verify-configs.mjs --tools=claude,codex --lang=zh-TW
 //
-// 最關鍵的一項是直接觸發 hook：餵一段串接指令進去，看它回不回 exit 2。
+// 最關鍵的兩項會直接觸發腳本：擋下串接指令，並把名稱寫進同步檔。
 // 這是真的行為驗證，不需要開 Claude session。
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { probeHook, runConfigCheck } from "../src/config-check.js";
+import { probeRegisteredHook, runConfigCheck } from "../src/config-check.js";
+import { findHookRegistration, hookFileName } from "../src/config-install.js";
 
 const HOME = homedir();
 const HOOK_PATH = path.join(HOME, ".claude", "hooks", "block-chained-bash.js");
+const SET_NAME_PATH = path.join(
+  HOME,
+  ".claude",
+  "hooks",
+  hookFileName("set-session-name"),
+);
+const VERIFY_NAME = "🔧 驗證測試";
 
 function parseArgs(argv) {
   const args = {};
@@ -27,8 +37,49 @@ function parseArgs(argv) {
   return args;
 }
 
-// 探測本身跟畫面那一列共用同一支，兩邊不會對不上。
-const runHook = (command) => probeHook(HOOK_PATH, command);
+// 驗的是 settings.json 裡真正註冊的那條指令，不是我們自己拼一次路徑去跑腳本。
+async function registeredHookCommand() {
+  const settings = await readFile(
+    path.join(HOME, ".claude", "settings.json"),
+    "utf8",
+  )
+    .then(JSON.parse)
+    .catch(() => null);
+  return findHookRegistration(settings)?.command ?? null;
+}
+
+function runSetSessionName(syncFile) {
+  const command = process.platform === "win32" ? "powershell.exe" : "bash";
+  const args =
+    process.platform === "win32"
+      ? ["-NoProfile", "-File", SET_NAME_PATH, VERIFY_NAME, String(process.pid)]
+      : [SET_NAME_PATH, VERIFY_NAME, String(process.pid)];
+
+  return new Promise((resolve) => {
+    let child;
+
+    try {
+      child = spawn(command, args, {
+        shell: false,
+        stdio: ["ignore", "ignore", "pipe"],
+        env: { ...process.env, AI_TAB_SYNC_FILE: syncFile },
+      });
+    } catch (error) {
+      resolve({ exitCode: null, stderr: error.message });
+      return;
+    }
+
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) =>
+      resolve({ exitCode: null, stderr: error.message }),
+    );
+    child.once("close", (exitCode) => resolve({ exitCode, stderr }));
+  });
+}
 
 let failures = 0;
 
@@ -55,9 +106,14 @@ if (tools.includes("claude")) {
   console.log("");
   console.log("── 實際觸發 hook ──");
 
+  const hookCommand = await registeredHookCommand();
+
   if (!existsSync(HOOK_PATH)) {
     report(false, "hook 檔案存在", "找不到，跳過行為測試");
+  } else if (!hookCommand) {
+    report(false, "hook 已註冊", "settings.json 裡沒有這個 hook，跳過行為測試");
   } else {
+    const runHook = (command) => probeRegisteredHook(hookCommand, command);
     const blocked = await runHook("echo a && echo b");
     report(
       blocked.exitCode === 2 && blocked.stderr.includes("一次只跑一個指令"),
@@ -70,6 +126,31 @@ if (tools.includes("claude")) {
 
     const quoted = await runHook('echo "a && b"');
     report(quoted.exitCode === 0, "引號內的 && 不會誤擋", `exit ${quoted.exitCode}`);
+  }
+
+  console.log("");
+  console.log("── 實際觸發命名 ──");
+
+  if (!existsSync(SET_NAME_PATH)) {
+    report(false, "命名腳本存在", "找不到，跳過行為測試");
+  } else {
+    const syncFile = path.join(
+      tmpdir(),
+      `jr-hooks-name-${process.pid}-${Date.now()}.txt`,
+    );
+
+    try {
+      await writeFile(syncFile, "");
+      const result = await runSetSessionName(syncFile);
+      const actual = (await readFile(syncFile, "utf8")).trim();
+      report(
+        result.exitCode === 0 && actual === VERIFY_NAME,
+        "命名寫得進 sync 檔",
+        result.exitCode === 0 ? actual : `exit ${result.exitCode}`,
+      );
+    } finally {
+      await unlink(syncFile).catch(() => {});
+    }
   }
 }
 
