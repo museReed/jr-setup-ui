@@ -99,3 +99,15 @@ for (const agent of ["claude", "codex"]) {
   );
 }
 console.log("ok - handoff 判定用的章節名真的在 SKILL.md 裡");
+
+// Codex 的改名是兩段式：模型先寫中繼檔，要等「下一次 hook 事件」才套上標題。所以
+// 每個會改名的情境都得叫它改完再做一次工具呼叫。漏掉的那一格會長成「檔案寫得出來、
+// 標題不動」，看起來像 skill 壞掉（naming 與 skill-rename 早就補了，skill-handoff
+// 漏掉，VM 實測才發現）。
+const RENAME_CASES = ["naming", "skill-rename", "skill-handoff"];
+assert.equal(
+  source.split("讓 hook 有機會把名字套用上去").length - 1,
+  RENAME_CASES.length,
+  `會改名的 ${RENAME_CASES.length} 個情境都要補 Codex 的第二次工具呼叫`,
+);
+console.log("ok - 每個會改名的情境都給 Codex 補了第二次工具呼叫");

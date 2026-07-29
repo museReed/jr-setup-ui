@@ -124,10 +124,16 @@ const CASES = {
     // ⚠️ 只說「不要 commit、不要寫進 docs/」的話，模型會把整段收尾都當成「這次不用
     //    做」一起跳過——VM 實測它自己回報「依用戶指示偏離 skill 預設流程三處」，
     //    改名那步就這樣沒了，看起來像 skill 壞掉。要跳過的步驟逐條講，要做的也逐條講。
-    prompt: ({ resultFile }) =>
+    prompt: ({ agent, resultFile }) =>
       "請使用 handoff skill 產出這個 session 的交接文件。" +
       `這一輪有兩件事要做完：（1）不要 commit、不要寫進 docs/，把整份文件內容寫進 ${resultFile}，章節標題照 skill 規定的寫；` +
-      "（2）照 skill 最後一步把這個 session 改名，執行它給你的那條改名指令，不要跳過。",
+      "（2）照 skill 最後一步把這個 session 改名，執行它給你的那條改名指令，不要跳過。" +
+      // Codex 的改名是兩段式：模型先把名字寫進中繼檔，要等「下一次 hook 事件」才
+      // 套上去。一問一答就結束的話名字永遠卡在中繼檔——skill-rename 那格早就補了
+      // 這一步，這裡漏掉，於是 Codex 的交接檔寫得出來、標題卻不動（VM 實測）。
+      (agent === "codex"
+        ? "改名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。"
+        : ""),
     // 「必讀檔案」是 SKILL.md 規定的章節名。模型沒讀到 skill 的話不會自己想到這四個字，
     // 所以它出現＝skill 真的被載入了。
     expect: () => ({ kind: "artifact", keyword: "必讀檔案" }),
