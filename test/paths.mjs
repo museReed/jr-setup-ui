@@ -31,6 +31,21 @@ try {
   ok("素材目錄裡有預期的內容");
 
   // action 的 buildArgs 產出的第一個參數是腳本路徑，那是實際被 spawn 的東西。
+  // 不帶參數的腳本型 action（args 寫死）也要指到存在的檔案。
+  for (const [name, action] of Object.entries(actions)) {
+    if (action.cmd !== process.execPath || !Array.isArray(action.args)) {
+      continue;
+    }
+
+    const [scriptPath] = action.args;
+    assert(path.isAbsolute(scriptPath), `${name} 的腳本路徑不是絕對路徑`);
+    assert(
+      !LOOKS_LIKE_BROKEN_WINDOWS_PATH.test(scriptPath),
+      `${name} 的腳本路徑帶了前導斜線：${scriptPath}`,
+    );
+    assert(existsSync(scriptPath), `${name} 指到的腳本不存在：${scriptPath}`);
+  }
+
   const scripted = Object.entries(actions).filter(
     ([, action]) => typeof action.buildArgs === "function",
   );

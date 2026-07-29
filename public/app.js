@@ -415,5 +415,11 @@ view.elements.verifyBehavior.addEventListener("click", () => {
     tools: view.elements.configTools.value,
   });
 });
+// 這顆不帶 options（驗的是「Claude Code 有沒有真的載入 hook」，跟語言與工具無關），
+// 也不把按鈕傳進去——傳了會被當成環境檢查那區的動作，跑完誤觸發環境重查與
+// 「安裝完成」訊息。按鈕的鎖定由 configControlsDisabled 統一處理。
+view.elements.verifyHookLive.addEventListener("click", () => {
+  run("verify-hook-live", undefined, null);
+});
 checkEnvironment();
 checkConfigs();

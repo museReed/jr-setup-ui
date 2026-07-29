@@ -24,6 +24,7 @@ const elements = {
   recheckConfigs: document.querySelector("#recheck-configs"),
   verifyConfigs: document.querySelector("#verify-configs"),
   verifyBehavior: document.querySelector("#verify-behavior"),
+  verifyHookLive: document.querySelector("#verify-hook-live"),
   configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
@@ -258,6 +259,7 @@ export function renderRunControls(state) {
   elements.recheckConfigs.disabled = state.configControlsDisabled;
   elements.verifyConfigs.disabled = state.configControlsDisabled;
   elements.verifyBehavior.disabled = state.configControlsDisabled;
+  elements.verifyHookLive.disabled = state.configControlsDisabled;
 
   for (const button of configActionButtons()) {
     button.disabled = state.configControlsDisabled;

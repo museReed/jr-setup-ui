@@ -17,6 +17,10 @@ const verifyBehaviorScript = moduleFile(
   "../scripts/verify-behavior.mjs",
   import.meta.url,
 );
+const verifyHookLiveScript = moduleFile(
+  "../scripts/verify-hook-live.mjs",
+  import.meta.url,
+);
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -145,6 +149,13 @@ Object.assign(actions, {
     options: { tools: ["claude", "codex", "claude,codex"] },
     buildArgs: ({ tools }) => [verifyBehaviorScript, `--tools=${tools}`],
     description: "請學生自己的 AI 回答一題並判定回覆有沒有照格式規則。",
+  },
+  "verify-hook-live": {
+    kind: "fixed",
+    label: "驗證 hook 會擋",
+    cmd: process.execPath,
+    args: [verifyHookLiveScript],
+    description: "叫真的 Claude 跑一個串接指令，確認 hook 真的被載入並執行。",
   },
   "merge-config-step": {
     kind: "agent",
