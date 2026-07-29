@@ -112,6 +112,33 @@ export function probeHook(hookPath, command) {
   });
 }
 
+// 檔案在不代表生效——真正的開關是 settings.json 的 outputStyle 欄位。
+async function checkOutputStyle(materials, step) {
+  const file = await checkCopyStep(materials, step);
+
+  if (file.status !== "ok") {
+    return file;
+  }
+
+  const settings = await readJsonOrNull(step.settingsTarget);
+
+  if (settings?.outputStyle !== step.styleName) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "檔案在，但 settings.json 沒啟用它——回覆格式不會變",
+    };
+  }
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: "ok",
+    detail: `已啟用「${step.styleName}」`,
+  };
+}
+
 async function checkHook(step) {
   const fileExists = existsSync(step.target);
   const settings = await readJsonOrNull(step.settingsTarget);
@@ -197,7 +224,9 @@ export async function runConfigCheck({ tools, lang }) {
   for (const id of ids) {
     const step = describeStep(id, { lang, home: HOME });
 
-    if (step.kind === "hook") {
+    if (step.kind === "output-style") {
+      checks.push(await checkOutputStyle(materials, step));
+    } else if (step.kind === "hook") {
       checks.push(await checkHook(step));
     } else if (step.kind === "allowlist") {
       checks.push(await checkAllowlist(materials, step));

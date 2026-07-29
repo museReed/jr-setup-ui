@@ -58,9 +58,14 @@ export function describeStep(id, { lang, home }) {
       return {
         id,
         label: "回覆格式 Output Style",
-        kind: "copy",
+        // 只複製檔案不會生效：真正的開關是 settings.json 的 outputStyle 欄位
+        // （md 裡是叫使用者自己去 /config 選）。沒寫的話回覆格式完全不會變，
+        // 而且沒有任何錯誤訊息——所以安裝時一起寫進去。
+        kind: "output-style",
         source: `claude-code/${lang}/output-styles/concise-structured.md`,
         target: `${claudeDir}/output-styles/concise-structured.md`,
+        settingsTarget: `${claudeDir}/settings.json`,
+        styleName: OUTPUT_STYLE_NAME,
       };
 
     case "hook":
@@ -112,6 +117,13 @@ export function expandAllowRules(rules, home) {
 }
 
 export const HOOK_MARKER = "block-chained-bash";
+
+// 對應 output-styles/concise-structured.md 的 frontmatter name。
+export const OUTPUT_STYLE_NAME = "Concise Structured";
+
+export function mergeOutputStyle(settings, { styleName }) {
+  return { ...structuredClone(settings ?? {}), outputStyle: styleName };
+}
 
 // 註冊 hook：先把舊的同名 hook 清掉再加，重跑安裝不會疊出兩份。
 export function mergeHookRegistration(settings, { hookPath }) {

@@ -13,6 +13,7 @@ import {
   expandAllowRules,
   mergeAllowRules,
   mergeHookRegistration,
+  mergeOutputStyle,
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
 
@@ -86,6 +87,15 @@ async function copyStep(step) {
   console.log(`✓ ${step.label} → ${step.target}`);
 }
 
+async function outputStyleStep(step) {
+  await copyStep(step);
+  const settings = mergeOutputStyle(await readSettings(step.settingsTarget), {
+    styleName: step.styleName,
+  });
+  await writeSettings(step.settingsTarget, settings);
+  console.log(`✓ 已在 settings.json 啟用「${step.styleName}」`);
+}
+
 async function hookStep(step) {
   const source = sourcePath(step);
   await mkdir(path.dirname(step.target), { recursive: true });
@@ -123,6 +133,8 @@ try {
 
   if (step.kind === "copy") {
     await copyStep(step);
+  } else if (step.kind === "output-style") {
+    await outputStyleStep(step);
   } else if (step.kind === "hook") {
     await hookStep(step);
   } else if (step.kind === "allowlist") {
