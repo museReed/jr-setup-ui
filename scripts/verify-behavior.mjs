@@ -95,7 +95,9 @@ function judgePrompt(answer) {
 }
 
 function runEngine(engine, prompt, env) {
-  const { cmd, args } = resolveLaunch(engine.cmd, engine.args(), { env });
+  const { cmd, args, spawnOptions } = resolveLaunch(engine.cmd, engine.args(), {
+    env,
+  });
 
   return new Promise((resolve) => {
     let child;
@@ -105,6 +107,7 @@ function runEngine(engine, prompt, env) {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
         env,
+        ...(spawnOptions ?? {}),
       });
     } catch (error) {
       resolve({ ok: false, text: error.message });

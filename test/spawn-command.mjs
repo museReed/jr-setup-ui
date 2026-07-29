@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   findExecutable,
@@ -122,6 +123,39 @@ try {
   });
   assert.equal(posixLaunch.cmd, "claude");
   ok("非 Windows 不做任何解析");
+
+  // 迴歸：resolveSpawn 回傳的 spawnOptions 漏帶，cmd.exe 包裝就會壞掉。實測代價很
+  // 大——env-check 漏帶時，Claude Code 與 Codex 明明裝了卻一律顯示「未安裝」，
+  // 而且看起來像環境檢查自己壞了，跟這支改動一點都不像有關係。
+  //
+  // 這裡掃原始碼：每個叫 resolveSpawn / resolveLaunch 的地方都要把 spawnOptions
+  // 接出來，接了才可能往下傳。
+  const callers = [
+    "src/env-check.js",
+    "src/server.js",
+    "scripts/install-configs.mjs",
+    "scripts/verify-behavior.mjs",
+    "scripts/verify-hook-live.mjs",
+    "scripts/verify-hooks-live.mjs",
+  ];
+
+  for (const file of callers) {
+    const text = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    const destructured = /const \{[^}]*\}\s*=\s*resolve(Spawn|Launch)\(/.test(text);
+
+    assert(
+      text.includes("spawnOptions"),
+      `${file} 沒有接 spawnOptions——cmd.exe 包裝會壞在 Windows 上`,
+    );
+
+    if (destructured) {
+      assert(
+        /const \{[^}]*spawnOptions[^}]*\}\s*=\s*resolve(Spawn|Launch)\(/.test(text),
+        `${file} 解構了 resolve 的結果卻沒把 spawnOptions 接出來`,
+      );
+    }
+  }
+  ok("每個 spawn 呼叫端都有接 resolve 回傳的 spawnOptions");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);
