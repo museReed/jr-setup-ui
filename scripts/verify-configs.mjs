@@ -4,12 +4,11 @@
 //
 // 最關鍵的一項是直接觸發 hook：餵一段串接指令進去，看它回不回 exit 2。
 // 這是真的行為驗證，不需要開 Claude session。
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { runConfigCheck } from "../src/config-check.js";
+import { probeHook, runConfigCheck } from "../src/config-check.js";
 
 const HOME = homedir();
 const HOOK_PATH = path.join(HOME, ".claude", "hooks", "block-chained-bash.js");
@@ -28,27 +27,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function runHook(command) {
-  return new Promise((resolve) => {
-    const child = spawn("node", [HOOK_PATH], {
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stderr = "";
-
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", (error) =>
-      resolve({ exitCode: null, stderr: error.message }),
-    );
-    child.once("close", (exitCode) => resolve({ exitCode, stderr }));
-    child.stdin.end(
-      JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
-    );
-  });
-}
+// 探測本身跟畫面那一列共用同一支，兩邊不會對不上。
+const runHook = (command) => probeHook(HOOK_PATH, command);
 
 let failures = 0;
 
