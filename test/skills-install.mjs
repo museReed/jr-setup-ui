@@ -3,7 +3,13 @@
 // 這一段全部可以在 macOS 上跑完——skill 的坑跟 hook 同一家族（檔案在但內容是舊的、
 // 路徑沒展開所以被權限層擋下），那些都是內容比對抓得到的事，不用等 VM。
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -145,5 +151,24 @@ writeFileSync(
 );
 assert.equal((await checkExternalSkill(mcp)).status, "ok");
 console.log("ok - 第三方 skill 認落點，MCP 認 ~/.claude.json 的註冊");
+
+// --- 第三方指令的 spawn 形狀 ---
+
+// Windows 上 npx / claude 都是 .cmd 包裝檔，沒有同名 .exe：shell:false 的 spawn 找不到
+// 裸指令，丟 ENOENT。畫面上會變成「叫不到 npx，請先裝 Node」，但 Node 明明裝好了
+// （VM 實測）。resolveLaunch 就是為了這件事存在的，這裡確認第三方那段真的走它。
+const installerSource = readFileSync(
+  new URL("../scripts/install-configs.mjs", import.meta.url),
+  "utf8",
+);
+assert(
+  installerSource.includes("resolveLaunch(step.cmd, step.args"),
+  "第三方 skill 的指令要先過 resolveLaunch，否則 Windows 上必 ENOENT",
+);
+assert(
+  !/spawn\(step\.cmd/.test(installerSource),
+  "不要直接 spawn(step.cmd)——那是 Windows 上叫不到 npx 的寫法",
+);
+console.log("ok - 第三方指令走 resolveLaunch，不直接 spawn 裸指令");
 
 rmSync(workdir, { recursive: true, force: true });

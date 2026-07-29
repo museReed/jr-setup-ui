@@ -20,6 +20,8 @@ import {
   upsertBlock,
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
+import { spawnEnv } from "../src/env-path.js";
+import { resolveLaunch } from "../src/spawn-command.js";
 
 const HOME = homedir();
 const MATERIALS = materialsDir();
@@ -214,11 +216,23 @@ async function skillStep(step) {
 
 // 第三方 skill 用它們自己 GitHub 上定義的裝法，我們只負責把指令跑起來、把失敗
 // 翻成學生看得懂的話。這一步要網路。
-function externalSkillStep(step) {
+//
+// ⚠️ 一定要走 resolveLaunch：Windows 上 npx / claude 都是 .cmd 包裝檔，沒有同名
+// .exe，shell:false 的 spawn 找不到裸指令而丟 ENOENT——畫面上會變成「叫不到 npx，
+// 請先裝 Node」，但 Node 明明就裝好了（VM 實測）。env 也要用 spawnEnv 取，
+// 嚮導自己那份 PATH 未必看得到剛裝好的東西。
+async function externalSkillStep(step) {
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch(step.cmd, step.args, { env });
+
   return new Promise((resolve, reject) => {
     console.log(`執行：${step.cmd} ${step.args.join(" ")}`);
     console.log("（第三方 skill 要連網下載，慢一點是正常的）");
-    const child = spawn(step.cmd, step.args, { stdio: "inherit", shell: false });
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: "inherit",
+      shell: false,
+      env,
+    });
     child.once("error", (error) =>
       reject(
         new Error(
