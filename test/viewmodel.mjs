@@ -6,7 +6,7 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_WAIT_TIMEOUT_MS,
-  VERIFIED_BY_ACTION,
+  AUTO_VERIFY_ACTIONS,
   agentNameFor,
   behaviorFallbackState,
   configQuery,
@@ -18,9 +18,11 @@ import {
   installStatusMessage,
   isLoginAction,
   loginWaitStep,
+  rowRunOptions,
   runControlsState,
   runOutcome,
 } from "../public/viewmodel.js";
+import { actions as ACTIONS } from "../src/actions.js";
 import { VERIFICATION } from "../src/config-check.js";
 
 function ok(description) {
@@ -101,7 +103,7 @@ try {
     detail: "已安裝",
     installAction: null,
     mergeAction: null,
-    verifyAction: "verify-hook-live",
+    verifyAction: "verify-behavior",
     eyeCheck: null,
   });
   assert.equal(pending.status, "unverified");
@@ -120,7 +122,7 @@ try {
       detail: "已安裝",
       installAction: null,
       mergeAction: null,
-      verifyAction: "verify-hook-live",
+      verifyAction: "verify-behavior",
       eyeCheck: null,
     },
     true,
@@ -150,27 +152,64 @@ try {
 
   // 兩張表分別住在 src/config-check.js 與 public/viewmodel.js，對不上的話那一列
   // 永遠停在待驗證——沒有錯誤訊息，只是永遠不會變綠。
-  const behaviorActions = new Set(
-    Object.values(VERIFICATION)
-      .map((entry) => entry.behavior)
-      .filter(Boolean),
-  );
-  for (const action of behaviorActions) {
+  for (const [step, entry] of Object.entries(VERIFICATION)) {
+    if (entry.behavior === undefined) continue;
     assert(
-      Array.isArray(VERIFIED_BY_ACTION[action]),
-      `${action} 沒有對應的已驗證列，那一列永遠不會變綠`,
+      AUTO_VERIFY_ACTIONS.has(entry.behavior),
+      `${step} 用 ${entry.behavior} 驗，但它不在會自動標綠的清單裡——那一列永遠不會變綠`,
     );
   }
-  for (const [action, steps] of Object.entries(VERIFIED_BY_ACTION)) {
-    for (const step of steps) {
-      assert.equal(
-        VERIFICATION[step]?.behavior,
-        action,
-        `${step} 說要由 ${action} 驗，但 VERIFICATION 裡對不上`,
+  ok("會自動標綠的驗證動作跟各列宣告的對得上");
+
+  // 開終端驗證分兩種：抓得到副產物的自動判定，抓不到的才給勾選框。給了勾選框
+  // 就一定要寫明要看什麼，否則學生看著視窗不知道該看哪裡，只能亂勾。
+  for (const [step, entry] of Object.entries(VERIFICATION)) {
+    if (entry.terminal === undefined) continue;
+    assert(
+      entry.behavior === undefined,
+      `${step} 同時掛了兩種驗證，畫面會冒出兩顆按鈕`,
+    );
+
+    if (entry.eye !== undefined) {
+      assert(
+        typeof entry.eye === "string" && entry.eye.length > 0,
+        `${step} 給了勾選框，卻沒寫要看什麼`,
       );
     }
   }
-  ok("驗證按鈕與待驗證列兩張表對得上");
+  ok("要學生用眼睛驗的列都寫明了要看什麼");
+
+  // 列上的按鈕少帶一個參數，伺服器就回「options.X 不在允許的值裡」，按鈕等於是死
+  // 的——而且畫面上只看得到一行錯誤，看不出少的是哪個。逐列拿 actions 自己宣告的
+  // schema 對賬：那一列會送出的參數，必須覆蓋它要按的 action 所宣告的每一個。
+  const rowSends = [
+    ...Object.entries(VERIFICATION).map(([step, entry]) => ({
+      step,
+      action: entry.behavior ?? "verify-in-terminal",
+      extra: entry.terminal ?? entry.options ?? null,
+    })),
+    { step: "claude-md", action: "install-config-step", extra: null },
+    { step: "claude-md", action: "merge-config-step", extra: null },
+  ];
+
+  for (const { step, action, extra } of rowSends) {
+    const options = rowRunOptions({
+      step,
+      lang: "zh-TW",
+      tools: "claude",
+      extra,
+    });
+
+    for (const [name, allowed] of Object.entries(
+      ACTIONS[action].options ?? {},
+    )) {
+      assert(
+        allowed.includes(options[name]),
+        `${step} 按 ${action} 時的 options.${name} 是「${options[name]}」，不在允許清單裡`,
+      );
+    }
+  }
+  ok("每一列送出的參數都覆蓋且符合該 action 宣告的 schema");
 
   assert.deepEqual(configSummary([]), {
     done: 0,

@@ -37,13 +37,24 @@ const STATUS_DISPLAY = {
   unverified: { symbol: "◐", label: "待驗證" },
 };
 
-// 一顆驗證按鈕跑完，等於驗過了哪幾列。頁面上方的四顆與列上的「驗證」共用這張表，
-// 兩邊不會對不上。
-export const VERIFIED_BY_ACTION = {
-  "verify-behavior": ["claude-md", "output-style", "codex-config", "codex-agents"],
-  "verify-hook-live": ["hook"],
-  "verify-hooks-live": ["claude-hooks"],
-};
+// 列上的按鈕一律帶齊這三個參數。伺服器只認 action 自己宣告的那幾個、其餘忽略，
+// 所以多帶不會出事，少帶會被擋（實測：列上的「驗證回覆格式」只帶了 step 與 lang，
+// 伺服器回「options.tools 不在允許的值裡」，按鈕等於是死的）。
+export function rowRunOptions({ step, lang, tools, extra = null }) {
+  return { step, lang, tools, ...(extra ?? {}) };
+}
+
+// 只有「跑完就知道結果」的驗證能自動標綠，而且只標「被按的那一列」。
+//
+// 先前是一顆按鈕標一整組（verify-behavior 一次標四列），結果按 CLAUDE.md 那列
+// 的驗證，codex 的兩列跟著變綠、按鈕消失——它們根本沒被測到（VM 實測）。又是
+// 假綠燈。
+//
+// 開終端那種不在這裡：按下去只是開了一個視窗，證明什麼要由學生看完再勾。
+export const AUTO_VERIFY_ACTIONS = new Set([
+  "verify-behavior",
+  "verify-in-terminal",
+]);
 
 export function isLoginAction(action) {
   return typeof action === "string" && action.startsWith("login-");
@@ -146,8 +157,9 @@ export function configRowModel(check, verified = false) {
     buttons.push({
       action: check.verifyAction,
       dataName: "verifyAction",
-      text: "驗證",
+      text: check.verifyKind === "terminal" ? "開終端驗證" : "驗證",
       step: check.id,
+      options: check.verifyOptions ?? undefined,
     });
   }
 

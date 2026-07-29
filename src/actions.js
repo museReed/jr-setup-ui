@@ -25,6 +25,10 @@ const verifyHookLiveScript = moduleFile(
   "../scripts/verify-hook-live.mjs",
   import.meta.url,
 );
+const verifyInTerminalScript = moduleFile(
+  "../scripts/verify-in-terminal.mjs",
+  import.meta.url,
+);
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -160,6 +164,23 @@ Object.assign(actions, {
     cmd: process.execPath,
     args: [verifyHookLiveScript],
     description: "叫真的 Claude 跑一個串接指令，確認 hook 真的被載入並執行。",
+  },
+  // hook 的效果只有在真終端裡看得到，所以這顆不是「跑完印結果」，而是「開一個
+  // 視窗讓學生看」。學生不需要輸入任何東西。
+  "verify-in-terminal": {
+    kind: "fixed",
+    label: "開終端驗證",
+    cmd: process.execPath,
+    options: {
+      case: ["naming", "chained", "context", "title"],
+      agent: ["claude", "codex"],
+    },
+    buildArgs: ({ case: testCase, agent }) => [
+      verifyInTerminalScript,
+      `--case=${testCase}`,
+      `--agent=${agent}`,
+    ],
+    description: "開一個真的終端視窗跑驗證，學生只要看畫面。",
   },
   "verify-hooks-live": {
     kind: "fixed",

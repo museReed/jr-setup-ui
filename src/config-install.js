@@ -16,8 +16,10 @@ export const STEP_IDS = [
   "codex-config",
   "codex-agents",
   "tab-sync",
-  "claude-hooks",
-  "codex-hooks",
+  "claude-namer",
+  "claude-monitor",
+  "codex-namer",
+  "codex-monitor",
 ];
 
 const CLAUDE_STEPS = ["claude-md", "output-style", "hook", "allowlist"];
@@ -35,8 +37,10 @@ export function stepsForTools(tools) {
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
     "tab-sync",
-    ...(selected.includes("claude") ? ["claude-hooks"] : []),
-    ...(selected.includes("codex") ? ["codex-hooks"] : []),
+    // 命名與 context 監控拆開：兩者的檔案、註冊、驗證方式都不一樣，綁在一起的話
+    // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
+    ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
+    ...(selected.includes("codex") ? ["codex-namer", "codex-monitor"] : []),
   ];
 }
 
@@ -161,12 +165,51 @@ function hookCommand(target, platform, args = []) {
   return [command, ...args].join(" ");
 }
 
+// 命名 hook 與 context 監控 hook 各自一列。共用同一個 settings 檔，靠 hookMarkers
+// 分辨誰是誰——兩邊的檔名沒有交集，所以重裝其中一個不會掃掉另一個的註冊。
+const AGENT_HOOK_STEPS = {
+  "claude-namer": {
+    label: "自動命名 hook",
+    agent: "claude",
+    bases: ["set-session-name", "session-auto-namer"],
+    events: [
+      { event: "PostToolUse", base: "session-auto-namer", args: [] },
+      { event: "UserPromptSubmit", base: "session-auto-namer", args: ["prompt"] },
+    ],
+  },
+  "claude-monitor": {
+    label: "Context 監控 hook",
+    agent: "claude",
+    bases: ["context-monitor"],
+    events: [{ event: "PostToolUse", base: "context-monitor", args: [] }],
+    supportFiles: ["skills/model-context-windows-cache.json"],
+  },
+  "codex-namer": {
+    label: "Codex 自動命名 hook",
+    agent: "codex",
+    bases: ["codex-session-namer"],
+    events: [
+      { event: "PostToolUse", base: "codex-session-namer", args: [] },
+      {
+        event: "UserPromptSubmit",
+        base: "codex-session-namer",
+        args: ["prompt"],
+      },
+    ],
+  },
+  "codex-monitor": {
+    label: "Codex Context 監控 hook",
+    agent: "codex",
+    bases: ["codex-context-monitor"],
+    events: [{ event: "PostToolUse", base: "codex-context-monitor", args: [] }],
+  },
+};
+
 function agentHooks(id, home, platform) {
-  const isClaude = id === "claude-hooks";
-  const agentDir = `${home}/.${isClaude ? "claude" : "codex"}`;
-  const bases = isClaude
-    ? ["set-session-name", "session-auto-namer", "context-monitor"]
-    : ["codex-session-namer", "codex-context-monitor"];
+  const spec = AGENT_HOOK_STEPS[id];
+  const isClaude = spec.agent === "claude";
+  const agentDir = `${home}/.${spec.agent}`;
+  const bases = spec.bases;
   const hookFiles = bases.map((base) => {
     const file = hookFileName(base, platform);
     return {
@@ -179,7 +222,7 @@ function agentHooks(id, home, platform) {
   // （原文：Command spawns a nested PowerShell process which cannot be validated），
   // 而「以後不要再問」寫下的規則含 session id，下次必失效。多裝一支 bash 薄殼把
   // powershell 藏進去，模型看到的就只是「執行一支腳本」，跟 macOS 同形狀。
-  if (isClaude && platform === "win32") {
+  if (isClaude && platform === "win32" && bases.includes("set-session-name")) {
     hookFiles.push({
       base: "set-session-name-shim",
       source: "skills/hooks/set-session-name-shim.sh",
@@ -191,42 +234,28 @@ function agentHooks(id, home, platform) {
   // 白名單放行的是模型真正會跑的那支：Windows 是薄殼，其他平台就是腳本本身。
   const namingTarget = (byBase["set-session-name-shim"] ?? byBase["set-session-name"])
     ?.target;
-  const namer = isClaude ? "session-auto-namer" : "codex-session-namer";
-  const monitor = isClaude ? "context-monitor" : "codex-context-monitor";
-  const registrations = [
-    {
-      event: "PostToolUse",
-      command: hookCommand(byBase[namer].target, platform),
-    },
-    {
-      event: "UserPromptSubmit",
-      command: hookCommand(byBase[namer].target, platform, ["prompt"]),
-    },
-    {
-      event: "PostToolUse",
-      command: hookCommand(byBase[monitor].target, platform),
-    },
-  ];
+  const registrations = spec.events.map((entry) => ({
+    event: entry.event,
+    command: hookCommand(byBase[entry.base].target, platform, entry.args),
+  }));
 
   return {
     id,
-    label: isClaude ? "Claude Code hooks" : "Codex hooks",
+    label: spec.label,
     kind: "agent-hooks",
     hookFiles,
     registrations,
     settingsTarget: isClaude
       ? `${agentDir}/settings.json`
       : `${agentDir}/hooks.json`,
-    // 只有 Claude 這邊吃白名單；Codex 沒有對應的權限層。
-    namingAllowRule: isClaude ? namingAllowRule(namingTarget) : undefined,
-    supportFiles: isClaude
-      ? [
-          {
-            source: "skills/model-context-windows-cache.json",
-            target: `${agentDir}/model-context-windows-cache.json`,
-          },
-        ]
-      : [],
+    // 只有 Claude 的命名指令要進白名單；Codex 沒有對應的權限層，監控 hook 也不
+    // 需要模型去執行任何東西。
+    namingAllowRule: namingTarget === undefined ? undefined : namingAllowRule(namingTarget),
+    // 附屬檔案跟著用得到它的那一列走：模型 context 上限的快取只有監控 hook 在讀。
+    supportFiles: (spec.supportFiles ?? []).map((source) => ({
+      source,
+      target: `${agentDir}/${source.split("/").pop()}`,
+    })),
   };
 }
 
@@ -324,8 +353,10 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       };
     }
 
-    case "claude-hooks":
-    case "codex-hooks":
+    case "claude-namer":
+    case "claude-monitor":
+    case "codex-namer":
+    case "codex-monitor":
       return agentHooks(id, home, platform);
 
     default:

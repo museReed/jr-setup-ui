@@ -7,6 +7,7 @@ import {
   checkAgentHooks,
   checkTabSync,
   probeHook,
+  resolveBash,
 } from "../src/config-check.js";
 import {
   describeStep,
@@ -68,6 +69,18 @@ process.stdin.on("end", () => {
   assert.notEqual(missing.exitCode, 2);
   ok("hook 檔案不存在時不會爆掉，也不會誤判成有擋");
 
+  // Windows 上嚮導的 PATH 未必看得到 Git Bash，但機器上幾乎一定有它——Claude Code
+  // 本來就要。找得到就用絕對路徑，別把一句學生修不了的 ENOENT 丟到畫面上。
+  assert.equal(resolveBash(() => true, "darwin"), "bash");
+  assert.equal(
+    resolveBash((p) => p.endsWith("/Git/bin/bash.exe"), "win32").endsWith(
+      "/Git/bin/bash.exe",
+    ),
+    true,
+  );
+  assert.equal(resolveBash(() => false, "win32"), "bash");
+  ok("Windows 上會去常見位置找 Git Bash，找不到才退回 PATH");
+
   const tabStep = describeStep("tab-sync", {
     lang: "zh-TW",
     home: dir,
@@ -96,7 +109,7 @@ process.stdin.on("end", () => {
   assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");
   ok("tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
 
-  const agentStep = describeStep("claude-hooks", {
+  const agentStep = describeStep("claude-namer", {
     lang: "zh-TW",
     home: dir,
     platform: "linux",
@@ -105,8 +118,8 @@ process.stdin.on("end", () => {
     installFrom(file.source, file.target);
   }
   assert.deepEqual(await checkAgentHooks(agentStep, MATERIALS), {
-    id: "claude-hooks",
-    label: "Claude Code hooks",
+    id: "claude-namer",
+    label: "自動命名 hook",
     status: "warn",
     detail: "檔案在，但沒註冊——不會被觸發",
   });

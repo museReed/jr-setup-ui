@@ -6,8 +6,8 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
-  VERIFIED_BY_ACTION,
   LOGIN_POLL_INTERVAL_MS,
+  AUTO_VERIFY_ACTIONS,
   agentNameFor,
   behaviorFallbackState,
   configSummary,
@@ -16,6 +16,7 @@ import {
   installStatusMessage,
   isLoginAction,
   loginWaitStep,
+  rowRunOptions,
   runControlsState,
   runOutcome,
 } from "./viewmodel.js";
@@ -33,6 +34,8 @@ const state = {
   // 這一頁開著的期間，哪幾列已經驗過行為了。重新整理就歸零——那是刻意的：
   // 驗證證明的是「那個當下生效」，換一次環境就該重驗。
   verifiedSteps: new Set(),
+  // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
+  lastChecks: [],
 };
 
 function renderControls() {
@@ -152,10 +155,16 @@ async function checkConfigs() {
 
   try {
     const result = await api.fetchConfigs({ tools, lang });
+    state.lastChecks = result.checks;
     view.renderConfigs(
       result.checks,
-      (action, button, step) =>
-        run(action, undefined, button, { step, lang: result.lang }),
+      (action, button, step, extra) =>
+        run(
+          action,
+          undefined,
+          button,
+          rowRunOptions({ step, lang: result.lang, tools, extra }),
+        ),
       {
         verifiedSteps: state.verifiedSteps,
         onEyeToggle: (step, checked) => {
@@ -227,7 +236,7 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, configAction, result) {
+function handleDone(action, envButton, configAction, result, verifiedStep) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -246,14 +255,21 @@ function handleDone(action, envButton, configAction, result) {
     return;
   }
 
-  // 驗證過了才記——失敗的話上面就 return 了，這裡不會留下假的已驗證。
-  const verifiedByThisRun = VERIFIED_BY_ACTION[action];
+  // 驗證過了才記，而且只記被按的那一列——失敗的話上面就 return 了，這裡不會留下
+  // 假的已驗證。
+  // 有勾選框的列不自動標綠：那代表程式抓不到證據，只能由學生看完說了算。
+  // 開終端驗證跑完 exit 0 不一定等於「驗過了」——codex 命名那格就是開完視窗
+  // 直接結束，沒有可輪詢的落點。
+  const verifiedCheck = state.lastChecks.find(
+    (check) => check.id === verifiedStep,
+  );
 
-  if (verifiedByThisRun !== undefined) {
-    for (const step of verifiedByThisRun) {
-      state.verifiedSteps.add(step);
-    }
-
+  if (
+    AUTO_VERIFY_ACTIONS.has(action) &&
+    verifiedStep !== undefined &&
+    verifiedCheck?.eyeCheck == null
+  ) {
+    state.verifiedSteps.add(verifiedStep);
     checkConfigs();
     return;
   }
@@ -349,7 +365,7 @@ async function run(action, promptText, button = null, options) {
         view.renderBehaviorFallback(behaviorFallbackState(result));
       }
 
-      handleDone(action, envButton, configAction, result);
+      handleDone(action, envButton, configAction, result, options?.step);
     });
 
     events.onerror = () => {
@@ -435,27 +451,5 @@ view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
 view.elements.configTools.addEventListener("change", checkConfigs);
 view.elements.configLang.addEventListener("change", checkConfigs);
-view.elements.verifyConfigs.addEventListener("click", () => {
-  run("verify-configs", undefined, view.elements.verifyConfigs, {
-    lang: view.elements.configLang.value,
-    tools: view.elements.configTools.value,
-  });
-});
-view.elements.verifyBehavior.addEventListener("click", () => {
-  view.renderBehaviorFallback({ visible: false });
-  run("verify-behavior", undefined, view.elements.verifyBehavior, {
-    tools: view.elements.configTools.value,
-  });
-});
-// 這顆不帶 options（驗的是「Claude Code 有沒有真的載入 hook」，跟語言與工具無關），
-// 也不把按鈕傳進去——傳了會被當成環境檢查那區的動作，跑完誤觸發環境重查與
-// 「安裝完成」訊息。按鈕的鎖定由 configControlsDisabled 統一處理。
-view.elements.verifyHookLive.addEventListener("click", () => {
-  run("verify-hook-live", undefined, null);
-});
-// 同上：不帶 options、不傳按鈕。
-view.elements.verifyNaming.addEventListener("click", () => {
-  run("verify-hooks-live", undefined, null);
-});
 checkEnvironment();
 checkConfigs();

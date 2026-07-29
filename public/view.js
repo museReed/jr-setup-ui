@@ -22,10 +22,6 @@ const elements = {
   configTools: document.querySelector("#config-tools"),
   configLang: document.querySelector("#config-lang"),
   recheckConfigs: document.querySelector("#recheck-configs"),
-  verifyConfigs: document.querySelector("#verify-configs"),
-  verifyBehavior: document.querySelector("#verify-behavior"),
-  verifyHookLive: document.querySelector("#verify-hook-live"),
-  verifyNaming: document.querySelector("#verify-naming"),
   configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
@@ -179,7 +175,7 @@ export function renderConfigs(
       element.dataset.step = button.step;
       element.textContent = button.text;
       element.addEventListener("click", () =>
-        onActionClick(button.action, element, button.step),
+        onActionClick(button.action, element, button.step, button.options),
       );
       row.append(element);
     }
@@ -279,10 +275,6 @@ export function renderRunControls(state) {
   elements.configTools.disabled = state.configControlsDisabled;
   elements.configLang.disabled = state.configControlsDisabled;
   elements.recheckConfigs.disabled = state.configControlsDisabled;
-  elements.verifyConfigs.disabled = state.configControlsDisabled;
-  elements.verifyBehavior.disabled = state.configControlsDisabled;
-  elements.verifyHookLive.disabled = state.configControlsDisabled;
-  elements.verifyNaming.disabled = state.configControlsDisabled;
 
   for (const button of configActionButtons()) {
     button.disabled = state.configControlsDisabled;

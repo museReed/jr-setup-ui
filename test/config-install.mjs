@@ -27,13 +27,15 @@ try {
     "hook",
     "allowlist",
     "tab-sync",
-    "claude-hooks",
+    "claude-namer",
+    "claude-monitor",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
     "codex-config",
     "codex-agents",
     "tab-sync",
-    "codex-hooks",
+    "codex-namer",
+    "codex-monitor",
   ]);
   assert.deepEqual(stepsForTools(["claude", "codex"]), [
     "claude-md",
@@ -43,8 +45,10 @@ try {
     "codex-config",
     "codex-agents",
     "tab-sync",
-    "claude-hooks",
-    "codex-hooks",
+    "claude-namer",
+    "claude-monitor",
+    "codex-namer",
+    "codex-monitor",
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
@@ -95,22 +99,45 @@ try {
   assert.match(windowsTabSync.rcBlock, /-NoNewWindow/);
   ok("Windows watcher 用 -NoNewWindow 起，跟終端共用同一個 console");
 
-  const claudeHooks = describeStep("claude-hooks", {
+  const claudeHooks = describeStep("claude-namer", { ...AT, platform: "linux" });
+  const claudeMonitor = describeStep("claude-monitor", {
     ...AT,
     platform: "linux",
   });
-  const codexHooks = describeStep("codex-hooks", {
+  const codexHooks = describeStep("codex-namer", { ...AT, platform: "win32" });
+  const codexMonitor = describeStep("codex-monitor", {
     ...AT,
     platform: "win32",
   });
-  assert.equal(claudeHooks.hookFiles.length, 3);
-  assert.equal(claudeHooks.registrations.length, 3);
+
+  // 命名 hook：兩支檔案（寫入腳本 + namer），兩筆註冊（工具跑完 + 送出訊息）。
+  assert.equal(claudeHooks.hookFiles.length, 2);
+  assert.equal(claudeHooks.registrations.length, 2);
   assert.equal(claudeHooks.settingsTarget, `${HOME}/.claude/settings.json`);
-  assert.equal(codexHooks.hookFiles.length, 2);
-  assert.equal(codexHooks.registrations.length, 3);
+  assert(claudeHooks.namingAllowRule !== undefined);
+
+  // 監控 hook：一支檔案、一筆註冊，而且不需要白名單——它不叫模型執行任何東西。
+  assert.equal(claudeMonitor.hookFiles.length, 1);
+  assert.equal(claudeMonitor.registrations.length, 1);
+  assert.equal(claudeMonitor.namingAllowRule, undefined);
+  assert.equal(claudeMonitor.supportFiles.length, 1);
+
   assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
+  assert.equal(codexHooks.namingAllowRule, undefined);
   assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
-  ok("Claude 與 Codex hooks 各自帶齊檔案、三筆註冊與設定目標");
+  assert.equal(codexMonitor.registrations.length, 1);
+  ok("命名與監控各自帶自己的檔案與註冊，監控不需要白名單");
+
+  // 兩列共用同一個 settings 檔，靠檔名分辨。重裝其中一列不能掃掉另一列的註冊——
+  // 綁在一起時這件事不存在，拆開之後它是最容易靜默壞掉的地方。
+  const markers = new Set(claudeHooks.hookFiles.map((file) => file.base));
+  for (const file of claudeMonitor.hookFiles) {
+    assert(
+      !markers.has(file.base),
+      `${file.base} 同時屬於兩列，重裝會互相掃掉註冊`,
+    );
+  }
+  ok("命名與監控的檔名沒有交集，重裝不會互相掃掉");
 
   assert.throws(() => describeStep("claude-md", { ...AT, lang: "ja" }));
   assert.throws(() => describeStep("不存在的步驟", AT));
@@ -195,7 +222,8 @@ try {
     },
   );
   assert.equal(hasAgentHookRegistrations(agentRegistered, claudeHooks.registrations), true);
-  assert.equal(agentRegistered.hooks.PostToolUse.length, 3);
+  // 別人的那筆 + 命名 hook 的一筆
+  assert.equal(agentRegistered.hooks.PostToolUse.length, 2);
   assert.equal(agentRegistered.hooks.Stop.length, 1);
   assert.equal(agentRegistered.model, "opus");
 
@@ -203,9 +231,24 @@ try {
     registrations: claudeHooks.registrations,
     hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
   });
-  assert.equal(agentRerun.hooks.PostToolUse.length, 3);
+  assert.equal(agentRerun.hooks.PostToolUse.length, 2);
   assert.equal(agentRerun.hooks.UserPromptSubmit.length, 1);
-  ok("三筆 agent hook 註冊可重跑，且不動使用者原本的 hook");
+
+  // 接著裝監控那列：它不能把命名那筆掃掉，兩者要並存。
+  const bothInstalled = mergeAgentHookRegistrations(agentRerun, {
+    registrations: claudeMonitor.registrations,
+    hookMarkers: claudeMonitor.hookFiles.map((file) => file.base),
+  });
+  assert.equal(
+    hasAgentHookRegistrations(bothInstalled, claudeHooks.registrations),
+    true,
+  );
+  assert.equal(
+    hasAgentHookRegistrations(bothInstalled, claudeMonitor.registrations),
+    true,
+  );
+  assert.equal(bothInstalled.hooks.PostToolUse.length, 3);
+  ok("命名與監控分兩次裝可重跑，彼此不覆蓋，也不動使用者原本的 hook");
 
   const allow = mergeAllowRules(
     { permissions: { allow: ["Bash(ls)"], deny: ["Bash(rm)"] } },

@@ -15,6 +15,7 @@ import {
   hasMarkedBlock,
   stepsForTools,
 } from "./config-install.js";
+import { spawnEnv } from "./env-path.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -113,18 +114,26 @@ async function checkCopyStep(materials, step) {
 // behavior = 程式跑得出結果的行為驗證；eye = 只有真終端看得到、得由學生回報。
 // 兩者都沒有的列（例如白名單）結構對了就是真的對了，直接綠燈。
 export const VERIFICATION = {
-  "claude-md": { behavior: "verify-behavior" },
-  "output-style": { behavior: "verify-behavior" },
-  "codex-config": { behavior: "verify-behavior" },
-  "codex-agents": { behavior: "verify-behavior" },
-  hook: { behavior: "verify-hook-live" },
-  "claude-hooks": { behavior: "verify-hooks-live" },
-  "codex-hooks": {
-    eye: "開一個新的終端分頁跑 codex，問一句話，看分頁標題有沒有變成命名（第一次會問你要不要信任 hook，要接受）",
-  },
+  // tools 綁死在列上：按 codex 那列的驗證卻連 claude 一起跑，慢一倍不說，claude
+  // 失敗還會把 codex 那列判成紅的。
+  "claude-md": { behavior: "verify-behavior", options: { tools: "claude" } },
+  "output-style": { behavior: "verify-behavior", options: { tools: "claude" } },
+  "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
+  "codex-agents": { behavior: "verify-behavior", options: { tools: "codex" } },
+  // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
+  hook: { terminal: { case: "chained", agent: "claude" } },
+  // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
   "tab-sync": {
-    eye: "關掉分頁重開一個，跑 claude 問一句話，看分頁標題有沒有變成「{emoji} 中文敘述」",
+    terminal: { case: "title", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
   },
+  "claude-namer": { terminal: { case: "naming", agent: "claude" } },
+  "claude-monitor": { terminal: { case: "context", agent: "claude" } },
+  "codex-namer": {
+    terminal: { case: "naming", agent: "codex" },
+    eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
+  },
+  "codex-monitor": { terminal: { case: "context", agent: "codex" } },
 };
 
 // 跑「settings.json 裡真的那條指令」，而不是我們自己拼一次路徑去跑腳本。
@@ -132,15 +141,50 @@ export const VERIFICATION = {
 // bash 把 C:\Users\Reed 的 \U \R 當跳脫吃掉 → node 找不到檔案 → exit 1 →
 // PreToolUse 把 exit 1 當「hook 出錯，放行」，串接指令一路暢通。只驗腳本的話
 // 這一格永遠是綠的。
-export function probeRegisteredHook(registeredCommand, command) {
+// Windows 上嚮導自己的 PATH 未必看得到 Git Bash，但 Claude Code 本來就要它，
+// 機器上幾乎一定有。與其把「叫不到 bash」丟給學生看（他做什麼都修不了，按安裝
+// 也不會變好），不如自己去常見的安裝位置找。
+export function resolveBash(exists = existsSync, platform = process.platform) {
+  if (platform !== "win32") {
+    return "bash";
+  }
+
+  // Claude Code 自己也要找 Git Bash，它認這個環境變數——學生設過的話，那一定是
+  // 對的位置，優先用。
+  const configured = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+
+  if (configured && exists(configured)) {
+    return configured;
+  }
+
+  const roots = [
+    process.env.ProgramFiles,
+    process.env.ProgramW6432,
+    process.env["ProgramFiles(x86)"],
+    "C:/Program Files",
+    "C:/Program Files (x86)",
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}/Programs`,
+    process.env.USERPROFILE && `${process.env.USERPROFILE}/scoop/apps/git/current`,
+  ].filter(Boolean);
+  // Git for Windows 兩處都有 bash：bin 是給人用的，usr/bin 是 MSYS 本體。
+  const suffixes = ["/Git/bin/bash.exe", "/Git/usr/bin/bash.exe"];
+  const candidates = roots.flatMap((root) =>
+    suffixes.map((suffix) => `${root}${suffix}`),
+  );
+
+  return candidates.find((candidate) => exists(candidate)) ?? "bash";
+}
+
+export function probeRegisteredHook(registeredCommand, command, env) {
   return new Promise((resolve) => {
     let child;
 
     try {
       // Claude Code 是把 hook 指令交給 bash 跑的，這裡照做才會踩到同一個坑。
-      child = spawn("bash", ["-c", registeredCommand], {
+      child = spawn(resolveBash(), ["-c", registeredCommand], {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
+        ...(env === undefined ? {} : { env }),
       });
     } catch (error) {
       resolve({ exitCode: null, stderr: error.message });
@@ -241,7 +285,28 @@ async function checkHook(step, materials) {
     const probe = await probeRegisteredHook(
       registration.command,
       "echo a && echo b",
+      await spawnEnv(),
     );
+
+    // 真的一台 bash 都找不到時，退回直接跑腳本本身。那比不上「跑註冊的那條指令」
+    // ——路徑寫壞就抓不到了——但總比把一句學生修不了的錯誤丟在畫面上好。
+    if (probe.exitCode === null) {
+      const fallback = await probeHook(step.target, "echo a && echo b");
+
+      return fallback.exitCode === 2
+        ? {
+            id: step.id,
+            label: step.label,
+            status: "ok",
+            detail: "已註冊，實測會擋（這台機器沒有 bash，改驗腳本本身）",
+          }
+        : {
+            id: step.id,
+            label: step.label,
+            status: "warn",
+            detail: `已註冊，但實測沒擋下來（exit ${fallback.exitCode}）`,
+          };
+    }
 
     if (probe.exitCode !== 2) {
       return {
@@ -446,7 +511,19 @@ export async function runConfigCheck({ tools, lang }) {
       ...check,
       installAction: check.status === "ok" ? null : "install-config-step",
       mergeAction: check.needsMerge === true ? "merge-config-step" : null,
-      verifyAction: VERIFICATION[check.id]?.behavior ?? null,
+      // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端
+      // 視窗讓學生看，程式判定不了，所以一定配一個 eye 說明。
+      verifyAction:
+        VERIFICATION[check.id]?.behavior ??
+        (VERIFICATION[check.id]?.terminal === undefined
+          ? null
+          : "verify-in-terminal"),
+      verifyKind:
+        VERIFICATION[check.id]?.terminal === undefined ? "page" : "terminal",
+      verifyOptions:
+        VERIFICATION[check.id]?.terminal ??
+        VERIFICATION[check.id]?.options ??
+        null,
       eyeCheck: VERIFICATION[check.id]?.eye ?? null,
     })),
   };
