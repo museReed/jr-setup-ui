@@ -1,19 +1,22 @@
 import { LANGUAGES, STEP_IDS } from "./config-install.js";
 import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
 import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
+import { moduleFile } from "./paths.js";
 
-const installConfigsScript = new URL(
+// moduleFile 而不是 new URL(...).pathname：後者在 Windows 會多一條前導斜線，
+// 拿去當指令參數會變成 C:\C:\... 找不到檔案（見 paths.js 的說明）。
+const installConfigsScript = moduleFile(
   "../scripts/install-configs.mjs",
   import.meta.url,
-).pathname;
-const verifyConfigsScript = new URL(
+);
+const verifyConfigsScript = moduleFile(
   "../scripts/verify-configs.mjs",
   import.meta.url,
-).pathname;
-const verifyBehaviorScript = new URL(
+);
+const verifyBehaviorScript = moduleFile(
   "../scripts/verify-behavior.mjs",
   import.meta.url,
-).pathname;
+);
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。

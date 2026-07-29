@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+
+import { actions } from "../src/actions.js";
+import { materialsDir, moduleFile } from "../src/paths.js";
+
+function ok(description) {
+  console.log(`ok - ${description}`);
+}
+
+// 迴歸：原本用 new URL(...).pathname 取檔案路徑，Windows 上會回傳
+// "/C:/Users/..."（前面多一條斜線），當成指令參數就被接成 "C:\C:\Users\..."。
+// macOS 上 pathname 剛好是對的，所以只有 Windows 會炸——這個形狀檢查兩邊都成立。
+const LOOKS_LIKE_BROKEN_WINDOWS_PATH = /^\/[A-Za-z]:/;
+
+try {
+  const materials = materialsDir();
+  assert(path.isAbsolute(materials), "materialsDir 必須是絕對路徑");
+  assert(
+    !LOOKS_LIKE_BROKEN_WINDOWS_PATH.test(materials),
+    `materialsDir 帶了前導斜線：${materials}`,
+  );
+  assert(existsSync(materials), "materialsDir 指到的目錄要真的存在");
+  ok("素材目錄是可用的絕對路徑");
+
+  assert(existsSync(path.join(materials, "claude-code", "hooks")), "素材不完整");
+  ok("素材目錄裡有預期的內容");
+
+  // action 的 buildArgs 產出的第一個參數是腳本路徑，那是實際被 spawn 的東西。
+  const scripted = Object.entries(actions).filter(
+    ([, action]) => typeof action.buildArgs === "function",
+  );
+  assert(scripted.length >= 3, "帶 buildArgs 的 action 應該有三個以上");
+
+  for (const [name, action] of scripted) {
+    const [scriptPath] = action.buildArgs({
+      step: "hook",
+      lang: "zh-TW",
+      tools: "claude",
+    });
+    assert(path.isAbsolute(scriptPath), `${name} 的腳本路徑不是絕對路徑`);
+    assert(
+      !LOOKS_LIKE_BROKEN_WINDOWS_PATH.test(scriptPath),
+      `${name} 的腳本路徑帶了前導斜線：${scriptPath}`,
+    );
+    assert(existsSync(scriptPath), `${name} 指到的腳本不存在：${scriptPath}`);
+  }
+
+  ok("每個帶參數的 action 都指到真實存在的腳本");
+
+  const file = moduleFile("../package.json", import.meta.url);
+  assert(existsSync(file), "moduleFile 解出來的路徑要能讀到");
+  assert(!LOOKS_LIKE_BROKEN_WINDOWS_PATH.test(file));
+  ok("moduleFile 解出來的路徑可以直接用");
+
+  // 上面那些形狀檢查只有在 Windows 上跑才抓得到，macOS 新舊寫法都會過。
+  // 所以再擋一次源頭：整個 src/ 與 scripts/ 都不准出現 .pathname。
+  const root = moduleFile("..", import.meta.url);
+  const offenders = [];
+
+  for (const dir of ["src", "scripts"]) {
+    for (const entry of readdirSync(path.join(root, dir))) {
+      if (!entry.endsWith(".js") && !entry.endsWith(".mjs")) {
+        continue;
+      }
+
+      const source = readFileSync(path.join(root, dir, entry), "utf8");
+
+      if (/import\.meta\.url[\s\S]{0,40}?\)\s*\.pathname/.test(source)) {
+        offenders.push(`${dir}/${entry}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `這些檔案又用了 .pathname 取路徑（Windows 會炸）：${offenders.join(", ")}`,
+  );
+  ok("沒有任何檔案用 .pathname 取模組路徑");
+} catch (error) {
+  console.error(`not ok - ${error.stack ?? error.message}`);
+  process.exit(1);
+}
