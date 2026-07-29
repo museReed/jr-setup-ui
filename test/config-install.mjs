@@ -85,6 +85,16 @@ try {
   assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
   ok("tab sync 會描述 watcher、rc 檔與跳過函式的真正指令");
 
+  // watcher 用 [Console]::Title 改標題，那個 API 只作用在自己所在的 console。
+  // -WindowStyle Hidden 會開一個新的 console，watcher 就改到自己的標題、碰不到
+  // 學生的分頁——全綠但標題不動（VM 實測）。共用 console 的是 -NoNewWindow。
+  assert(
+    !windowsTabSync.rcBlock.includes("-WindowStyle Hidden"),
+    "watcher 不能用 -WindowStyle Hidden 起，那會開新的 console",
+  );
+  assert.match(windowsTabSync.rcBlock, /-NoNewWindow/);
+  ok("Windows watcher 用 -NoNewWindow 起，跟終端共用同一個 console");
+
   const claudeHooks = describeStep("claude-hooks", {
     ...AT,
     platform: "linux",

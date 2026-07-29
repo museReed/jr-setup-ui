@@ -116,6 +116,10 @@ function posixTabSyncFunction(command, watcherTarget) {
 }`;
 }
 
+// watcher 改標題用的是 [Console]::Title，那個 API 作用在「自己所在的 console」。
+// -WindowStyle Hidden 會開一個新的 console，watcher 於是改到自己的標題、碰不到
+// 學生的分頁——安裝看起來全綠、名字也寫進檔案了，就是標題不動（VM 實測 A 無效
+// B 有效）。-NoNewWindow 共用同一個 console，而且一樣不會冒出黑框。
 function powershellTabSyncFunction(command, watcherTarget) {
   return `function ${command} {
   param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
@@ -129,7 +133,7 @@ function powershellTabSyncFunction(command, watcherTarget) {
   [System.IO.File]::WriteAllText($syncFile, '(等待命名)', [System.Text.Encoding]::UTF8)
   $previousSyncFile = $env:AI_TAB_SYNC_FILE
   $env:AI_TAB_SYNC_FILE = $syncFile
-  $watcher = Start-Process powershell.exe -ArgumentList "-NoProfile -File \`"${watcherTarget}\`" \`"$syncFile\`" $PID" -WindowStyle Hidden -PassThru
+  $watcher = Start-Process powershell.exe -ArgumentList "-NoProfile -File \`"${watcherTarget}\`" \`"$syncFile\`" $PID" -NoNewWindow -PassThru
 
   try {
     & $realCommand.Source @InvocationArgs
