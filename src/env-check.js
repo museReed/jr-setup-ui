@@ -1,4 +1,9 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { actions } from "./actions.js";
 import {
@@ -36,6 +41,76 @@ if (process.platform === "win32") {
     id: "execution-policy",
     label: "PowerShell 執行原則",
   });
+  CHECKS.push(
+    {
+      id: "windows-terminal",
+      label: "終端機是 Windows Terminal",
+    },
+    { id: "powershell-version", label: "PowerShell 版本" },
+    { id: "powershell-encoding", label: "PowerShell 中文編碼" },
+  );
+}
+
+if (process.platform === "darwin") {
+  CHECKS.push({ id: "ghostty", label: "Ghostty 終端機" });
+}
+
+export function ghosttyStatus(paths, exists) {
+  const installed = paths.some((path) => exists(path));
+  return {
+    status: installed ? "ok" : "missing",
+    detail: installed ? "已安裝" : "未安裝",
+  };
+}
+
+// 工作坊硬性要求跑在 Windows Terminal 上——沒有分頁就沒有標題可以命名，
+// 而且舊主控台的中文常變方框。所以沒用它就是紅的，不是黃的提醒。
+//
+// 「沒安裝」與「裝了但沒用它開」要分開：前者給安裝按鈕，後者叫人換視窗重開。
+// 兩者混在一起的話，已經有 Windows Terminal 的人會看到一顆沒有意義的安裝鍵。
+export function windowsTerminalStatus(env, installed) {
+  if (env.WT_SESSION) {
+    return { status: "ok", detail: "是" };
+  }
+
+  if (installed) {
+    return {
+      status: "missing",
+      detail: "請改用 Windows Terminal 開一個 PowerShell 分頁，再重新啟動嚮導",
+      installable: false,
+    };
+  }
+
+  return {
+    status: "missing",
+    detail: "尚未安裝 Windows Terminal",
+    installable: true,
+  };
+}
+
+export function parsePowerShellVersion(stdout) {
+  const version = typeof stdout === "string" ? stdout.trim() : "";
+  const match = version.match(/^(\d+)\.(\d+)(?:\.\d+)*$/);
+
+  if (match === null) {
+    return { version: null, supported: false };
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return {
+    version,
+    supported: (major === 5 && minor >= 1) || major >= 7,
+  };
+}
+
+export function encodingProbeSource(text, outputPath = "output.txt") {
+  const escapedPath = outputPath.replaceAll("'", "''");
+  const escapedText = text
+    .replaceAll("`", "``")
+    .replaceAll("$", "`$")
+    .replaceAll('"', '`"');
+  return `\uFEFF$out = '${escapedPath}'\n[System.IO.File]::WriteAllText($out, "${escapedText}", (New-Object System.Text.UTF8Encoding $false))\n`;
 }
 
 export function parseClaudeAuth(stdout) {
@@ -171,8 +246,9 @@ async function spawnProbe(rawCmd, rawArgs) {
 }
 
 function withActions(check) {
+  // installable 為 false 的紅燈是「東西在、但用錯方式」——給安裝按鈕只會誤導。
   const installer =
-    check.status === "missing"
+    check.status === "missing" && check.installable !== false
       ? resolveInstaller(check.id, process.platform)
       : null;
   const fixActions = {
@@ -221,6 +297,120 @@ async function checkExecutionPolicy() {
     };
   } catch {
     return { id, label, status: "warn", detail: "檢查失敗" };
+  }
+}
+
+function checkGhostty() {
+  const id = "ghostty";
+  const label = "Ghostty 終端機";
+  const status = ghosttyStatus(
+    [
+      "/Applications/Ghostty.app",
+      join(homedir(), "Applications", "Ghostty.app"),
+    ],
+    existsSync,
+  );
+  return { id, label, ...status };
+}
+
+async function checkWindowsTerminal() {
+  const id = "windows-terminal";
+  const label = "終端機是 Windows Terminal";
+
+  // 已經跑在裡面就不用查有沒有裝，省一次 spawn。
+  if (process.env.WT_SESSION) {
+    return { id, label, ...windowsTerminalStatus(process.env, true) };
+  }
+
+  // 問 PowerShell 本人，不去猜安裝路徑：app execution alias 的位置與可見性
+  // 會因為安裝方式（Store / winget / 全機安裝）而不同，實測過檔案判定會漏。
+  // 也不直接跑 wt.exe——那會真的開一個視窗出來。
+  const result = await runProbe("powershell.exe", [
+    "-NoProfile",
+    "-Command",
+    "if (Get-Command wt -ErrorAction SilentlyContinue) { 'installed' } else { 'missing' }",
+  ]);
+  const installed =
+    result.type === "close" &&
+    result.exitCode === 0 &&
+    (result.stdout ?? "").includes("installed");
+
+  return { id, label, ...windowsTerminalStatus(process.env, installed) };
+}
+
+async function checkPowerShellVersion() {
+  const id = "powershell-version";
+  const label = "PowerShell 版本";
+
+  try {
+    const result = await runProbe("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      "$PSVersionTable.PSVersion.ToString()",
+    ]);
+
+    if (result.type === "timeout") {
+      return timedOut(id, label);
+    }
+
+    const parsed = parsePowerShellVersion(
+      result.type === "close" && result.exitCode === 0 ? result.stdout : "",
+    );
+    return {
+      id,
+      label,
+      status: parsed.supported ? "ok" : "warn",
+      detail: parsed.supported
+        ? parsed.version
+        : `需要 PowerShell 5.1 或 7 以上（目前 ${parsed.version ?? "無法辨識"}）`,
+    };
+  } catch {
+    return {
+      id,
+      label,
+      status: "warn",
+      detail: "需要 PowerShell 5.1 或 7 以上（目前 無法辨識）",
+    };
+  }
+}
+
+async function checkPowerShellEncoding() {
+  const id = "powershell-encoding";
+  const label = "PowerShell 中文編碼";
+  const expected = "中文編碼測試";
+  const token = randomUUID();
+  const sourcePath = join(tmpdir(), `jr-setup-${token}.ps1`);
+  const outputPath = join(tmpdir(), `jr-setup-${token}.txt`);
+
+  try {
+    await writeFile(sourcePath, encodingProbeSource(expected, outputPath), "utf8");
+    const result = await runProbe("powershell.exe", [
+      "-NoProfile",
+      "-File",
+      sourcePath,
+    ]);
+
+    if (result.type !== "close" || result.exitCode !== 0) {
+      return { id, label, status: "warn", detail: "無法確認" };
+    }
+
+    const actual = await readFile(outputPath, "utf8");
+    return {
+      id,
+      label,
+      status: actual === expected ? "ok" : "warn",
+      detail:
+        actual === expected
+          ? "讀得到中文"
+          : "中文會變亂碼——之後裝的腳本會受影響",
+    };
+  } catch {
+    return { id, label, status: "warn", detail: "無法確認" };
+  } finally {
+    await Promise.all([
+      unlink(sourcePath).catch(() => {}),
+      unlink(outputPath).catch(() => {}),
+    ]);
   }
 }
 
@@ -395,6 +585,15 @@ export async function runEnvCheck() {
 
     if (process.platform === "win32") {
       checksToRun.unshift(checkExecutionPolicy());
+      checksToRun.push(
+        checkWindowsTerminal(),
+        checkPowerShellVersion(),
+        checkPowerShellEncoding(),
+      );
+    }
+
+    if (process.platform === "darwin") {
+      checksToRun.push(checkGhostty());
     }
 
     const checks = await Promise.all(checksToRun);

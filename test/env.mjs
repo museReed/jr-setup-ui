@@ -70,19 +70,34 @@ clearTimeout(timeout);
 
 assert.equal(result.os.platform, process.platform);
 assert.equal(result.os.arch, process.arch);
-assert.equal(result.checks.length, 8);
+const expectedIds = [
+  "claude",
+  "claude-auth",
+  "codex",
+  "codex-auth",
+  "git",
+  "gh",
+  "gh-auth",
+  "node",
+];
+
+if (process.platform === "win32") {
+  expectedIds.unshift("execution-policy");
+  expectedIds.push(
+    "windows-terminal",
+    "powershell-version",
+    "powershell-encoding",
+  );
+}
+
+if (process.platform === "darwin") {
+  expectedIds.push("ghostty");
+}
+
+assert.equal(result.checks.length, expectedIds.length);
 assert.deepEqual(
   result.checks.map(({ id }) => id),
-  [
-    "claude",
-    "claude-auth",
-    "codex",
-    "codex-auth",
-    "git",
-    "gh",
-    "gh-auth",
-    "node",
-  ],
+  expectedIds,
 );
 
 for (const check of result.checks) {
@@ -92,7 +107,7 @@ for (const check of result.checks) {
   assert.equal(typeof check.detail, "string");
 }
 
-ok("runEnvCheck 回傳 os 與 8 筆固定形狀的檢查結果");
+ok(`runEnvCheck 回傳 os 與 ${expectedIds.length} 筆固定形狀的檢查結果`);
 
 for (const check of result.checks) {
   assert(Object.hasOwn(check, "fixAction"));
@@ -104,6 +119,7 @@ ok("每筆檢查都有字串或 null 的 fixAction");
 
 if (process.platform === "darwin") {
   assert(!result.checks.some(({ id }) => id === "execution-policy"));
+  assert(result.checks.some(({ id }) => id === "ghostty"));
   ok("darwin 不包含 PowerShell 執行原則檢查");
 } else {
   ok("(skipped) 非 darwin 不檢查執行原則項目是否缺席");

@@ -155,8 +155,12 @@ try {
   );
   const env = await envResponse.json();
   assert.equal(typeof env.os, "object");
-  assert.equal(env.checks.length, 8);
-  ok("正確 token 的 GET /env 回傳 os 與 8 筆 checks");
+  // 列數依平台而定：macOS 多一列 Ghostty，Windows 多執行原則與三列 PowerShell。
+  const expectedChecks =
+    8 + (process.platform === "darwin" ? 1 : 0) +
+    (process.platform === "win32" ? 4 : 0);
+  assert.equal(env.checks.length, expectedChecks);
+  ok(`正確 token 的 GET /env 回傳 os 與 ${expectedChecks} 筆 checks`);
 
   assert(
     env.checks.every((check) => Object.hasOwn(check, "installAction")),
