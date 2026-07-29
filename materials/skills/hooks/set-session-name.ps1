@@ -27,10 +27,16 @@ $ErrorActionPreference = 'Continue'
 # Validate the emoji: the model sometimes picks one outside the list (VM sighting:
 # 🎯). Rewording the instruction only asks it nicely — this is the last gate.
 # Anything else becomes 🔍; the rest of the name is left alone.
+#
+# 📦 (0x1F4E6) is the 9th: the handoff skill marks "已交接" with it. It used to be
+# missing here, so every handoff silently retitled to 🔍 — the script says nothing,
+# so it looked like the rename never ran at all (VM testing, three rounds to find).
+# The naming hook still offers the model only the 8; 📦 is skill-only.
 $allowedEmoji = @([char]::ConvertFromUtf32(0x1F3D7), [char]::ConvertFromUtf32(0x1F527),
   [char]::ConvertFromUtf32(0x1F41B), [char]::ConvertFromUtf32(0x1F4D0),
   [char]::ConvertFromUtf32(0x1F4CB), [char]::ConvertFromUtf32(0x1F4AC),
-  [char]::ConvertFromUtf32(0x26F4), [char]::ConvertFromUtf32(0x1F50D))
+  [char]::ConvertFromUtf32(0x26F4), [char]::ConvertFromUtf32(0x1F50D),
+  [char]::ConvertFromUtf32(0x1F4E6))
 if (-not ($allowedEmoji | Where-Object { $Name.StartsWith($_) })) {
   $rest = if ($Name -match '^\S+\s+(.*)$') { $Matches[1] } else { $Name }
   $Name = "$([char]::ConvertFromUtf32(0x1F50D)) $rest"
