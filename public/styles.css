@@ -222,6 +222,28 @@ textarea {
   font-weight: 700;
 }
 
+.behavior-fallback {
+  margin: 16px 20px 20px;
+}
+
+.behavior-fallback p {
+  margin-top: 0;
+}
+
+.behavior-fallback ul {
+  margin-bottom: 0;
+}
+
+.behavior-question-row {
+  align-items: flex-start;
+}
+
+#behavior-question {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
 .login-code-row {
   display: flex;
   align-items: center;

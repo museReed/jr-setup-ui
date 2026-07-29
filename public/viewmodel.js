@@ -18,6 +18,18 @@ export const CONFIG_TOOL_CHOICES = [
   { value: "claude,codex", label: "兩個都要" },
 ];
 
+export const BEHAVIOR_QUESTION =
+  "我想開始經營個人品牌，Instagram 和 YouTube 我該先從哪個開始？";
+// 這五條要跟 scripts/verify-behavior.mjs 裡 AI 判定用的規則一字對得上，
+// 否則學生照清單自己看，會跟按鈕跑出來的結果不一致。
+export const BEHAVIOR_CHECKLIST = [
+  "結論先行：第一行就是粗體結論，不是「好問題！」這種開場白。",
+  "比較用表格：兩個平台的比較用表格，不是散文。",
+  "語氣中性：沒有 emoji、沒有「太棒了！」這類慶祝語氣。",
+  "長度中等：精簡到可以行動，不是長篇大論。",
+  "追問清單：結尾有「你可能會想問」之類的追問清單。",
+];
+
 const STATUS_DISPLAY = {
   ok: { symbol: "✓", label: "通過" },
   missing: { symbol: "✗", label: "缺少" },
@@ -206,6 +218,16 @@ export function runOutcome(result) {
         ? `exit code: ${result.exitCode}`
         : `已停止：${result.signal}`,
     className: succeeded ? "succeeded" : "failed",
+  };
+}
+
+export function behaviorFallbackState(result) {
+  const { succeeded } = runOutcome(result);
+
+  return {
+    visible: !succeeded,
+    question: succeeded ? "" : BEHAVIOR_QUESTION,
+    checklist: succeeded ? [] : BEHAVIOR_CHECKLIST,
   };
 }
 

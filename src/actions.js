@@ -10,6 +10,10 @@ const verifyConfigsScript = new URL(
   "../scripts/verify-configs.mjs",
   import.meta.url,
 ).pathname;
+const verifyBehaviorScript = new URL(
+  "../scripts/verify-behavior.mjs",
+  import.meta.url,
+).pathname;
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -130,6 +134,14 @@ Object.assign(actions, {
       `--tools=${tools}`,
     ],
     description: "檢查規則檔是否真的生效，含實際觸發 hook。",
+  },
+  "verify-behavior": {
+    kind: "fixed",
+    label: "驗證回覆格式",
+    cmd: process.execPath,
+    options: { tools: ["claude", "codex", "claude,codex"] },
+    buildArgs: ({ tools }) => [verifyBehaviorScript, `--tools=${tools}`],
+    description: "請學生自己的 AI 回答一題並判定回覆有沒有照格式規則。",
   },
   "merge-config-step": {
     kind: "agent",

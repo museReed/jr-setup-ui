@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 
 import {
+  BEHAVIOR_CHECKLIST,
+  BEHAVIOR_QUESTION,
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_WAIT_TIMEOUT_MS,
   agentNameFor,
+  behaviorFallbackState,
   configQuery,
   configRowModel,
   configSummary,
@@ -304,6 +307,28 @@ try {
     "已停止：SIGKILL",
   );
   ok("成功判定含 benign 退出碼，被中止時顯示訊號");
+
+  assert.deepEqual(
+    behaviorFallbackState({ exitCode: 0, signal: null }),
+    { visible: false, question: "", checklist: [] },
+  );
+  ok("行為驗證 exit 0 時不顯示手動退路");
+
+  assert.deepEqual(
+    behaviorFallbackState({ exitCode: 1, signal: null }),
+    {
+      visible: true,
+      question: BEHAVIOR_QUESTION,
+      checklist: BEHAVIOR_CHECKLIST,
+    },
+  );
+  ok("行為驗證 exit 1 時顯示問題與五項檢查清單");
+
+  assert.deepEqual(
+    behaviorFallbackState({ exitCode: 1, signal: null, benign: true }),
+    { visible: false, question: "", checklist: [] },
+  );
+  ok("行為驗證 benign 結果沿用成功判定且不顯示手動退路");
 
   assert.deepEqual(
     installStatusMessage("install-gh", { exitCode: 0, signal: null }),

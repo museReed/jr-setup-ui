@@ -23,8 +23,13 @@ const elements = {
   configLang: document.querySelector("#config-lang"),
   recheckConfigs: document.querySelector("#recheck-configs"),
   verifyConfigs: document.querySelector("#verify-configs"),
+  verifyBehavior: document.querySelector("#verify-behavior"),
   configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
+  behaviorFallback: document.querySelector("#behavior-fallback"),
+  behaviorQuestion: document.querySelector("#behavior-question"),
+  behaviorChecklist: document.querySelector("#behavior-checklist"),
+  copyBehaviorQuestion: document.querySelector("#copy-behavior-question"),
 };
 
 export { elements };
@@ -199,6 +204,26 @@ export function renderConfigFailure(message) {
   elements.configResults.replaceChildren(paragraph);
 }
 
+export function renderBehaviorFallback(state) {
+  elements.behaviorQuestion.textContent = "";
+  elements.behaviorChecklist.replaceChildren();
+  elements.copyBehaviorQuestion.textContent = "複製";
+
+  if (!state.visible) {
+    elements.behaviorFallback.hidden = true;
+    return;
+  }
+
+  const items = state.checklist.map((text) => {
+    const item = document.createElement("li");
+    item.textContent = text;
+    return item;
+  });
+  elements.behaviorQuestion.textContent = state.question;
+  elements.behaviorChecklist.replaceChildren(...items);
+  elements.behaviorFallback.hidden = false;
+}
+
 export function configActionButtons() {
   return [
     ...elements.configResults.querySelectorAll(
@@ -232,6 +257,7 @@ export function renderRunControls(state) {
   elements.configLang.disabled = state.configControlsDisabled;
   elements.recheckConfigs.disabled = state.configControlsDisabled;
   elements.verifyConfigs.disabled = state.configControlsDisabled;
+  elements.verifyBehavior.disabled = state.configControlsDisabled;
 
   for (const button of configActionButtons()) {
     button.disabled = state.configControlsDisabled;

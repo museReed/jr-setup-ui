@@ -8,6 +8,7 @@ import {
   LOGIN_CHECK_IDS,
   LOGIN_POLL_INTERVAL_MS,
   agentNameFor,
+  behaviorFallbackState,
   configSummary,
   envButtonState,
   extractLoginHints,
@@ -249,8 +250,8 @@ function handleDone(action, envButton, configAction, result) {
 }
 
 async function run(action, promptText, button = null, options) {
-  const configAction = options !== undefined;
-  const envButton = configAction ? null : button;
+  const configAction = options !== undefined && action !== "verify-behavior";
+  const envButton = options === undefined ? button : null;
 
   if (isLoginAction(action)) {
     stopLoginWait();
@@ -310,7 +311,13 @@ async function run(action, promptText, button = null, options) {
     events.addEventListener("done", (event) => {
       done = true;
       events.close();
-      handleDone(action, envButton, configAction, JSON.parse(event.data));
+      const result = JSON.parse(event.data);
+
+      if (action === "verify-behavior") {
+        view.renderBehaviorFallback(behaviorFallbackState(result));
+      }
+
+      handleDone(action, envButton, configAction, result);
     });
 
     events.onerror = () => {
@@ -362,6 +369,17 @@ view.elements.copyLoginCode.addEventListener("click", async () => {
   }
 });
 
+view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(
+      view.elements.behaviorQuestion.textContent,
+    );
+    view.elements.copyBehaviorQuestion.textContent = "已複製";
+  } catch (error) {
+    view.addLine(`無法複製：${error.message}`, "failed");
+  }
+});
+
 view.elements.runInput.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -388,6 +406,12 @@ view.elements.configLang.addEventListener("change", checkConfigs);
 view.elements.verifyConfigs.addEventListener("click", () => {
   run("verify-configs", undefined, view.elements.verifyConfigs, {
     lang: view.elements.configLang.value,
+    tools: view.elements.configTools.value,
+  });
+});
+view.elements.verifyBehavior.addEventListener("click", () => {
+  view.renderBehaviorFallback({ visible: false });
+  run("verify-behavior", undefined, view.elements.verifyBehavior, {
     tools: view.elements.configTools.value,
   });
 });

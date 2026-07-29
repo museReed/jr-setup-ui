@@ -191,6 +191,9 @@ try {
   assert.match(page, /重新檢查/);
   ok("首頁包含環境檢查、規則檔安裝結果區與重新檢查按鈕");
 
+  assert.match(page, /<div\s+id="behavior-fallback"[^>]*\shidden(?:\s|>)/);
+  ok("首頁包含預設隱藏的行為驗證手動退路");
+
   assert.match(page, /id="login-hints"/);
   assert.match(page, /target="_blank"/);
   assert.match(page, /rel="noopener noreferrer"/);
@@ -230,8 +233,9 @@ try {
   const viewModelSource = await (await fetch(`${baseUrl}/viewmodel.js`)).text();
   assert(viewModelSource.includes("狀態已更新"));
   assert(viewModelSource.includes("configRowModel"));
+  assert(viewModelSource.includes("behaviorFallbackState"));
   assert(!viewModelSource.includes("document."));
-  ok("ViewModel 含規則檔列模型且完全不碰 DOM");
+  ok("ViewModel 含規則檔與行為驗證模型且完全不碰 DOM");
 
   // 迴歸：開視窗的 action 不能接管線——新視窗會一直握著，close 事件永遠不來，
   // 前端會永遠卡在「登入中…」而且所有按鈕鎖死（實測登入按鈕就是這樣）。
