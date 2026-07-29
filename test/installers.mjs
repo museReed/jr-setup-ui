@@ -76,6 +76,14 @@ assert.deepEqual(ghosttyDarwin, {
 assert.equal(resolveInstaller("ghostty", "win32"), null);
 ok("Ghostty 只在 darwin 提供 brew cask 安裝器");
 
+const terminalWin = resolveInstaller("windows-terminal", "win32");
+assert.equal(terminalWin.cmd, "winget");
+assert(terminalWin.args.includes("Microsoft.WindowsTerminal"));
+// 迴歸：不指定 --source winget 會去撞 msstore 憑證驗證。
+assert(terminalWin.args.includes("--source"));
+assert.equal(resolveInstaller("windows-terminal", "darwin"), null);
+ok("Windows Terminal 只在 win32 提供 winget 安裝器");
+
 assert.equal(resolveInstaller("node", "win32"), null);
 ok("Node.js 不提供安裝器");
 

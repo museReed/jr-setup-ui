@@ -71,6 +71,21 @@ export const INSTALLERS = {
       args: ["install", "--cask", "ghostty"],
     },
   },
+  "windows-terminal": {
+    win32: {
+      cmd: "winget",
+      args: [
+        "install",
+        "--id",
+        "Microsoft.WindowsTerminal",
+        "-e",
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+      ],
+    },
+  },
 };
 
 // winget 在「已經裝好、沒有可用更新」時會回非零 exit code，那不是失敗。

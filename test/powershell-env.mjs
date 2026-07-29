@@ -51,12 +51,21 @@ assert.deepEqual(
 );
 ok("Ghostty 任一路徑存在時已安裝，兩處都不存在時未安裝");
 
-assert.deepEqual(windowsTerminalStatus({ WT_SESSION: "session-id" }), {
+assert.deepEqual(windowsTerminalStatus({ WT_SESSION: "session-id" }, true), {
   status: "ok",
   detail: "是",
 });
-assert.deepEqual(windowsTerminalStatus({}), {
-  status: "warn",
-  detail: "不是 Windows Terminal——tab 標題功能不會運作",
-});
-ok("WT_SESSION 有值時是 Windows Terminal，沒有時只警告");
+ok("WT_SESSION 有值就是跑在 Windows Terminal 上");
+
+// 工作坊硬性要求，所以是紅的不是黃的。
+const notUsing = windowsTerminalStatus({}, true);
+assert.equal(notUsing.status, "missing");
+assert.equal(notUsing.installable, false);
+assert.match(notUsing.detail, /重新啟動嚮導/);
+ok("裝了但沒用它開 → 紅燈叫人換視窗，不給安裝按鈕");
+
+const notInstalled = windowsTerminalStatus({}, false);
+assert.equal(notInstalled.status, "missing");
+assert.equal(notInstalled.installable, true);
+assert.match(notInstalled.detail, /尚未安裝/);
+ok("完全沒裝 → 紅燈且給安裝按鈕");

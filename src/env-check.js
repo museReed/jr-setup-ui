@@ -63,13 +63,28 @@ export function ghosttyStatus(paths, exists) {
   };
 }
 
-export function windowsTerminalStatus(env) {
-  const isWindowsTerminal = Boolean(env.WT_SESSION);
+// 工作坊硬性要求跑在 Windows Terminal 上——沒有分頁就沒有標題可以命名，
+// 而且舊主控台的中文常變方框。所以沒用它就是紅的，不是黃的提醒。
+//
+// 「沒安裝」與「裝了但沒用它開」要分開：前者給安裝按鈕，後者叫人換視窗重開。
+// 兩者混在一起的話，已經有 Windows Terminal 的人會看到一顆沒有意義的安裝鍵。
+export function windowsTerminalStatus(env, installed) {
+  if (env.WT_SESSION) {
+    return { status: "ok", detail: "是" };
+  }
+
+  if (installed) {
+    return {
+      status: "missing",
+      detail: "請改用 Windows Terminal 開一個 PowerShell 分頁，再重新啟動嚮導",
+      installable: false,
+    };
+  }
+
   return {
-    status: isWindowsTerminal ? "ok" : "warn",
-    detail: isWindowsTerminal
-      ? "是"
-      : "不是 Windows Terminal——tab 標題功能不會運作",
+    status: "missing",
+    detail: "尚未安裝 Windows Terminal",
+    installable: true,
   };
 }
 
@@ -231,8 +246,9 @@ async function spawnProbe(rawCmd, rawArgs) {
 }
 
 function withActions(check) {
+  // installable 為 false 的紅燈是「東西在、但用錯方式」——給安裝按鈕只會誤導。
   const installer =
-    check.status === "missing"
+    check.status === "missing" && check.installable !== false
       ? resolveInstaller(check.id, process.platform)
       : null;
   const fixActions = {
@@ -300,7 +316,17 @@ function checkGhostty() {
 function checkWindowsTerminal() {
   const id = "windows-terminal";
   const label = "終端機是 Windows Terminal";
-  return { id, label, ...windowsTerminalStatus(process.env) };
+  // 用檔案存在判定有沒有裝，不去跑 wt.exe——那會真的開一個視窗出來。
+  // 這個路徑是 Windows 的 app execution alias，裝了就有。
+  const installed = existsSync(
+    join(
+      process.env.LOCALAPPDATA ?? "",
+      "Microsoft",
+      "WindowsApps",
+      "wt.exe",
+    ),
+  );
+  return { id, label, ...windowsTerminalStatus(process.env, installed) };
 }
 
 async function checkPowerShellVersion() {
