@@ -108,19 +108,38 @@ try {
   assert.equal(codexSettings.hooks.UserPromptSubmit.length, 1);
   ok("Codex hooks 實際安裝可重跑，hooks.json 保留三筆單份註冊");
 
-  // 迴歸：白名單是字串比對。Windows 上 hook 用 Join-Path 產生反斜線路徑，
-  // 規則若留著正斜線就永遠對不上，等於沒加——實測模型回報「被權限規則擋下」。
-  const winRule = namingAllowRule(
-    "C:/Users/Reed/.claude/hooks/set-session-name.ps1",
-    "win32",
+  // 迴歸：規則不能是「powershell -File …」那種形狀。Claude Code 拒絕用白名單
+  // 放行會生出巢狀直譯器的指令（原文 Command spawns a nested PowerShell process
+  // which cannot be validated），改多少字串都沒用——要改的是指令本身。
+  const winStep = describeStep("claude-hooks", {
+    lang: "zh-TW",
+    home: "C:/Users/Reed",
+    platform: "win32",
+  });
+  assert(
+    !winStep.namingAllowRule.includes("powershell"),
+    `規則不該放行 powershell 指令：${winStep.namingAllowRule}`,
   );
-  assert(winRule.includes("C:\\Users\\Reed\\.claude\\hooks"), winRule);
-  assert(winRule.startsWith("Bash(powershell -NoProfile -ExecutionPolicy Bypass -File"));
-  assert(!winRule.includes("/"), `規則裡不該還有正斜線：${winRule}`);
-  ok("Windows 的命名白名單規則用反斜線，跟 hook 實際組出的指令對得上");
+  assert.equal(
+    winStep.namingAllowRule,
+    "Bash(C:/Users/Reed/.claude/hooks/set-session-name.sh:*)",
+  );
+  ok("Windows 的命名白名單放行的是薄殼腳本，不是巢狀 powershell 指令");
+
+  // 薄殼要真的被裝出來，否則規則指向一個不存在的檔案。
+  const shim = winStep.hookFiles.find(
+    (file) => file.base === "set-session-name-shim",
+  );
+  assert.equal(shim.source, "skills/hooks/set-session-name-shim.sh");
+  assert.equal(shim.target, "C:/Users/Reed/.claude/hooks/set-session-name.sh");
+  assert(
+    winStep.hookFiles.some((file) => file.base === "set-session-name"),
+    "薄殼是外皮，真正的 .ps1 也要一起裝",
+  );
+  ok("Windows 會同時裝薄殼與 .ps1 本體");
 
   assert.equal(
-    namingAllowRule("/Users/reed/.claude/hooks/set-session-name.sh", "darwin"),
+    namingAllowRule("/Users/reed/.claude/hooks/set-session-name.sh"),
     "Bash(/Users/reed/.claude/hooks/set-session-name.sh:*)",
   );
   ok("macOS 的規則就是既有 starter allowlist 那條，不會重複新增");

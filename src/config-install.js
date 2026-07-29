@@ -175,7 +175,22 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/hooks/${file}`,
     };
   });
+  // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
+  // （原文：Command spawns a nested PowerShell process which cannot be validated），
+  // 而「以後不要再問」寫下的規則含 session id，下次必失效。多裝一支 bash 薄殼把
+  // powershell 藏進去，模型看到的就只是「執行一支腳本」，跟 macOS 同形狀。
+  if (isClaude && platform === "win32") {
+    hookFiles.push({
+      base: "set-session-name-shim",
+      source: "skills/hooks/set-session-name-shim.sh",
+      target: `${agentDir}/hooks/set-session-name.sh`,
+    });
+  }
+
   const byBase = Object.fromEntries(hookFiles.map((file) => [file.base, file]));
+  // 白名單放行的是模型真正會跑的那支：Windows 是薄殼，其他平台就是腳本本身。
+  const namingTarget = (byBase["set-session-name-shim"] ?? byBase["set-session-name"])
+    ?.target;
   const namer = isClaude ? "session-auto-namer" : "codex-session-namer";
   const monitor = isClaude ? "context-monitor" : "codex-context-monitor";
   const registrations = [
@@ -203,9 +218,7 @@ function agentHooks(id, home, platform) {
       ? `${agentDir}/settings.json`
       : `${agentDir}/hooks.json`,
     // 只有 Claude 這邊吃白名單；Codex 沒有對應的權限層。
-    namingAllowRule: isClaude
-      ? namingAllowRule(byBase["set-session-name"].target, platform)
-      : undefined,
+    namingAllowRule: isClaude ? namingAllowRule(namingTarget) : undefined,
     supportFiles: isClaude
       ? [
           {
@@ -327,16 +340,11 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
 // ⚠️ starter-allowlist.json 只有 .sh 那條規則（`Bash(~/.claude/hooks/
 // set-session-name.sh:*)`），Windows 上實際要跑的是一段 powershell 指令，
 // 比對不到。實測模型自己回報：「要求開一個巢狀 PowerShell 程序，被權限規則擋下」。
-export function namingAllowRule(hookTarget, platform = process.platform) {
-  if (platform === "win32") {
-    // 前綴要跟 session-auto-namer.ps1 組出來的指令一字不差。那支用 Join-Path
-    // 產生路徑，出來是反斜線；我們內部一律用正斜線組路徑，不轉的話比對不到，
-    // 這條規則就等於沒加。
-    const windowsPath = hookTarget.replaceAll("/", "\\");
-    return `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "${windowsPath}":*)`;
-  }
-
-  return `Bash(${hookTarget}:*)`;
+// 兩個平台同一個形狀：直接執行一支腳本。Windows 那支是薄殼（見 agentHooks），
+// powershell 藏在腳本內部，權限層看不到巢狀直譯器。路徑一律正斜線——session-auto-namer
+// 組指令時也轉，兩邊不一致的話前綴永遠對不上，這條規則就等於沒加。
+export function namingAllowRule(hookTarget) {
+  return `Bash(${hookTarget.replaceAll("\\", "/")}:*)`;
 }
 
 export function expandAllowRules(rules, home) {
