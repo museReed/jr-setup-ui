@@ -252,12 +252,29 @@ export async function checkAgentHooks(step) {
     step.registrations,
   );
 
-  if (filesExist && registered) {
+  // 命名指令沒進白名單的話，模型每次要命名都會被權限層擋下——檔案在、註冊也在，
+  // 但功能是死的。只驗前兩項的話這一列會給假綠燈，而且綠燈就沒有安裝按鈕，
+  // 學生連重跑的機會都沒有（實測就是卡在這）。
+  const allowRuleNeeded = step.namingAllowRule !== undefined;
+  const allowRuleInstalled =
+    !allowRuleNeeded ||
+    (settings?.permissions?.allow ?? []).includes(step.namingAllowRule);
+
+  if (filesExist && registered && allowRuleInstalled) {
     return {
       id: step.id,
       label: step.label,
       status: "ok",
       detail: "hook 檔案與 3 筆註冊都已生效",
+    };
+  }
+
+  if (filesExist && registered) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "已註冊，但命名指令不在白名單——模型會被權限層擋下",
     };
   }
 

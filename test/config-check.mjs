@@ -102,8 +102,23 @@ process.stdin.on("end", () => {
     },
   );
   writeFileSync(agentStep.settingsTarget, JSON.stringify(settings));
+
+  // 迴歸：白名單也要算進去。少了它模型每次命名都被權限層擋下，功能是死的；
+  // 只驗檔案與註冊的話會給假綠燈，而綠燈就沒有安裝按鈕，學生連重跑都做不到。
+  const withoutRule = await checkAgentHooks(agentStep);
+  assert.equal(withoutRule.status, "warn");
+  assert.match(withoutRule.detail, /白名單/);
+  ok("命名指令沒進白名單時不給綠燈");
+
+  writeFileSync(
+    agentStep.settingsTarget,
+    JSON.stringify({
+      ...settings,
+      permissions: { allow: [agentStep.namingAllowRule] },
+    }),
+  );
   assert.equal((await checkAgentHooks(agentStep)).status, "ok");
-  ok("agent hooks 要所有檔案與三筆註冊同時存在才算生效");
+  ok("檔案、註冊、白名單三者都在才算生效");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);
