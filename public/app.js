@@ -155,12 +155,12 @@ async function checkConfigs() {
     const result = await api.fetchConfigs({ tools, lang });
     view.renderConfigs(
       result.checks,
-      (action, button, step) =>
+      (action, button, step, extra) =>
         run(
           action,
           undefined,
           button,
-          rowRunOptions({ step, lang: result.lang, tools }),
+          rowRunOptions({ step, lang: result.lang, tools, extra }),
         ),
       {
         verifiedSteps: state.verifiedSteps,
@@ -441,27 +441,5 @@ view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
 view.elements.configTools.addEventListener("change", checkConfigs);
 view.elements.configLang.addEventListener("change", checkConfigs);
-view.elements.verifyConfigs.addEventListener("click", () => {
-  run("verify-configs", undefined, view.elements.verifyConfigs, {
-    lang: view.elements.configLang.value,
-    tools: view.elements.configTools.value,
-  });
-});
-view.elements.verifyBehavior.addEventListener("click", () => {
-  view.renderBehaviorFallback({ visible: false });
-  run("verify-behavior", undefined, view.elements.verifyBehavior, {
-    tools: view.elements.configTools.value,
-  });
-});
-// 這顆不帶 options（驗的是「Claude Code 有沒有真的載入 hook」，跟語言與工具無關），
-// 也不把按鈕傳進去——傳了會被當成環境檢查那區的動作，跑完誤觸發環境重查與
-// 「安裝完成」訊息。按鈕的鎖定由 configControlsDisabled 統一處理。
-view.elements.verifyHookLive.addEventListener("click", () => {
-  run("verify-hook-live", undefined, null);
-});
-// 同上：不帶 options、不傳按鈕。
-view.elements.verifyNaming.addEventListener("click", () => {
-  run("verify-hooks-live", undefined, null);
-});
 checkEnvironment();
 checkConfigs();

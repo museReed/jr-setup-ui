@@ -103,7 +103,7 @@ try {
     detail: "已安裝",
     installAction: null,
     mergeAction: null,
-    verifyAction: "verify-hook-live",
+    verifyAction: "verify-behavior",
     eyeCheck: null,
   });
   assert.equal(pending.status, "unverified");
@@ -122,7 +122,7 @@ try {
       detail: "已安裝",
       installAction: null,
       mergeAction: null,
-      verifyAction: "verify-hook-live",
+      verifyAction: "verify-behavior",
       eyeCheck: null,
     },
     true,
@@ -174,6 +174,21 @@ try {
   }
   ok("驗證按鈕與待驗證列兩張表對得上");
 
+  // 開終端那種驗證，程式判定不了結果——按下去只是開了一個視窗。所以它一定要配一
+  // 段「要看什麼」，否則學生看著視窗不知道該看哪裡，只能亂勾。
+  for (const [step, entry] of Object.entries(VERIFICATION)) {
+    if (entry.terminal === undefined) continue;
+    assert(
+      typeof entry.eye === "string" && entry.eye.length > 0,
+      `${step} 是開終端驗證，卻沒寫要看什麼`,
+    );
+    assert(
+      entry.behavior === undefined,
+      `${step} 同時掛了兩種驗證，畫面會冒出兩顆按鈕`,
+    );
+  }
+  ok("開終端驗證的列都寫明了要看什麼");
+
   // 列上的按鈕少帶一個參數，伺服器就回「options.X 不在允許的值裡」，按鈕等於是死
   // 的——而且畫面上只看得到一行錯誤，看不出少的是哪個。這裡拿 actions 自己宣告的
   // schema 對賬：列會觸發的每個 action，它要的每個參數都必須被帶到。
@@ -197,6 +212,28 @@ try {
     }
   }
   ok("列上按鈕帶齊每個 action 宣告要的參數");
+
+  // 開終端驗證的參數是逐列不同的（哪個情境、哪個 agent），跟著按鈕走而不是全域，
+  // 所以要驗 extra 真的被合進去、而且值都在 action 宣告的允許清單裡。
+  for (const [step, entry] of Object.entries(VERIFICATION)) {
+    if (entry.terminal === undefined) continue;
+    const options = rowRunOptions({
+      step,
+      lang: "zh-TW",
+      tools: "claude",
+      extra: entry.terminal,
+    });
+
+    for (const [name, allowed] of Object.entries(
+      ACTIONS["verify-in-terminal"].options,
+    )) {
+      assert(
+        allowed.includes(options[name]),
+        `${step} 的 options.${name} 是「${options[name]}」，不在允許清單裡`,
+      );
+    }
+  }
+  ok("開終端驗證帶的情境與 agent 都在允許清單裡");
 
   assert.deepEqual(configSummary([]), {
     done: 0,

@@ -117,13 +117,29 @@ export const VERIFICATION = {
   "output-style": { behavior: "verify-behavior" },
   "codex-config": { behavior: "verify-behavior" },
   "codex-agents": { behavior: "verify-behavior" },
-  hook: { behavior: "verify-hook-live" },
-  "claude-hooks": { behavior: "verify-hooks-live" },
-  "codex-hooks": {
-    eye: "開一個新的終端分頁跑 codex，問一句話，看分頁標題有沒有變成命名（第一次會問你要不要信任 hook，要接受）",
+  hook: {
+    terminal: { case: "chained", agent: "claude" },
+    eye: "那個視窗裡出現「一次只跑一個指令」的中文訊息，指令被擋下來",
   },
   "tab-sync": {
-    eye: "關掉分頁重開一個，跑 claude 問一句話，看分頁標題有沒有變成「{emoji} 中文敘述」",
+    terminal: { case: "naming", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+  },
+  "claude-namer": {
+    terminal: { case: "naming", agent: "claude" },
+    eye: "那個視窗的分頁標題變成命名，而且沒有跳出權限詢問",
+  },
+  "claude-monitor": {
+    terminal: { case: "context", agent: "claude" },
+    eye: "工具跑幾次之後跳出 context 用量警告（標著「（測試模式）」）",
+  },
+  "codex-namer": {
+    terminal: { case: "naming", agent: "codex" },
+    eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
+  },
+  "codex-monitor": {
+    terminal: { case: "context", agent: "codex" },
+    eye: "工具跑幾次之後跳出 context 用量警告（標著「（測試模式）」）",
   },
 };
 
@@ -446,7 +462,14 @@ export async function runConfigCheck({ tools, lang }) {
       ...check,
       installAction: check.status === "ok" ? null : "install-config-step",
       mergeAction: check.needsMerge === true ? "merge-config-step" : null,
-      verifyAction: VERIFICATION[check.id]?.behavior ?? null,
+      // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端
+      // 視窗讓學生看，程式判定不了，所以一定配一個 eye 說明。
+      verifyAction:
+        VERIFICATION[check.id]?.behavior ??
+        (VERIFICATION[check.id]?.terminal === undefined
+          ? null
+          : "verify-in-terminal"),
+      verifyOptions: VERIFICATION[check.id]?.terminal ?? null,
       eyeCheck: VERIFICATION[check.id]?.eye ?? null,
     })),
   };

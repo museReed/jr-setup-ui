@@ -96,7 +96,7 @@ process.stdin.on("end", () => {
   assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");
   ok("tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
 
-  const agentStep = describeStep("claude-hooks", {
+  const agentStep = describeStep("claude-namer", {
     lang: "zh-TW",
     home: dir,
     platform: "linux",
@@ -105,8 +105,8 @@ process.stdin.on("end", () => {
     installFrom(file.source, file.target);
   }
   assert.deepEqual(await checkAgentHooks(agentStep, MATERIALS), {
-    id: "claude-hooks",
-    label: "Claude Code hooks",
+    id: "claude-namer",
+    label: "自動命名 hook",
     status: "warn",
     detail: "檔案在，但沒註冊——不會被觸發",
   });

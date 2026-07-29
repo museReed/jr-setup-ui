@@ -69,9 +69,9 @@ try {
   assert.equal(readFileSync(tabStep.target, "utf8").length > 0, true);
   ok("tab sync 實際安裝可重跑，watcher 與 shell function 都會落地");
 
-  install("claude-hooks");
-  install("claude-hooks");
-  const agentStep = describeStep("claude-hooks", {
+  install("claude-namer");
+  install("claude-namer");
+  const agentStep = describeStep("claude-namer", {
     lang: "zh-TW",
     home,
     platform: process.platform,
@@ -86,13 +86,33 @@ try {
     hasAgentHookRegistrations(settings, agentStep.registrations),
     true,
   );
-  assert.equal(settings.hooks.PostToolUse.length, 2);
+  assert.equal(settings.hooks.PostToolUse.length, 1);
   assert.equal(settings.hooks.UserPromptSubmit.length, 1);
-  ok("Claude hooks 實際安裝可重跑，檔案與三筆註冊都保持單份");
+  ok("命名 hook 實際安裝可重跑，檔案與兩筆註冊都保持單份");
 
-  install("codex-hooks");
-  install("codex-hooks");
-  const codexStep = describeStep("codex-hooks", {
+  // 監控那列另外裝：兩列共用同一個 settings.json，不能互相掃掉。
+  install("claude-monitor");
+  const monitorStep = describeStep("claude-monitor", {
+    lang: "zh-TW",
+    home,
+    platform: process.platform,
+  });
+  const bothSettings = JSON.parse(
+    readFileSync(agentStep.settingsTarget, "utf8"),
+  );
+  assert.equal(
+    hasAgentHookRegistrations(bothSettings, agentStep.registrations),
+    true,
+  );
+  assert.equal(
+    hasAgentHookRegistrations(bothSettings, monitorStep.registrations),
+    true,
+  );
+  ok("監控 hook 裝上去之後，命名 hook 的註冊還在");
+
+  install("codex-namer");
+  install("codex-namer");
+  const codexStep = describeStep("codex-namer", {
     lang: "zh-TW",
     home,
     platform: process.platform,
@@ -104,14 +124,14 @@ try {
     hasAgentHookRegistrations(codexSettings, codexStep.registrations),
     true,
   );
-  assert.equal(codexSettings.hooks.PostToolUse.length, 2);
+  assert.equal(codexSettings.hooks.PostToolUse.length, 1);
   assert.equal(codexSettings.hooks.UserPromptSubmit.length, 1);
-  ok("Codex hooks 實際安裝可重跑，hooks.json 保留三筆單份註冊");
+  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 保留單份註冊");
 
   // 迴歸：規則不能是「powershell -File …」那種形狀。Claude Code 拒絕用白名單
   // 放行會生出巢狀直譯器的指令（原文 Command spawns a nested PowerShell process
   // which cannot be validated），改多少字串都沒用——要改的是指令本身。
-  const winStep = describeStep("claude-hooks", {
+  const winStep = describeStep("claude-namer", {
     lang: "zh-TW",
     home: "C:/Users/Reed",
     platform: "win32",
