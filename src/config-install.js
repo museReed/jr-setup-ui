@@ -348,6 +348,16 @@ export function mergeOutputStyle(settings, { styleName }) {
   return { ...structuredClone(settings ?? {}), outputStyle: styleName };
 }
 
+// PreToolUse 的指令是丟給 bash 跑的，Windows 路徑不處理就會被吃掉：
+// C:\Users\Reed 裡的 \U \R 是 bash 的跳脫序列，路徑變成 C:UsersReed，node 找不到
+// 檔案而以 exit 1 結束——而 PreToolUse 只認 exit 2 是「擋下」，exit 1 是「hook 出
+// 錯，放行」。於是 hook 看起來裝好了、實際上什麼都沒擋（VM 實測 echo a && echo b
+// 直接通過）。反斜線換成正斜線 + 補引號，兩件都做：Windows 吃正斜線，引號則讓路
+// 徑帶空白時也不會斷成兩段。
+export function bashHookCommand(hookPath) {
+  return `node "${hookPath.replaceAll("\\", "/")}"`;
+}
+
 // 註冊 hook：先把舊的同名 hook 清掉再加，重跑安裝不會疊出兩份。
 export function mergeHookRegistration(settings, { hookPath }) {
   const next = structuredClone(settings ?? {});
@@ -363,7 +373,7 @@ export function mergeHookRegistration(settings, { hookPath }) {
 
   preToolUse.push({
     matcher: "Bash",
-    hooks: [{ type: "command", command: `node ${hookPath}`, timeout: 5 }],
+    hooks: [{ type: "command", command: bashHookCommand(hookPath), timeout: 5 }],
   });
 
   next.hooks = { ...hooks, PreToolUse: preToolUse };

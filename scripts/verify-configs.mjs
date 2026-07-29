@@ -10,8 +10,8 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { probeHook, runConfigCheck } from "../src/config-check.js";
-import { hookFileName } from "../src/config-install.js";
+import { probeRegisteredHook, runConfigCheck } from "../src/config-check.js";
+import { findHookRegistration, hookFileName } from "../src/config-install.js";
 
 const HOME = homedir();
 const HOOK_PATH = path.join(HOME, ".claude", "hooks", "block-chained-bash.js");
@@ -37,8 +37,16 @@ function parseArgs(argv) {
   return args;
 }
 
-// 探測本身跟畫面那一列共用同一支，兩邊不會對不上。
-const runHook = (command) => probeHook(HOOK_PATH, command);
+// 驗的是 settings.json 裡真正註冊的那條指令，不是我們自己拼一次路徑去跑腳本。
+async function registeredHookCommand() {
+  const settings = await readFile(
+    path.join(HOME, ".claude", "settings.json"),
+    "utf8",
+  )
+    .then(JSON.parse)
+    .catch(() => null);
+  return findHookRegistration(settings)?.command ?? null;
+}
 
 function runSetSessionName(syncFile) {
   const command = process.platform === "win32" ? "powershell.exe" : "bash";
@@ -98,9 +106,14 @@ if (tools.includes("claude")) {
   console.log("");
   console.log("── 實際觸發 hook ──");
 
+  const hookCommand = await registeredHookCommand();
+
   if (!existsSync(HOOK_PATH)) {
     report(false, "hook 檔案存在", "找不到，跳過行為測試");
+  } else if (!hookCommand) {
+    report(false, "hook 已註冊", "settings.json 裡沒有這個 hook，跳過行為測試");
   } else {
+    const runHook = (command) => probeRegisteredHook(hookCommand, command);
     const blocked = await runHook("echo a && echo b");
     report(
       blocked.exitCode === 2 && blocked.stderr.includes("一次只跑一個指令"),

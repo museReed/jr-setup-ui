@@ -82,6 +82,41 @@ async function checkCopyStep(materials, step) {
   return { id: step.id, label: step.label, status: "ok", detail: "已安裝" };
 }
 
+// 跑「settings.json 裡真的那條指令」，而不是我們自己拼一次路徑去跑腳本。
+// 差別很致命：VM 上腳本本身完全正常、直接跑必過，但註冊的指令路徑沒加引號，
+// bash 把 C:\Users\Reed 的 \U \R 當跳脫吃掉 → node 找不到檔案 → exit 1 →
+// PreToolUse 把 exit 1 當「hook 出錯，放行」，串接指令一路暢通。只驗腳本的話
+// 這一格永遠是綠的。
+export function probeRegisteredHook(registeredCommand, command) {
+  return new Promise((resolve) => {
+    let child;
+
+    try {
+      // Claude Code 是把 hook 指令交給 bash 跑的，這裡照做才會踩到同一個坑。
+      child = spawn("bash", ["-c", registeredCommand], {
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      resolve({ exitCode: null, stderr: error.message });
+      return;
+    }
+
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) =>
+      resolve({ exitCode: null, stderr: error.message }),
+    );
+    child.once("close", (exitCode) => resolve({ exitCode, stderr }));
+    child.stdin.end(
+      JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
+    );
+  });
+}
+
 // 真的把一段指令餵給 hook，看它擋不擋。這是唯一「結構對了但行為可能還是不對」
 // 的項目——Node 不在 PATH、檔案內容壞掉，檔案與註冊都完美，hook 照樣叫不起來，
 // 而且不會有任何錯誤訊息。

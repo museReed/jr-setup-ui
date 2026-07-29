@@ -121,10 +121,28 @@ try {
   assert.deepEqual(registered.hooks.PreToolUse, [
     {
       matcher: "Bash",
-      hooks: [{ type: "command", command: `node ${hookPath}`, timeout: 5 }],
+      hooks: [{ type: "command", command: `node "${hookPath}"`, timeout: 5 }],
     },
   ]);
   ok("空的 settings.json 會長出 hook 註冊，指令是 node 不是 python3");
+
+  // Windows 路徑不處理的話，bash 會把 C:\Users\Reed 的 \U \R 當跳脫序列吃掉，
+  // 路徑變成 C:UsersReed → node 找不到檔案 → exit 1 → PreToolUse 當成「hook
+  // 出錯，放行」，串接指令一路暢通。這條在 macOS 上就會紅，不用等 VM。
+  const windowsHook = mergeHookRegistration(
+    {},
+    { hookPath: "C:\\Users\\Reed/.claude/hooks/block-chained-bash.js" },
+  );
+  const windowsCommand = windowsHook.hooks.PreToolUse[0].hooks[0].command;
+  assert(
+    !windowsCommand.includes("\\"),
+    `註冊指令不能留反斜線，實際是：${windowsCommand}`,
+  );
+  assert.equal(
+    windowsCommand,
+    'node "C:/Users/Reed/.claude/hooks/block-chained-bash.js"',
+  );
+  ok("Windows 路徑轉正斜線並加引號，bash 不會把它吃掉");
 
   // 重跑安裝不能疊出兩份，也不能把別人的 hook 掃掉。
   const rerun = mergeHookRegistration(registered, { hookPath });
@@ -202,7 +220,7 @@ try {
   );
   assert.deepEqual(findHookRegistration(registered), {
     matcher: "Bash",
-    command: `node ${hookPath}`,
+    command: `node "${hookPath}"`,
   });
   ok("找得出 settings.json 裡的 hook 註冊，別人的 hook 不會誤判成有裝");
 
