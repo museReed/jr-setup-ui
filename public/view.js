@@ -146,9 +146,13 @@ export function renderConfigChoices(toolChoices, languages) {
   elements.configLang.replaceChildren(...languageOptions);
 }
 
-export function renderConfigs(checks, onActionClick) {
+export function renderConfigs(
+  checks,
+  onActionClick,
+  { verifiedSteps = new Set(), onEyeToggle = () => {} } = {},
+) {
   const rows = checks.map((check) => {
-    const model = configRowModel(check);
+    const model = configRowModel(check, verifiedSteps.has(check.id));
     const row = document.createElement("div");
     row.className = "env-row";
     row.dataset.status = model.status;
@@ -178,6 +182,23 @@ export function renderConfigs(checks, onActionClick) {
         onActionClick(button.action, element, button.step),
       );
       row.append(element);
+    }
+
+    // 程式驗不到的那一格，明講要回終端看什麼，看完自己勾。
+    if (model.eyeCheck !== null) {
+      const eye = document.createElement("label");
+      eye.className = "env-eye-check";
+
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.dataset.eyeStep = check.id;
+      box.addEventListener("change", () => onEyeToggle(check.id, box.checked));
+
+      const text = document.createElement("span");
+      text.textContent = `我看到了：${model.eyeCheck}`;
+
+      eye.append(box, text);
+      row.append(eye);
     }
 
     return row;

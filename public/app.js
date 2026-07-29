@@ -6,6 +6,7 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
+  VERIFIED_BY_ACTION,
   LOGIN_POLL_INTERVAL_MS,
   agentNameFor,
   behaviorFallbackState,
@@ -29,6 +30,9 @@ const state = {
   envCheckInProgress: false,
   configCheckInProgress: false,
   loginWait: null,
+  // 這一頁開著的期間，哪幾列已經驗過行為了。重新整理就歸零——那是刻意的：
+  // 驗證證明的是「那個當下生效」，換一次環境就該重驗。
+  verifiedSteps: new Set(),
 };
 
 function renderControls() {
@@ -148,10 +152,26 @@ async function checkConfigs() {
 
   try {
     const result = await api.fetchConfigs({ tools, lang });
-    view.renderConfigs(result.checks, (action, button, step) =>
-      run(action, undefined, button, { step, lang: result.lang }),
+    view.renderConfigs(
+      result.checks,
+      (action, button, step) =>
+        run(action, undefined, button, { step, lang: result.lang }),
+      {
+        verifiedSteps: state.verifiedSteps,
+        onEyeToggle: (step, checked) => {
+          if (checked) {
+            state.verifiedSteps.add(step);
+          } else {
+            state.verifiedSteps.delete(step);
+          }
+
+          checkConfigs();
+        },
+      },
     );
-    view.renderConfigSummary(configSummary(result.checks));
+    view.renderConfigSummary(
+      configSummary(result.checks, state.verifiedSteps),
+    );
   } catch (error) {
     view.renderConfigFailure(error.message);
   } finally {
@@ -223,6 +243,18 @@ function handleDone(action, envButton, configAction, result) {
   resetRun();
 
   if (!outcome.succeeded) {
+    return;
+  }
+
+  // 驗證過了才記——失敗的話上面就 return 了，這裡不會留下假的已驗證。
+  const verifiedByThisRun = VERIFIED_BY_ACTION[action];
+
+  if (verifiedByThisRun !== undefined) {
+    for (const step of verifiedByThisRun) {
+      state.verifiedSteps.add(step);
+    }
+
+    checkConfigs();
     return;
   }
 

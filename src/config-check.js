@@ -82,6 +82,24 @@ async function checkCopyStep(materials, step) {
   return { id: step.id, label: step.label, status: "ok", detail: "已安裝" };
 }
 
+// 每一列除了「結構齊全」還要驗什麼，見 docs/wizard-verification-design.md。
+// behavior = 程式跑得出結果的行為驗證；eye = 只有真終端看得到、得由學生回報。
+// 兩者都沒有的列（例如白名單）結構對了就是真的對了，直接綠燈。
+export const VERIFICATION = {
+  "claude-md": { behavior: "verify-behavior" },
+  "output-style": { behavior: "verify-behavior" },
+  "codex-config": { behavior: "verify-behavior" },
+  "codex-agents": { behavior: "verify-behavior" },
+  hook: { behavior: "verify-hook-live" },
+  "claude-hooks": { behavior: "verify-hooks-live" },
+  "codex-hooks": {
+    eye: "開一個新的終端分頁跑 codex，問一句話，看分頁標題有沒有變成命名（第一次會問你要不要信任 hook，要接受）",
+  },
+  "tab-sync": {
+    eye: "關掉分頁重開一個，跑 claude 問一句話，看分頁標題有沒有變成「{emoji} 中文敘述」",
+  },
+};
+
 // 跑「settings.json 裡真的那條指令」，而不是我們自己拼一次路徑去跑腳本。
 // 差別很致命：VM 上腳本本身完全正常、直接跑必過，但註冊的指令路徑沒加引號，
 // bash 把 C:\Users\Reed 的 \U \R 當跳脫吃掉 → node 找不到檔案 → exit 1 →
@@ -360,6 +378,8 @@ export async function runConfigCheck({ tools, lang }) {
       ...check,
       installAction: check.status === "ok" ? null : "install-config-step",
       mergeAction: check.needsMerge === true ? "merge-config-step" : null,
+      verifyAction: VERIFICATION[check.id]?.behavior ?? null,
+      eyeCheck: VERIFICATION[check.id]?.eye ?? null,
     })),
   };
 }

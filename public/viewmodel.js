@@ -34,6 +34,15 @@ const STATUS_DISPLAY = {
   ok: { symbol: "✓", label: "通過" },
   missing: { symbol: "✗", label: "缺少" },
   warn: { symbol: "!", label: "需處理" },
+  unverified: { symbol: "◐", label: "待驗證" },
+};
+
+// 一顆驗證按鈕跑完，等於驗過了哪幾列。頁面上方的四顆與列上的「驗證」共用這張表，
+// 兩邊不會對不上。
+export const VERIFIED_BY_ACTION = {
+  "verify-behavior": ["claude-md", "output-style", "codex-config", "codex-agents"],
+  "verify-hook-live": ["hook"],
+  "verify-hooks-live": ["claude-hooks"],
 };
 
 export function isLoginAction(action) {
@@ -108,15 +117,36 @@ export function envRowModel(check) {
   };
 }
 
-export function configRowModel(check) {
-  const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
+// 結構齊全但行為還沒驗過的列不給綠燈：綠燈就沒有安裝按鈕，學生連重跑的機會都
+// 沒有。實測踩過四次「裝好了、綠燈、就是不生效」，詳見
+// docs/wizard-verification-design.md。
+export function configRowModel(check, verified = false) {
+  const pending =
+    check.status === "ok" &&
+    !verified &&
+    (check.verifyAction != null || check.eyeCheck != null);
+  const status = pending ? "unverified" : check.status;
+  const display = STATUS_DISPLAY[status] ?? STATUS_DISPLAY.warn;
   const buttons = [];
 
-  if (check.installAction !== null && check.installAction !== undefined) {
+  // 待驗證的列也要留安裝按鈕——重跑安裝是學生手上唯一的自救手段。
+  const installAction =
+    check.installAction ?? (pending ? "install-config-step" : null);
+
+  if (installAction !== null && installAction !== undefined) {
     buttons.push({
-      action: check.installAction,
+      action: installAction,
       dataName: "installAction",
       text: "安裝",
+      step: check.id,
+    });
+  }
+
+  if (check.verifyAction != null && !verified) {
+    buttons.push({
+      action: check.verifyAction,
+      dataName: "verifyAction",
+      text: "驗證",
       step: check.id,
     });
   }
@@ -131,16 +161,19 @@ export function configRowModel(check) {
   }
 
   return {
-    status: check.status,
+    status,
     symbol: display.symbol,
     ariaLabel: display.label,
     label: check.label,
-    detail: check.detail,
+    detail: pending ? `${check.detail}——尚未驗證真的生效` : check.detail,
     buttons,
+    // 只有真終端看得到的那一格：程式驗不到，讓學生看完回來勾。
+    eyeCheck: pending && check.eyeCheck != null ? check.eyeCheck : null,
+    verified,
   };
 }
 
-export function configSummary(checks) {
+export function configSummary(checks, verifiedSteps = new Set()) {
   const total = checks.length;
 
   if (total === 0) {
@@ -152,7 +185,11 @@ export function configSummary(checks) {
     };
   }
 
-  const done = checks.filter((check) => check.status === "ok").length;
+  // 「就緒」的門檻跟列上的綠燈同一條：結構齊全，而且該驗的行為也驗過了。
+  const done = checks.filter(
+    (check) =>
+      configRowModel(check, verifiedSteps.has(check.id)).status === "ok",
+  ).length;
 
   return {
     done,
