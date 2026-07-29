@@ -3,9 +3,13 @@
 import * as api from "./api.js";
 import * as view from "./view.js";
 import {
+  CONFIG_LANGUAGES,
+  CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
   LOGIN_POLL_INTERVAL_MS,
   agentNameFor,
+  behaviorFallbackState,
+  configSummary,
   envButtonState,
   extractLoginHints,
   installStatusMessage,
@@ -23,8 +27,21 @@ const state = {
   activeEnvButton: null,
   currentEnvAction: null,
   envCheckInProgress: false,
+  configCheckInProgress: false,
   loginWait: null,
 };
+
+function renderControls() {
+  view.renderRunControls(
+    runControlsState({
+      runInProgress: state.runInProgress,
+      runId: state.runId,
+      acceptsInput: state.acceptsInput,
+      envCheckInProgress: state.envCheckInProgress,
+      configCheckInProgress: state.configCheckInProgress,
+    }),
+  );
+}
 
 function renderEnvActionButtons() {
   for (const button of view.envActionButtons()) {
@@ -44,14 +61,7 @@ function renderEnvActionButtons() {
 
 function setRunning(running) {
   state.runInProgress = running;
-  view.renderRunControls(
-    runControlsState({
-      runInProgress: running,
-      runId: state.runId,
-      acceptsInput: state.acceptsInput,
-      envCheckInProgress: state.envCheckInProgress,
-    }),
-  );
+  renderControls();
   renderEnvActionButtons();
 }
 
@@ -125,6 +135,31 @@ async function checkEnvironment(showLoading = true) {
   }
 }
 
+async function checkConfigs() {
+  if (state.configCheckInProgress) {
+    return;
+  }
+
+  state.configCheckInProgress = true;
+  renderControls();
+  view.renderConfigLoading();
+  const tools = view.elements.configTools.value;
+  const lang = view.elements.configLang.value;
+
+  try {
+    const result = await api.fetchConfigs({ tools, lang });
+    view.renderConfigs(result.checks, (action, button, step) =>
+      run(action, undefined, button, { step, lang: result.lang }),
+    );
+    view.renderConfigSummary(configSummary(result.checks));
+  } catch (error) {
+    view.renderConfigFailure(error.message);
+  } finally {
+    state.configCheckInProgress = false;
+    renderControls();
+  }
+}
+
 async function pollLogin(wait) {
   if (state.loginWait !== wait) {
     return;
@@ -172,7 +207,7 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, result) {
+function handleDone(action, envButton, configAction, result) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -187,7 +222,16 @@ function handleDone(action, envButton, result) {
   const wasEnvAction = envButton !== null;
   resetRun();
 
-  if (!wasEnvAction || !outcome.succeeded) {
+  if (!outcome.succeeded) {
+    return;
+  }
+
+  if (configAction) {
+    checkConfigs();
+    return;
+  }
+
+  if (!wasEnvAction) {
     return;
   }
 
@@ -205,7 +249,10 @@ function handleDone(action, envButton, result) {
   checkEnvironment();
 }
 
-async function run(action, promptText, envButton = null) {
+async function run(action, promptText, button = null, options) {
+  const configAction = options !== undefined && action !== "verify-behavior";
+  const envButton = options === undefined ? button : null;
+
   if (isLoginAction(action)) {
     stopLoginWait();
   }
@@ -235,6 +282,10 @@ async function run(action, promptText, envButton = null) {
       }
     }
 
+    if (options !== undefined) {
+      body.options = options;
+    }
+
     const { runId, acceptsInput } = await api.startRun(body);
     state.runId = runId;
     state.acceptsInput = acceptsInput;
@@ -260,7 +311,13 @@ async function run(action, promptText, envButton = null) {
     events.addEventListener("done", (event) => {
       done = true;
       events.close();
-      handleDone(action, envButton, JSON.parse(event.data));
+      const result = JSON.parse(event.data);
+
+      if (action === "verify-behavior") {
+        view.renderBehaviorFallback(behaviorFallbackState(result));
+      }
+
+      handleDone(action, envButton, configAction, result);
     });
 
     events.onerror = () => {
@@ -312,6 +369,17 @@ view.elements.copyLoginCode.addEventListener("click", async () => {
   }
 });
 
+view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(
+      view.elements.behaviorQuestion.textContent,
+    );
+    view.elements.copyBehaviorQuestion.textContent = "已複製";
+  } catch (error) {
+    view.addLine(`無法複製：${error.message}`, "failed");
+  }
+});
+
 view.elements.runInput.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -331,4 +399,27 @@ view.elements.runInput.addEventListener("submit", async (event) => {
 });
 
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
+view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
+view.elements.recheckConfigs.addEventListener("click", checkConfigs);
+view.elements.configTools.addEventListener("change", checkConfigs);
+view.elements.configLang.addEventListener("change", checkConfigs);
+view.elements.verifyConfigs.addEventListener("click", () => {
+  run("verify-configs", undefined, view.elements.verifyConfigs, {
+    lang: view.elements.configLang.value,
+    tools: view.elements.configTools.value,
+  });
+});
+view.elements.verifyBehavior.addEventListener("click", () => {
+  view.renderBehaviorFallback({ visible: false });
+  run("verify-behavior", undefined, view.elements.verifyBehavior, {
+    tools: view.elements.configTools.value,
+  });
+});
+// 這顆不帶 options（驗的是「Claude Code 有沒有真的載入 hook」，跟語言與工具無關），
+// 也不把按鈕傳進去——傳了會被當成環境檢查那區的動作，跑完誤觸發環境重查與
+// 「安裝完成」訊息。按鈕的鎖定由 configControlsDisabled 統一處理。
+view.elements.verifyHookLive.addEventListener("click", () => {
+  run("verify-hook-live", undefined, null);
+});
 checkEnvironment();
+checkConfigs();

@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 
 import {
+  BEHAVIOR_CHECKLIST,
+  BEHAVIOR_QUESTION,
+  CONFIG_LANGUAGES,
+  CONFIG_TOOL_CHOICES,
   LOGIN_WAIT_TIMEOUT_MS,
   agentNameFor,
+  behaviorFallbackState,
+  configQuery,
+  configRowModel,
+  configSummary,
   envButtonState,
   envRowModel,
   extractLoginHints,
@@ -18,6 +26,89 @@ function ok(description) {
 }
 
 try {
+  assert.deepEqual(CONFIG_LANGUAGES, ["zh-TW", "zh-CN", "en"]);
+  assert.deepEqual(
+    CONFIG_TOOL_CHOICES.map((choice) => choice.value),
+    ["claude", "codex", "claude,codex"],
+  );
+  ok("規則檔語言與工具選項符合後端白名單");
+
+  assert.equal(
+    configQuery({ tools: "claude,codex", lang: "zh-TW" }),
+    "tools=claude,codex&lang=zh-TW",
+  );
+  ok("規則檔查詢字串保留工具順序與逗號");
+
+  for (const input of [
+    { tools: "cursor", lang: "zh-TW" },
+    { tools: "claude", lang: "ja" },
+  ]) {
+    assert.throws(() => configQuery(input));
+  }
+  ok("規則檔查詢拒絕不合法的工具與語言");
+
+  const configChecks = [
+    { status: "ok", symbol: "✓", ariaLabel: "通過" },
+    { status: "warn", symbol: "!", ariaLabel: "需處理" },
+    { status: "missing", symbol: "✗", ariaLabel: "缺少" },
+  ];
+  for (const expected of configChecks) {
+    const model = configRowModel({
+      id: `${expected.status}-step`,
+      label: "規則",
+      status: expected.status,
+      detail: "狀態",
+      installAction: null,
+      mergeAction: null,
+    });
+    assert.equal(model.symbol, expected.symbol);
+    assert.equal(model.ariaLabel, expected.ariaLabel);
+  }
+  ok("規則檔三種狀態沿用環境檢查圖示與讀屏文字");
+
+  const configActions = configRowModel({
+    id: "claude-md",
+    label: "行為規則 CLAUDE.md",
+    status: "warn",
+    detail: "需要合併",
+    installAction: "install-config-step",
+    mergeAction: "merge-config-step",
+  });
+  assert.deepEqual(configActions.buttons, [
+    {
+      action: "install-config-step",
+      dataName: "installAction",
+      text: "安裝",
+      step: "claude-md",
+    },
+    {
+      action: "merge-config-step",
+      dataName: "mergeAction",
+      text: "用 AI 合併",
+      step: "claude-md",
+    },
+  ]);
+  ok("規則檔同時可安裝與合併時安裝按鈕在前");
+
+  assert.deepEqual(configSummary([]), {
+    done: 0,
+    total: 0,
+    allOk: false,
+    text: "尚未檢查",
+  });
+  ok("空的規則檔檢查顯示尚未檢查");
+
+  assert.deepEqual(
+    configSummary([{ status: "ok" }, { status: "warn" }]),
+    {
+      done: 1,
+      total: 2,
+      allOk: false,
+      text: "2 項中 1 項就緒",
+    },
+  );
+  ok("規則檔摘要算出部分完成數量");
+
   assert.deepEqual(extractLoginHints("請開 https://example.com/device 並輸入"), {
     url: "https://example.com/device",
     code: null,
@@ -36,6 +127,7 @@ try {
   assert.equal(isLoginAction("install-claude"), false);
   assert.equal(agentNameFor("claude-free"), "Claude");
   assert.equal(agentNameFor("codex-hello"), "Codex");
+  assert.equal(agentNameFor("merge-config-step"), "Claude");
   assert.equal(agentNameFor("hello"), "");
   ok("能從 action 名稱判斷類型與代理名稱");
 
@@ -144,6 +236,7 @@ try {
   assert.equal(idle.cancelHidden, true);
   assert.equal(idle.inputHidden, true);
   assert.equal(idle.recheckDisabled, false);
+  assert.equal(idle.configControlsDisabled, false);
 
   const running = runControlsState({
     runInProgress: true,
@@ -155,6 +248,7 @@ try {
   assert.equal(running.cancelDisabled, false);
   assert.equal(running.inputHidden, false);
   assert.equal(running.actionButtonsDisabled, true);
+  assert.equal(running.configControlsDisabled, true);
 
   // 不接受輸入的動作不該冒出那格貼代碼的輸入列。
   assert.equal(
@@ -185,6 +279,16 @@ try {
     }).recheckDisabled,
     true,
   );
+  assert.equal(
+    runControlsState({
+      runInProgress: false,
+      runId: null,
+      acceptsInput: false,
+      envCheckInProgress: false,
+      configCheckInProgress: true,
+    }).configControlsDisabled,
+    true,
+  );
   ok("執行中／閒置時各控制項的開關正確");
 
   assert.deepEqual(runOutcome({ exitCode: 0, signal: null }), {
@@ -203,6 +307,28 @@ try {
     "已停止：SIGKILL",
   );
   ok("成功判定含 benign 退出碼，被中止時顯示訊號");
+
+  assert.deepEqual(
+    behaviorFallbackState({ exitCode: 0, signal: null }),
+    { visible: false, question: "", checklist: [] },
+  );
+  ok("行為驗證 exit 0 時不顯示手動退路");
+
+  assert.deepEqual(
+    behaviorFallbackState({ exitCode: 1, signal: null }),
+    {
+      visible: true,
+      question: BEHAVIOR_QUESTION,
+      checklist: BEHAVIOR_CHECKLIST,
+    },
+  );
+  ok("行為驗證 exit 1 時顯示問題與五項檢查清單");
+
+  assert.deepEqual(
+    behaviorFallbackState({ exitCode: 1, signal: null, benign: true }),
+    { visible: false, question: "", checklist: [] },
+  );
+  ok("行為驗證 benign 結果沿用成功判定且不顯示手動退路");
 
   assert.deepEqual(
     installStatusMessage("install-gh", { exitCode: 0, signal: null }),
