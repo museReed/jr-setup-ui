@@ -141,15 +141,30 @@ export const VERIFICATION = {
 // bash 把 C:\Users\Reed 的 \U \R 當跳脫吃掉 → node 找不到檔案 → exit 1 →
 // PreToolUse 把 exit 1 當「hook 出錯，放行」，串接指令一路暢通。只驗腳本的話
 // 這一格永遠是綠的。
+// Windows 上嚮導自己的 PATH 未必看得到 Git Bash，但 Claude Code 本來就要它，
+// 機器上幾乎一定有。與其把「叫不到 bash」丟給學生看（他做什麼都修不了，按安裝
+// 也不會變好），不如自己去常見的安裝位置找。
+export function resolveBash(exists = existsSync, platform = process.platform) {
+  if (platform !== "win32") {
+    return "bash";
+  }
+
+  const candidates = [
+    `${process.env.ProgramFiles ?? "C:/Program Files"}/Git/bin/bash.exe`,
+    `${process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)"}/Git/bin/bash.exe`,
+    `${process.env.LOCALAPPDATA ?? ""}/Programs/Git/bin/bash.exe`,
+  ];
+
+  return candidates.find((candidate) => exists(candidate)) ?? "bash";
+}
+
 export function probeRegisteredHook(registeredCommand, command, env) {
   return new Promise((resolve) => {
     let child;
 
     try {
       // Claude Code 是把 hook 指令交給 bash 跑的，這裡照做才會踩到同一個坑。
-      // env 要帶補過的 PATH：Windows 上嚮導自己的 PATH 未必看得到 Git Bash，
-      // 找不到 bash 會回 exitCode null，那一列就永遠停在「實測沒擋下來」。
-      child = spawn("bash", ["-c", registeredCommand], {
+      child = spawn(resolveBash(), ["-c", registeredCommand], {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
         ...(env === undefined ? {} : { env }),
@@ -256,15 +271,24 @@ async function checkHook(step, materials) {
       await spawnEnv(),
     );
 
-    // exitCode null = 連 bash 都叫不起來，那是我們的探測環境有問題，不是學生的
-    // hook 壞了。講清楚差別，否則他會一直重裝一個本來就好的東西。
+    // 真的一台 bash 都找不到時，退回直接跑腳本本身。那比不上「跑註冊的那條指令」
+    // ——路徑寫壞就抓不到了——但總比把一句學生修不了的錯誤丟在畫面上好。
     if (probe.exitCode === null) {
-      return {
-        id: step.id,
-        label: step.label,
-        status: "warn",
-        detail: `無法實測（叫不到 bash：${probe.stderr.trim().slice(0, 60)}）`,
-      };
+      const fallback = await probeHook(step.target, "echo a && echo b");
+
+      return fallback.exitCode === 2
+        ? {
+            id: step.id,
+            label: step.label,
+            status: "ok",
+            detail: "已註冊，實測會擋（這台機器沒有 bash，改驗腳本本身）",
+          }
+        : {
+            id: step.id,
+            label: step.label,
+            status: "warn",
+            detail: `已註冊，但實測沒擋下來（exit ${fallback.exitCode}）`,
+          };
     }
 
     if (probe.exitCode !== 2) {

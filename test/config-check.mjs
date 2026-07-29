@@ -7,6 +7,7 @@ import {
   checkAgentHooks,
   checkTabSync,
   probeHook,
+  resolveBash,
 } from "../src/config-check.js";
 import {
   describeStep,
@@ -67,6 +68,18 @@ process.stdin.on("end", () => {
   const missing = await probeHook(path.join(dir, "不存在.js"), "echo a && echo b");
   assert.notEqual(missing.exitCode, 2);
   ok("hook 檔案不存在時不會爆掉，也不會誤判成有擋");
+
+  // Windows 上嚮導的 PATH 未必看得到 Git Bash，但機器上幾乎一定有它——Claude Code
+  // 本來就要。找得到就用絕對路徑，別把一句學生修不了的 ENOENT 丟到畫面上。
+  assert.equal(resolveBash(() => true, "darwin"), "bash");
+  assert.equal(
+    resolveBash((p) => p.endsWith("/Git/bin/bash.exe"), "win32").endsWith(
+      "/Git/bin/bash.exe",
+    ),
+    true,
+  );
+  assert.equal(resolveBash(() => false, "win32"), "bash");
+  ok("Windows 上會去常見位置找 Git Bash，找不到才退回 PATH");
 
   const tabStep = describeStep("tab-sync", {
     lang: "zh-TW",
