@@ -11,6 +11,8 @@ import {
   describeStep,
   expandAllowRules,
   findHookRegistration,
+  hasAgentHookRegistrations,
+  hasMarkedBlock,
   stepsForTools,
 } from "./config-install.js";
 import { materialsDir } from "./paths.js";
@@ -216,6 +218,66 @@ async function checkAllowlist(materials, step) {
   };
 }
 
+export async function checkTabSync(step) {
+  if (!existsSync(step.target)) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "missing",
+      detail: "尚未安裝",
+    };
+  }
+
+  const rcContent = existsSync(step.rcTarget)
+    ? await readFile(step.rcTarget, "utf8")
+    : "";
+
+  if (!hasMarkedBlock(rcContent, step.rcMarker)) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "檔案在，但 shell function 沒寫進去",
+    };
+  }
+
+  return { id: step.id, label: step.label, status: "ok", detail: "已啟用" };
+}
+
+export async function checkAgentHooks(step) {
+  const filesExist = step.hookFiles.every((file) => existsSync(file.target));
+  const settings = await readJsonOrNull(step.settingsTarget);
+  const registered = hasAgentHookRegistrations(
+    settings ?? {},
+    step.registrations,
+  );
+
+  if (filesExist && registered) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "ok",
+      detail: "hook 檔案與 3 筆註冊都已生效",
+    };
+  }
+
+  if (filesExist) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "檔案在，但沒註冊——不會被觸發",
+    };
+  }
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: "missing",
+    detail: registered ? "已註冊但 hook 檔案不完整" : "尚未安裝",
+  };
+}
+
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
@@ -230,6 +292,10 @@ export async function runConfigCheck({ tools, lang }) {
       checks.push(await checkHook(step));
     } else if (step.kind === "allowlist") {
       checks.push(await checkAllowlist(materials, step));
+    } else if (step.kind === "tab-sync") {
+      checks.push(await checkTabSync(step));
+    } else if (step.kind === "agent-hooks") {
+      checks.push(await checkAgentHooks(step));
     } else {
       checks.push(await checkCopyStep(materials, step));
     }

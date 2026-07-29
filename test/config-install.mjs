@@ -5,7 +5,10 @@ import {
   describeStep,
   expandAllowRules,
   findHookRegistration,
+  hasAgentHookRegistrations,
+  hookFileName,
   mergeAllowRules,
+  mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
 } from "../src/config-install.js";
@@ -23,15 +26,34 @@ try {
     "output-style",
     "hook",
     "allowlist",
+    "tab-sync",
+    "claude-hooks",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
     "codex-config",
     "codex-agents",
+    "tab-sync",
+    "codex-hooks",
   ]);
-  assert.equal(stepsForTools(["claude", "codex"]).length, 6);
+  assert.deepEqual(stepsForTools(["claude", "codex"]), [
+    "claude-md",
+    "output-style",
+    "hook",
+    "allowlist",
+    "codex-config",
+    "codex-agents",
+    "tab-sync",
+    "claude-hooks",
+    "codex-hooks",
+  ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
-  ok("步驟清單跟著選的工具走，沒選工具就報錯");
+  ok("既有規則之後才出現共用 tab sync 與各工具的 hooks");
+
+  assert.equal(hookFileName("context-monitor", "linux"), "context-monitor.sh");
+  assert.equal(hookFileName("context-monitor", "darwin"), "context-monitor.sh");
+  assert.equal(hookFileName("context-monitor", "win32"), "context-monitor.ps1");
+  ok("hook 副檔名會依平台選 sh 或 ps1");
 
   assert.equal(
     describeStep("claude-md", AT).target,
@@ -45,6 +67,40 @@ try {
   assert.equal(describeStep("codex-config", AT).protectExisting, true);
   assert.equal(describeStep("codex-agents", AT).protectExisting, undefined);
   ok("每步知道自己的來源與目標，會蓋掉使用者內容的步驟有標記");
+
+  const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
+  assert.equal(tabSync.kind, "tab-sync");
+  assert.equal(tabSync.watcherSource, "skills/bin/ai-tab-sync.sh");
+  assert.equal(tabSync.target, `${HOME}/.local/bin/ai-tab-sync.sh`);
+  assert.equal(tabSync.rcTarget, `${HOME}/.zshrc`);
+  assert.match(tabSync.rcBlock, /command claude "\$@"/);
+  assert.match(tabSync.rcBlock, /command codex "\$@"/);
+
+  const windowsTabSync = describeStep("tab-sync", {
+    ...AT,
+    platform: "win32",
+  });
+  assert.equal(windowsTabSync.watcherSource, "skills/bin/ai-tab-sync.ps1");
+  assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
+  assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
+  ok("tab sync 會描述 watcher、rc 檔與跳過函式的真正指令");
+
+  const claudeHooks = describeStep("claude-hooks", {
+    ...AT,
+    platform: "linux",
+  });
+  const codexHooks = describeStep("codex-hooks", {
+    ...AT,
+    platform: "win32",
+  });
+  assert.equal(claudeHooks.hookFiles.length, 3);
+  assert.equal(claudeHooks.registrations.length, 3);
+  assert.equal(claudeHooks.settingsTarget, `${HOME}/.claude/settings.json`);
+  assert.equal(codexHooks.hookFiles.length, 2);
+  assert.equal(codexHooks.registrations.length, 3);
+  assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
+  assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
+  ok("Claude 與 Codex hooks 各自帶齊檔案、三筆註冊與設定目標");
 
   assert.throws(() => describeStep("claude-md", { ...AT, lang: "ja" }));
   assert.throws(() => describeStep("不存在的步驟", AT));
@@ -94,6 +150,34 @@ try {
   assert.equal(withOthers.hooks.Stop.length, 1);
   assert.equal(withOthers.model, "opus");
   ok("不動使用者原本的其他 hook 與設定");
+
+  const agentRegistered = mergeAgentHookRegistrations(
+    {
+      hooks: {
+        PostToolUse: [
+          { hooks: [{ type: "command", command: "bash /別人的.sh" }] },
+        ],
+        Stop: [{ hooks: [{ type: "command", command: "echo bye" }] }],
+      },
+      model: "opus",
+    },
+    {
+      registrations: claudeHooks.registrations,
+      hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
+    },
+  );
+  assert.equal(hasAgentHookRegistrations(agentRegistered, claudeHooks.registrations), true);
+  assert.equal(agentRegistered.hooks.PostToolUse.length, 3);
+  assert.equal(agentRegistered.hooks.Stop.length, 1);
+  assert.equal(agentRegistered.model, "opus");
+
+  const agentRerun = mergeAgentHookRegistrations(agentRegistered, {
+    registrations: claudeHooks.registrations,
+    hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
+  });
+  assert.equal(agentRerun.hooks.PostToolUse.length, 3);
+  assert.equal(agentRerun.hooks.UserPromptSubmit.length, 1);
+  ok("三筆 agent hook 註冊可重跑，且不動使用者原本的 hook");
 
   const allow = mergeAllowRules(
     { permissions: { allow: ["Bash(ls)"], deny: ["Bash(rm)"] } },

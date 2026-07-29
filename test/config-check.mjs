@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { probeHook } from "../src/config-check.js";
+import {
+  checkAgentHooks,
+  checkTabSync,
+  probeHook,
+} from "../src/config-check.js";
+import {
+  describeStep,
+  mergeAgentHookRegistrations,
+  upsertBlock,
+} from "../src/config-install.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -49,6 +58,52 @@ process.stdin.on("end", () => {
   const missing = await probeHook(path.join(dir, "不存在.js"), "echo a && echo b");
   assert.notEqual(missing.exitCode, 2);
   ok("hook 檔案不存在時不會爆掉，也不會誤判成有擋");
+
+  const tabStep = describeStep("tab-sync", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  mkdirSync(path.dirname(tabStep.target), { recursive: true });
+  writeFileSync(tabStep.target, "watcher");
+  assert.deepEqual(await checkTabSync(tabStep), {
+    id: "tab-sync",
+    label: "終端機標題同步",
+    status: "warn",
+    detail: "檔案在，但 shell function 沒寫進去",
+  });
+  writeFileSync(
+    tabStep.rcTarget,
+    upsertBlock("", tabStep.rcMarker, tabStep.rcBlock),
+  );
+  assert.equal((await checkTabSync(tabStep)).status, "ok");
+  ok("tab sync 要 watcher 與 rc 標記同時存在才算生效");
+
+  const agentStep = describeStep("claude-hooks", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  for (const file of agentStep.hookFiles) {
+    mkdirSync(path.dirname(file.target), { recursive: true });
+    writeFileSync(file.target, "hook");
+  }
+  assert.deepEqual(await checkAgentHooks(agentStep), {
+    id: "claude-hooks",
+    label: "Claude Code hooks",
+    status: "warn",
+    detail: "檔案在，但沒註冊——不會被觸發",
+  });
+  const settings = mergeAgentHookRegistrations(
+    {},
+    {
+      registrations: agentStep.registrations,
+      hookMarkers: agentStep.hookFiles.map((file) => file.base),
+    },
+  );
+  writeFileSync(agentStep.settingsTarget, JSON.stringify(settings));
+  assert.equal((await checkAgentHooks(agentStep)).status, "ok");
+  ok("agent hooks 要所有檔案與三筆註冊同時存在才算生效");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);
