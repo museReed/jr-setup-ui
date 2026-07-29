@@ -313,19 +313,28 @@ function checkGhostty() {
   return { id, label, ...status };
 }
 
-function checkWindowsTerminal() {
+async function checkWindowsTerminal() {
   const id = "windows-terminal";
   const label = "終端機是 Windows Terminal";
-  // 用檔案存在判定有沒有裝，不去跑 wt.exe——那會真的開一個視窗出來。
-  // 這個路徑是 Windows 的 app execution alias，裝了就有。
-  const installed = existsSync(
-    join(
-      process.env.LOCALAPPDATA ?? "",
-      "Microsoft",
-      "WindowsApps",
-      "wt.exe",
-    ),
-  );
+
+  // 已經跑在裡面就不用查有沒有裝，省一次 spawn。
+  if (process.env.WT_SESSION) {
+    return { id, label, ...windowsTerminalStatus(process.env, true) };
+  }
+
+  // 問 PowerShell 本人，不去猜安裝路徑：app execution alias 的位置與可見性
+  // 會因為安裝方式（Store / winget / 全機安裝）而不同，實測過檔案判定會漏。
+  // 也不直接跑 wt.exe——那會真的開一個視窗出來。
+  const result = await runProbe("powershell.exe", [
+    "-NoProfile",
+    "-Command",
+    "if (Get-Command wt -ErrorAction SilentlyContinue) { 'installed' } else { 'missing' }",
+  ]);
+  const installed =
+    result.type === "close" &&
+    result.exitCode === 0 &&
+    (result.stdout ?? "").includes("installed");
+
   return { id, label, ...windowsTerminalStatus(process.env, installed) };
 }
 
