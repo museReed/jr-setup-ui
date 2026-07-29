@@ -172,7 +172,7 @@ Object.assign(actions, {
     label: "開終端驗證",
     cmd: process.execPath,
     options: {
-      case: ["naming", "chained", "context"],
+      case: ["naming", "chained", "context", "title"],
       agent: ["claude", "codex"],
     },
     buildArgs: ({ case: testCase, agent }) => [

@@ -40,7 +40,7 @@ const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
 const CASES = {
   naming: {
     label: "自動命名",
-    env: {},
+    env: () => ({}),
     prompt: ({ agent, resultFile }) =>
       agent === "codex"
         ? // codex 的命名是兩段式：模型先把名字寫到中繼檔，hook 要在「下一次 hook
@@ -55,9 +55,20 @@ const CASES = {
     expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
     watchFor: "分頁標題變成「{emoji} 中文敘述」，emoji 是規定的那 8 個之一",
   },
+  // 標題那格不該叫 AI——要驗的是「watcher 有沒有把名字放上分頁標題」，跟模型
+  // 一點關係都沒有。這裡直接起裝好的 watcher、餵它一個名字，學生看標題就好：
+  // 不花 API 額度、不受模型心情影響，而且失敗時只剩兩個可能（watcher 壞了 /
+  // 終端不吃標題），比夾著一個 AI 好查太多。
+  title: {
+    label: "終端機標題同步",
+    env: () => ({}),
+    prompt: () => "",
+    expect: () => null,
+    watchFor: "分頁標題變成「🔍 標題同步測試」，五秒後自己還原",
+  },
   chained: {
     label: "Shell 不串接",
-    env: {},
+    env: () => ({}),
     prompt: ({ resultFile }) =>
       "請執行這條指令：echo a && echo b。" +
       `不管成功或被擋，都把你收到的完整訊息一字不改寫進 ${resultFile}。`,
@@ -66,8 +77,13 @@ const CASES = {
   },
   context: {
     label: "Context 監控",
-    // 把 context 上限假裝成 30k，門檻降到 21k，幾次工具呼叫就會跨過去。
-    env: { CONTEXT_MONITOR_TEST_WINDOW: "30000" },
+    // 把 context 上限假裝成小視窗，門檻降到七成，幾次工具呼叫就會跨過去。
+    // 兩支監控腳本的測試開關名字不一樣——先前兩邊都設 claude 那個，codex 的門檻
+    // 沒被降下來，模型當然回報「未出現 context hook 提醒」（VM 實測）。
+    env: ({ agent }) =>
+      agent === "codex"
+        ? { CODEX_TEST_MAX_CONTEXT_WINDOW: "5000" }
+        : { CONTEXT_MONITOR_TEST_WINDOW: "30000" },
     prompt: ({ resultFile }) =>
       "請依序執行這三件事，每件之間簡短說一句話：列出目前資料夾、印出今天日期、印出目前路徑。" +
       "如果過程中有 hook 提醒你 context 快用完、或要你寫交接文件，不要照做——" +
@@ -112,9 +128,39 @@ const startedAt = Date.now();
 
 // 腳本寫成檔案再交給終端跑：把整段指令塞進終端的參數裡，引號與換行會被各平台的
 // 命令列各自重新解讀一次，中文和 && 都會被吃掉（前面踩過）。
+// 標題測試不叫 agent，改成起 watcher 再餵它一個名字。
+function titleScript() {
+  const name = "🔍 標題同步測試";
+
+  if (process.platform === "win32") {
+    const watcher = "$HOME\\.jr-setup\\bin\\ai-tab-sync.ps1";
+    return [
+      "$sync = Join-Path $env:TEMP \"jr-title-$PID.txt\"",
+      `Set-Content -Path $sync -Value '${name}' -Encoding UTF8`,
+      `$w = Start-Process powershell.exe -ArgumentList "-NoProfile -File \"${watcher}\" \"$sync\" $PID" -NoNewWindow -PassThru`,
+      "Start-Sleep -Seconds 5",
+      "Stop-Process -Id $w.Id -Force -ErrorAction SilentlyContinue",
+      "Remove-Item $sync -Force -ErrorAction SilentlyContinue",
+      "Write-Host '標題測試結束——剛才那五秒分頁標題有變嗎？'",
+    ].join("\n");
+  }
+
+  return [
+    'sync="$(mktemp)"',
+    `printf '%s\\n' '${name}' > "$sync"`,
+    '"$HOME/.local/bin/ai-tab-sync.sh" "$sync" "$(tty)" &',
+    "watcher=$!",
+    "sleep 5",
+    'kill "$watcher" 2>/dev/null',
+    'rm -f "$sync"',
+    'echo "標題測試結束——剛才那五秒分頁標題有變嗎？"',
+  ].join("\n");
+}
+
 function writeLauncher(prompt) {
   const stamp = `${process.pid}-${Date.now()}`;
-  const envLines = Object.entries(testCase.env);
+  const envLines = Object.entries(testCase.env({ agent }));
+  const body = caseName === "title" ? titleScript() : `${agent} '${prompt}'`;
 
   if (process.platform === "win32") {
     const file = path.join(tmpdir(), `jr-verify-${stamp}.ps1`);
@@ -122,7 +168,7 @@ function writeLauncher(prompt) {
       .map(([name, value]) => `$env:${name} = '${value}'`)
       .join("\n");
     // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    writeFileSync(file, `﻿${setEnv}\n${agent} '${prompt}'\n`, "utf8");
+    writeFileSync(file, `\ufeff${setEnv}\n${body}\n`, "utf8");
     return file;
   }
 
@@ -131,7 +177,7 @@ function writeLauncher(prompt) {
     .map(([name, value]) => `export ${name}='${value}'`)
     .join("\n");
   // -i 讓 zsh 讀 ~/.zshrc，wrapper 才會存在。
-  writeFileSync(file, `#!/bin/zsh -i\n${setEnv}\n${agent} '${prompt}'\n`);
+  writeFileSync(file, `#!/bin/zsh -i\n${setEnv}\n${body}\n`);
   chmodSync(file, 0o755);
   return file;
 }

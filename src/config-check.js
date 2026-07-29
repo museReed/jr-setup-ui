@@ -15,6 +15,7 @@ import {
   hasMarkedBlock,
   stepsForTools,
 } from "./config-install.js";
+import { spawnEnv } from "./env-path.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -121,9 +122,10 @@ export const VERIFICATION = {
   "codex-agents": { behavior: "verify-behavior", options: { tools: "codex" } },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
+  // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
   "tab-sync": {
-    terminal: { case: "naming", agent: "claude" },
-    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+    terminal: { case: "title", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
   },
   "claude-namer": { terminal: { case: "naming", agent: "claude" } },
   "claude-monitor": { terminal: { case: "context", agent: "claude" } },
@@ -139,15 +141,18 @@ export const VERIFICATION = {
 // bash 把 C:\Users\Reed 的 \U \R 當跳脫吃掉 → node 找不到檔案 → exit 1 →
 // PreToolUse 把 exit 1 當「hook 出錯，放行」，串接指令一路暢通。只驗腳本的話
 // 這一格永遠是綠的。
-export function probeRegisteredHook(registeredCommand, command) {
+export function probeRegisteredHook(registeredCommand, command, env) {
   return new Promise((resolve) => {
     let child;
 
     try {
       // Claude Code 是把 hook 指令交給 bash 跑的，這裡照做才會踩到同一個坑。
+      // env 要帶補過的 PATH：Windows 上嚮導自己的 PATH 未必看得到 Git Bash，
+      // 找不到 bash 會回 exitCode null，那一列就永遠停在「實測沒擋下來」。
       child = spawn("bash", ["-c", registeredCommand], {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
+        ...(env === undefined ? {} : { env }),
       });
     } catch (error) {
       resolve({ exitCode: null, stderr: error.message });
@@ -248,7 +253,19 @@ async function checkHook(step, materials) {
     const probe = await probeRegisteredHook(
       registration.command,
       "echo a && echo b",
+      await spawnEnv(),
     );
+
+    // exitCode null = 連 bash 都叫不起來，那是我們的探測環境有問題，不是學生的
+    // hook 壞了。講清楚差別，否則他會一直重裝一個本來就好的東西。
+    if (probe.exitCode === null) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: `無法實測（叫不到 bash：${probe.stderr.trim().slice(0, 60)}）`,
+      };
+    }
 
     if (probe.exitCode !== 2) {
       return {
