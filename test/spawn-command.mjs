@@ -34,12 +34,26 @@ try {
     "/d",
     "/s",
     "/c",
-    "npm.cmd",
-    "install",
-    "-g",
-    "@openai/codex",
+    '"npm.cmd install -g @openai/codex"',
   ]);
+  assert.equal(wrapped.spawnOptions.windowsVerbatimArguments, true);
   ok("包裝後由 cmd.exe 執行，原本的參數順序不變");
+
+  // 迴歸：路徑帶空白（C:\Program Files\nodejs\npx.cmd）時，指令本身要有自己的
+  // 引號，整串再包一層給 /s 剝——少了內層引號，cmd.exe 會在空白處斷開，畫面上是
+  // 'C:\Program' is not recognized（VM 實測；winget 那些指令沒空白所以一直沒踩到）。
+  const spaced = resolveSpawn(
+    "C:\\Program Files\\nodejs\\npx.cmd",
+    ["--yes", "skills", "add", "anthropics/skills"],
+    "win32",
+  );
+  assert.deepEqual(spaced.args, [
+    "/d",
+    "/s",
+    "/c",
+    '""C:\\Program Files\\nodejs\\npx.cmd" --yes skills add anthropics/skills"',
+  ]);
+  ok("指令路徑帶空白時，內層引號與最外層引號都在");
 
   const untouched = resolveSpawn("winget", ["install", "--id", "Git.Git"], "win32");
   assert.equal(untouched.cmd, "winget");
@@ -76,9 +90,7 @@ try {
     "/d",
     "/s",
     "/c",
-    `${npmDir}\\claude.CMD`,
-    "auth",
-    "login",
+    `"${npmDir}\\claude.CMD auth login"`,
   ]);
   ok("登入動作解析到 .CMD 後改由 cmd.exe 執行");
 

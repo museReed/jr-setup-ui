@@ -232,6 +232,7 @@ async function externalSkillStep(step) {
       stdio: "inherit",
       shell: false,
       env,
+      ...(spawnable.spawnOptions ?? {}),
     });
     child.once("error", (error) =>
       reject(
