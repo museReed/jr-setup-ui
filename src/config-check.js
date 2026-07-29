@@ -45,6 +45,33 @@ async function sameAsSource(materials, step) {
   return a === b;
 }
 
+// 「檔案在」不等於「檔案是對的」。hook 與 watcher 的內容改過之後，已經裝過的人
+// 手上是舊版——嚮導若只看存在與否，會告訴他一切正常。這輪五個斷點的修正全都落在
+// 這些檔案裡，所以逐字比對是必要的。
+async function staleTargets(materials, files) {
+  const stale = [];
+
+  for (const file of files) {
+    const source = path.join(materials, file.source);
+
+    // 材料本身缺了是我們的問題，不是學生的——不要報成他裝錯。
+    if (!existsSync(source) || !existsSync(file.target)) {
+      continue;
+    }
+
+    const [expected, actual] = await Promise.all([
+      readFile(source, "utf8"),
+      readFile(file.target, "utf8"),
+    ]);
+
+    if (expected !== actual) {
+      stale.push(file.target);
+    }
+  }
+
+  return stale;
+}
+
 async function checkCopyStep(materials, step) {
   if (!existsSync(step.target)) {
     return {
@@ -194,13 +221,27 @@ async function checkOutputStyle(materials, step) {
   };
 }
 
-async function checkHook(step) {
+async function checkHook(step, materials) {
   const fileExists = existsSync(step.target);
   const settings = await readJsonOrNull(step.settingsTarget);
   const registration = findHookRegistration(settings ?? {});
 
+  if (fileExists && (await staleTargets(materials, [step])).length > 0) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "裝的是舊版——重跑安裝",
+    };
+  }
+
   if (fileExists && registration !== null) {
-    const probe = await probeHook(step.target, "echo a && echo b");
+    // 跑註冊的那條指令，不是自己拼路徑去跑腳本。腳本幾乎永遠是好的，壞的是它被
+    // 怎麼叫——Windows 上就是註冊路徑沒加引號，這一格卻一直給綠燈。
+    const probe = await probeRegisteredHook(
+      registration.command,
+      "echo a && echo b",
+    );
 
     if (probe.exitCode !== 2) {
       return {
@@ -271,7 +312,7 @@ async function checkAllowlist(materials, step) {
   };
 }
 
-export async function checkTabSync(step) {
+export async function checkTabSync(step, materials) {
   if (!existsSync(step.target)) {
     return {
       id: step.id,
@@ -294,11 +335,38 @@ export async function checkTabSync(step) {
     };
   }
 
+  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow）。
+  // 舊版兩者都是「檔案在、標記在」，只看存在與否會給綠燈，但標題不會變。
+  const staleWatcher = await staleTargets(materials, [
+    { source: step.watcherSource, target: step.target },
+  ]);
+
+  if (staleWatcher.length > 0 || !rcContent.includes(step.rcBlock.trim())) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "裝的是舊版——重跑安裝，然後開新的終端分頁",
+    };
+  }
+
   return { id: step.id, label: step.label, status: "ok", detail: "已啟用" };
 }
 
-export async function checkAgentHooks(step) {
+export async function checkAgentHooks(step, materials) {
   const filesExist = step.hookFiles.every((file) => existsSync(file.target));
+
+  // 命名 hook 的內容改過（改叫薄殼、含空白的路徑加引號）。舊版一樣是「檔案在、
+  // 註冊在、白名單在」，三項全綠，但模型每次命名還是會被權限層擋下。
+  if (filesExist && (await staleTargets(materials, step.hookFiles)).length > 0) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "裝的是舊版——重跑安裝，然後開新的 session",
+    };
+  }
+
   const settings = await readJsonOrNull(step.settingsTarget);
   const registered = hasAgentHookRegistrations(
     settings ?? {},
@@ -359,13 +427,13 @@ export async function runConfigCheck({ tools, lang }) {
     if (step.kind === "output-style") {
       checks.push(await checkOutputStyle(materials, step));
     } else if (step.kind === "hook") {
-      checks.push(await checkHook(step));
+      checks.push(await checkHook(step, materials));
     } else if (step.kind === "allowlist") {
       checks.push(await checkAllowlist(materials, step));
     } else if (step.kind === "tab-sync") {
-      checks.push(await checkTabSync(step));
+      checks.push(await checkTabSync(step, materials));
     } else if (step.kind === "agent-hooks") {
-      checks.push(await checkAgentHooks(step));
+      checks.push(await checkAgentHooks(step, materials));
     } else {
       checks.push(await checkCopyStep(materials, step));
     }

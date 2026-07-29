@@ -344,7 +344,14 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
 // powershell 藏在腳本內部，權限層看不到巢狀直譯器。路徑一律正斜線——session-auto-namer
 // 組指令時也轉，兩邊不一致的話前綴永遠對不上，這條規則就等於沒加。
 export function namingAllowRule(hookTarget) {
-  return `Bash(${hookTarget.replaceAll("\\", "/")}:*)`;
+  return `Bash(${quoteIfSpaced(hookTarget.replaceAll("\\", "/"))}:*)`;
+}
+
+// 家目錄含空白（C:\Users\Reed Chen）時不加引號，bash 會把路徑斷成兩段，命名指令
+// 直接跑不起來。沒空白就不加：那是 macOS 已經證實白名單放行得了的形狀，能不動就
+// 不動。session-auto-namer 用同一條規則組指令，兩邊必須一致，否則前綴對不上。
+export function quoteIfSpaced(path) {
+  return path.includes(" ") ? `"${path}"` : path;
 }
 
 export function expandAllowRules(rules, home) {

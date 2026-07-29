@@ -143,6 +143,14 @@ try {
     "Bash(/Users/reed/.claude/hooks/set-session-name.sh:*)",
   );
   ok("macOS 的規則就是既有 starter allowlist 那條，不會重複新增");
+
+  // 家目錄含空白時不加引號，bash 會在空白處把路徑斷成兩段（實測：
+  // "…/Reed: No such file or directory"），命名指令根本跑不起來。
+  assert.equal(
+    namingAllowRule("C:/Users/Reed Chen/.claude/hooks/set-session-name.sh"),
+    'Bash("C:/Users/Reed Chen/.claude/hooks/set-session-name.sh":*)',
+  );
+  ok("家目錄含空白時規則帶引號，路徑才不會被斷開");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

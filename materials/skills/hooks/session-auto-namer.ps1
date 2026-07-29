@@ -90,6 +90,12 @@ if (-not $env:AI_TAB_SYNC_FILE) {
 # macOS already proves an allowlist prefix accepts; the shim hides powershell
 # inside itself. Forward slashes: bash eats \U \R in C:\Users\Reed as escapes.
 $setNamePath = (Join-Path $HOME '.claude\hooks\set-session-name.sh') -replace '\\', '/'
+# Quote only when the path contains a space (C:\Users\Reed Chen), otherwise bash
+# splits it in two and the command never runs. No space means no quotes: that is
+# the shape macOS has already proved an allowlist prefix accepts, so leave it be.
+# namingAllowRule in config-install.js applies the same rule — the two must agree
+# or the prefix never matches.
+if ($setNamePath -match ' ') { $setNamePath = "`"$setNamePath`"" }
 $writeCmd = "$setNamePath '{名稱}' '$sessionKey'"
 
 $rules = @(
