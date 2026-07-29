@@ -6,8 +6,8 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
-  VERIFIED_BY_ACTION,
   LOGIN_POLL_INTERVAL_MS,
+  VERIFIED_BY_ACTION,
   agentNameFor,
   behaviorFallbackState,
   configSummary,
@@ -16,6 +16,7 @@ import {
   installStatusMessage,
   isLoginAction,
   loginWaitStep,
+  rowRunOptions,
   runControlsState,
   runOutcome,
 } from "./viewmodel.js";
@@ -155,7 +156,12 @@ async function checkConfigs() {
     view.renderConfigs(
       result.checks,
       (action, button, step) =>
-        run(action, undefined, button, { step, lang: result.lang }),
+        run(
+          action,
+          undefined,
+          button,
+          rowRunOptions({ step, lang: result.lang, tools }),
+        ),
       {
         verifiedSteps: state.verifiedSteps,
         onEyeToggle: (step, checked) => {

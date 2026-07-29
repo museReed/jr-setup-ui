@@ -37,6 +37,13 @@ const STATUS_DISPLAY = {
   unverified: { symbol: "◐", label: "待驗證" },
 };
 
+// 列上的按鈕一律帶齊這三個參數。伺服器只認 action 自己宣告的那幾個、其餘忽略，
+// 所以多帶不會出事，少帶會被擋（實測：列上的「驗證回覆格式」只帶了 step 與 lang，
+// 伺服器回「options.tools 不在允許的值裡」，按鈕等於是死的）。
+export function rowRunOptions({ step, lang, tools }) {
+  return { step, lang, tools };
+}
+
 // 一顆驗證按鈕跑完，等於驗過了哪幾列。頁面上方的四顆與列上的「驗證」共用這張表，
 // 兩邊不會對不上。
 export const VERIFIED_BY_ACTION = {

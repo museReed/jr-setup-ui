@@ -18,9 +18,11 @@ import {
   installStatusMessage,
   isLoginAction,
   loginWaitStep,
+  rowRunOptions,
   runControlsState,
   runOutcome,
 } from "../public/viewmodel.js";
+import { actions as ACTIONS } from "../src/actions.js";
 import { VERIFICATION } from "../src/config-check.js";
 
 function ok(description) {
@@ -171,6 +173,30 @@ try {
     }
   }
   ok("驗證按鈕與待驗證列兩張表對得上");
+
+  // 列上的按鈕少帶一個參數，伺服器就回「options.X 不在允許的值裡」，按鈕等於是死
+  // 的——而且畫面上只看得到一行錯誤，看不出少的是哪個。這裡拿 actions 自己宣告的
+  // schema 對賬：列會觸發的每個 action，它要的每個參數都必須被帶到。
+  const rowOptions = rowRunOptions({
+    step: "claude-md",
+    lang: "zh-TW",
+    tools: "claude",
+  });
+  const rowActions = [
+    "install-config-step",
+    "merge-config-step",
+    ...Object.keys(VERIFIED_BY_ACTION),
+  ];
+
+  for (const action of rowActions) {
+    for (const name of Object.keys(ACTIONS[action].options ?? {})) {
+      assert(
+        rowOptions[name] !== undefined,
+        `列上按 ${action} 時沒帶 options.${name}，伺服器會擋下來`,
+      );
+    }
+  }
+  ok("列上按鈕帶齊每個 action 宣告要的參數");
 
   assert.deepEqual(configSummary([]), {
     done: 0,
