@@ -15,7 +15,8 @@ main {
   margin: 0 auto;
 }
 
-.env-check {
+.env-check,
+.config-install {
   overflow: hidden;
   margin: 0 0 28px;
   border: 1px solid #b8c3cc;
@@ -41,6 +42,39 @@ main {
   color: #4d5963;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9rem;
+}
+
+.config-selects,
+.config-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.config-selects {
+  margin-top: 10px;
+}
+
+.config-selects label {
+  display: grid;
+  gap: 4px;
+  color: #4d5963;
+  font-size: 0.9rem;
+}
+
+.config-selects select {
+  padding: 7px 9px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  background: #fff;
+  color: #202020;
+  font: inherit;
+}
+
+#config-summary {
+  margin: 0;
+  padding: 0 20px 16px;
+  color: #4d5963;
 }
 
 .env-results {
@@ -275,6 +309,11 @@ textarea {
 
   .env-heading button {
     align-self: flex-start;
+  }
+
+  .config-buttons {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .env-row {

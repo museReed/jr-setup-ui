@@ -11,6 +11,13 @@ export const LOGIN_CHECK_IDS = {
 export const LOGIN_POLL_INTERVAL_MS = 5_000;
 export const LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
 
+export const CONFIG_LANGUAGES = ["zh-TW", "zh-CN", "en"];
+export const CONFIG_TOOL_CHOICES = [
+  { value: "claude", label: "Claude Code" },
+  { value: "codex", label: "Codex CLI" },
+  { value: "claude,codex", label: "兩個都要" },
+];
+
 const STATUS_DISPLAY = {
   ok: { symbol: "✓", label: "通過" },
   missing: { symbol: "✗", label: "缺少" },
@@ -26,11 +33,21 @@ export function agentNameFor(action) {
     return "";
   }
 
-  if (action.startsWith("claude")) {
+  if (action.startsWith("claude") || action === "merge-config-step") {
     return "Claude";
   }
 
   return action.startsWith("codex") ? "Codex" : "";
+}
+
+export function configQuery({ tools, lang }) {
+  const toolValues = CONFIG_TOOL_CHOICES.map((choice) => choice.value);
+
+  if (!toolValues.includes(tools) || !CONFIG_LANGUAGES.includes(lang)) {
+    throw new Error("規則檔工具或語言不合法");
+  }
+
+  return `tools=${tools}&lang=${lang}`;
 }
 
 // 登入指令把網址和代碼混在一般輸出裡，要挑出來變成可點的連結與可複製的代碼。
@@ -79,6 +96,60 @@ export function envRowModel(check) {
   };
 }
 
+export function configRowModel(check) {
+  const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
+  const buttons = [];
+
+  if (check.installAction !== null && check.installAction !== undefined) {
+    buttons.push({
+      action: check.installAction,
+      dataName: "installAction",
+      text: "安裝",
+      step: check.id,
+    });
+  }
+
+  if (check.mergeAction !== null && check.mergeAction !== undefined) {
+    buttons.push({
+      action: check.mergeAction,
+      dataName: "mergeAction",
+      text: "用 AI 合併",
+      step: check.id,
+    });
+  }
+
+  return {
+    status: check.status,
+    symbol: display.symbol,
+    ariaLabel: display.label,
+    label: check.label,
+    detail: check.detail,
+    buttons,
+  };
+}
+
+export function configSummary(checks) {
+  const total = checks.length;
+
+  if (total === 0) {
+    return {
+      done: 0,
+      total: 0,
+      allOk: false,
+      text: "尚未檢查",
+    };
+  }
+
+  const done = checks.filter((check) => check.status === "ok").length;
+
+  return {
+    done,
+    total,
+    allOk: done === total,
+    text: `${total} 項中 ${done} 項就緒`,
+  };
+}
+
 // 環境檢查那一區的按鈕：跑東西時全部鎖住，正在跑的那顆改成「安裝中…」，
 // 等登入結果的那顆改成「等待登入中…」。
 export function envButtonState({
@@ -107,6 +178,7 @@ export function runControlsState({
   runId,
   acceptsInput,
   envCheckInProgress,
+  configCheckInProgress,
 }) {
   const hasRun = runId !== null && runId !== undefined;
 
@@ -115,6 +187,7 @@ export function runControlsState({
     promptDisabled: runInProgress,
     allowWriteDisabled: runInProgress,
     recheckDisabled: runInProgress || envCheckInProgress,
+    configControlsDisabled: Boolean(runInProgress || configCheckInProgress),
     cancelHidden: !runInProgress,
     cancelDisabled: !runInProgress || !hasRun,
     // 只有「會等輸入」的動作才給那格貼代碼的輸入列。

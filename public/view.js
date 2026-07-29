@@ -1,5 +1,5 @@
 // View：只負責把 ViewModel 算好的東西畫到畫面上，不做任何判斷。
-import { envRowModel } from "./viewmodel.js";
+import { configRowModel, envRowModel } from "./viewmodel.js";
 
 const elements = {
   output: document.querySelector("#output"),
@@ -19,6 +19,12 @@ const elements = {
   copyLoginCode: document.querySelector("#copy-login-code"),
   runInput: document.querySelector("#run-input"),
   runInputText: document.querySelector("#run-input-text"),
+  configTools: document.querySelector("#config-tools"),
+  configLang: document.querySelector("#config-lang"),
+  recheckConfigs: document.querySelector("#recheck-configs"),
+  verifyConfigs: document.querySelector("#verify-configs"),
+  configSummary: document.querySelector("#config-summary"),
+  configResults: document.querySelector("#config-results"),
 };
 
 export { elements };
@@ -116,9 +122,96 @@ export function renderEnv(os, checks, onActionClick) {
   elements.envResults.replaceChildren(...rows);
 }
 
+export function renderConfigChoices(toolChoices, languages) {
+  const toolOptions = toolChoices.map((choice) => {
+    const option = document.createElement("option");
+    option.value = choice.value;
+    option.textContent = choice.label;
+    return option;
+  });
+  const languageOptions = languages.map((language) => {
+    const option = document.createElement("option");
+    option.value = language;
+    option.textContent = language;
+    return option;
+  });
+  elements.configTools.replaceChildren(...toolOptions);
+  elements.configLang.replaceChildren(...languageOptions);
+}
+
+export function renderConfigs(checks, onActionClick) {
+  const rows = checks.map((check) => {
+    const model = configRowModel(check);
+    const row = document.createElement("div");
+    row.className = "env-row";
+    row.dataset.status = model.status;
+
+    const icon = document.createElement("span");
+    icon.className = "env-icon";
+    icon.textContent = model.symbol;
+    icon.setAttribute("aria-label", model.ariaLabel);
+
+    const label = document.createElement("strong");
+    label.textContent = model.label;
+
+    const detail = document.createElement("span");
+    detail.className = "env-detail";
+    detail.textContent = model.detail;
+
+    row.append(icon, label, detail);
+
+    for (const button of model.buttons) {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = "env-action";
+      element.dataset[button.dataName] = button.action;
+      element.dataset.step = button.step;
+      element.textContent = button.text;
+      element.addEventListener("click", () =>
+        onActionClick(button.action, element, button.step),
+      );
+      row.append(element);
+    }
+
+    return row;
+  });
+  elements.configResults.setAttribute("aria-busy", "false");
+  elements.configResults.replaceChildren(...rows);
+}
+
+export function renderConfigSummary(summary) {
+  elements.configSummary.textContent = summary.text;
+}
+
+export function renderConfigLoading() {
+  const loading = document.createElement("p");
+  loading.className = "env-message";
+  loading.textContent = "檢查中…";
+  elements.configResults.setAttribute("aria-busy", "true");
+  elements.configResults.replaceChildren(loading);
+}
+
+export function renderConfigFailure(message) {
+  const paragraph = document.createElement("p");
+  paragraph.className = "env-message failed";
+  paragraph.textContent = `規則檔檢查失敗：${message}`;
+  elements.configResults.setAttribute("aria-busy", "false");
+  elements.configResults.replaceChildren(paragraph);
+}
+
+export function configActionButtons() {
+  return [
+    ...elements.configResults.querySelectorAll(
+      "[data-install-action], [data-merge-action]",
+    ),
+  ];
+}
+
 export function envActionButtons() {
   return [
-    ...document.querySelectorAll("[data-install-action], [data-fix-action]"),
+    ...elements.envResults.querySelectorAll(
+      "[data-install-action], [data-fix-action]",
+    ),
   ];
 }
 
@@ -135,6 +228,15 @@ export function renderRunControls(state) {
   elements.prompt.disabled = state.promptDisabled;
   elements.allowWrite.disabled = state.allowWriteDisabled;
   elements.recheckEnv.disabled = state.recheckDisabled;
+  elements.configTools.disabled = state.configControlsDisabled;
+  elements.configLang.disabled = state.configControlsDisabled;
+  elements.recheckConfigs.disabled = state.configControlsDisabled;
+  elements.verifyConfigs.disabled = state.configControlsDisabled;
+
+  for (const button of configActionButtons()) {
+    button.disabled = state.configControlsDisabled;
+  }
+
   elements.cancel.hidden = state.cancelHidden;
   elements.cancel.disabled = state.cancelDisabled;
   elements.runInput.hidden = state.inputHidden;

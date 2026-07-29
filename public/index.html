@@ -30,6 +30,31 @@
           <p class="env-message">檢查中…</p>
         </div>
       </section>
+      <section class="config-install" aria-labelledby="config-title">
+        <div class="env-heading">
+          <div>
+            <h2 id="config-title">規則檔安裝</h2>
+            <div class="config-selects">
+              <label>
+                工具
+                <select id="config-tools"></select>
+              </label>
+              <label>
+                語言
+                <select id="config-lang"></select>
+              </label>
+            </div>
+          </div>
+          <div class="config-buttons">
+            <button type="button" id="recheck-configs">重新檢查</button>
+            <button type="button" id="verify-configs">驗證安裝</button>
+          </div>
+        </div>
+        <p id="config-summary">尚未檢查</p>
+        <div id="config-results" class="env-results" aria-live="polite">
+          <p class="env-message">檢查中…</p>
+        </div>
+      </section>
       <h2>固定步驟</h2>
       <div class="actions">
         <button type="button" data-action="hello">顯示問候</button>

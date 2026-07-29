@@ -1,4 +1,6 @@
 // Model：跟本機 server 講話的唯一出口。所有請求都要帶啟動時產生的一次性 token。
+import { configQuery } from "./viewmodel.js";
+
 const token = new URLSearchParams(window.location.search).get("t") ?? "";
 
 function withToken(path) {
@@ -21,6 +23,18 @@ async function postJson(path, body) {
 
 export async function fetchEnv() {
   const response = await fetch(withToken("/env"));
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return response.json();
+}
+
+export async function fetchConfigs({ tools, lang }) {
+  const response = await fetch(
+    withToken(`/configs?${configQuery({ tools, lang })}`),
+  );
 
   if (!response.ok) {
     throw new Error(await response.text());

@@ -3,9 +3,12 @@
 import * as api from "./api.js";
 import * as view from "./view.js";
 import {
+  CONFIG_LANGUAGES,
+  CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
   LOGIN_POLL_INTERVAL_MS,
   agentNameFor,
+  configSummary,
   envButtonState,
   extractLoginHints,
   installStatusMessage,
@@ -23,8 +26,21 @@ const state = {
   activeEnvButton: null,
   currentEnvAction: null,
   envCheckInProgress: false,
+  configCheckInProgress: false,
   loginWait: null,
 };
+
+function renderControls() {
+  view.renderRunControls(
+    runControlsState({
+      runInProgress: state.runInProgress,
+      runId: state.runId,
+      acceptsInput: state.acceptsInput,
+      envCheckInProgress: state.envCheckInProgress,
+      configCheckInProgress: state.configCheckInProgress,
+    }),
+  );
+}
 
 function renderEnvActionButtons() {
   for (const button of view.envActionButtons()) {
@@ -44,14 +60,7 @@ function renderEnvActionButtons() {
 
 function setRunning(running) {
   state.runInProgress = running;
-  view.renderRunControls(
-    runControlsState({
-      runInProgress: running,
-      runId: state.runId,
-      acceptsInput: state.acceptsInput,
-      envCheckInProgress: state.envCheckInProgress,
-    }),
-  );
+  renderControls();
   renderEnvActionButtons();
 }
 
@@ -125,6 +134,31 @@ async function checkEnvironment(showLoading = true) {
   }
 }
 
+async function checkConfigs() {
+  if (state.configCheckInProgress) {
+    return;
+  }
+
+  state.configCheckInProgress = true;
+  renderControls();
+  view.renderConfigLoading();
+  const tools = view.elements.configTools.value;
+  const lang = view.elements.configLang.value;
+
+  try {
+    const result = await api.fetchConfigs({ tools, lang });
+    view.renderConfigs(result.checks, (action, button, step) =>
+      run(action, undefined, button, { step, lang: result.lang }),
+    );
+    view.renderConfigSummary(configSummary(result.checks));
+  } catch (error) {
+    view.renderConfigFailure(error.message);
+  } finally {
+    state.configCheckInProgress = false;
+    renderControls();
+  }
+}
+
 async function pollLogin(wait) {
   if (state.loginWait !== wait) {
     return;
@@ -172,7 +206,7 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, result) {
+function handleDone(action, envButton, configAction, result) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -187,7 +221,16 @@ function handleDone(action, envButton, result) {
   const wasEnvAction = envButton !== null;
   resetRun();
 
-  if (!wasEnvAction || !outcome.succeeded) {
+  if (!outcome.succeeded) {
+    return;
+  }
+
+  if (configAction) {
+    checkConfigs();
+    return;
+  }
+
+  if (!wasEnvAction) {
     return;
   }
 
@@ -205,7 +248,10 @@ function handleDone(action, envButton, result) {
   checkEnvironment();
 }
 
-async function run(action, promptText, envButton = null) {
+async function run(action, promptText, button = null, options) {
+  const configAction = options !== undefined;
+  const envButton = configAction ? null : button;
+
   if (isLoginAction(action)) {
     stopLoginWait();
   }
@@ -235,6 +281,10 @@ async function run(action, promptText, envButton = null) {
       }
     }
 
+    if (options !== undefined) {
+      body.options = options;
+    }
+
     const { runId, acceptsInput } = await api.startRun(body);
     state.runId = runId;
     state.acceptsInput = acceptsInput;
@@ -260,7 +310,7 @@ async function run(action, promptText, envButton = null) {
     events.addEventListener("done", (event) => {
       done = true;
       events.close();
-      handleDone(action, envButton, JSON.parse(event.data));
+      handleDone(action, envButton, configAction, JSON.parse(event.data));
     });
 
     events.onerror = () => {
@@ -331,4 +381,15 @@ view.elements.runInput.addEventListener("submit", async (event) => {
 });
 
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
+view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
+view.elements.recheckConfigs.addEventListener("click", checkConfigs);
+view.elements.configTools.addEventListener("change", checkConfigs);
+view.elements.configLang.addEventListener("change", checkConfigs);
+view.elements.verifyConfigs.addEventListener("click", () => {
+  run("verify-configs", undefined, view.elements.verifyConfigs, {
+    lang: view.elements.configLang.value,
+    tools: view.elements.configTools.value,
+  });
+});
 checkEnvironment();
+checkConfigs();
