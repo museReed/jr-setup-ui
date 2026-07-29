@@ -88,20 +88,17 @@ Commit 到當前 branch，不要切換 branch。
 
 ### Step 5: 改 Session Name + 回報
 
-改名為 `📦 {topic}`（topic 轉中文敘述，≤ 30 字元）。一個 Bash call 完成：
+改名為 `📦 {topic}`（topic 轉中文敘述，≤ 30 字元）。一個 Bash call 呼叫包裝腳本即可
+（跟 auto-rename 走同一支）：
 
 ```bash
-TERMINAL_PID=$(ps -o ppid= -p $PPID 2>/dev/null | tr -d ' ') && \
-mkdir -p ~/.claude/session-names && \
-echo '📦 {topic}' > ~/.claude/session-names/${TERMINAL_PID}.txt && \
-if [ -n "$AI_TAB_SYNC_FILE" ]; then echo '📦 {topic}' > "$AI_TAB_SYNC_FILE"; \
-else TTY_DEV=$(ps -o tty= -p $PPID 2>/dev/null | tr -d ' '); \
-  [ -n "$TTY_DEV" ] && [ -w "/dev/$TTY_DEV" ] && printf '\033]0;📦 {topic}\007' > "/dev/$TTY_DEV"; fi ; \
-rm -f /tmp/claude-session-namer/$PPID.default
+$HOME/.claude/hooks/set-session-name.sh '📦 {topic}' $PPID
 ```
 
-⚠️ 不要把 OSC 印到 stdout — Claude Code 2.1+ 會過濾工具輸出裡的 ESC bytes。
-tab 由 `$AI_TAB_SYNC_FILE`（myclaude wrapper + watcher）同步；沒有 wrapper 時才直寫 tty device。
+⚠️ 不要自己拼 `ps` + `echo` + `printf` 的串接指令：那種寫法含 `&&` 與 `;`，會被
+block-chained-bash hook 擋下（exit 2），結果是交接檔寫得出來、分頁標題完全不動，
+而且畫面上不會有人告訴你為什麼。腳本內部已經做完 PID 定位、寫 session-name 檔、
+寫 tab-sync file（或 OSC 到 tty）、清 default marker，而且只需要白名單放行這一支。
 
 回報格式（最後一行必須是可直接複製的單行起始 prompt，路徑用絕對路徑）：
 

@@ -96,9 +96,31 @@ assert.equal(
   ),
   `${HOME}/.claude/hooks/set-session-name.sh '{名稱}' $PPID`,
 );
-// 其他 skill 不需要代換，別亂動內容。
-assert.deepEqual(claudeHandoff.substitutions, []);
-console.log("ok - auto-rename 的 $HOME 換成絕對路徑，其他 skill 不動");
+// handoff 收尾也會叫同一支命名腳本，所以代換套在所有 Claude skill 上。
+assert.deepEqual(claudeHandoff.substitutions, autoRename.substitutions);
+// Codex 那邊沒有這條路徑（改名走 _shared 的 relay 檔），不要亂動內容。
+assert.deepEqual(codexHandoff.substitutions, []);
+console.log("ok - Claude skill 的 $HOME 換成絕對路徑，Codex 不動");
+
+// 改名指令不准自己拼串接：那種寫法會被 block-chained-bash hook 擋下（exit 2），
+// 結果是交接檔寫得出來、分頁標題完全不動，畫面上還不會有人說為什麼（VM 實測）。
+for (const name of ["auto-rename", "handoff"]) {
+  const skill = readFileSync(
+    new URL(`../materials/skills/skill-files/claude/${name}/SKILL.md`, import.meta.url),
+    "utf8",
+  );
+  assert(
+    skill.includes("set-session-name.sh"),
+    `${name} 要透過包裝腳本改名`,
+  );
+  // 盯的是「串接指令」這個形狀（`&& \` 換行接下一段），不是 ps 這個字——
+  // 內文解釋腳本內部怎麼運作時提到 ps 是正常的。
+  assert(
+    !/&&\s*\\/.test(skill),
+    `${name} 又自己拼串接的改名指令了——會被 block-chained-bash 擋下`,
+  );
+}
+console.log("ok - Claude skill 的改名一律走包裝腳本，不拼串接指令");
 
 // --- 三態判定 ---
 

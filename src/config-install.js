@@ -414,8 +414,10 @@ function skillStep(id, home) {
     // SKILL.md 裡寫的是 $HOME/...，但 Bash() 白名單是字面比對、不展開變數：模型照
     // SKILL.md 打出來的那條指令會對不上白名單而被擋（跟 hook 那邊同一個坑）。
     // 安裝時就換成這台機器的絕對路徑，形狀跟 namingAllowRule 一致。
+    // 代換套在所有 Claude skill 上，不挑名字：會叫命名腳本的不只 auto-rename，
+    // handoff 收尾也要改名。沒有那段字串的 skill 代換不到東西，等於不動。
     substitutions:
-      agent === "claude" && name === "auto-rename"
+      agent === "claude"
         ? [
             {
               from: "$HOME/.claude/hooks/set-session-name.sh",
