@@ -198,6 +198,10 @@ function agentHooks(id, home, platform) {
     settingsTarget: isClaude
       ? `${agentDir}/settings.json`
       : `${agentDir}/hooks.json`,
+    // 只有 Claude 這邊吃白名單；Codex 沒有對應的權限層。
+    namingAllowRule: isClaude
+      ? namingAllowRule(byBase["set-session-name"].target, platform)
+      : undefined,
     supportFiles: isClaude
       ? [
           {
@@ -313,6 +317,24 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
 }
 
 // Bash() 白名單是字面比對，不會展開 ~ 或 $HOME——安裝時就要換成這台機器的絕對路徑。
+// 命名 hook 會叫模型去執行寫入指令，那條指令必須在白名單裡，否則每次命名都跳
+// 權限詢問——在 claude -p 這種沒人能按同意的情境下直接被拒。
+//
+// ⚠️ starter-allowlist.json 只有 .sh 那條規則（`Bash(~/.claude/hooks/
+// set-session-name.sh:*)`），Windows 上實際要跑的是一段 powershell 指令，
+// 比對不到。實測模型自己回報：「要求開一個巢狀 PowerShell 程序，被權限規則擋下」。
+export function namingAllowRule(hookTarget, platform = process.platform) {
+  if (platform === "win32") {
+    // 前綴要跟 session-auto-namer.ps1 組出來的指令一字不差。那支用 Join-Path
+    // 產生路徑，出來是反斜線；我們內部一律用正斜線組路徑，不轉的話比對不到，
+    // 這條規則就等於沒加。
+    const windowsPath = hookTarget.replaceAll("/", "\\");
+    return `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "${windowsPath}":*)`;
+  }
+
+  return `Bash(${hookTarget}:*)`;
+}
+
 export function expandAllowRules(rules, home) {
   return rules.map((rule) => rule.replace("Bash(~/", `Bash(${home}/`));
 }

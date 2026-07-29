@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { namingAllowRule } from "../src/config-install.js";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -106,6 +107,23 @@ try {
   assert.equal(codexSettings.hooks.PostToolUse.length, 2);
   assert.equal(codexSettings.hooks.UserPromptSubmit.length, 1);
   ok("Codex hooks 實際安裝可重跑，hooks.json 保留三筆單份註冊");
+
+  // 迴歸：白名單是字串比對。Windows 上 hook 用 Join-Path 產生反斜線路徑，
+  // 規則若留著正斜線就永遠對不上，等於沒加——實測模型回報「被權限規則擋下」。
+  const winRule = namingAllowRule(
+    "C:/Users/Reed/.claude/hooks/set-session-name.ps1",
+    "win32",
+  );
+  assert(winRule.includes("C:\\Users\\Reed\\.claude\\hooks"), winRule);
+  assert(winRule.startsWith("Bash(powershell -NoProfile -ExecutionPolicy Bypass -File"));
+  assert(!winRule.includes("/"), `規則裡不該還有正斜線：${winRule}`);
+  ok("Windows 的命名白名單規則用反斜線，跟 hook 實際組出的指令對得上");
+
+  assert.equal(
+    namingAllowRule("/Users/reed/.claude/hooks/set-session-name.sh", "darwin"),
+    "Bash(/Users/reed/.claude/hooks/set-session-name.sh:*)",
+  );
+  ok("macOS 的規則就是既有 starter allowlist 那條，不會重複新增");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

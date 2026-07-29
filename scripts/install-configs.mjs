@@ -169,13 +169,27 @@ async function agentHooksStep(step) {
     console.log(`✓ hook 檔案 → ${file.target}`);
   }
 
-  const settings = mergeAgentHookRegistrations(
+  let settings = mergeAgentHookRegistrations(
     await readSettings(step.settingsTarget),
     {
       registrations: step.registrations,
       hookMarkers: step.hookFiles.map((file) => file.base),
     },
   );
+
+  // 命名指令要在白名單裡，否則模型每次要命名都跳權限詢問。
+  // Windows 上跑的是 powershell 指令，跟 starter-allowlist 裡那條 .sh 規則對不上。
+  if (step.namingAllowRule !== undefined) {
+    const merged = mergeAllowRules(settings, {
+      allowRules: [step.namingAllowRule],
+    });
+    settings = merged.settings;
+
+    if (merged.addedRules > 0) {
+      console.log(`✓ 已把命名指令加進白名單`);
+    }
+  }
+
   await writeSettings(step.settingsTarget, settings);
   console.log(`✓ 已註冊 3 筆 hook → ${step.settingsTarget}`);
 }
