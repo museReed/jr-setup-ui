@@ -17,6 +17,10 @@ const verifyBehaviorScript = moduleFile(
   "../scripts/verify-behavior.mjs",
   import.meta.url,
 );
+const verifyHooksLiveScript = moduleFile(
+  "../scripts/verify-hooks-live.mjs",
+  import.meta.url,
+);
 const verifyHookLiveScript = moduleFile(
   "../scripts/verify-hook-live.mjs",
   import.meta.url,
@@ -156,6 +160,13 @@ Object.assign(actions, {
     cmd: process.execPath,
     args: [verifyHookLiveScript],
     description: "叫真的 Claude 跑一個串接指令，確認 hook 真的被載入並執行。",
+  },
+  "verify-hooks-live": {
+    kind: "fixed",
+    label: "驗證自動命名",
+    cmd: process.execPath,
+    args: [verifyHooksLiveScript],
+    description: "叫真的 Claude 跑一次，確認 session 命名 hook 有被觸發。",
   },
   "merge-config-step": {
     kind: "agent",

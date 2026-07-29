@@ -421,5 +421,9 @@ view.elements.verifyBehavior.addEventListener("click", () => {
 view.elements.verifyHookLive.addEventListener("click", () => {
   run("verify-hook-live", undefined, null);
 });
+// 同上：不帶 options、不傳按鈕。
+view.elements.verifyNaming.addEventListener("click", () => {
+  run("verify-hooks-live", undefined, null);
+});
 checkEnvironment();
 checkConfigs();
