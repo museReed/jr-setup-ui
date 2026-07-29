@@ -65,3 +65,37 @@ for (const [agent, keyword] of [
   );
 }
 console.log("ok - context 比對的關鍵字真的出現在對應 hook 的訊息裡");
+
+// 列上寫的驗證情境，verify-in-terminal 與 actions 的白名單都要認得。少一邊的話按鈕
+// 不是丟「不認得的驗證情境」就是被伺服器擋在門外——兩種都是按下去沒反應。
+const { VERIFICATION } = await import("../src/config-check.js");
+const { actions } = await import("../src/actions.js");
+const allowedCases = actions["verify-in-terminal"].options.case;
+
+for (const [step, spec] of Object.entries(VERIFICATION)) {
+  if (spec.terminal === undefined) continue;
+
+  // CASES 的鍵有引號的（帶連字號）也有沒引號的，兩種都要認。
+  assert(
+    new RegExp(`^\\s+"?${spec.terminal.case}"?:`, "m").test(source),
+    `${step} 用的情境 ${spec.terminal.case} 在 verify-in-terminal 裡不存在`,
+  );
+  assert(
+    allowedCases.includes(spec.terminal.case),
+    `${step} 用的情境 ${spec.terminal.case} 不在 action 的白名單裡`,
+  );
+}
+console.log("ok - 每一列的終端驗證情境，腳本與白名單兩邊都認得");
+
+// handoff 那格靠「必讀檔案」判定：那四個字是 SKILL.md 規定的章節名，模型沒讀到
+// skill 不會自己想到。SKILL.md 改了章節名而這裡沒跟著改，判定就永遠不會中。
+for (const agent of ["claude", "codex"]) {
+  assert(
+    readFileSync(
+      path.join(repoRoot, `materials/skills/skill-files/${agent}/handoff/SKILL.md`),
+      "utf8",
+    ).includes("必讀檔案"),
+    `${agent} 的 handoff SKILL.md 裡沒有「必讀檔案」，比對永遠不會中`,
+  );
+}
+console.log("ok - handoff 判定用的章節名真的在 SKILL.md 裡");

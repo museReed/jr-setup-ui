@@ -29,6 +29,12 @@ try {
     "tab-sync",
     "claude-namer",
     "claude-monitor",
+    "skill-claude-auto-rename",
+    "skill-claude-handoff",
+    "skill-claude-structured-questions",
+    "ext-frontend-design-claude",
+    "ext-skill-creator-claude",
+    "ext-playwright-claude",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
     "codex-config",
@@ -36,6 +42,11 @@ try {
     "tab-sync",
     "codex-namer",
     "codex-monitor",
+    "skill-codex-auto-rename",
+    "skill-codex-handoff",
+    "skill-codex-structured-questions",
+    "ext-frontend-design-codex",
+    "ext-playwright-codex",
   ]);
   assert.deepEqual(stepsForTools(["claude", "codex"]), [
     "claude-md",
@@ -49,6 +60,17 @@ try {
     "claude-monitor",
     "codex-namer",
     "codex-monitor",
+    "skill-claude-auto-rename",
+    "skill-claude-handoff",
+    "skill-claude-structured-questions",
+    "skill-codex-auto-rename",
+    "skill-codex-handoff",
+    "skill-codex-structured-questions",
+    "ext-frontend-design-claude",
+    "ext-skill-creator-claude",
+    "ext-playwright-claude",
+    "ext-frontend-design-codex",
+    "ext-playwright-codex",
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));

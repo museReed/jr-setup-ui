@@ -18,8 +18,11 @@ if [ ! -d "$SOURCE/installer" ]; then
   exit 1
 fi
 
-rm -rf "$TARGET"
-mkdir -p "$TARGET/bin" "$TARGET/hooks"
+# ⚠️ 不要 rm -rf 整個 TARGET：materials/skills/hooks 裡有嚮導自己的檔案（薄殼
+# set-session-name-shim.sh，上游沒有），整包砍掉它就消失了，而且沒有任何一步會把
+# 它補回來。只清這支自己會重建的目錄。
+rm -rf "$TARGET/skill-files"
+mkdir -p "$TARGET/bin" "$TARGET/hooks" "$TARGET/skill-files"
 
 for file in ai-tab-sync.sh ai-tab-sync.ps1; do
   cp "$SOURCE/installer/bin/$file" "$TARGET/bin/$file"
@@ -36,6 +39,11 @@ done
 
 cp "$SOURCE/installer/model-context-windows-cache.json" \
   "$TARGET/model-context-windows-cache.json"
+
+# skill 本體：Claude 的在 ~/.claude/skills/，Codex 的在 ~/.agents/skills/（含 _shared，
+# handoff 的 SKILL.md 會叫模型去讀它）。一樣內建不上網，理由同上。
+cp -R "$SOURCE/installer/skills/claude" "$TARGET/skill-files/claude"
+cp -R "$SOURCE/installer/skills/codex" "$TARGET/skill-files/codex"
 
 echo "已同步："
 find "$TARGET" -type f | sort | sed "s|$TARGET/|  |"

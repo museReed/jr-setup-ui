@@ -4,11 +4,13 @@
 //
 // 每做一件事就印一行，讓網頁那邊即時看得到。
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 import {
+  applySubstitutions,
   describeStep,
   expandAllowRules,
   mergeAllowRules,
@@ -194,6 +196,48 @@ async function agentHooksStep(step) {
   console.log(`✓ 已註冊 3 筆 hook → ${step.settingsTarget}`);
 }
 
+async function skillStep(step) {
+  for (const file of step.files) {
+    const source = sourcePath(file);
+    await mkdir(path.dirname(file.target), { recursive: true });
+    await backup(file.target);
+    const content = applySubstitutions(
+      await readFile(source, "utf8"),
+      step.substitutions,
+    );
+    await writeFile(file.target, content);
+    console.log(`✓ ${file.target}`);
+  }
+
+  console.log(`✓ ${step.label} 已安裝`);
+}
+
+// 第三方 skill 用它們自己 GitHub 上定義的裝法，我們只負責把指令跑起來、把失敗
+// 翻成學生看得懂的話。這一步要網路。
+function externalSkillStep(step) {
+  return new Promise((resolve, reject) => {
+    console.log(`執行：${step.cmd} ${step.args.join(" ")}`);
+    console.log("（第三方 skill 要連網下載，慢一點是正常的）");
+    const child = spawn(step.cmd, step.args, { stdio: "inherit", shell: false });
+    child.once("error", (error) =>
+      reject(
+        new Error(
+          `叫不到 ${step.cmd}——${step.cmd === "npx" ? "請先裝 Node 18 以上" : "請先裝好 Claude Code"}（${error.message}）`,
+        ),
+      ),
+    );
+    child.once("close", (exitCode) => {
+      if (exitCode === 0) {
+        console.log(`✓ ${step.label} 安裝完成`);
+        resolve();
+        return;
+      }
+
+      reject(new Error(`${step.label} 安裝失敗（exit ${exitCode}），多半是網路問題，可以重按一次`));
+    });
+  });
+}
+
 const args = parseArgs(process.argv.slice(2));
 
 try {
@@ -214,6 +258,10 @@ try {
     await tabSyncStep(step);
   } else if (step.kind === "agent-hooks") {
     await agentHooksStep(step);
+  } else if (step.kind === "skill") {
+    await skillStep(step);
+  } else if (step.kind === "external-skill") {
+    await externalSkillStep(step);
   } else {
     throw new Error(`不認得的步驟種類：${step.kind}`);
   }
