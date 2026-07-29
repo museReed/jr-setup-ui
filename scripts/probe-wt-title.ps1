@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # probe-wt-title.ps1 — 這台機器的終端，標題到底改不改得動？
 #
 # 在「你要驗的那個終端視窗裡」直接跑（不要用管線接走輸出，那樣就不是終端了）：
