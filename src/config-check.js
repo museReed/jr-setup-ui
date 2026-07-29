@@ -42,17 +42,6 @@ async function sameAsSource(materials, step) {
   return a === b;
 }
 
-async function checkMaterials(materials) {
-  const ready = existsSync(path.join(materials, "claude-code"));
-
-  return {
-    id: "materials",
-    label: "設定素材",
-    status: ready ? "ok" : "missing",
-    detail: ready ? "已下載" : "尚未下載",
-  };
-}
-
 async function checkCopyStep(materials, step) {
   if (!existsSync(step.target)) {
     return {
@@ -117,7 +106,7 @@ async function checkAllowlist(materials, step) {
       id: step.id,
       label: step.label,
       status: "missing",
-      detail: "尚未下載素材",
+      detail: "嚮導內建的素材不完整，請重新下載嚮導",
     };
   }
 
@@ -151,9 +140,7 @@ export async function runConfigCheck({ tools, lang }) {
   for (const id of ids) {
     const step = describeStep(id, { lang, home: HOME });
 
-    if (step.kind === "download") {
-      checks.push(await checkMaterials(materials));
-    } else if (step.kind === "hook") {
+    if (step.kind === "hook") {
       checks.push(await checkHook(step));
     } else if (step.kind === "allowlist") {
       checks.push(await checkAllowlist(materials, step));

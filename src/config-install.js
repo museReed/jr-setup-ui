@@ -1,14 +1,14 @@
 // 規則檔安裝：每個步驟是一個可以獨立執行、獨立驗證的單位。
 // 這裡只算「要做什麼」，不碰檔案系統；真正動手的是 scripts/install-configs.mjs。
 //
-// ⚠️ 這份清單對應 jr_ai_agent_configs/install/{zh-TW,zh-CN,en}.md 的步驟。
-// 那邊改了，這裡要跟著改（兩份實作是刻意的取捨，見 PR 說明）。
+// ⚠️ 這份清單對應 jr_ai_agent_configs/install/{zh-TW,zh-CN,en}.md 的步驟，
+// 檔案本體則內建在 materials/（用 scripts/sync-materials.sh 同步）。
+// configs repo 改了之後，這兩處都要跟著更新（兩份是刻意的取捨，見 PR 說明）。
 
 export const LANGUAGES = ["zh-TW", "zh-CN", "en"];
 export const TOOLS = ["claude", "codex"];
 
 export const STEP_IDS = [
-  "materials",
   "claude-md",
   "output-style",
   "hook",
@@ -28,7 +28,6 @@ export function stepsForTools(tools) {
   }
 
   return [
-    "materials",
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
   ];
@@ -44,9 +43,6 @@ export function describeStep(id, { lang, home }) {
   const codexDir = `${home}/.codex`;
 
   switch (id) {
-    case "materials":
-      return { id, label: "設定素材", kind: "download" };
-
     case "claude-md":
       return {
         id,

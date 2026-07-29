@@ -8,7 +8,8 @@ export function ensureWorkDir() {
   return workDir;
 }
 
-// 從 jr_ai_agent_configs 抓下來的規則檔素材放這裡。
+// 規則檔素材內建在 repo 裡（scripts/sync-materials.sh 從 jr_ai_agent_configs 同步）。
+// 不在安裝時上網抓：工作坊現場網路不一定穩，少一個會壞的環節。
 export function materialsDir() {
-  return resolve(homedir(), ".jr-setup", "configs");
+  return new URL("../materials", import.meta.url).pathname;
 }

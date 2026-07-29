@@ -3,18 +3,9 @@
 //   node scripts/install-configs.mjs --step=hook --lang=zh-TW
 //
 // 每做一件事就印一行，讓網頁那邊即時看得到。
-import { spawn } from "node:child_process";
-import {
-  chmod,
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import {
@@ -25,8 +16,6 @@ import {
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
 
-const CONFIGS_TARBALL =
-  "https://codeload.github.com/museReed/jr_ai_agent_configs/tar.gz/refs/heads/main";
 const HOME = homedir();
 const MATERIALS = materialsDir();
 
@@ -46,30 +35,6 @@ function parseArgs(argv) {
 
 function stamp() {
   return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-}
-
-function run(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stderr = "";
-
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", reject);
-    child.once("close", (exitCode) => {
-      if (exitCode === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`${command} 失敗（exit ${exitCode}）：${stderr.trim()}`));
-    });
-  });
 }
 
 async function backup(target) {
@@ -104,27 +69,6 @@ async function writeSettings(target, settings) {
   await mkdir(path.dirname(target), { recursive: true });
   await backup(target);
   await writeFile(target, `${JSON.stringify(settings, null, 2)}\n`);
-}
-
-// 素材每次都重抓：同學可能在課程中途才更新，舊的留著只會裝到過期的規則。
-async function downloadMaterials() {
-  console.log("下載設定素材…");
-  const response = await fetch(CONFIGS_TARBALL);
-
-  if (!response.ok) {
-    throw new Error(`下載設定素材失敗：HTTP ${response.status}`);
-  }
-
-  const temp = await mkdtemp(path.join(tmpdir(), "jr-configs-"));
-  const tarball = path.join(temp, "configs.tar.gz");
-  await writeFile(tarball, Buffer.from(await response.arrayBuffer()));
-
-  await rm(MATERIALS, { recursive: true, force: true });
-  await mkdir(MATERIALS, { recursive: true });
-  // tar 在 macOS 內建，Windows 10 1803 之後也內建（bsdtar）。
-  await run("tar", ["-xzf", tarball, "-C", MATERIALS, "--strip-components=1"]);
-  await rm(temp, { recursive: true, force: true });
-  console.log("✓ 素材已就緒");
 }
 
 async function copyStep(step) {
@@ -177,9 +121,7 @@ try {
     home: HOME,
   });
 
-  if (step.kind === "download") {
-    await downloadMaterials();
-  } else if (step.kind === "copy") {
+  if (step.kind === "copy") {
     await copyStep(step);
   } else if (step.kind === "hook") {
     await hookStep(step);

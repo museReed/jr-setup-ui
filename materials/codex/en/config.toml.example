@@ -1,0 +1,14 @@
+# Codex CLI — Workshop Recommended Settings
+# Add the lines below to the top of your ~/.codex/config.toml
+#
+# personality: Controls the AI's base tone
+#   "pragmatic" — concise and direct (recommended, pairs best with Output Style)
+#   "friendly"  — warmer, more explanatory
+#   "none"      — no personality injection, fully controlled by AGENTS.md
+#
+# instructions: System prompt snippet injected every session
+#   This reminds Codex to follow AGENTS.md response rules.
+#   Without it, Codex may revert to default tone after a few turns.
+
+personality = "pragmatic"
+instructions = "Strictly follow the Output Style rules in AGENTS.md: conclusion first (bold), 3-5 bullets, comparisons in tables, no emoji/celebratory tone, medium length, plain language principle. Self-check before every response."

@@ -1,0 +1,14 @@
+# Codex CLI — Workshop 建議設定
+# 把下面幾行加到你的 ~/.codex/config.toml 最上方
+#
+# personality：控制 AI 的基本語氣
+#   "pragmatic" — 務實簡潔（推薦，和 Output Style 最搭）
+#   "friendly"  — 友善、解釋多一點
+#   "none"      — 不注入任何人格，完全靠 AGENTS.md 控制
+#
+# instructions：每次開 session 都注入的 system prompt 片段
+#   這行讓 Codex 被提醒遵守 AGENTS.md 的回覆規則。
+#   沒有這行的話，Codex 可能幾輪對話後就退回預設語氣。
+
+personality = "pragmatic"
+instructions = "回覆必須嚴格遵守 AGENTS.md 的 Output Style 規則：結論先行（粗體）、3-5 bullet、比較用表格、不用 emoji/慶祝語氣、中等長度不灌水、白話原則。每次回覆前自檢。"

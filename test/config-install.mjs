@@ -19,18 +19,16 @@ const AT = { lang: "zh-TW", home: HOME };
 
 try {
   assert.deepEqual(stepsForTools(["claude"]), [
-    "materials",
     "claude-md",
     "output-style",
     "hook",
     "allowlist",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
-    "materials",
     "codex-config",
     "codex-agents",
   ]);
-  assert.equal(stepsForTools(["claude", "codex"]).length, 7);
+  assert.equal(stepsForTools(["claude", "codex"]).length, 6);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
   ok("步驟清單跟著選的工具走，沒選工具就報錯");
