@@ -113,10 +113,12 @@ async function checkCopyStep(materials, step) {
 // behavior = 程式跑得出結果的行為驗證；eye = 只有真終端看得到、得由學生回報。
 // 兩者都沒有的列（例如白名單）結構對了就是真的對了，直接綠燈。
 export const VERIFICATION = {
-  "claude-md": { behavior: "verify-behavior" },
-  "output-style": { behavior: "verify-behavior" },
-  "codex-config": { behavior: "verify-behavior" },
-  "codex-agents": { behavior: "verify-behavior" },
+  // tools 綁死在列上：按 codex 那列的驗證卻連 claude 一起跑，慢一倍不說，claude
+  // 失敗還會把 codex 那列判成紅的。
+  "claude-md": { behavior: "verify-behavior", options: { tools: "claude" } },
+  "output-style": { behavior: "verify-behavior", options: { tools: "claude" } },
+  "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
+  "codex-agents": { behavior: "verify-behavior", options: { tools: "codex" } },
   hook: {
     terminal: { case: "chained", agent: "claude" },
     eye: "那個視窗裡出現「一次只跑一個指令」的中文訊息，指令被擋下來",
@@ -469,7 +471,12 @@ export async function runConfigCheck({ tools, lang }) {
         (VERIFICATION[check.id]?.terminal === undefined
           ? null
           : "verify-in-terminal"),
-      verifyOptions: VERIFICATION[check.id]?.terminal ?? null,
+      verifyKind:
+        VERIFICATION[check.id]?.terminal === undefined ? "page" : "terminal",
+      verifyOptions:
+        VERIFICATION[check.id]?.terminal ??
+        VERIFICATION[check.id]?.options ??
+        null,
       eyeCheck: VERIFICATION[check.id]?.eye ?? null,
     })),
   };

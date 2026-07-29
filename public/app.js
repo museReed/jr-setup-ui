@@ -7,7 +7,7 @@ import {
   CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
   LOGIN_POLL_INTERVAL_MS,
-  VERIFIED_BY_ACTION,
+  AUTO_VERIFY_ACTIONS,
   agentNameFor,
   behaviorFallbackState,
   configSummary,
@@ -233,7 +233,7 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, configAction, result) {
+function handleDone(action, envButton, configAction, result, verifiedStep) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -252,14 +252,10 @@ function handleDone(action, envButton, configAction, result) {
     return;
   }
 
-  // 驗證過了才記——失敗的話上面就 return 了，這裡不會留下假的已驗證。
-  const verifiedByThisRun = VERIFIED_BY_ACTION[action];
-
-  if (verifiedByThisRun !== undefined) {
-    for (const step of verifiedByThisRun) {
-      state.verifiedSteps.add(step);
-    }
-
+  // 驗證過了才記，而且只記被按的那一列——失敗的話上面就 return 了，這裡不會留下
+  // 假的已驗證。
+  if (AUTO_VERIFY_ACTIONS.has(action) && verifiedStep !== undefined) {
+    state.verifiedSteps.add(verifiedStep);
     checkConfigs();
     return;
   }
@@ -355,7 +351,7 @@ async function run(action, promptText, button = null, options) {
         view.renderBehaviorFallback(behaviorFallbackState(result));
       }
 
-      handleDone(action, envButton, configAction, result);
+      handleDone(action, envButton, configAction, result, options?.step);
     });
 
     events.onerror = () => {

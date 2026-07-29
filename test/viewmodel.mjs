@@ -6,7 +6,7 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   LOGIN_WAIT_TIMEOUT_MS,
-  VERIFIED_BY_ACTION,
+  AUTO_VERIFY_ACTIONS,
   agentNameFor,
   behaviorFallbackState,
   configQuery,
@@ -152,27 +152,14 @@ try {
 
   // 兩張表分別住在 src/config-check.js 與 public/viewmodel.js，對不上的話那一列
   // 永遠停在待驗證——沒有錯誤訊息，只是永遠不會變綠。
-  const behaviorActions = new Set(
-    Object.values(VERIFICATION)
-      .map((entry) => entry.behavior)
-      .filter(Boolean),
-  );
-  for (const action of behaviorActions) {
+  for (const [step, entry] of Object.entries(VERIFICATION)) {
+    if (entry.behavior === undefined) continue;
     assert(
-      Array.isArray(VERIFIED_BY_ACTION[action]),
-      `${action} 沒有對應的已驗證列，那一列永遠不會變綠`,
+      AUTO_VERIFY_ACTIONS.has(entry.behavior),
+      `${step} 用 ${entry.behavior} 驗，但它不在會自動標綠的清單裡——那一列永遠不會變綠`,
     );
   }
-  for (const [action, steps] of Object.entries(VERIFIED_BY_ACTION)) {
-    for (const step of steps) {
-      assert.equal(
-        VERIFICATION[step]?.behavior,
-        action,
-        `${step} 說要由 ${action} 驗，但 VERIFICATION 裡對不上`,
-      );
-    }
-  }
-  ok("驗證按鈕與待驗證列兩張表對得上");
+  ok("會自動標綠的驗證動作跟各列宣告的對得上");
 
   // 開終端那種驗證，程式判定不了結果——按下去只是開了一個視窗。所以它一定要配一
   // 段「要看什麼」，否則學生看著視窗不知道該看哪裡，只能亂勾。
@@ -200,7 +187,7 @@ try {
   const rowActions = [
     "install-config-step",
     "merge-config-step",
-    ...Object.keys(VERIFIED_BY_ACTION),
+    ...AUTO_VERIFY_ACTIONS,
   ];
 
   for (const action of rowActions) {
