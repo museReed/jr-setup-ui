@@ -133,13 +133,16 @@ function titleScript() {
   const name = "🔍 標題同步測試";
 
   if (process.platform === "win32") {
-    const watcher = "$HOME\\.jr-setup\\bin\\ai-tab-sync.ps1";
+    // 參數用陣列傳，不要拼成一個字串。拼字串的話 PowerShell 會再解讀一次引號，
+    // 而 JS 的 \" 在 .ps1 檔裡是「反斜線加引號」不是跳脫（PowerShell 用反引號）——
+    // 字串提早結束，路徑全變成位置參數（VM 實測：Start-Process 直接報錯）。
     return [
+      "$watcher = Join-Path $HOME '.jr-setup\\bin\\ai-tab-sync.ps1'",
       "$sync = Join-Path $env:TEMP \"jr-title-$PID.txt\"",
       `Set-Content -Path $sync -Value '${name}' -Encoding UTF8`,
-      `$w = Start-Process powershell.exe -ArgumentList "-NoProfile -File \"${watcher}\" \"$sync\" $PID" -NoNewWindow -PassThru`,
+      "$w = Start-Process powershell.exe -ArgumentList @('-NoProfile','-File',$watcher,$sync,\"$PID\") -NoNewWindow -PassThru",
       "Start-Sleep -Seconds 5",
-      "Stop-Process -Id $w.Id -Force -ErrorAction SilentlyContinue",
+      "if ($w) { Stop-Process -Id $w.Id -Force -ErrorAction SilentlyContinue }",
       "Remove-Item $sync -Force -ErrorAction SilentlyContinue",
       "Write-Host '標題測試結束——剛才那五秒分頁標題有變嗎？'",
     ].join("\n");

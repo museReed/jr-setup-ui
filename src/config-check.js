@@ -149,11 +149,28 @@ export function resolveBash(exists = existsSync, platform = process.platform) {
     return "bash";
   }
 
-  const candidates = [
-    `${process.env.ProgramFiles ?? "C:/Program Files"}/Git/bin/bash.exe`,
-    `${process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)"}/Git/bin/bash.exe`,
-    `${process.env.LOCALAPPDATA ?? ""}/Programs/Git/bin/bash.exe`,
-  ];
+  // Claude Code 自己也要找 Git Bash，它認這個環境變數——學生設過的話，那一定是
+  // 對的位置，優先用。
+  const configured = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+
+  if (configured && exists(configured)) {
+    return configured;
+  }
+
+  const roots = [
+    process.env.ProgramFiles,
+    process.env.ProgramW6432,
+    process.env["ProgramFiles(x86)"],
+    "C:/Program Files",
+    "C:/Program Files (x86)",
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}/Programs`,
+    process.env.USERPROFILE && `${process.env.USERPROFILE}/scoop/apps/git/current`,
+  ].filter(Boolean);
+  // Git for Windows 兩處都有 bash：bin 是給人用的，usr/bin 是 MSYS 本體。
+  const suffixes = ["/Git/bin/bash.exe", "/Git/usr/bin/bash.exe"];
+  const candidates = roots.flatMap((root) =>
+    suffixes.map((suffix) => `${root}${suffix}`),
+  );
 
   return candidates.find((candidate) => exists(candidate)) ?? "bash";
 }
