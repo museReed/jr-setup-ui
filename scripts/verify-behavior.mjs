@@ -1,38 +1,87 @@
 // 行為驗證：讓學生自己的 AI 判定「回覆有沒有照規則」。
 //
-//   node scripts/verify-behavior.mjs
+//   node scripts/verify-behavior.mjs --tools=claude,codex
 //
-// 兩次呼叫：第一次問一題標準問題拿回答，第二次把回答丟回去請 AI 對照規則判定。
+// 每個工具都跑兩段：先問一題標準問題拿回答，再把回答丟回同一個工具，
+// 請它對照規則逐條判定。Claude 與 Codex 走完全一樣的流程，只有啟動指令不同。
+//
 // 為什麼不是人工看：規則有五條，學生不知道該看什麼；AI 判定會給每條的理由。
-// 為什麼可以用 -p：實測 -p 與互動 session 讀的是同一份 settings.json，
-// output style 一樣會套用。
+// 為什麼可以用 -p / exec：實測 claude -p 與互動 session 讀同一份 settings.json，
+// output style 一樣會套用；codex 讀的則是 ~/.codex/config.toml。
 import { spawn } from "node:child_process";
 
-import { resolveLaunch } from "../src/spawn-command.js";
 import { spawnEnv } from "../src/env-path.js";
+import { resolveLaunch } from "../src/spawn-command.js";
 
 const TIMEOUT_MS = 180_000;
+
+// 五條裡至少三條就算通過：判定本身有浮動（「長度中等」尤其主觀），
+// 一條誤判就整個變紅會讓學生以為自己裝壞了。
+const PASS_THRESHOLD = 3;
 
 const QUESTION =
   "我想開始經營個人品牌，Instagram 和 YouTube 我該先從哪個開始？";
 
-// advisory 的項目只顯示、不計入通過與否：它沒有客觀依據，判定會浮動，
-// 誤報一次就會讓學生以為自己裝壞了。其他四條都是看得見的結構特徵。
 const RULES = [
-  { name: "結論先行", detail: "第一行就是粗體結論，不是「好問題！」這種開場白" },
-  { name: "比較用表格", detail: "兩個平台的比較用 Markdown 表格，不是散文" },
-  { name: "語氣中性", detail: "沒有 emoji、沒有「太棒了！」這類慶祝語氣" },
-  { name: "追問清單", detail: "結尾有「你可能會想問」之類的追問清單" },
-  { name: "長度中等", detail: "精簡到可以行動，不是長篇大論", advisory: true },
+  ["結論先行", "第一行就是粗體結論，不是「好問題！」這種開場白"],
+  ["比較用表格", "兩個平台的比較用 Markdown 表格，不是散文"],
+  ["語氣中性", "沒有 emoji、沒有「太棒了！」這類慶祝語氣"],
+  ["長度中等", "精簡到可以行動，不是長篇大論"],
+  ["追問清單", "結尾有「你可能會想問」之類的追問清單"],
 ];
+
+const ENGINES = {
+  claude: {
+    label: "Claude Code",
+    cmd: "claude",
+    args: (prompt) => ["-p", "--", prompt],
+    // claude -p 直接把回答印到 stdout。
+    extract: (stdout) => stdout.trim(),
+  },
+  codex: {
+    label: "Codex CLI",
+    cmd: "codex",
+    args: (prompt) => [
+      "exec",
+      "--json",
+      "--color",
+      "never",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "read-only",
+      "--",
+      prompt,
+    ],
+    // codex exec --json 是一串事件，回答在 agent_message 裡。
+    extract: (stdout) => {
+      const messages = [];
+
+      for (const line of stdout.split("\n")) {
+        try {
+          const value = JSON.parse(line);
+
+          if (
+            value?.type === "item.completed" &&
+            value.item?.type === "agent_message" &&
+            typeof value.item.text === "string"
+          ) {
+            messages.push(value.item.text);
+          }
+        } catch {
+          // 事件流裡混著非 JSON 的行，跳過就好。
+        }
+      }
+
+      return messages.at(-1)?.trim() ?? "";
+    },
+  },
+};
 
 function judgePrompt(answer) {
   return [
     "以下是另一個 AI 的回答。請只依照格式規則判定，不要評論內容對錯。\n\n",
     "規則：\n",
-    ...RULES.map(
-      (rule, index) => `${index + 1}. ${rule.name}：${rule.detail}\n`,
-    ),
+    ...RULES.map(([name, detail], index) => `${index + 1}. ${name}：${detail}\n`),
     "\n只輸出 JSON，不要有其他文字，格式：\n",
     '{"results":[{"rule":"結論先行","pass":true,"reason":"一句話"}]}\n\n',
     "要判定的回答：\n---\n",
@@ -41,8 +90,8 @@ function judgePrompt(answer) {
   ].join("");
 }
 
-function runClaude(prompt, env) {
-  const { cmd, args } = resolveLaunch("claude", ["-p", "--", prompt], { env });
+function runEngine(engine, prompt, env) {
+  const { cmd, args } = resolveLaunch(engine.cmd, engine.args(prompt), { env });
 
   return new Promise((resolve) => {
     let child;
@@ -80,16 +129,17 @@ function runClaude(prompt, env) {
     });
     child.once("close", (exitCode) => {
       clearTimeout(timer);
+      const answer = engine.extract(stdout);
 
-      if (exitCode !== 0 || stdout.trim().length === 0) {
+      if (exitCode !== 0 || answer.length === 0) {
         resolve({
           ok: false,
-          text: stderr.trim() || `claude 結束於 exit ${exitCode} 且沒有輸出`,
+          text: stderr.trim() || `結束於 exit ${exitCode} 且沒有取得回答`,
         });
         return;
       }
 
-      resolve({ ok: true, text: stdout });
+      resolve({ ok: true, text: answer });
     });
   });
 }
@@ -110,73 +160,105 @@ function extractJson(text) {
   }
 }
 
-const env = await spawnEnv();
+async function verifyEngine(engine, env) {
+  console.log("");
+  console.log(`── ${engine.label} ──`);
+  console.log("正在請它回答一題標準問題…（要等十幾秒）");
+  const answer = await runEngine(engine, QUESTION, env);
 
-console.log("正在請 Claude 回答一題標準問題…（要等十幾秒）");
-const answer = await runClaude(QUESTION, env);
+  if (!answer.ok) {
+    console.log(`FAIL  叫不動 ${engine.label}：${answer.text}`);
+    console.log("確認上面的環境檢查裡這個工具是綠的、而且已經登入。");
+    return false;
+  }
 
-if (!answer.ok) {
-  console.error(`叫不動 claude：${answer.text}`);
-  console.error("確認上面的環境檢查裡 Claude Code 是綠的、而且已經登入。");
-  process.exit(1);
-}
+  console.log("");
+  console.log("它的回答（前 8 行）：");
 
-console.log("");
-console.log("── 它的回答（節錄前 12 行）──");
+  for (const line of answer.text.split("\n").slice(0, 8)) {
+    console.log(`  ${line}`);
+  }
 
-for (const line of answer.text.trim().split("\n").slice(0, 12)) {
-  console.log(`  ${line}`);
-}
+  console.log("");
+  console.log("正在請它對照規則判定自己的回答…");
+  const verdict = await runEngine(engine, judgePrompt(answer.text), env);
 
-console.log("");
-console.log("正在請 Claude 對照規則判定自己的回答…");
-const verdict = await runClaude(judgePrompt(answer.text), env);
+  if (!verdict.ok) {
+    console.log(`FAIL  判定失敗：${verdict.text}`);
+    return false;
+  }
 
-if (!verdict.ok) {
-  console.error(`判定失敗：${verdict.text}`);
-  process.exit(1);
-}
+  const parsed = extractJson(verdict.text);
 
-const parsed = extractJson(verdict.text);
+  if (parsed === null || !Array.isArray(parsed.results)) {
+    console.log("FAIL  判定結果不是預期的 JSON，原始輸出：");
+    console.log(verdict.text.trim().slice(0, 300));
+    return false;
+  }
 
-if (parsed === null || !Array.isArray(parsed.results)) {
-  console.error("判定結果不是預期的 JSON，原始輸出：");
-  console.error(verdict.text.trim().slice(0, 500));
-  process.exit(1);
-}
+  let passed = 0;
 
-console.log("");
-console.log("── 判定結果 ──");
-let failures = 0;
+  for (const [name] of RULES) {
+    const result = parsed.results.find((item) => item.rule === name);
 
-for (const rule of RULES) {
-  const result = parsed.results.find((item) => item.rule === rule.name);
-  const suffix = rule.advisory === true ? "（參考，不計入）" : "";
-
-  if (result === undefined) {
-    if (rule.advisory !== true) {
-      failures += 1;
+    if (result?.pass === true) {
+      passed += 1;
     }
 
-    console.log(`FAIL  ${rule.name}${suffix}：沒有判定結果`);
-    continue;
+    const mark = result?.pass === true ? "PASS" : "FAIL";
+    console.log(`${mark}  ${name}：${result?.reason ?? "沒有判定結果"}`);
   }
 
-  if (result.pass !== true && rule.advisory !== true) {
+  const ok = passed >= PASS_THRESHOLD;
+  console.log("");
+  console.log(
+    `${engine.label}：${RULES.length} 條中 ${passed} 條通過` +
+      `（門檻 ${PASS_THRESHOLD} 條）→ ${ok ? "通過" : "沒過"}`,
+  );
+  return ok;
+}
+
+function parseArgs(argv) {
+  const args = {};
+
+  for (const entry of argv) {
+    const match = entry.match(/^--([^=]+)=(.*)$/);
+
+    if (match !== null) {
+      args[match[1]] = match[2];
+    }
+  }
+
+  return args;
+}
+
+const args = parseArgs(process.argv.slice(2));
+const selected = (args.tools ?? "claude")
+  .split(",")
+  .filter((tool) => Object.hasOwn(ENGINES, tool));
+
+if (selected.length === 0) {
+  console.error("沒有指定要驗哪個工具（--tools=claude,codex）");
+  process.exit(1);
+}
+
+const env = await spawnEnv();
+let failures = 0;
+
+for (const tool of selected) {
+  const ok = await verifyEngine(ENGINES[tool], env);
+
+  if (!ok) {
     failures += 1;
   }
-
-  const mark = result.pass === true ? "PASS" : "FAIL";
-  console.log(`${mark}  ${rule.name}${suffix}：${result.reason ?? ""}`);
 }
 
 console.log("");
 
 if (failures > 0) {
-  console.log(`${failures} 條沒過。設定只對新開的 session 生效——`);
-  console.log("如果你剛裝完，這裡跑的是新的程序，理論上已經套用了；");
-  console.log("仍然沒過的話，回上面看「回覆格式 Output Style」那一列是不是綠的。");
+  console.log(`${failures} 個工具沒通過。`);
+  console.log("回上面看對應的那幾列是不是綠的——規則檔沒裝好，行為就不會變。");
   process.exit(1);
 }
 
-console.log("格式規則全部通過——設定確實生效了。");
+console.log("行為驗證通過——設定確實生效了。");
