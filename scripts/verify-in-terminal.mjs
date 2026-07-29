@@ -121,14 +121,18 @@ const CASES = {
     env: () => ({}),
     // 刻意不讓它走 skill 預設的 docs/handoff/ 落點：那要在 git repo 裡才成立，
     // 學生的家目錄不是。改指定檔案路徑，內容照 skill 的格式寫。
+    // ⚠️ 只說「不要 commit、不要寫進 docs/」的話，模型會把整段收尾都當成「這次不用
+    //    做」一起跳過——VM 實測它自己回報「依用戶指示偏離 skill 預設流程三處」，
+    //    改名那步就這樣沒了，看起來像 skill 壞掉。要跳過的步驟逐條講，要做的也逐條講。
     prompt: ({ resultFile }) =>
       "請使用 handoff skill 產出這個 session 的交接文件。" +
-      `不要 commit、不要寫進 docs/，直接把整份文件內容寫進 ${resultFile}。` +
-      "章節標題照 skill 規定的寫。",
+      `這一輪有兩件事要做完：（1）不要 commit、不要寫進 docs/，把整份文件內容寫進 ${resultFile}，章節標題照 skill 規定的寫；` +
+      "（2）照 skill 最後一步把這個 session 改名，執行它給你的那條改名指令，不要跳過。",
     // 「必讀檔案」是 SKILL.md 規定的章節名。模型沒讀到 skill 的話不會自己想到這四個字，
     // 所以它出現＝skill 真的被載入了。
     expect: () => ({ kind: "artifact", keyword: "必讀檔案" }),
-    watchFor: "模型說它用了 handoff skill，並產出一份有「狀態摘要 / 必讀檔案 / 下一步」的文件",
+    watchFor:
+      "模型產出一份有「狀態摘要 / 必讀檔案 / 下一步」的文件，收尾把分頁標題改成「📦 ...」",
   },
   "skill-questions": {
     label: "Skill：結構化提問",

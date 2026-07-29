@@ -144,8 +144,16 @@ export const VERIFICATION = {
     terminal: { case: "skill-rename", agent: "codex" },
     eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
   },
-  "skill-claude-handoff": { terminal: { case: "skill-handoff", agent: "claude" } },
-  "skill-codex-handoff": { terminal: { case: "skill-handoff", agent: "codex" } },
+  // 文件本身自動判定得了（章節名比對），但收尾的改名只有終端看得到——那一步是
+  // 整支 skill 最容易靜靜失敗的地方（指令被 hook 擋下也不會有人說），所以配一格眼睛。
+  "skill-claude-handoff": {
+    terminal: { case: "skill-handoff", agent: "claude" },
+    eye: "那個視窗的分頁標題最後變成「📦 ...」",
+  },
+  "skill-codex-handoff": {
+    terminal: { case: "skill-handoff", agent: "codex" },
+    eye: "那個視窗的分頁標題最後變成「📦 ...」",
+  },
   // 這一支的效果是「跳出選項讓人選」，副產物是一個要人回答的 UI——程式抓不到，
   // headless 更是連 UI 都沒有。所以它是唯一走人眼判定的 skill。
   "skill-claude-structured-questions": {
