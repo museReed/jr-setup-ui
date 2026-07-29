@@ -46,7 +46,14 @@ function runClaude(prompt, env) {
     }
 
     child.stdin.end(prompt);
-    child.stdout.resume();
+
+    // 留著 stdout：命名沒發生時，模型說了什麼是唯一能判斷卡在哪的線索
+    // （原本直接 resume() 丟掉，失敗時只剩「無法確認」四個字可看）。
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
 
     let stderr = "";
     child.stderr.setEncoding("utf8");
@@ -74,7 +81,7 @@ function runClaude(prompt, env) {
         return;
       }
 
-      finish({ ok: true });
+      finish({ ok: true, text: stdout, stderr });
     });
   });
 }
@@ -108,9 +115,14 @@ try {
       // 指令跑了但失敗？把模型實際說的話印出來，才有東西可查。
       console.log("");
       console.log("── Claude 實際的回覆（最後 15 行，用來判斷卡在哪）──");
+      const transcript = `${result.text ?? ""}\n${result.stderr ?? ""}`.trim();
 
-      for (const line of result.text.trim().split("\n").slice(-15)) {
-        console.log(`  ${line}`);
+      if (transcript.length === 0) {
+        console.log("  （沒有任何輸出）");
+      } else {
+        for (const line of transcript.split("\n").slice(-15)) {
+          console.log(`  ${line}`);
+        }
       }
     }
   }
