@@ -610,6 +610,15 @@ export function expandAllowRules(rules, home) {
   return rules.map((rule) => rule.replace("Bash(~/", `Bash(${home}/`));
 }
 
+// 命名／監控 hook 的執行上限。原本 10 秒，Windows VM 實測會超時：
+//   UserPromptSubmit hook timed out after 10s — output discarded
+// 那支是 PowerShell 腳本，冷啟動加上第一次 Get-CimInstance（WMI 查父行程）在 VM 裡
+// 就能吃掉十秒。超時的後果是 hook 的輸出被整個丟棄——那一輪的命名指示等於沒發生，
+// 而且畫面上只有一行紅字，看起來像 skill 壞了。
+//
+// 放寬到 30 秒不會讓正常情況變慢（跑完就結束），只是把冷啟動那一下的餘裕留出來。
+export const AGENT_HOOK_TIMEOUT_SECONDS = 30;
+
 export const HOOK_MARKER = "block-chained-bash";
 
 // 對應 output-styles/concise-structured.md 的 frontmatter name。
@@ -675,7 +684,11 @@ export function mergeAgentHookRegistrations(
     const groups = [...(hooks[registration.event] ?? [])];
     groups.push({
       hooks: [
-        { type: "command", command: registration.command, timeout: 10 },
+        {
+          type: "command",
+          command: registration.command,
+          timeout: AGENT_HOOK_TIMEOUT_SECONDS,
+        },
       ],
     });
     hooks[registration.event] = groups;
