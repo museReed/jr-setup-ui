@@ -28,6 +28,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
+import { materialsDir } from "../src/paths.js";
+
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
 const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
@@ -146,6 +148,27 @@ const CASES = {
     expect: () => ({ kind: "artifact", keyword: "必讀檔案" }),
     watchFor:
       "模型產出一份有「狀態摘要 / 必讀檔案 / 下一步」的文件，收尾把分頁標題改成「📦 ...」",
+  },
+  // 一條龍 demo：把三個 skill 串起來跑一次（問配色 → 生成網頁 → 逐字打 code）。
+  // 它不是「驗證某一格」而是「現場展示」，但判定一樣要證據——產出的網頁檔只有三段
+  // 都真的跑完才會出現，模型嘴上說「已完成」是生不出檔案的。
+  //
+  // 這一格要人回答問題，所以等的時間比其他格長很多（其他格是模型自己跑完就結束）。
+  demo: {
+    label: "一條龍 demo",
+    env: () => ({}),
+    timeoutMs: 900_000,
+    needsAnswer: true,
+    prompt: ({ agent }) =>
+      (agent === "codex" ? "$structured-questions " : "") +
+      `請讀 ${path.join(materialsDir(), "skills", "demo", `demo-prompt-${agent}.md`)}，` +
+      "照裡面的步驟執行這條一條龍 demo。先執行第 1 步。",
+    expect: () => ({
+      kind: "file",
+      file: path.join(homedir(), "demo-page.html"),
+    }),
+    watchFor:
+      "跳出選項讓你選（網頁類型 / 主色調 / 風格 / 字體），回答完會生成網頁，最後逐字打 code 現場長出來",
   },
   "skill-questions": {
     label: "Skill：結構化提問",
@@ -289,6 +312,18 @@ function collectEvidence() {
       : null;
   }
 
+  // file：指定的那個檔案有沒有在這一輪被寫出來。demo 用它——模型嘴上說「已完成」
+  // 是生不出網頁檔的。
+  if (expect.kind === "file") {
+    try {
+      return statSync(expect.file).mtimeMs >= startedAt
+        ? { detail: `產出了 ${expect.file}` }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   // session-name：hook 真的跑完才會出現的檔案，跟模型說什麼無關。
   let entries = [];
 
@@ -320,7 +355,13 @@ child.unref();
 
 console.log(`已開啟一個新的終端視窗，正在跑「${testCase.label}」驗證。`);
 console.log("");
-console.log("請看那個視窗，你不需要輸入任何東西：");
+// demo 是唯一要人動手的情境（選項要你選），其他格一律「看就好」——寫錯這句學生
+// 會乾等，以為卡住了。
+console.log(
+  testCase.needsAnswer === true
+    ? "請到那個視窗回答它的問題："
+    : "請看那個視窗，你不需要輸入任何東西：",
+);
 console.log(`  ▸ ${testCase.watchFor}`);
 console.log("");
 
@@ -332,7 +373,10 @@ if (expect === null) {
 
 console.log("同時我在等副產物出現，出現就自動判定，你不用手動勾。");
 
-while (Date.now() - startedAt < TIMEOUT_MS) {
+// demo 那格要人回答問題，等的時間比其他格長很多——其他格是模型自己跑完就結束。
+const timeoutMs = testCase.timeoutMs ?? TIMEOUT_MS;
+
+while (Date.now() - startedAt < timeoutMs) {
   const evidence = collectEvidence();
 
   if (evidence !== null) {
@@ -345,11 +389,13 @@ while (Date.now() - startedAt < TIMEOUT_MS) {
 }
 
 console.log("");
-console.log("無法確認  等了四分鐘，沒等到證據。");
+console.log(`無法確認  等了 ${Math.round(timeoutMs / 60_000)} 分鐘，沒等到證據。`);
 console.log(
   expect.kind === "artifact"
     ? `      應該要出現在：${resultFile}（而且內容含「${expect.keyword}」）`
-    : `      應該要有新檔案出現在：${namesDir}`,
+    : expect.kind === "file"
+      ? `      應該要產出：${expect.file}`
+      : `      應該要有新檔案出現在：${namesDir}`,
 );
 console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
 process.exit(1);

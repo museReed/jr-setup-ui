@@ -21,7 +21,13 @@ import {
   skillStepId,
   stepsForTools,
 } from "../src/config-install.js";
-import { checkExternalSkill, checkSkill } from "../src/config-check.js";
+import {
+  checkDemo,
+  checkExternalSkill,
+  checkSkill,
+  withActions,
+} from "../src/config-check.js";
+import { configRowModel } from "../public/viewmodel.js";
 
 const HOME = "/home/student";
 
@@ -173,6 +179,29 @@ writeFileSync(
 );
 assert.equal((await checkExternalSkill(mcp)).status, "ok");
 console.log("ok - 第三方 skill 認落點，MCP 認 ~/.claude.json 的註冊");
+
+// --- 一條龍 demo 那一列 ---
+
+// demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
+assert.equal(claudeOnly.at(-1), "demo-claude");
+assert.equal(codexOnly.at(-1), "demo-codex");
+
+const demo = describeStep("demo-claude", { lang: "zh-TW", home: HOME });
+assert.equal(demo.kind, "demo");
+
+// 這一列沒有東西可裝，所以不能有安裝按鈕——補了按下去只會失敗。
+const demoCheck = withActions(checkDemo(demo));
+assert.equal(demoCheck.noInstall, true);
+assert.equal(demoCheck.status, "ok");
+
+const demoRow = configRowModel(demoCheck, false);
+assert.equal(demoRow.buttons.length, 1);
+assert.equal(demoRow.buttons[0].dataName, "verifyAction");
+assert.equal(demoRow.buttons[0].text, "開終端跑");
+// 沒驗過之前不給綠燈，跟其他列同一條規則。
+assert.equal(demoRow.status, "unverified");
+assert.equal(configRowModel(demoCheck, true).status, "ok");
+console.log("ok - demo 那列只有開終端的按鈕，跑過才變綠");
 
 // --- 第三方指令的 spawn 形狀 ---
 

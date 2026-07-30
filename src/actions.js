@@ -180,6 +180,7 @@ Object.assign(actions, {
         "skill-rename",
         "skill-handoff",
         "skill-questions",
+        "demo",
       ],
       agent: ["claude", "codex"],
     },

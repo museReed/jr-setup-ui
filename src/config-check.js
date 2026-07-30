@@ -156,6 +156,10 @@ export const VERIFICATION = {
   },
   // 這一支的效果是「跳出選項讓人選」，副產物是一個要人回答的 UI——程式抓不到，
   // headless 更是連 UI 都沒有。所以它是唯一走人眼判定的 skill。
+  // demo 沒有「裝好了沒」可查——它是把前面裝的東西串起來跑一次。判定看產出的
+  // 網頁檔，那是三個 skill 都真的動了才會出現的東西。
+  "demo-claude": { terminal: { case: "demo", agent: "claude" } },
+  "demo-codex": { terminal: { case: "demo", agent: "codex" } },
   "skill-claude-structured-questions": {
     terminal: { case: "skill-questions", agent: "claude" },
     eye: "那個視窗裡跳出一組選項讓你選（不是用文字把選項寫出來）",
@@ -585,6 +589,19 @@ export async function checkExternalSkill(step) {
   };
 }
 
+// demo 那一列沒有「安裝」這個動作，所以它永遠是「結構齊全、等你跑一次」的狀態：
+// 顯示成待驗證 ◐、只掛一顆開終端的按鈕。noInstall 讓 ViewModel 別補安裝按鈕——
+// 補了也沒有東西可裝，按下去只會失敗。
+export function checkDemo(step) {
+  return {
+    id: step.id,
+    label: step.label,
+    status: "ok",
+    detail: "按右邊開終端跑一次：問配色 → 生成網頁 → 逐字打 code 現場長出來",
+    noInstall: true,
+  };
+}
+
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
@@ -607,32 +624,34 @@ export async function runConfigCheck({ tools, lang }) {
       checks.push(await checkSkill(step, materials));
     } else if (step.kind === "external-skill") {
       checks.push(await checkExternalSkill(step));
+    } else if (step.kind === "demo") {
+      checks.push(checkDemo(step));
     } else {
       checks.push(await checkCopyStep(materials, step));
     }
   }
 
+  return { lang, tools, checks: checks.map(withActions) };
+}
+
+// 一列檢查結果 → 那一列該掛哪幾顆按鈕。抽出來是為了測得到：ViewModel 吃的是這個
+// 形狀，直接拿原始的 check 去測會少掉 verifyAction，測出來的按鈕數永遠是 0。
+export function withActions(check) {
+  const spec = VERIFICATION[check.id];
+
   return {
-    lang,
-    tools,
-    checks: checks.map((check) => ({
-      ...check,
-      installAction: check.status === "ok" ? null : "install-config-step",
-      mergeAction: check.needsMerge === true ? "merge-config-step" : null,
-      // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端
-      // 視窗讓學生看，程式判定不了，所以一定配一個 eye 說明。
-      verifyAction:
-        VERIFICATION[check.id]?.behavior ??
-        (VERIFICATION[check.id]?.terminal === undefined
-          ? null
-          : "verify-in-terminal"),
-      verifyKind:
-        VERIFICATION[check.id]?.terminal === undefined ? "page" : "terminal",
-      verifyOptions:
-        VERIFICATION[check.id]?.terminal ??
-        VERIFICATION[check.id]?.options ??
-        null,
-      eyeCheck: VERIFICATION[check.id]?.eye ?? null,
-    })),
+    ...check,
+    installAction:
+      check.noInstall === true || check.status === "ok"
+        ? null
+        : "install-config-step",
+    mergeAction: check.needsMerge === true ? "merge-config-step" : null,
+    // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端
+    // 視窗讓學生看，程式判定不了，所以一定配一個 eye 說明。
+    verifyAction:
+      spec?.behavior ?? (spec?.terminal === undefined ? null : "verify-in-terminal"),
+    verifyKind: spec?.terminal === undefined ? "page" : "terminal",
+    verifyOptions: spec?.terminal ?? spec?.options ?? null,
+    eyeCheck: spec?.eye ?? null,
   };
 }

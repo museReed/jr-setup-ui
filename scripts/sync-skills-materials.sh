@@ -45,5 +45,12 @@ cp "$SOURCE/installer/model-context-windows-cache.json" \
 cp -R "$SOURCE/installer/skills/claude" "$TARGET/skill-files/claude"
 cp -R "$SOURCE/installer/skills/codex" "$TARGET/skill-files/codex"
 
+# 一條龍 demo：prompt 兩份（Claude / Codex 各一）＋ live-preview 腳本。嚮導的
+# 「跑一條龍 demo」那一列會叫 agent 去讀這裡的 prompt，所以要跟著內建。
+mkdir -p "$TARGET/demo"
+cp "$SOURCE/installer/demo-prompt-claude.md" "$TARGET/demo/demo-prompt-claude.md"
+cp "$SOURCE/installer/demo-prompt-codex.md" "$TARGET/demo/demo-prompt-codex.md"
+cp -R "$SOURCE/installer/demo/live-preview" "$TARGET/demo/live-preview"
+
 echo "已同步："
 find "$TARGET" -type f | sort | sed "s|$TARGET/|  |"

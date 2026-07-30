@@ -141,8 +141,10 @@ export function configRowModel(check, verified = false) {
   const buttons = [];
 
   // 待驗證的列也要留安裝按鈕——重跑安裝是學生手上唯一的自救手段。
+  // 例外是 demo 那種「沒有東西可裝」的列（noInstall）：補了按鈕按下去只會失敗。
   const installAction =
-    check.installAction ?? (pending ? "install-config-step" : null);
+    check.installAction ??
+    (pending && check.noInstall !== true ? "install-config-step" : null);
 
   if (installAction !== null && installAction !== undefined) {
     buttons.push({
@@ -157,7 +159,13 @@ export function configRowModel(check, verified = false) {
     buttons.push({
       action: check.verifyAction,
       dataName: "verifyAction",
-      text: check.verifyKind === "terminal" ? "開終端驗證" : "驗證",
+      // demo 那列按下去是「跑給你看」不是「驗證有沒有裝好」，按鈕跟著改字。
+      text:
+        check.verifyKind !== "terminal"
+          ? "驗證"
+          : check.noInstall === true
+            ? "開終端跑"
+            : "開終端驗證",
       step: check.id,
       options: check.verifyOptions ?? undefined,
     });

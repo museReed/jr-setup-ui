@@ -111,6 +111,11 @@ export function skillStepId(agent, name) {
   return `skill-${agent}-${name}`;
 }
 
+// 一條龍 demo 不是「安裝」而是「跑一次給你看」：問配色（structured-questions）
+// → 生成網頁（frontend-design）→ live-preview 逐字打 code。所以這一列沒有安裝
+// 按鈕，只有「開終端驗證」，而且判定看的是它有沒有真的產出網頁。
+export const DEMO_STEPS = ["demo-claude", "demo-codex"];
+
 const CLAUDE_SKILL_STEPS = SKILL_NAMES.map((name) =>
   skillStepId("claude", name),
 );
@@ -137,6 +142,7 @@ export const STEP_IDS = [
   ...CLAUDE_SKILL_STEPS,
   ...CODEX_SKILL_STEPS,
   ...EXTERNAL_SKILL_IDS,
+  ...DEMO_STEPS,
 ];
 
 const CLAUDE_STEPS = ["claude-md", "output-style", "hook", "allowlist"];
@@ -164,6 +170,9 @@ export function stepsForTools(tools) {
     ...(selected.includes("codex") ? CODEX_SKILL_STEPS : []),
     ...(selected.includes("claude") ? externalStepsFor("claude") : []),
     ...(selected.includes("codex") ? externalStepsFor("codex") : []),
+    // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
+    ...(selected.includes("claude") ? ["demo-claude"] : []),
+    ...(selected.includes("codex") ? ["demo-codex"] : []),
   ];
 }
 
@@ -551,6 +560,17 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "codex-namer":
     case "codex-monitor":
       return agentHooks(id, home, platform);
+
+    case "demo-claude":
+    case "demo-codex": {
+      const agent = id === "demo-claude" ? "claude" : "codex";
+      return {
+        id,
+        label: `跑一條龍 demo（${agent === "claude" ? "Claude" : "Codex"}）`,
+        kind: "demo",
+        agent,
+      };
+    }
 
     default:
       if (EXTERNAL_SKILL_STEPS[id] !== undefined) {
