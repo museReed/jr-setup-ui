@@ -115,12 +115,26 @@ async function checkCopyStep(materials, step) {
 // behavior = 程式跑得出結果的行為驗證；eye = 只有真終端看得到、得由學生回報。
 // 兩者都沒有的列（例如白名單）結構對了就是真的對了，直接綠燈。
 export const VERIFICATION = {
+  // 一個 agent 只做一次行為驗證。
+  //
+  // 格式規則在兩份檔案裡各有一份（Claude：CLAUDE.md 與 output-style；Codex：
+  // AGENTS.md 與 config.toml 的 instructions），所以原本那四列跑的是同一個測試
+  // ——同一題、同一組判準，只是各燒一次 API。行為驗證是整份嚮導最慢最貴的一步
+  // （每次兩趟 LLM：先問一題，再把回答餵回去逐條判定）。
+  //
+  // 留哪一列的判準不是「誰重要」而是「誰會靜默失效」：
+  //   CLAUDE.md / AGENTS.md  放著就讀，結構對＝生效，沒有中間狀態
+  //   output-style           要 settings.json 的 outputStyle 啟用，沒啟用不會報錯
+  //   config.toml            要 Codex 讀到那個 instructions，同樣不會報錯
+  // 所以行為驗證掛在有開關的那兩列。
+  //
+  // 代價：學生若只裝了 CLAUDE.md 沒裝 output-style，那個 agent 就沒有行為驗證。
+  // 可接受——那時 output-style 那列本身還沒綠，摘要不會全綠，人會被推去裝。
+  //
   // tools 綁死在列上：按 codex 那列的驗證卻連 claude 一起跑，慢一倍不說，claude
   // 失敗還會把 codex 那列判成紅的。
-  "claude-md": { behavior: "verify-behavior", options: { tools: "claude" } },
   "output-style": { behavior: "verify-behavior", options: { tools: "claude" } },
   "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
-  "codex-agents": { behavior: "verify-behavior", options: { tools: "codex" } },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
   // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
