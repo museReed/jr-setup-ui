@@ -156,10 +156,19 @@ export const VERIFICATION = {
   },
   // 這一支的效果是「跳出選項讓人選」，副產物是一個要人回答的 UI——程式抓不到，
   // headless 更是連 UI 都沒有。所以它是唯一走人眼判定的 skill。
-  // demo 沒有「裝好了沒」可查——它是把前面裝的東西串起來跑一次。判定看產出的
-  // 網頁檔，那是三個 skill 都真的動了才會出現的東西。
-  "demo-claude": { terminal: { case: "demo", agent: "claude" } },
-  "demo-codex": { terminal: { case: "demo", agent: "codex" } },
+  // demo 沒有「裝好了沒」可查——它是把前面裝的東西串起來跑一次。
+  //
+  // 網頁檔只證明前兩段（問配色、生成網頁）跑完了；第三段「逐字打 code、右邊即時
+  // 長出網頁」是純畫面，只有人看得到。所以這一列兩種判定都要：程式等檔案，人看畫面。
+  // 有 eye 的列不會自動變綠（見 app.js），綠燈以學生勾選為準。
+  "demo-claude": {
+    terminal: { case: "demo", agent: "claude" },
+    eye: "左邊逐字打 code、右邊即時長出你剛才選的那個網頁",
+  },
+  "demo-codex": {
+    terminal: { case: "demo", agent: "codex" },
+    eye: "左邊逐字打 code、右邊即時長出你剛才選的那個網頁",
+  },
   "skill-claude-structured-questions": {
     terminal: { case: "skill-questions", agent: "claude" },
     eye: "那個視窗裡跳出一組選項讓你選（不是用文字把選項寫出來）",

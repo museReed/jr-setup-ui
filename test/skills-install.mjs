@@ -201,7 +201,10 @@ assert.equal(demoRow.buttons[0].text, "開終端跑");
 // 沒驗過之前不給綠燈，跟其他列同一條規則。
 assert.equal(demoRow.status, "unverified");
 assert.equal(configRowModel(demoCheck, true).status, "ok");
-console.log("ok - demo 那列只有開終端的按鈕，跑過才變綠");
+// 第三段「逐字打 code、右邊長出網頁」是純畫面，程式判不到——要有勾選框讓學生確認。
+// 有 eyeCheck 的列不會被自動標綠（app.js 那條規則），綠燈以勾選為準。
+assert(demoRow.eyeCheck != null, "demo 那列要有人眼確認的勾選框");
+console.log("ok - demo 那列只有開終端的按鈕，且附人眼確認的勾選框");
 
 // --- 第三方指令的 spawn 形狀 ---
 
