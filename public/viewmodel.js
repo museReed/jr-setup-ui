@@ -11,13 +11,6 @@ export const LOGIN_CHECK_IDS = {
 export const LOGIN_POLL_INTERVAL_MS = 5_000;
 export const LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
 
-export const CONFIG_LANGUAGES = ["zh-TW", "zh-CN", "en"];
-export const CONFIG_TOOL_CHOICES = [
-  { value: "claude", label: "Claude Code" },
-  { value: "codex", label: "Codex CLI" },
-  { value: "claude,codex", label: "兩個都要" },
-];
-
 export const BEHAVIOR_QUESTION =
   "我想開始經營個人品牌，Instagram 和 YouTube 我該先從哪個開始？";
 // 這五條要跟 scripts/verify-behavior.mjs 裡 AI 判定用的規則一字對得上，
@@ -70,16 +63,6 @@ export function agentNameFor(action) {
   }
 
   return action.startsWith("codex") ? "Codex" : "";
-}
-
-export function configQuery({ tools, lang }) {
-  const toolValues = CONFIG_TOOL_CHOICES.map((choice) => choice.value);
-
-  if (!toolValues.includes(tools) || !CONFIG_LANGUAGES.includes(lang)) {
-    throw new Error("規則檔工具或語言不合法");
-  }
-
-  return `tools=${tools}&lang=${lang}`;
 }
 
 // 登入指令把網址和代碼混在一般輸出裡，要挑出來變成可點的連結與可複製的代碼。

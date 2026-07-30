@@ -1,5 +1,6 @@
-// Model：跟本機 server 講話的唯一出口。所有請求都要帶啟動時產生的一次性 token。
-import { configQuery } from "./viewmodel.js";
+// API：跟本機 server 講話的唯一出口。所有請求都要帶啟動時產生的一次性 token。
+// 只往內依賴 model（domain），不碰 View / ViewModel。
+import { configQuery } from "./model.js";
 
 const token = new URLSearchParams(window.location.search).get("t") ?? "";
 

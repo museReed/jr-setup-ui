@@ -22,6 +22,7 @@ const ASSETS = [
   ["/app.js", "text/javascript; charset=utf-8"],
   ["/view.js", "text/javascript; charset=utf-8"],
   ["/viewmodel.js", "text/javascript; charset=utf-8"],
+  ["/model.js", "text/javascript; charset=utf-8"],
   ["/api.js", "text/javascript; charset=utf-8"],
 ];
 
