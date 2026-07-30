@@ -163,6 +163,34 @@ try {
   }
   ok("會自動標綠的驗證動作跟各列宣告的對得上");
 
+  // 行為驗證是整份嚮導最慢最貴的一步（每次兩趟 LLM：先問一題、再把回答餵回去逐條
+  // 判定），而格式規則在兩份檔案裡各有一份——四列各驗一次等於同一個測試跑四遍。
+  // 一個 agent 剛好一列，多了是浪費、少了那個 agent 就沒有行為驗證。
+  const behaviorRows = Object.entries(VERIFICATION).filter(
+    ([, entry]) => entry.behavior !== undefined,
+  );
+
+  for (const tools of ["claude", "codex"]) {
+    const owned = behaviorRows.filter(
+      ([, entry]) => entry.options?.tools === tools,
+    );
+    assert.equal(
+      owned.length,
+      1,
+      `${tools} 應該剛好有一列做行為驗證，現在有 ${owned.length} 列：${owned
+        .map(([step]) => step)
+        .join(", ")}`,
+    );
+  }
+  // 掛在「有開關、會靜默失效」的那一列：CLAUDE.md / AGENTS.md 放著就讀，結構對
+  // 就是生效；output-style 要 settings.json 啟用、config.toml 要 Codex 讀到，
+  // 沒生效時兩者都不會報錯。
+  assert.deepEqual(
+    behaviorRows.map(([step]) => step).sort(),
+    ["codex-config", "output-style"],
+  );
+  ok("每個 agent 剛好一列做行為驗證，且掛在會靜默失效的那一列");
+
   // 開終端驗證分兩種：抓得到副產物的自動判定，抓不到的才給勾選框。給了勾選框
   // 就一定要寫明要看什麼，否則學生看著視窗不知道該看哪裡，只能亂勾。
   for (const [step, entry] of Object.entries(VERIFICATION)) {
