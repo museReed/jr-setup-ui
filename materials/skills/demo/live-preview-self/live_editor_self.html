@@ -1,13 +1,22 @@
-<!-- 高亮版即時編輯器：左邊逐字打 code + 語法高亮（用昨天 terminal 的 --term-* 色），
-     右邊即時長出網頁。右邊全程只開一份 document、不重載：body 用 document.write
-     逐段 stream 進去，CSS 直接改 <style> 的 textContent。由 type_hl.py 驅動。 -->
+<!-- 自走版即時編輯器樣板：跟 live-preview/live_editor_hl.html 同一個畫面與同一套
+     語法高亮，差別只有一個——「誰在打字」。
+
+     原版（live-preview/）：Python 每 14ms 用 page.evaluate 餵一段字進來，所以要
+       python playwright + chromium，workshop 現場多兩個安裝步驟。
+     自走版（本檔）：全文在產出時就 inline 進頁面，計時器改用頁面自己的 setInterval。
+       產出的檔案打開就自己演，零依賴——瀏覽器、Playwright MCP、`open` 都能放。
+
+     代價：沒有「每拍存一張 PNG」那條路（瀏覽器裡的 JS 存不了檔到硬碟）。要影格
+     就用原版。
+
+     這份是樣板，不能直接開——__SOURCE__ 等佔位符要由 self_play.py 換掉。 -->
 <!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<title>Live Editor — 語法高亮版</title>
+<title>Live Editor — 自走版</title>
 <style>
-  /* 終端機主題色（與昨天 terminal_type.html 一致） */
+  /* 終端機主題色（與 live_editor_hl.html 一致） */
   :root{
     --term-bg:#1F1B16;--term-bg-2:#2A241D;--term-ink:#F0ECE4;--term-ink-dim:#B3A99B;
     --term-prompt:#E8A06A;--term-ok:#30CECE;--term-err:#E89080;--term-folder:#7FB8E0;
@@ -37,6 +46,9 @@
     font:700 12px/1.2 "Noto Sans TC",sans-serif;letter-spacing:.08em;display:flex;justify-content:space-between}
   .bar .mode{opacity:.85}
   iframe{flex:1;border:0;width:100%;background:#F0ECE4}
+  /* 自走版多一顆重播鍵：現場講解時常要再演一次，重新整理會連捲動位置一起重來。 */
+  .replay{border:0;background:var(--term-bg);color:var(--term-prompt);cursor:pointer;
+    font:700 11px/1 "Noto Sans TC",sans-serif;letter-spacing:.06em;padding:6px 10px;border-radius:4px}
 </style>
 </head>
 <body>
@@ -50,7 +62,10 @@
     <div id="code"></div>
   </div>
   <div class="right">
-    <div class="bar"><span>▸ 即時預覽 · LIVE PREVIEW</span><span class="mode" id="mode"></span></div>
+    <div class="bar">
+      <span>▸ 即時預覽 · LIVE PREVIEW</span>
+      <span><span class="mode" id="mode"></span> <button class="replay" id="replay">重播</button></span>
+    </div>
     <iframe id="preview"></iframe>
   </div>
 
@@ -87,7 +102,7 @@
     }
   }
 
-  // --- CSS tokenizer（新增：容忍未打完，選擇器/屬性/值分色）---
+  // --- CSS tokenizer（容忍未打完，選擇器/屬性/值分色）---
   function tokenizeCSS(css, push){
     let i=0, n=css.length, inBlock=false;
     while(i<n){
@@ -135,14 +150,7 @@
     return toks.join('');
   }
 
-  // --- 右邊：一份「從頭到尾都不重載」的 document。
-  // 之前每拍都用 srcdoc / data: / file:// 重新載入整份文件，等於每秒把畫面
-  // 打掉重畫七八次——白閃、捲軸歸零、再跳錨點，那個中間態就是高頻跳動的
-  // 來源；換哪種 URL 都只是換「用什麼方式重載」，救不了。
-  // 這裡改成 document.open() 開一次 stream，之後只把「新打出來的那幾個字」
-  // write 進去：已解析的節點原地不動，捲動位置自然保留，寫到哪就捲到哪。
-  // CSS 走另一條路——直接改 head 那顆 <style> 的 textContent。規則沒打完
-  // 瀏覽器本來就會忽略，等於免費得到「一條規則完成才套用」。
+  // --- 右邊：一份「從頭到尾都不重載」的 document（同原版，理由見 live_editor_hl.html）---
   window.T = {
     doc: null,
     styleEl: null,
@@ -158,17 +166,93 @@
     follow(){
       if(!this.doc) return;
       const se = this.doc.scrollingElement || this.doc.documentElement;
-      if(se) se.scrollTop = se.scrollHeight;   // 寫到哪捲到哪；沒重載所以不閃
+      if(se) se.scrollTop = se.scrollHeight;
     },
     end(){ if(this.doc){ try{ this.doc.close(); }catch(e){} } },
     left(raw){
       codeEl.innerHTML=highlight(raw)+'<span class="car"></span>';
       codeEl.scrollTop=codeEl.scrollHeight;
     },
-    mode(text){
-      modeEl.textContent=text;
-    }
+    mode(text){ modeEl.textContent=text; }
   };
+
+  // --- 自走版的驅動：原版這段在 Python 裡，現在搬進頁面 ---
+  const SRC = __SOURCE__;
+  const CSS_SECONDS = __CSS_SECONDS__;
+  const BODY_SECONDS = __BODY_SECONDS__;
+  const TICK_MS = __TICK_MS__;
+
+  // <style> 的邊界：CSS 內容直接餵給右邊的 <style>.textContent，不 stream 進 body。
+  function cssBounds(src){
+    const open = src.indexOf('<style');
+    if(open === -1) return null;
+    const gt = src.indexOf('>', open);
+    if(gt === -1) return null;
+    const close = src.indexOf('</' + 'style>', gt);
+    if(close === -1) return null;
+    return { open, textStart: gt + 1, textEnd: close, blockEnd: close + 8 };
+  }
+
+  // 切成 [(start, end, 秒數, kind)]，跟原版 build_segments 同一套分配方式：
+  // CSS 整塊吃 CSS_SECONDS，其餘本體按長度比例分掉 BODY_SECONDS。
+  function buildSegments(src, b){
+    const total = src.length;
+    if(!b) return [[0, total, CSS_SECONDS + BODY_SECONDS, 'stream']];
+    const nonCss = total - (b.blockEnd - b.open);
+    const segs = [];
+    if(b.open > 0) segs.push([0, b.open, BODY_SECONDS * (nonCss > 0 ? b.open / nonCss : 0), 'stream']);
+    segs.push([b.open, b.blockEnd, CSS_SECONDS, 'css']);
+    if(b.blockEnd < total){
+      segs.push([b.blockEnd, total, BODY_SECONDS * (nonCss > 0 ? (total - b.blockEnd) / nonCss : 0), 'stream']);
+    }
+    return segs.filter(s => s[1] > s[0]);
+  }
+
+  let timer = null;
+
+  function play(){
+    if(timer !== null) clearInterval(timer);
+    const b = cssBounds(SRC);
+    const segments = buildSegments(SRC, b);
+    let si = 0, written = segments.length ? segments[0][0] : 0;
+    let segStartedAt = Date.now();
+    window.T.begin();
+    window.T.left('');
+    window.T.mode('');
+
+    timer = setInterval(() => {
+      if(si >= segments.length){
+        clearInterval(timer); timer = null;
+        window.T.mode('完成');
+        window.T.end();
+        return;
+      }
+
+      const [start, end, seconds, kind] = segments[si];
+      // 用真實時鐘反推目前該打到第幾個字，而不是「拍數 × TICK_MS」——後者忽略每拍
+      // 實際耗時，幾千拍下來誤差會累積到肉眼可見（原版踩過，這裡照抄結論）。
+      const ratio = seconds > 0 ? Math.min(1, (Date.now() - segStartedAt) / (seconds * 1000)) : 1;
+      const k = Math.floor(start + (end - start) * ratio);
+
+      window.T.left(SRC.slice(0, k));
+
+      if(kind === 'stream'){
+        window.T.mode('');
+        if(k > written){ window.T.write(SRC.slice(written, k)); written = k; }
+        window.T.follow();
+      } else {
+        window.T.mode('CSS 撰寫中…');
+        const curEnd = Math.min(k, b.textEnd);
+        if(curEnd > b.textStart) window.T.css(SRC.slice(b.textStart, curEnd));
+        written = Math.max(written, Math.min(k, b.blockEnd));
+      }
+
+      if(ratio >= 1){ si += 1; segStartedAt = Date.now(); }
+    }, TICK_MS);
+  }
+
+  document.getElementById('replay').addEventListener('click', play);
+  play();
 </script>
 </body>
 </html>

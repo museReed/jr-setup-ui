@@ -159,10 +159,22 @@ const CASES = {
     env: () => ({}),
     timeoutMs: 900_000,
     needsAnswer: true,
-    prompt: ({ agent }) =>
-      (agent === "codex" ? "$structured-questions " : "") +
-      `請讀 ${path.join(materialsDir(), "skills", "demo", `demo-prompt-${agent}.md`)}，` +
-      "照裡面的步驟執行這條一條龍 demo。先執行第 1 步。",
+    // ⚠️ 第 3 步的路徑在 prompt 裡寫的是上游 repo 的位置（installer/demo/），學生
+    //    機器上沒有那個 repo——不覆蓋掉的話每個人都會卡在那裡先 find 一輪（VM 實測，
+    //    模型自己指出來的）。而且嚮導內建的是自走版：產出的頁面打開就自己演，
+    //    不需要 python playwright + chromium，現場少兩個安裝步驟。
+    prompt: ({ agent }) => {
+      const demoDir = path.join(materialsDir(), "skills", "demo");
+
+      return (
+        (agent === "codex" ? "$structured-questions " : "") +
+        `請讀 ${path.join(demoDir, `demo-prompt-${agent}.md`)}，照裡面的步驟執行這條一條龍 demo。` +
+        "第 3 步不要用 prompt 裡寫的那支腳本（那是另一個 repo 的路徑，這台機器上沒有），" +
+        `改用這支自走版：python3 ${path.join(demoDir, "live-preview-self", "self_play.py")} ~/demo-page.html，` +
+        "它只用標準函式庫、不需要安裝任何東西，跑完把產出的檔案用瀏覽器打開就會自己演。" +
+        "先執行第 1 步。"
+      );
+    },
     expect: () => ({
       kind: "file",
       file: path.join(homedir(), "demo-page.html"),

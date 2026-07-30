@@ -4,6 +4,7 @@
 // 路徑沒展開所以被權限層擋下），那些都是內容比對抓得到的事，不用等 VM。
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -205,6 +206,29 @@ assert.equal(configRowModel(demoCheck, true).status, "ok");
 // 有 eyeCheck 的列不會被自動標綠（app.js 那條規則），綠燈以勾選為準。
 assert(demoRow.eyeCheck != null, "demo 那列要有人眼確認的勾選框");
 console.log("ok - demo 那列只有開終端的按鈕，且附人眼確認的勾選框");
+
+// demo 第 3 步：內建的是自走版（產出的頁面打開就自己演，零依賴）。原版 type_hl.py
+// 要 python playwright + chromium，現場多兩個安裝步驟，所以不帶——這裡釘住「帶的是
+// 哪一版」，免得哪天同步腳本又把原版塞回來。
+const demoDir = new URL("../materials/skills/demo/", import.meta.url);
+assert(
+  existsSync(new URL("live-preview-self/self_play.py", demoDir)),
+  "內建素材少了自走版 self_play.py",
+);
+assert(
+  !existsSync(new URL("live-preview/type_hl.py", demoDir)),
+  "不要帶原版 type_hl.py——它要 python playwright，學生現場裝不動",
+);
+
+const terminalSource = readFileSync(
+  new URL("../scripts/verify-in-terminal.mjs", import.meta.url),
+  "utf8",
+);
+assert(
+  terminalSource.includes("self_play.py"),
+  "demo 的提問要指定自走版腳本，否則模型會照 prompt 去找另一個 repo 的路徑",
+);
+console.log("ok - demo 帶的是自走版腳本，提問也指到它");
 
 // --- 第三方指令的 spawn 形狀 ---
 
