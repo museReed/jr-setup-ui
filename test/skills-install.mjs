@@ -230,6 +230,27 @@ assert(
 );
 console.log("ok - demo 帶的是自走版腳本，提問也指到它");
 
+// 嚮導是獨立的：學生只 clone 這一個 repo，機器上不會有 jr_ai_agent_skills /
+// jr_ai_agent_configs。內建素材裡若還留著那些 repo 的路徑，模型會照著去找、找不到，
+// 然後卡住（VM 實測，demo 第 3 步就是這樣卡的）。
+//
+// 只查「模型會讀到的內容」——scripts/sync-*.sh 是維護者用的同步工具，本來就要知道
+// 上游在哪，不在此限。
+for (const file of [
+  "demo/demo-prompt-claude.md",
+  "demo/demo-prompt-codex.md",
+]) {
+  const text = readFileSync(
+    new URL(`../materials/skills/${file}`, import.meta.url),
+    "utf8",
+  );
+  assert(
+    !text.includes("jr_ai_agent_skills"),
+    `${file} 還指著 jr_ai_agent_skills——學生機器上沒有那個 repo`,
+  );
+}
+console.log("ok - 模型會讀到的內建素材不指向其他 repo");
+
 // --- 第三方指令的 spawn 形狀 ---
 
 // Windows 上 npx / claude 都是 .cmd 包裝檔，沒有同名 .exe：shell:false 的 spawn 找不到

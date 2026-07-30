@@ -15,12 +15,14 @@
    - **不可**有外部 `<link href>` 或 `<script src>`（右邊預覽用 iframe srcdoc，外部相對檔會渲染不出來）
    - 存成 `~/demo-page.html`
 
-3. **現場展示** — 用本地 live-preview 腳本跑一次（左邊逐字打 code、右邊即時長出網頁，打 CSS 時右邊等規則完成才刷新）：
+3. **現場展示** — 產出一份「打開就自己演」的頁面（左邊逐字打 code、右邊即時長出網頁，打 CSS 時右邊等規則完成才刷新）：
    ```bash
-   python3 <jr_ai_agent_skills 路徑>/installer/demo/live-preview/type_hl.py ~/demo-page.html
+   python3 <嚮導路徑>/materials/skills/demo/live-preview-self/self_play.py ~/demo-page.html
    ```
-   - 找不到路徑就先定位：`find ~ -name type_hl.py -path '*live-preview*' 2>/dev/null`
-   - 想打慢一點好講解：`TICK_MS=30 python3 .../type_hl.py ~/demo-page.html`
+   - 這支只用 Python 標準函式庫，不需要安裝任何東西（`python3` 叫不動時改用 `py` 或 `python`）
+   - 找不到路徑就先定位：`find ~ -name self_play.py -path '*live-preview-self*' 2>/dev/null`
+   - 跑完把它印出來的那份 `*-self-play.html` 用瀏覽器打開，就會開始演（右上角有「重播」）
+   - 想調速度：`CSS_SECONDS=15 BODY_SECONDS=70 python3 .../self_play.py ~/demo-page.html`
 
 > 注意：Codex 的 `skill-creator` 是內建（`$skill-creator`），不是這次 demo 的一環，但已可用。
 
