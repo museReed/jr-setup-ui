@@ -1,0 +1,258 @@
+<!-- 自走版即時編輯器樣板：跟 live-preview/live_editor_hl.html 同一個畫面與同一套
+     語法高亮，差別只有一個——「誰在打字」。
+
+     原版（live-preview/）：Python 每 14ms 用 page.evaluate 餵一段字進來，所以要
+       python playwright + chromium，workshop 現場多兩個安裝步驟。
+     自走版（本檔）：全文在產出時就 inline 進頁面，計時器改用頁面自己的 setInterval。
+       產出的檔案打開就自己演，零依賴——瀏覽器、Playwright MCP、`open` 都能放。
+
+     代價：沒有「每拍存一張 PNG」那條路（瀏覽器裡的 JS 存不了檔到硬碟）。要影格
+     就用原版。
+
+     這份是樣板，不能直接開——__SOURCE__ 等佔位符要由 self_play.py 換掉。 -->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Live Editor — 自走版</title>
+<style>
+  /* 終端機主題色（與 live_editor_hl.html 一致） */
+  :root{
+    --term-bg:#1F1B16;--term-bg-2:#2A241D;--term-ink:#F0ECE4;--term-ink-dim:#B3A99B;
+    --term-prompt:#E8A06A;--term-ok:#30CECE;--term-err:#E89080;--term-folder:#7FB8E0;
+    --danger:#E85B4A;--warn:#D4A843;--ok:#30CECE;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{display:grid;grid-template-columns:1fr 1fr;background:#12100e}
+  .term{display:flex;flex-direction:column;height:100vh;background:var(--term-bg)}
+  .chrome{background:var(--term-bg-2);padding:11px 14px;display:flex;gap:7px;align-items:center}
+  .dot{width:12px;height:12px;border-radius:50%}
+  .chrome .title{margin-left:10px;color:var(--term-ink-dim);font:600 12px/1 ui-monospace,monospace;letter-spacing:.04em}
+  #code{flex:1;overflow:auto;padding:18px 20px;white-space:pre-wrap;word-break:break-word;
+    font:13px/1.75 "JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;color:var(--term-ink);tab-size:2}
+  /* 語法高亮 —— HTML 與 CSS 共用同一套終端機色 */
+  .tg{color:var(--term-prompt)}    /* HTML 標籤名 / CSS 選擇器 = 橘 */
+  .at{color:var(--term-folder)}    /* HTML 屬性 / CSS 屬性 = 藍 */
+  .st{color:var(--term-ok)}        /* 字串 / CSS 值 = 青 */
+  .tx{color:var(--term-ink)}       /* 文字內容 = 米白 */
+  .pt{color:var(--term-ink-dim)}   /* 標點 < > = { } : ; = 灰 */
+  .tc{color:var(--term-ink-dim);font-style:italic}  /* 註解 */
+  .car{display:inline-block;width:8px;height:1.05em;vertical-align:text-bottom;background:var(--term-prompt);
+    animation:blink 1s steps(1) infinite;margin-left:1px}
+  @keyframes blink{50%{opacity:0}}
+  .right{display:flex;flex-direction:column;height:100vh;border-left:3px solid var(--term-prompt)}
+  .bar{padding:11px 16px;background:var(--term-prompt);color:var(--term-bg);
+    font:700 12px/1.2 "Noto Sans TC",sans-serif;letter-spacing:.08em;display:flex;justify-content:space-between}
+  .bar .mode{opacity:.85}
+  iframe{flex:1;border:0;width:100%;background:#F0ECE4}
+  /* 自走版多一顆重播鍵：現場講解時常要再演一次，重新整理會連捲動位置一起重來。 */
+  .replay{border:0;background:var(--term-bg);color:var(--term-prompt);cursor:pointer;
+    font:700 11px/1 "Noto Sans TC",sans-serif;letter-spacing:.06em;padding:6px 10px;border-radius:4px}
+</style>
+</head>
+<body>
+  <div class="term">
+    <div class="chrome">
+      <span class="dot" style="background:var(--danger)"></span>
+      <span class="dot" style="background:var(--warn)"></span>
+      <span class="dot" style="background:var(--ok)"></span>
+      <span class="title">~/live · index.html</span>
+    </div>
+    <div id="code"></div>
+  </div>
+  <div class="right">
+    <div class="bar">
+      <span>▸ 即時預覽 · LIVE PREVIEW</span>
+      <span><span class="mode" id="mode"></span> <button class="replay" id="replay">重播</button></span>
+    </div>
+    <iframe id="preview"></iframe>
+  </div>
+
+<script>
+  const codeEl = document.getElementById('code');
+  const preview = document.getElementById('preview');
+  const modeEl = document.getElementById('mode');
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // --- HTML 標籤 tokenizer（容忍未打完，逐字打用）---
+  function tokenizeTag(tag, push){
+    let i=0, n=tag.length;
+    const lead=(/^<\/?/.exec(tag)||['<'])[0];
+    push('pt', lead); i=lead.length;
+    const nm=/^[\w-]+/.exec(tag.slice(i));
+    if(nm){ push('tg', nm[0]); i+=nm[0].length; }
+    while(i<n){
+      const s=tag.slice(i);
+      const ws=/^\s+/.exec(s);
+      if(ws){ push('pt', ws[0]); i+=ws[0].length; continue; }
+      if(s[0]==='>'||s.startsWith('/>')){ const p=s.startsWith('/>')?'/>':'>'; push('pt',p); i+=p.length; continue; }
+      const at=/^[\w-]+/.exec(s);
+      if(at){
+        push('at', at[0]); i+=at[0].length;
+        const eq=/^\s*=\s*/.exec(tag.slice(i));
+        if(eq){
+          push('pt', eq[0]); i+=eq[0].length;
+          const str=/^"[^"]*"?|^'[^']*'?/.exec(tag.slice(i));
+          if(str){ push('st', str[0]); i+=str[0].length; }
+        }
+        continue;
+      }
+      push('pt', s[0]); i+=1;
+    }
+  }
+
+  // --- CSS tokenizer（容忍未打完，選擇器/屬性/值分色）---
+  function tokenizeCSS(css, push){
+    let i=0, n=css.length, inBlock=false;
+    while(i<n){
+      const s=css.slice(i);
+      let m=/^\/\*[\s\S]*?(\*\/|$)/.exec(s);   // 註解
+      if(m){ push('tc', m[0]); i+=m[0].length; continue; }
+      m=/^\s+/.exec(s);
+      if(m){ push('pt', m[0]); i+=m[0].length; continue; }
+      if(!inBlock){
+        if(s[0]==='{'){ push('pt','{'); i++; inBlock=true; continue; }
+        m=/^[^{\s][^{]*/.exec(s);              // 選擇器（到 { 為止）
+        if(m){ push('tg', m[0]); i+=m[0].length; continue; }
+        push('pt', s[0]); i++;
+      } else {
+        if(s[0]==='}'){ push('pt','}'); i++; inBlock=false; continue; }
+        m=/^[\w-]+/.exec(s);                   // 屬性名
+        if(m){ push('at', m[0]); i+=m[0].length; continue; }
+        if(s[0]===':'){
+          push('pt',':'); i++;
+          const v=/^[^;}]*/.exec(css.slice(i));// 值到 ; 或 } 為止
+          if(v && v[0]){ push('st', v[0]); i+=v[0].length; }
+          continue;
+        }
+        if(s[0]===';'){ push('pt',';'); i++; continue; }
+        push('pt', s[0]); i++;
+      }
+    }
+  }
+
+  // 頂層 walker：HTML 區走 HTML tokenizer；遇 <style> 內容切 CSS tokenizer
+  function highlight(src){
+    const toks=[];
+    const push=(c,t)=>{ if(t) toks.push('<span class="'+c+'">'+esc(t)+'</span>'); };
+    let i=0, n=src.length;
+    while(i<n){
+      if(src.startsWith('<!--',i)){ let e=src.indexOf('-->',i); e=e<0?n:e+3; push('tc',src.slice(i,e)); i=e; continue; }
+      if(src.startsWith('<style',i)){
+        let e=src.indexOf('>',i); e=e<0?n:e+1; tokenizeTag(src.slice(i,e),push); i=e;
+        let c=src.indexOf('</style>',i); const end=c<0?n:c;
+        tokenizeCSS(src.slice(i,end),push); i=end; continue;
+      }
+      if(src[i]==='<'){ let e=src.indexOf('>',i); e=e<0?n:e+1; tokenizeTag(src.slice(i,e),push); i=e; continue; }
+      let e=src.indexOf('<',i); e=e<0?n:e; push('tx',src.slice(i,e)); i=e;
+    }
+    return toks.join('');
+  }
+
+  // --- 右邊：一份「從頭到尾都不重載」的 document（同原版，理由見 live_editor_hl.html）---
+  window.T = {
+    doc: null,
+    styleEl: null,
+    begin(){
+      const doc = preview.contentDocument;
+      doc.open();
+      doc.write('<!doctype html><html><head><meta charset="utf-8"><style id="live-css"></style></head><body>');
+      this.doc = doc;
+      this.styleEl = doc.getElementById('live-css');
+    },
+    css(text){ if(this.styleEl) this.styleEl.textContent = text; },
+    write(chunk){ if(this.doc && chunk) this.doc.write(chunk); },
+    follow(){
+      if(!this.doc) return;
+      const se = this.doc.scrollingElement || this.doc.documentElement;
+      if(se) se.scrollTop = se.scrollHeight;
+    },
+    end(){ if(this.doc){ try{ this.doc.close(); }catch(e){} } },
+    left(raw){
+      codeEl.innerHTML=highlight(raw)+'<span class="car"></span>';
+      codeEl.scrollTop=codeEl.scrollHeight;
+    },
+    mode(text){ modeEl.textContent=text; }
+  };
+
+  // --- 自走版的驅動：原版這段在 Python 裡，現在搬進頁面 ---
+  const SRC = __SOURCE__;
+  const CSS_SECONDS = __CSS_SECONDS__;
+  const BODY_SECONDS = __BODY_SECONDS__;
+  const TICK_MS = __TICK_MS__;
+
+  // <style> 的邊界：CSS 內容直接餵給右邊的 <style>.textContent，不 stream 進 body。
+  function cssBounds(src){
+    const open = src.indexOf('<style');
+    if(open === -1) return null;
+    const gt = src.indexOf('>', open);
+    if(gt === -1) return null;
+    const close = src.indexOf('</' + 'style>', gt);
+    if(close === -1) return null;
+    return { open, textStart: gt + 1, textEnd: close, blockEnd: close + 8 };
+  }
+
+  // 切成 [(start, end, 秒數, kind)]，跟原版 build_segments 同一套分配方式：
+  // CSS 整塊吃 CSS_SECONDS，其餘本體按長度比例分掉 BODY_SECONDS。
+  function buildSegments(src, b){
+    const total = src.length;
+    if(!b) return [[0, total, CSS_SECONDS + BODY_SECONDS, 'stream']];
+    const nonCss = total - (b.blockEnd - b.open);
+    const segs = [];
+    if(b.open > 0) segs.push([0, b.open, BODY_SECONDS * (nonCss > 0 ? b.open / nonCss : 0), 'stream']);
+    segs.push([b.open, b.blockEnd, CSS_SECONDS, 'css']);
+    if(b.blockEnd < total){
+      segs.push([b.blockEnd, total, BODY_SECONDS * (nonCss > 0 ? (total - b.blockEnd) / nonCss : 0), 'stream']);
+    }
+    return segs.filter(s => s[1] > s[0]);
+  }
+
+  let timer = null;
+
+  function play(){
+    if(timer !== null) clearInterval(timer);
+    const b = cssBounds(SRC);
+    const segments = buildSegments(SRC, b);
+    let si = 0, written = segments.length ? segments[0][0] : 0;
+    let segStartedAt = Date.now();
+    window.T.begin();
+    window.T.left('');
+    window.T.mode('');
+
+    timer = setInterval(() => {
+      if(si >= segments.length){
+        clearInterval(timer); timer = null;
+        window.T.mode('完成');
+        window.T.end();
+        return;
+      }
+
+      const [start, end, seconds, kind] = segments[si];
+      // 用真實時鐘反推目前該打到第幾個字，而不是「拍數 × TICK_MS」——後者忽略每拍
+      // 實際耗時，幾千拍下來誤差會累積到肉眼可見（原版踩過，這裡照抄結論）。
+      const ratio = seconds > 0 ? Math.min(1, (Date.now() - segStartedAt) / (seconds * 1000)) : 1;
+      const k = Math.floor(start + (end - start) * ratio);
+
+      window.T.left(SRC.slice(0, k));
+
+      if(kind === 'stream'){
+        window.T.mode('');
+        if(k > written){ window.T.write(SRC.slice(written, k)); written = k; }
+        window.T.follow();
+      } else {
+        window.T.mode('CSS 撰寫中…');
+        const curEnd = Math.min(k, b.textEnd);
+        if(curEnd > b.textStart) window.T.css(SRC.slice(b.textStart, curEnd));
+        written = Math.max(written, Math.min(k, b.blockEnd));
+      }
+
+      if(ratio >= 1){ si += 1; segStartedAt = Date.now(); }
+    }, TICK_MS);
+  }
+
+  document.getElementById('replay').addEventListener('click', play);
+  play();
+</script>
+</body>
+</html>

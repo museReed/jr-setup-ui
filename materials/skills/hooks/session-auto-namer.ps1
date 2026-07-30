@@ -103,6 +103,7 @@ $rules = @(
   '- 格式：{emoji} {中文敘述}，emoji 取代英文動詞，技術名詞可保留英文'
   '- 總長度 ≤ 40 字元'
   '- emoji 只能從這 8 個選：🏗️ build/implement/refactor、🔧 fix、🐛 debug、📐 plan/design、📋 review/audit、💬 discuss、⛴️ pilot/spike、🔍 research'
+  '- 例外：skill 明確指定前綴時以 skill 為準（handoff 用 📦 標記「已交接」）'
 ) -join "`n"
 
 function Send-NamingRequest([string]$HookEventName, [string]$LeadIn) {

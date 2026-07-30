@@ -2,9 +2,8 @@
 // 這裡只做接線與狀態保管，判斷邏輯在 viewmodel.js、畫面操作在 view.js。
 import * as api from "./api.js";
 import * as view from "./view.js";
+import { CONFIG_LANGUAGES, CONFIG_TOOL_CHOICES } from "./model.js";
 import {
-  CONFIG_LANGUAGES,
-  CONFIG_TOOL_CHOICES,
   LOGIN_CHECK_IDS,
   LOGIN_POLL_INTERVAL_MS,
   AUTO_VERIFY_ACTIONS,

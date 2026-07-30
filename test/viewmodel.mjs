@@ -3,13 +3,10 @@ import assert from "node:assert/strict";
 import {
   BEHAVIOR_CHECKLIST,
   BEHAVIOR_QUESTION,
-  CONFIG_LANGUAGES,
-  CONFIG_TOOL_CHOICES,
   LOGIN_WAIT_TIMEOUT_MS,
   AUTO_VERIFY_ACTIONS,
   agentNameFor,
   behaviorFallbackState,
-  configQuery,
   configRowModel,
   configSummary,
   envButtonState,
@@ -22,6 +19,11 @@ import {
   runControlsState,
   runOutcome,
 } from "../public/viewmodel.js";
+import {
+  CONFIG_LANGUAGES,
+  CONFIG_TOOL_CHOICES,
+  configQuery,
+} from "../public/model.js";
 import { actions as ACTIONS } from "../src/actions.js";
 import { VERIFICATION } from "../src/config-check.js";
 

@@ -35,6 +35,7 @@ try {
     "ext-frontend-design-claude",
     "ext-skill-creator-claude",
     "ext-playwright-claude",
+    "demo-claude",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
     "codex-config",
@@ -47,6 +48,7 @@ try {
     "skill-codex-structured-questions",
     "ext-frontend-design-codex",
     "ext-playwright-codex",
+    "demo-codex",
   ]);
   assert.deepEqual(stepsForTools(["claude", "codex"]), [
     "claude-md",
@@ -71,6 +73,8 @@ try {
     "ext-playwright-claude",
     "ext-frontend-design-codex",
     "ext-playwright-codex",
+    "demo-claude",
+    "demo-codex",
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));

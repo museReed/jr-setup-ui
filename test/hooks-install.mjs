@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { AGENT_HOOK_TIMEOUT_SECONDS } from "../src/config-install.js";
 import { namingAllowRule } from "../src/config-install.js";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -89,6 +90,21 @@ try {
   assert.equal(settings.hooks.PostToolUse.length, 1);
   assert.equal(settings.hooks.UserPromptSubmit.length, 1);
   ok("命名 hook 實際安裝可重跑，檔案與兩筆註冊都保持單份");
+
+  // Windows VM 實測：UserPromptSubmit hook timed out after 10s — output discarded。
+  // 那支是 PowerShell 腳本，冷啟動加第一次 Get-CimInstance 在 VM 裡就能吃掉十秒，
+  // 超時的話 hook 輸出被整個丟棄，那一輪的命名等於沒發生。
+  assert(
+    AGENT_HOOK_TIMEOUT_SECONDS >= 30,
+    "命名 hook 的 timeout 太短，Windows 上冷啟動會來不及",
+  );
+  for (const event of ["PostToolUse", "UserPromptSubmit"]) {
+    assert.equal(
+      settings.hooks[event][0].hooks[0].timeout,
+      AGENT_HOOK_TIMEOUT_SECONDS,
+    );
+  }
+  ok("命名 hook 註冊的 timeout 有留冷啟動的餘裕");
 
   // 監控那列另外裝：兩列共用同一個 settings.json，不能互相掃掉。
   install("claude-monitor");

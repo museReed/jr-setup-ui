@@ -4,6 +4,7 @@
 // 路徑沒展開所以被權限層擋下），那些都是內容比對抓得到的事，不用等 VM。
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -21,7 +22,13 @@ import {
   skillStepId,
   stepsForTools,
 } from "../src/config-install.js";
-import { checkExternalSkill, checkSkill } from "../src/config-check.js";
+import {
+  checkDemo,
+  checkExternalSkill,
+  checkSkill,
+  withActions,
+} from "../src/config-check.js";
+import { configRowModel } from "../public/viewmodel.js";
 
 const HOME = "/home/student";
 
@@ -173,6 +180,76 @@ writeFileSync(
 );
 assert.equal((await checkExternalSkill(mcp)).status, "ok");
 console.log("ok - 第三方 skill 認落點，MCP 認 ~/.claude.json 的註冊");
+
+// --- 一條龍 demo 那一列 ---
+
+// demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
+assert.equal(claudeOnly.at(-1), "demo-claude");
+assert.equal(codexOnly.at(-1), "demo-codex");
+
+const demo = describeStep("demo-claude", { lang: "zh-TW", home: HOME });
+assert.equal(demo.kind, "demo");
+
+// 這一列沒有東西可裝，所以不能有安裝按鈕——補了按下去只會失敗。
+const demoCheck = withActions(checkDemo(demo));
+assert.equal(demoCheck.noInstall, true);
+assert.equal(demoCheck.status, "ok");
+
+const demoRow = configRowModel(demoCheck, false);
+assert.equal(demoRow.buttons.length, 1);
+assert.equal(demoRow.buttons[0].dataName, "verifyAction");
+assert.equal(demoRow.buttons[0].text, "開終端跑");
+// 沒驗過之前不給綠燈，跟其他列同一條規則。
+assert.equal(demoRow.status, "unverified");
+assert.equal(configRowModel(demoCheck, true).status, "ok");
+// 第三段「逐字打 code、右邊長出網頁」是純畫面，程式判不到——要有勾選框讓學生確認。
+// 有 eyeCheck 的列不會被自動標綠（app.js 那條規則），綠燈以勾選為準。
+assert(demoRow.eyeCheck != null, "demo 那列要有人眼確認的勾選框");
+console.log("ok - demo 那列只有開終端的按鈕，且附人眼確認的勾選框");
+
+// demo 第 3 步：內建的是自走版（產出的頁面打開就自己演，零依賴）。原版 type_hl.py
+// 要 python playwright + chromium，現場多兩個安裝步驟，所以不帶——這裡釘住「帶的是
+// 哪一版」，免得哪天同步腳本又把原版塞回來。
+const demoDir = new URL("../materials/skills/demo/", import.meta.url);
+assert(
+  existsSync(new URL("live-preview-self/self_play.py", demoDir)),
+  "內建素材少了自走版 self_play.py",
+);
+assert(
+  !existsSync(new URL("live-preview/type_hl.py", demoDir)),
+  "不要帶原版 type_hl.py——它要 python playwright，學生現場裝不動",
+);
+
+const terminalSource = readFileSync(
+  new URL("../scripts/verify-in-terminal.mjs", import.meta.url),
+  "utf8",
+);
+assert(
+  terminalSource.includes("self_play.py"),
+  "demo 的提問要指定自走版腳本，否則模型會照 prompt 去找另一個 repo 的路徑",
+);
+console.log("ok - demo 帶的是自走版腳本，提問也指到它");
+
+// 嚮導是獨立的：學生只 clone 這一個 repo，機器上不會有 jr_ai_agent_skills /
+// jr_ai_agent_configs。內建素材裡若還留著那些 repo 的路徑，模型會照著去找、找不到，
+// 然後卡住（VM 實測，demo 第 3 步就是這樣卡的）。
+//
+// 只查「模型會讀到的內容」——scripts/sync-*.sh 是維護者用的同步工具，本來就要知道
+// 上游在哪，不在此限。
+for (const file of [
+  "demo/demo-prompt-claude.md",
+  "demo/demo-prompt-codex.md",
+]) {
+  const text = readFileSync(
+    new URL(`../materials/skills/${file}`, import.meta.url),
+    "utf8",
+  );
+  assert(
+    !text.includes("jr_ai_agent_skills"),
+    `${file} 還指著 jr_ai_agent_skills——學生機器上沒有那個 repo`,
+  );
+}
+console.log("ok - 模型會讀到的內建素材不指向其他 repo");
 
 // --- 第三方指令的 spawn 形狀 ---
 

@@ -111,6 +111,11 @@ export function skillStepId(agent, name) {
   return `skill-${agent}-${name}`;
 }
 
+// 一條龍 demo 不是「安裝」而是「跑一次給你看」：問配色（structured-questions）
+// → 生成網頁（frontend-design）→ live-preview 逐字打 code。所以這一列沒有安裝
+// 按鈕，只有「開終端驗證」，而且判定看的是它有沒有真的產出網頁。
+export const DEMO_STEPS = ["demo-claude", "demo-codex"];
+
 const CLAUDE_SKILL_STEPS = SKILL_NAMES.map((name) =>
   skillStepId("claude", name),
 );
@@ -137,6 +142,7 @@ export const STEP_IDS = [
   ...CLAUDE_SKILL_STEPS,
   ...CODEX_SKILL_STEPS,
   ...EXTERNAL_SKILL_IDS,
+  ...DEMO_STEPS,
 ];
 
 const CLAUDE_STEPS = ["claude-md", "output-style", "hook", "allowlist"];
@@ -164,6 +170,9 @@ export function stepsForTools(tools) {
     ...(selected.includes("codex") ? CODEX_SKILL_STEPS : []),
     ...(selected.includes("claude") ? externalStepsFor("claude") : []),
     ...(selected.includes("codex") ? externalStepsFor("codex") : []),
+    // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
+    ...(selected.includes("claude") ? ["demo-claude"] : []),
+    ...(selected.includes("codex") ? ["demo-codex"] : []),
   ];
 }
 
@@ -552,6 +561,17 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "codex-monitor":
       return agentHooks(id, home, platform);
 
+    case "demo-claude":
+    case "demo-codex": {
+      const agent = id === "demo-claude" ? "claude" : "codex";
+      return {
+        id,
+        label: `跑一條龍 demo（${agent === "claude" ? "Claude" : "Codex"}）`,
+        kind: "demo",
+        agent,
+      };
+    }
+
     default:
       if (EXTERNAL_SKILL_STEPS[id] !== undefined) {
         return externalSkill(id, home);
@@ -589,6 +609,15 @@ export function quoteIfSpaced(path) {
 export function expandAllowRules(rules, home) {
   return rules.map((rule) => rule.replace("Bash(~/", `Bash(${home}/`));
 }
+
+// 命名／監控 hook 的執行上限。原本 10 秒，Windows VM 實測會超時：
+//   UserPromptSubmit hook timed out after 10s — output discarded
+// 那支是 PowerShell 腳本，冷啟動加上第一次 Get-CimInstance（WMI 查父行程）在 VM 裡
+// 就能吃掉十秒。超時的後果是 hook 的輸出被整個丟棄——那一輪的命名指示等於沒發生，
+// 而且畫面上只有一行紅字，看起來像 skill 壞了。
+//
+// 放寬到 30 秒不會讓正常情況變慢（跑完就結束），只是把冷啟動那一下的餘裕留出來。
+export const AGENT_HOOK_TIMEOUT_SECONDS = 30;
 
 export const HOOK_MARKER = "block-chained-bash";
 
@@ -655,7 +684,11 @@ export function mergeAgentHookRegistrations(
     const groups = [...(hooks[registration.event] ?? [])];
     groups.push({
       hooks: [
-        { type: "command", command: registration.command, timeout: 10 },
+        {
+          type: "command",
+          command: registration.command,
+          timeout: AGENT_HOOK_TIMEOUT_SECONDS,
+        },
       ],
     });
     hooks[registration.event] = groups;

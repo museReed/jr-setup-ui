@@ -43,6 +43,27 @@ console.log("ok - 清單外的 emoji 換成 🔍，名字其餘部分不動");
 assert.equal(nameWritten("📦 交接完成"), "📦 交接完成");
 console.log("ok - handoff 的 📦 保留，不被換成 🔍");
 
+// hook 每次都注入「emoji 只能從這 8 個選」，而 handoff skill 要求用 📦 標記「已交接」
+// ——兩份指示互相矛盾時模型會選 hook 的，於是它寫進 relay 檔的名字一開始就是錯的
+// （Windows VM 實測，模型自己說「我錯誤優先套用了 session-namer 的八種 emoji 限制」）。
+// 這種衝突查起來特別貴：relay 檔、watcher、環境變數全都是好的，只有內容錯。
+for (const hook of [
+  "session-auto-namer.sh",
+  "session-auto-namer.ps1",
+  "codex-session-namer.sh",
+  "codex-session-namer.ps1",
+]) {
+  const text = readFileSync(
+    path.join(repoRoot, "materials/skills/hooks", hook),
+    "utf8",
+  );
+  assert(
+    text.includes("skill 明確指定前綴時以 skill 為準"),
+    `${hook} 的命名規則沒有替 skill 的前綴留例外——會跟 handoff 的 📦 打架`,
+  );
+}
+console.log("ok - 四支命名 hook 的規則都放行 skill 指定的前綴");
+
 // 沒帶 emoji 時不能把真正的第一個詞當成 emoji 吃掉。
 assert.equal(nameWritten("完全沒有 emoji"), "🔍 完全沒有 emoji");
 console.log("ok - 根本沒帶 emoji 時補一個，且不吃掉原本的字");
