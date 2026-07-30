@@ -60,6 +60,7 @@ ctx = (
     "- 格式：{emoji} {中文敘述}，總長度 ≤ 40 字元，技術名詞保留英文\n"
     "- emoji 只能從這 8 個選：🏗️ build/implement/refactor、🔧 fix、🐛 debug、"
     "📐 plan/design、📋 review/audit、💬 discuss、⛴️ pilot/spike、🔍 research\n"
+    "- 例外：skill 明確指定前綴時以 skill 為準（handoff 用 📦 標記「已交接」）\n"
     "- 根據對話「主要目的」命名，不是最新一句話\n\n"
     f"執行指令（只需這一步，hook 會自動同步 sidebar 與 terminal tab）：\n"
     f"mkdir -p /tmp/codex-session-namer && echo '{{名稱}}' > {relay}"

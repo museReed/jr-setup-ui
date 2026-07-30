@@ -40,7 +40,7 @@ fi
 # process layer deeper → off-by-one → the name lands in the wrong session-name file.
 WRITE_CMD="$HOME/.claude/hooks/set-session-name.sh '{名稱}' ${CLAUDE_PID}"
 
-RULES="命名規則：\n- 格式：{emoji} {中文敘述}，emoji 取代英文動詞，技術名詞可保留英文\n- 總長度 ≤ 40 字元\n- emoji 只能從這 8 個選：🏗️ build/implement/refactor、🔧 fix、🐛 debug、📐 plan/design、📋 review/audit、💬 discuss、⛴️ pilot/spike、🔍 research"
+RULES="命名規則：\n- 格式：{emoji} {中文敘述}，emoji 取代英文動詞，技術名詞可保留英文\n- 總長度 ≤ 40 字元\n- emoji 只能從這 8 個選：🏗️ build/implement/refactor、🔧 fix、🐛 debug、📐 plan/design、📋 review/audit、💬 discuss、⛴️ pilot/spike、🔍 research\n- 例外：skill 明確指定前綴時以 skill 為準（handoff 用 📦 標記「已交接」）"
 
 emit_naming_request() { # $1=hookEventName  $2=lead-in instruction
   cat <<EOF
