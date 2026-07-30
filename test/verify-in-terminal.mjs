@@ -111,3 +111,14 @@ assert.equal(
   `會改名的 ${RENAME_CASES.length} 個情境都要補 Codex 的第二次工具呼叫`,
 );
 console.log("ok - 每個會改名的情境都給 Codex 補了第二次工具呼叫");
+
+// Codex 的 SKILL.md 標了 user-invocable，要用 `$名字` 才會真的載入。只寫「請使用
+// handoff skill」的話它當成一般描述，自己憑印象寫一份交出來——文件長得像、SKILL.md
+// 裡的步驟一個都沒跑（mac VM 實測：交接檔有、改名整段沒提，/tmp 沒有任何 relay 檔）。
+for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
+  assert(
+    source.includes(`$${skill} `),
+    `Codex 那一路要用 $${skill} 呼叫，不能只寫「請使用 ${skill} skill」`,
+  );
+}
+console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
