@@ -191,7 +191,10 @@ export function normalizeNotFound(result) {
 }
 
 async function spawnProbe(rawCmd, rawArgs) {
-  const { cmd, args } = resolveSpawn(rawCmd, rawArgs);
+  // spawnOptions 不能漏：cmd.exe 包裝要 windowsVerbatimArguments，少了它 Node 會
+  // 把整串指令再跳脫一次，探測必定失敗——畫面上是 Claude Code / Codex 明明裝了
+  // 卻顯示「未安裝」（VM 實測）。
+  const { cmd, args, spawnOptions } = resolveSpawn(rawCmd, rawArgs);
   const env = await spawnEnv();
   return new Promise((resolve) => {
     let child;
@@ -214,6 +217,7 @@ async function spawnProbe(rawCmd, rawArgs) {
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        ...(spawnOptions ?? {}),
       });
     } catch (error) {
       resolve({ type: "error", error });

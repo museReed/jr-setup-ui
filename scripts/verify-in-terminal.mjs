@@ -97,6 +97,68 @@ const CASES = {
     }),
     watchFor: "畫面上出現 context 用量警告（標著「（測試模式）」）",
   },
+  // 以下三個驗的是 skill，不是 hook。判準沒變：要嘛有只有 skill 跑過才會出現的
+  // 副產物，要嘛就老實交給人眼。
+  //
+  // ⚠️ skill 是「開新 session 才會載入」的東西，所以這裡開的是真終端跑互動式
+  //    session——headless 的 -p 連 wrapper 都不經過，skill 目錄也不一定掃得到。
+  //
+  // ⚠️ 兩邊叫 skill 的方式不一樣。Codex 的 SKILL.md 標了 user-invocable，要用
+  //    `$名字` 才會真的載入；只寫「請使用 handoff skill」它會當成一般描述，自己
+  //    憑印象寫一份交出來——文件長得像、SKILL.md 裡的步驟一個都沒跑（mac VM 實測：
+  //    交接檔有、改名整段沒提，/tmp 也沒有任何 relay 檔）。
+  "skill-rename": {
+    label: "Skill：自動命名",
+    env: () => ({}),
+    prompt: ({ agent, resultFile }) =>
+      agent === "codex"
+        ? "$auto-rename 請照這個 skill 的 SKILL.md 步驟幫這個 session 命名。" +
+          "命名完之後再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。" +
+          `最後把你取的名字寫進 ${resultFile}。`
+        : "請使用 auto-rename skill 幫這個 session 命名，照它 SKILL.md 裡寫的指令執行。",
+    // Claude 那支 skill 會叫模型執行寫檔指令，檔案就是證據；Codex 寫的是 sqlite
+    // 與中繼檔，沒有能穩定輪詢的落點，維持人眼判定（跟命名 hook 那列同一個理由）。
+    expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
+    watchFor: "模型說它用了 auto-rename skill，分頁標題跟著變成「{emoji} 中文敘述」",
+  },
+  "skill-handoff": {
+    label: "Skill：交接文件",
+    env: () => ({}),
+    // 刻意不讓它走 skill 預設的 docs/handoff/ 落點：那要在 git repo 裡才成立，
+    // 學生的家目錄不是。改指定檔案路徑，內容照 skill 的格式寫。
+    // ⚠️ 只說「不要 commit、不要寫進 docs/」的話，模型會把整段收尾都當成「這次不用
+    //    做」一起跳過——VM 實測它自己回報「依用戶指示偏離 skill 預設流程三處」，
+    //    改名那步就這樣沒了，看起來像 skill 壞掉。要跳過的步驟逐條講，要做的也逐條講。
+    prompt: ({ agent, resultFile }) =>
+      (agent === "codex"
+        ? "$handoff 請照這個 skill 產出這個 session 的交接文件。"
+        : "請使用 handoff skill 產出這個 session 的交接文件。") +
+      `這一輪有兩件事要做完：（1）不要 commit、不要寫進 docs/，把整份文件內容寫進 ${resultFile}，章節標題照 skill 規定的寫；` +
+      "（2）照 skill 最後一步把這個 session 改名，執行它給你的那條改名指令，不要跳過。" +
+      // Codex 的改名是兩段式：模型先把名字寫進中繼檔，要等「下一次 hook 事件」才
+      // 套上去。一問一答就結束的話名字永遠卡在中繼檔——skill-rename 那格早就補了
+      // 這一步，這裡漏掉，於是 Codex 的交接檔寫得出來、標題卻不動（VM 實測）。
+      (agent === "codex"
+        ? "改名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。"
+        : ""),
+    // 「必讀檔案」是 SKILL.md 規定的章節名。模型沒讀到 skill 的話不會自己想到這四個字，
+    // 所以它出現＝skill 真的被載入了。
+    expect: () => ({ kind: "artifact", keyword: "必讀檔案" }),
+    watchFor:
+      "模型產出一份有「狀態摘要 / 必讀檔案 / 下一步」的文件，收尾把分頁標題改成「📦 ...」",
+  },
+  "skill-questions": {
+    label: "Skill：結構化提問",
+    env: () => ({}),
+    // 這支唯一的證據是「畫面上跳出選項讓人選」。要它同時寫個副產物也沒用——寫了
+    // 只證明模型讀得到 skill，證明不了它真的用了提問 UI，那正是這一格要驗的事。
+    prompt: ({ agent }) =>
+      (agent === "codex" ? "$structured-questions " : "") +
+      "我想幫這台電腦選一個終端機工具，但我不知道要選哪個。" +
+      "請使用 structured-questions skill 問我，讓我用選的。",
+    expect: () => null,
+    watchFor: "畫面跳出一組可以上下選的選項（不是把選項寫成文字要你打字回答）",
+  },
 };
 
 function parseArgs(argv) {

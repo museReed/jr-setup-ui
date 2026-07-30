@@ -4,11 +4,13 @@
 //
 // 每做一件事就印一行，讓網頁那邊即時看得到。
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 import {
+  applySubstitutions,
   describeStep,
   expandAllowRules,
   mergeAllowRules,
@@ -18,6 +20,8 @@ import {
   upsertBlock,
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
+import { spawnEnv } from "../src/env-path.js";
+import { resolveLaunch } from "../src/spawn-command.js";
 
 const HOME = homedir();
 const MATERIALS = materialsDir();
@@ -194,6 +198,61 @@ async function agentHooksStep(step) {
   console.log(`✓ 已註冊 3 筆 hook → ${step.settingsTarget}`);
 }
 
+async function skillStep(step) {
+  for (const file of step.files) {
+    const source = sourcePath(file);
+    await mkdir(path.dirname(file.target), { recursive: true });
+    await backup(file.target);
+    const content = applySubstitutions(
+      await readFile(source, "utf8"),
+      step.substitutions,
+    );
+    await writeFile(file.target, content);
+    console.log(`✓ ${file.target}`);
+  }
+
+  console.log(`✓ ${step.label} 已安裝`);
+}
+
+// 第三方 skill 用它們自己 GitHub 上定義的裝法，我們只負責把指令跑起來、把失敗
+// 翻成學生看得懂的話。這一步要網路。
+//
+// ⚠️ 一定要走 resolveLaunch：Windows 上 npx / claude 都是 .cmd 包裝檔，沒有同名
+// .exe，shell:false 的 spawn 找不到裸指令而丟 ENOENT——畫面上會變成「叫不到 npx，
+// 請先裝 Node」，但 Node 明明就裝好了（VM 實測）。env 也要用 spawnEnv 取，
+// 嚮導自己那份 PATH 未必看得到剛裝好的東西。
+async function externalSkillStep(step) {
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch(step.cmd, step.args, { env });
+
+  return new Promise((resolve, reject) => {
+    console.log(`執行：${step.cmd} ${step.args.join(" ")}`);
+    console.log("（第三方 skill 要連網下載，慢一點是正常的）");
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: "inherit",
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    child.once("error", (error) =>
+      reject(
+        new Error(
+          `叫不到 ${step.cmd}——${step.cmd === "npx" ? "請先裝 Node 18 以上" : "請先裝好 Claude Code"}（${error.message}）`,
+        ),
+      ),
+    );
+    child.once("close", (exitCode) => {
+      if (exitCode === 0) {
+        console.log(`✓ ${step.label} 安裝完成`);
+        resolve();
+        return;
+      }
+
+      reject(new Error(`${step.label} 安裝失敗（exit ${exitCode}），多半是網路問題，可以重按一次`));
+    });
+  });
+}
+
 const args = parseArgs(process.argv.slice(2));
 
 try {
@@ -214,6 +273,10 @@ try {
     await tabSyncStep(step);
   } else if (step.kind === "agent-hooks") {
     await agentHooksStep(step);
+  } else if (step.kind === "skill") {
+    await skillStep(step);
+  } else if (step.kind === "external-skill") {
+    await externalSkillStep(step);
   } else {
     throw new Error(`不認得的步驟種類：${step.kind}`);
   }

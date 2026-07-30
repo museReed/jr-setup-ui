@@ -38,6 +38,11 @@ console.log("ok - 清單內的 emoji 原樣保留");
 assert.equal(nameWritten("🎯 測試 hook 能否運行"), "🔍 測試 hook 能否運行");
 console.log("ok - 清單外的 emoji 換成 🔍，名字其餘部分不動");
 
+// 📦 是 handoff skill 標「已交接」用的第 9 個。它不在清單裡的時候，每次交接完標題
+// 都被悄悄換成 🔍，而且腳本不出聲——看起來像改名整個沒生效（VM 實測查了三輪）。
+assert.equal(nameWritten("📦 交接完成"), "📦 交接完成");
+console.log("ok - handoff 的 📦 保留，不被換成 🔍");
+
 // 沒帶 emoji 時不能把真正的第一個詞當成 emoji 吃掉。
 assert.equal(nameWritten("完全沒有 emoji"), "🔍 完全沒有 emoji");
 console.log("ok - 根本沒帶 emoji 時補一個，且不吃掉原本的字");

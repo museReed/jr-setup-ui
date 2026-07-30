@@ -8,6 +8,120 @@
 export const LANGUAGES = ["zh-TW", "zh-CN", "en"];
 export const TOOLS = ["claude", "codex"];
 
+// 核心三件套。一個 skill 一列：壞了看得出來是哪一支，重裝也只重裝那一支。
+export const SKILL_NAMES = ["auto-rename", "handoff", "structured-questions"];
+
+const SKILL_LABELS = {
+  "auto-rename": "自動命名",
+  handoff: "交接文件",
+  "structured-questions": "結構化提問",
+};
+
+// 第三方 skill 走各自 GitHub 上定義的安裝法（npx skills / claude mcp），要網路與
+// Node——跟前面那些內建素材的離線安裝不同類，所以另開一種 kind，畫面上也標出來。
+const EXTERNAL_SKILL_STEPS = {
+  "ext-frontend-design-claude": {
+    label: "第三方：frontend-design（Claude）",
+    agent: "claude",
+    cmd: "npx",
+    args: [
+      "--yes",
+      "skills",
+      "add",
+      "anthropics/skills",
+      "--skill",
+      "frontend-design",
+      "-g",
+      "-a",
+      "claude-code",
+      "-y",
+    ],
+    // 裝完長在哪：驗證只認這個落點，不看指令有沒有跑完。
+    marker: ".claude/skills/frontend-design",
+  },
+  "ext-frontend-design-codex": {
+    label: "第三方：frontend-design（Codex）",
+    agent: "codex",
+    cmd: "npx",
+    args: [
+      "--yes",
+      "skills",
+      "add",
+      "anthropics/skills",
+      "--skill",
+      "frontend-design",
+      "-g",
+      "-a",
+      "codex",
+      "-y",
+    ],
+    marker: ".agents/skills/frontend-design",
+  },
+  "ext-skill-creator-claude": {
+    label: "第三方：skill-creator（Claude）",
+    agent: "claude",
+    cmd: "npx",
+    args: [
+      "--yes",
+      "skills",
+      "add",
+      "anthropics/skills",
+      "--skill",
+      "skill-creator",
+      "-g",
+      "-a",
+      "claude-code",
+      "--copy",
+      "-y",
+    ],
+    marker: ".claude/skills/skill-creator",
+  },
+  "ext-playwright-codex": {
+    label: "第三方：playwright（Codex）",
+    agent: "codex",
+    cmd: "npx",
+    args: [
+      "--yes",
+      "skills",
+      "add",
+      "openai/skills",
+      "--skill",
+      "playwright",
+      "-g",
+      "-a",
+      "codex",
+      "-y",
+    ],
+    marker: ".agents/skills/playwright",
+  },
+  // Claude 這邊的 Playwright 不是 skill 而是 MCP server，落點在 ~/.claude.json，
+  // 所以驗證方式跟上面四列不同（見 config-check.js 的 checkExternalSkill）。
+  "ext-playwright-claude": {
+    label: "第三方：Playwright MCP（Claude）",
+    agent: "claude",
+    cmd: "claude",
+    args: ["mcp", "add", "-s", "user", "playwright", "npx", "@playwright/mcp@latest"],
+    mcpServer: "playwright",
+  },
+};
+
+export const EXTERNAL_SKILL_IDS = Object.keys(EXTERNAL_SKILL_STEPS);
+
+export function skillStepId(agent, name) {
+  return `skill-${agent}-${name}`;
+}
+
+const CLAUDE_SKILL_STEPS = SKILL_NAMES.map((name) =>
+  skillStepId("claude", name),
+);
+const CODEX_SKILL_STEPS = SKILL_NAMES.map((name) => skillStepId("codex", name));
+
+function externalStepsFor(agent) {
+  return EXTERNAL_SKILL_IDS.filter(
+    (id) => EXTERNAL_SKILL_STEPS[id].agent === agent,
+  );
+}
+
 export const STEP_IDS = [
   "claude-md",
   "output-style",
@@ -20,6 +134,9 @@ export const STEP_IDS = [
   "claude-monitor",
   "codex-namer",
   "codex-monitor",
+  ...CLAUDE_SKILL_STEPS,
+  ...CODEX_SKILL_STEPS,
+  ...EXTERNAL_SKILL_IDS,
 ];
 
 const CLAUDE_STEPS = ["claude-md", "output-style", "hook", "allowlist"];
@@ -41,6 +158,12 @@ export function stepsForTools(tools) {
     // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
     ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
     ...(selected.includes("codex") ? ["codex-namer", "codex-monitor"] : []),
+    // skill 排在 hook 後面：auto-rename 那支手動叫的是命名 hook 的腳本，hook 沒裝
+    // 好的話 skill 裝了也叫不動。
+    ...(selected.includes("claude") ? CLAUDE_SKILL_STEPS : []),
+    ...(selected.includes("codex") ? CODEX_SKILL_STEPS : []),
+    ...(selected.includes("claude") ? externalStepsFor("claude") : []),
+    ...(selected.includes("codex") ? externalStepsFor("codex") : []),
   ];
 }
 
@@ -259,6 +382,76 @@ function agentHooks(id, home, platform) {
   };
 }
 
+// Claude 的 skill 住 ~/.claude/skills/，Codex 的住 ~/.agents/skills/（官方 user 目錄，
+// 舊版才在 ~/.codex/skills）。兩邊的 SKILL.md 內容不同，各自一列。
+function skillStep(id, home) {
+  const [, agent, ...rest] = id.split("-");
+  const name = rest.join("-");
+  const root = agent === "claude" ? `${home}/.claude/skills` : `${home}/.agents/skills`;
+  const files = [
+    {
+      source: `skills/skill-files/${agent}/${name}/SKILL.md`,
+      target: `${root}/${name}/SKILL.md`,
+    },
+  ];
+
+  // Codex 的 handoff 會叫模型去 Read _shared/codex-session-rename.md。那個檔案沒
+  // 跟著裝的話，skill 讀得到、改名那半段卻是死的——附屬檔案跟著用得到它的那一列走。
+  if (agent === "codex" && name === "handoff") {
+    files.push({
+      source: "skills/skill-files/codex/_shared/codex-session-rename.md",
+      target: `${root}/_shared/codex-session-rename.md`,
+    });
+  }
+
+  return {
+    id,
+    label: `Skill：${SKILL_LABELS[name]}（${agent === "claude" ? "Claude" : "Codex"}）`,
+    kind: "skill",
+    agent,
+    name,
+    files,
+    // SKILL.md 裡寫的是 $HOME/...，但 Bash() 白名單是字面比對、不展開變數：模型照
+    // SKILL.md 打出來的那條指令會對不上白名單而被擋（跟 hook 那邊同一個坑）。
+    // 安裝時就換成這台機器的絕對路徑，形狀跟 namingAllowRule 一致。
+    // 代換套在所有 Claude skill 上，不挑名字：會叫命名腳本的不只 auto-rename，
+    // handoff 收尾也要改名。沒有那段字串的 skill 代換不到東西，等於不動。
+    substitutions:
+      agent === "claude"
+        ? [
+            {
+              from: "$HOME/.claude/hooks/set-session-name.sh",
+              to: `${home.replaceAll("\\", "/")}/.claude/hooks/set-session-name.sh`,
+            },
+          ]
+        : [],
+  };
+}
+
+export function applySubstitutions(content, substitutions) {
+  return substitutions.reduce(
+    (text, { from, to }) => text.replaceAll(from, to),
+    content,
+  );
+}
+
+function externalSkill(id, home) {
+  const spec = EXTERNAL_SKILL_STEPS[id];
+
+  return {
+    id,
+    label: spec.label,
+    kind: "external-skill",
+    agent: spec.agent,
+    cmd: spec.cmd,
+    args: spec.args,
+    // 兩種落點：一般 skill 是目錄，Playwright（Claude）是 ~/.claude.json 裡的 MCP 設定。
+    marker: spec.marker === undefined ? undefined : `${home}/${spec.marker}`,
+    mcpServer: spec.mcpServer,
+    mcpConfig: `${home}/.claude.json`,
+  };
+}
+
 // 第一版只做 User Level：不需要知道學生的專案在哪。
 export function describeStep(id, { lang, home, platform = process.platform }) {
   if (!LANGUAGES.includes(lang)) {
@@ -360,6 +553,14 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       return agentHooks(id, home, platform);
 
     default:
+      if (EXTERNAL_SKILL_STEPS[id] !== undefined) {
+        return externalSkill(id, home);
+      }
+
+      if (STEP_IDS.includes(id)) {
+        return skillStep(id, home);
+      }
+
       throw new Error(`不認得的步驟：${id}`);
   }
 }

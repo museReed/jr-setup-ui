@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   findExecutable,
@@ -34,12 +35,26 @@ try {
     "/d",
     "/s",
     "/c",
-    "npm.cmd",
-    "install",
-    "-g",
-    "@openai/codex",
+    '"npm.cmd install -g @openai/codex"',
   ]);
+  assert.equal(wrapped.spawnOptions.windowsVerbatimArguments, true);
   ok("包裝後由 cmd.exe 執行，原本的參數順序不變");
+
+  // 迴歸：路徑帶空白（C:\Program Files\nodejs\npx.cmd）時，指令本身要有自己的
+  // 引號，整串再包一層給 /s 剝——少了內層引號，cmd.exe 會在空白處斷開，畫面上是
+  // 'C:\Program' is not recognized（VM 實測；winget 那些指令沒空白所以一直沒踩到）。
+  const spaced = resolveSpawn(
+    "C:\\Program Files\\nodejs\\npx.cmd",
+    ["--yes", "skills", "add", "anthropics/skills"],
+    "win32",
+  );
+  assert.deepEqual(spaced.args, [
+    "/d",
+    "/s",
+    "/c",
+    '""C:\\Program Files\\nodejs\\npx.cmd" --yes skills add anthropics/skills"',
+  ]);
+  ok("指令路徑帶空白時，內層引號與最外層引號都在");
 
   const untouched = resolveSpawn("winget", ["install", "--id", "Git.Git"], "win32");
   assert.equal(untouched.cmd, "winget");
@@ -76,9 +91,7 @@ try {
     "/d",
     "/s",
     "/c",
-    `${npmDir}\\claude.CMD`,
-    "auth",
-    "login",
+    `"${npmDir}\\claude.CMD auth login"`,
   ]);
   ok("登入動作解析到 .CMD 後改由 cmd.exe 執行");
 
@@ -110,6 +123,39 @@ try {
   });
   assert.equal(posixLaunch.cmd, "claude");
   ok("非 Windows 不做任何解析");
+
+  // 迴歸：resolveSpawn 回傳的 spawnOptions 漏帶，cmd.exe 包裝就會壞掉。實測代價很
+  // 大——env-check 漏帶時，Claude Code 與 Codex 明明裝了卻一律顯示「未安裝」，
+  // 而且看起來像環境檢查自己壞了，跟這支改動一點都不像有關係。
+  //
+  // 這裡掃原始碼：每個叫 resolveSpawn / resolveLaunch 的地方都要把 spawnOptions
+  // 接出來，接了才可能往下傳。
+  const callers = [
+    "src/env-check.js",
+    "src/server.js",
+    "scripts/install-configs.mjs",
+    "scripts/verify-behavior.mjs",
+    "scripts/verify-hook-live.mjs",
+    "scripts/verify-hooks-live.mjs",
+  ];
+
+  for (const file of callers) {
+    const text = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    const destructured = /const \{[^}]*\}\s*=\s*resolve(Spawn|Launch)\(/.test(text);
+
+    assert(
+      text.includes("spawnOptions"),
+      `${file} 沒有接 spawnOptions——cmd.exe 包裝會壞在 Windows 上`,
+    );
+
+    if (destructured) {
+      assert(
+        /const \{[^}]*spawnOptions[^}]*\}\s*=\s*resolve(Spawn|Launch)\(/.test(text),
+        `${file} 解構了 resolve 的結果卻沒把 spawnOptions 接出來`,
+      );
+    }
+  }
+  ok("每個 spawn 呼叫端都有接 resolve 回傳的 spawnOptions");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

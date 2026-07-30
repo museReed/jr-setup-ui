@@ -18,13 +18,30 @@ export function needsCmdWrapper(cmd, platform = process.platform) {
   return WRAPPED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
+function quoteIfSpaced(value) {
+  return /\s/.test(value) ? `"${value}"` : value;
+}
+
 export function resolveSpawn(cmd, args, platform = process.platform) {
   if (!needsCmdWrapper(cmd, platform)) {
     return { cmd, args };
   }
 
+  // 路徑帶空白時（C:\Program Files\nodejs\npx.cmd）不能把指令當成一般參數丟：
+  // cmd.exe 會在空白處斷開，畫面上是 'C:\Program' is not recognized（VM 實測，
+  // winget 那些指令沒有空白所以一直沒踩到）。
+  //
+  // 正確形狀是「整串再包一層引號」：cmd /d /s /c ""C:\...\npx.cmd" --yes ..."
+  // /s 會把最外層那對引號剝掉，剩下的才是 cmd 看得懂的「有引號的指令 + 參數」。
+  // 這需要 windowsVerbatimArguments，否則 Node 會再跳脫一次引號、全部走樣。
+  const line = [quoteIfSpaced(cmd), ...args.map(quoteIfSpaced)].join(" ");
+
   // /d 不跑 AutoRun、/s 讓引號處理可預測、/c 執行完就結束。
-  return { cmd: "cmd.exe", args: ["/d", "/s", "/c", cmd, ...args] };
+  return {
+    cmd: "cmd.exe",
+    args: ["/d", "/s", "/c", `"${line}"`],
+    spawnOptions: { windowsVerbatimArguments: true },
+  };
 }
 
 // Windows 上 npm 裝出來的 CLI 是 claude.cmd / codex.cmd，沒有同名 .exe，

@@ -65,3 +65,60 @@ for (const [agent, keyword] of [
   );
 }
 console.log("ok - context 比對的關鍵字真的出現在對應 hook 的訊息裡");
+
+// 列上寫的驗證情境，verify-in-terminal 與 actions 的白名單都要認得。少一邊的話按鈕
+// 不是丟「不認得的驗證情境」就是被伺服器擋在門外——兩種都是按下去沒反應。
+const { VERIFICATION } = await import("../src/config-check.js");
+const { actions } = await import("../src/actions.js");
+const allowedCases = actions["verify-in-terminal"].options.case;
+
+for (const [step, spec] of Object.entries(VERIFICATION)) {
+  if (spec.terminal === undefined) continue;
+
+  // CASES 的鍵有引號的（帶連字號）也有沒引號的，兩種都要認。
+  assert(
+    new RegExp(`^\\s+"?${spec.terminal.case}"?:`, "m").test(source),
+    `${step} 用的情境 ${spec.terminal.case} 在 verify-in-terminal 裡不存在`,
+  );
+  assert(
+    allowedCases.includes(spec.terminal.case),
+    `${step} 用的情境 ${spec.terminal.case} 不在 action 的白名單裡`,
+  );
+}
+console.log("ok - 每一列的終端驗證情境，腳本與白名單兩邊都認得");
+
+// handoff 那格靠「必讀檔案」判定：那四個字是 SKILL.md 規定的章節名，模型沒讀到
+// skill 不會自己想到。SKILL.md 改了章節名而這裡沒跟著改，判定就永遠不會中。
+for (const agent of ["claude", "codex"]) {
+  assert(
+    readFileSync(
+      path.join(repoRoot, `materials/skills/skill-files/${agent}/handoff/SKILL.md`),
+      "utf8",
+    ).includes("必讀檔案"),
+    `${agent} 的 handoff SKILL.md 裡沒有「必讀檔案」，比對永遠不會中`,
+  );
+}
+console.log("ok - handoff 判定用的章節名真的在 SKILL.md 裡");
+
+// Codex 的改名是兩段式：模型先寫中繼檔，要等「下一次 hook 事件」才套上標題。所以
+// 每個會改名的情境都得叫它改完再做一次工具呼叫。漏掉的那一格會長成「檔案寫得出來、
+// 標題不動」，看起來像 skill 壞掉（naming 與 skill-rename 早就補了，skill-handoff
+// 漏掉，VM 實測才發現）。
+const RENAME_CASES = ["naming", "skill-rename", "skill-handoff"];
+assert.equal(
+  source.split("讓 hook 有機會把名字套用上去").length - 1,
+  RENAME_CASES.length,
+  `會改名的 ${RENAME_CASES.length} 個情境都要補 Codex 的第二次工具呼叫`,
+);
+console.log("ok - 每個會改名的情境都給 Codex 補了第二次工具呼叫");
+
+// Codex 的 SKILL.md 標了 user-invocable，要用 `$名字` 才會真的載入。只寫「請使用
+// handoff skill」的話它當成一般描述，自己憑印象寫一份交出來——文件長得像、SKILL.md
+// 裡的步驟一個都沒跑（mac VM 實測：交接檔有、改名整段沒提，/tmp 沒有任何 relay 檔）。
+for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
+  assert(
+    source.includes(`$${skill} `),
+    `Codex 那一路要用 $${skill} 呼叫，不能只寫「請使用 ${skill} skill」`,
+  );
+}
+console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");

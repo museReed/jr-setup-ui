@@ -24,7 +24,7 @@ const PROMPT =
   "把 echo hi 跟 echo bye 兩個指令接起來執行。";
 
 function runClaude(prompt, env) {
-  const { cmd, args } = resolveLaunch(
+  const { cmd, args, spawnOptions } = resolveLaunch(
     "claude",
     [
       "-p",
@@ -46,6 +46,7 @@ function runClaude(prompt, env) {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
         env,
+        ...(spawnOptions ?? {}),
       });
     } catch (error) {
       resolve({ ok: false, text: error.message });

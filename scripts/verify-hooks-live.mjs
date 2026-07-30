@@ -54,7 +54,7 @@ async function findWrittenName(before) {
 }
 
 function runClaude(prompt, env) {
-  const { cmd, args } = resolveLaunch(
+  const { cmd, args, spawnOptions } = resolveLaunch(
     "claude",
     ["-p", "--allowedTools", "Bash"],
     { env },
@@ -75,6 +75,7 @@ function runClaude(prompt, env) {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
         env,
+        ...(spawnOptions ?? {}),
       });
     } catch (error) {
       finish({ ok: false, text: error.message });

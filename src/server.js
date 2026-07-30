@@ -172,6 +172,7 @@ function launchWindow(command, env, runId, runs, response) {
       stdio: "ignore",
       detached: true,
       env,
+      ...(spawnable.spawnOptions ?? {}),
     });
     child.unref();
     writeEvent(response, "line", {
@@ -250,7 +251,12 @@ async function runAction(
   let child;
 
   try {
-    child = spawn(spawnable.cmd, spawnable.args, spawnOptions);
+    // spawnOptions 之外還要帶 resolveLaunch 自己要求的旗標（cmd.exe 包裝要
+    // windowsVerbatimArguments，否則帶空白的路徑會被 Node 再跳脫一次）。
+    child = spawn(spawnable.cmd, spawnable.args, {
+      ...spawnOptions,
+      ...(spawnable.spawnOptions ?? {}),
+    });
   } catch (error) {
     writeEvent(response, "agent", {
       kind: "error",

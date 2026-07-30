@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import {
+  applySubstitutions,
   countInstalledRules,
   describeStep,
   expandAllowRules,
@@ -134,6 +135,35 @@ export const VERIFICATION = {
     eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
   },
   "codex-monitor": { terminal: { case: "context", agent: "codex" } },
+  // skill 的行為驗證跟 hook 同一個判準：要嘛留下只有 skill 跑過才會有的副產物，
+  // 要嘛就老實承認驗不到、交給學生看。
+  "skill-claude-auto-rename": {
+    terminal: { case: "skill-rename", agent: "claude" },
+  },
+  "skill-codex-auto-rename": {
+    terminal: { case: "skill-rename", agent: "codex" },
+    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+  },
+  // 文件本身自動判定得了（章節名比對），但收尾的改名只有終端看得到——那一步是
+  // 整支 skill 最容易靜靜失敗的地方（指令被 hook 擋下也不會有人說），所以配一格眼睛。
+  "skill-claude-handoff": {
+    terminal: { case: "skill-handoff", agent: "claude" },
+    eye: "那個視窗的分頁標題最後變成「📦 ...」",
+  },
+  "skill-codex-handoff": {
+    terminal: { case: "skill-handoff", agent: "codex" },
+    eye: "那個視窗的分頁標題最後變成「📦 ...」",
+  },
+  // 這一支的效果是「跳出選項讓人選」，副產物是一個要人回答的 UI——程式抓不到，
+  // headless 更是連 UI 都沒有。所以它是唯一走人眼判定的 skill。
+  "skill-claude-structured-questions": {
+    terminal: { case: "skill-questions", agent: "claude" },
+    eye: "那個視窗裡跳出一組選項讓你選（不是用文字把選項寫出來）",
+  },
+  "skill-codex-structured-questions": {
+    terminal: { case: "skill-questions", agent: "codex" },
+    eye: "那個視窗裡跳出一組選項讓你選（不是用文字把選項寫出來）",
+  },
 };
 
 // 跑「settings.json 裡真的那條指令」，而不是我們自己拼一次路徑去跑腳本。
@@ -481,6 +511,80 @@ export async function checkAgentHooks(step, materials) {
   };
 }
 
+// skill 只有一個檔案，但「檔案在」照樣不等於「是這一版」——auto-rename 的 SKILL.md
+// 還要把 $HOME 換成絕對路徑才叫得動命名腳本，換錯或沒換都是安裝完看起來正常、
+// 用起來被權限層擋下。所以比對的是「套過代換的原始素材」。
+export async function checkSkill(step, materials) {
+  const missing = step.files.filter((file) => !existsSync(file.target));
+
+  if (missing.length > 0) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "missing",
+      detail: "尚未安裝",
+    };
+  }
+
+  for (const file of step.files) {
+    const source = path.join(materials, file.source);
+
+    if (!existsSync(source)) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: "嚮導內建的素材不完整，請重新下載嚮導",
+      };
+    }
+
+    const [expected, actual] = await Promise.all([
+      readFile(source, "utf8"),
+      readFile(file.target, "utf8"),
+    ]);
+
+    if (applySubstitutions(expected, step.substitutions) !== actual) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: "裝的是舊版——重跑安裝，然後開新的 session",
+      };
+    }
+  }
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: "ok",
+    detail: `已安裝 → ${step.files[0].target}`,
+  };
+}
+
+// 第三方 skill 不是我們裝的，所以不比對內容——只認落點在不在。
+export async function checkExternalSkill(step) {
+  if (step.mcpServer !== undefined) {
+    const config = await readJsonOrNull(step.mcpConfig);
+    const registered = config?.mcpServers?.[step.mcpServer] !== undefined;
+
+    return {
+      id: step.id,
+      label: step.label,
+      status: registered ? "ok" : "missing",
+      detail: registered
+        ? `已註冊 MCP server：${step.mcpServer}`
+        : "尚未註冊（要網路）",
+    };
+  }
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: existsSync(step.marker) ? "ok" : "missing",
+    detail: existsSync(step.marker) ? `已安裝 → ${step.marker}` : "尚未安裝（要網路）",
+  };
+}
+
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
@@ -499,6 +603,10 @@ export async function runConfigCheck({ tools, lang }) {
       checks.push(await checkTabSync(step, materials));
     } else if (step.kind === "agent-hooks") {
       checks.push(await checkAgentHooks(step, materials));
+    } else if (step.kind === "skill") {
+      checks.push(await checkSkill(step, materials));
+    } else if (step.kind === "external-skill") {
+      checks.push(await checkExternalSkill(step));
     } else {
       checks.push(await checkCopyStep(materials, step));
     }
