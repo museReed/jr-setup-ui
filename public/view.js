@@ -1,5 +1,11 @@
 // View：只負責把 ViewModel 算好的東西畫到畫面上，不做任何判斷。
-import { configRowModel, envRowModel } from "./viewmodel.js";
+import { groupChecks } from "./model.js";
+import {
+  configRowModel,
+  envLogoFor,
+  envRowModel,
+  progressSummary,
+} from "./viewmodel.js";
 
 const elements = {
   output: document.querySelector("#output"),
@@ -24,6 +30,19 @@ const elements = {
   recheckConfigs: document.querySelector("#recheck-configs"),
   configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
+  configToolbar: document.querySelector("#config-toolbar"),
+  sectionNav: document.querySelector("#section-nav"),
+  sectionButtons: [...document.querySelectorAll("[data-section-target]")],
+  sectionPanels: [...document.querySelectorAll("[data-section-panel]")],
+  sectionCards: {
+    rules: document.querySelector("#rules-cards"),
+    skills: document.querySelector("#skills-cards"),
+    demo: document.querySelector("#demo-cards"),
+  },
+  progressBar: document.querySelector("#progress-bar"),
+  progressFill: document.querySelector("#progress-fill"),
+  progressDuck: document.querySelector("#progress-duck"),
+  progressSummary: document.querySelector("#progress-summary"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
@@ -33,6 +52,88 @@ const elements = {
 export { elements };
 
 let activeText = null;
+let latestEnvChecks = null;
+let latestConfigChecks = null;
+let latestVerifiedSteps = new Set();
+
+function showSection(sectionId) {
+  for (const button of elements.sectionButtons) {
+    const current = button.dataset.sectionTarget === sectionId;
+    button.classList.toggle("current", current);
+
+    if (current) {
+      button.setAttribute("aria-current", "step");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  }
+
+  for (const panel of elements.sectionPanels) {
+    panel.hidden = panel.dataset.sectionPanel !== sectionId;
+  }
+
+  elements.configToolbar.hidden = sectionId === "env";
+}
+
+for (const button of elements.sectionButtons) {
+  button.addEventListener("click", () =>
+    showSection(button.dataset.sectionTarget),
+  );
+}
+
+function createLogo(logo) {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("class", "ds-toollogo-mark");
+  icon.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#${logo}`);
+  icon.append(use);
+  return icon;
+}
+
+function updateProgress() {
+  const summary = progressSummary(
+    latestEnvChecks,
+    latestConfigChecks,
+    latestVerifiedSteps,
+  );
+  elements.progressBar.classList.toggle(
+    "ds-pbar--indeterminate",
+    summary.loading,
+  );
+
+  if (summary.loading) {
+    elements.progressSummary.textContent = "正在計算…";
+    elements.progressFill.style.width = "";
+    elements.progressDuck.style.left = "0%";
+    return;
+  }
+
+  elements.progressSummary.textContent = `${summary.done} / ${summary.total} 項就緒`;
+  elements.progressFill.style.width = `${summary.percent}%`;
+  elements.progressDuck.style.left = `${summary.percent}%`;
+}
+
+function createSkeleton() {
+  const card = document.createElement("div");
+  card.className = "ds-card config-skeleton";
+  const skeleton = document.createElement("div");
+  skeleton.className = "ds-skeleton";
+  skeleton.setAttribute("aria-hidden", "true");
+
+  for (const className of [
+    "ds-skeleton-line ds-skeleton-line--title",
+    "ds-skeleton-line",
+    "ds-skeleton-line ds-skeleton-line--short",
+  ]) {
+    const line = document.createElement("div");
+    line.className = className;
+    skeleton.append(line);
+  }
+
+  card.append(skeleton);
+  return card;
+}
 
 export function addLine(text, className = "") {
   const line = document.createElement("div");
@@ -67,10 +168,24 @@ export function clearOutput() {
 }
 
 export function renderEnvLoading() {
-  const loading = document.createElement("p");
-  loading.className = "env-message";
-  loading.textContent = "檢查中…";
-  elements.envResults.replaceChildren(loading);
+  latestEnvChecks = null;
+  const skeleton = document.createElement("div");
+  skeleton.className = "ds-skeleton";
+  skeleton.setAttribute("aria-hidden", "true");
+
+  for (const className of [
+    "ds-skeleton-line ds-skeleton-line--title",
+    "ds-skeleton-line",
+    "ds-skeleton-line ds-skeleton-line--short",
+    "ds-skeleton-line",
+  ]) {
+    const line = document.createElement("div");
+    line.className = className;
+    skeleton.append(line);
+  }
+
+  elements.envResults.replaceChildren(skeleton);
+  updateProgress();
 }
 
 export function renderEnvBusy(busy) {
@@ -78,14 +193,17 @@ export function renderEnvBusy(busy) {
 }
 
 export function renderEnvFailure(message) {
+  latestEnvChecks = [];
   elements.envOs.textContent = "作業系統：無法取得";
   const paragraph = document.createElement("p");
   paragraph.className = "env-message failed";
   paragraph.textContent = `環境檢查失敗：${message}`;
   elements.envResults.replaceChildren(paragraph);
+  updateProgress();
 }
 
 export function renderEnv(os, checks, onActionClick) {
+  latestEnvChecks = checks;
   elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
   const rows = checks.map((check) => {
     const model = envRowModel(check);
@@ -98,6 +216,17 @@ export function renderEnv(os, checks, onActionClick) {
     icon.textContent = model.symbol;
     icon.setAttribute("aria-label", model.ariaLabel);
 
+    const logoName = envLogoFor(check.id);
+
+    if (logoName !== null) {
+      row.append(createLogo(logoName));
+    } else {
+      const spacer = document.createElement("span");
+      spacer.className = "env-logo-spacer";
+      spacer.setAttribute("aria-hidden", "true");
+      row.append(spacer);
+    }
+
     const label = document.createElement("strong");
     label.textContent = model.label;
 
@@ -105,7 +234,11 @@ export function renderEnv(os, checks, onActionClick) {
     detail.className = "env-detail";
     detail.textContent = model.detail;
 
-    row.append(icon, label, detail);
+    row.prepend(icon);
+    row.append(label, detail);
+
+    const actions = document.createElement("div");
+    actions.className = "env-actions";
 
     for (const button of model.buttons) {
       const element = document.createElement("button");
@@ -117,12 +250,14 @@ export function renderEnv(os, checks, onActionClick) {
       element.addEventListener("click", () =>
         onActionClick(button.action, element),
       );
-      row.append(element);
+      actions.append(element);
     }
 
+    row.append(actions);
     return row;
   });
   elements.envResults.replaceChildren(...rows);
+  updateProgress();
 }
 
 export function renderConfigChoices(toolChoices, languages) {
@@ -142,65 +277,127 @@ export function renderConfigChoices(toolChoices, languages) {
   elements.configLang.replaceChildren(...languageOptions);
 }
 
+function createConfigRow(check, model, onActionClick, onEyeToggle) {
+  const row = document.createElement("div");
+  row.className = "env-row";
+  row.dataset.status = model.status;
+
+  const icon = document.createElement("span");
+  icon.className = "env-icon";
+  icon.textContent = model.symbol;
+  icon.setAttribute("aria-label", model.ariaLabel);
+
+  const label = document.createElement("strong");
+  label.textContent = model.label;
+
+  const detail = document.createElement("span");
+  detail.className = "env-detail";
+  detail.textContent = model.detail;
+
+  row.append(icon, label, detail);
+
+  const actions = document.createElement("div");
+  actions.className = "env-actions";
+
+  for (const button of model.buttons) {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "env-action";
+    element.dataset[button.dataName] = button.action;
+    element.dataset.step = button.step;
+    element.textContent = button.text;
+    element.addEventListener("click", () =>
+      onActionClick(button.action, element, button.step, button.options),
+    );
+    actions.append(element);
+  }
+
+  row.append(actions);
+
+  // 程式驗不到的那一格，明講要回終端看什麼，看完自己勾。
+  if (model.eyeCheck !== null) {
+    const eye = document.createElement("label");
+    eye.className = "env-eye-check";
+
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.dataset.eyeStep = check.id;
+    box.addEventListener("change", () => onEyeToggle(check.id, box.checked));
+
+    const text = document.createElement("span");
+    text.textContent = `我看到了：${model.eyeCheck}`;
+
+    eye.append(box, text);
+    row.append(eye);
+  }
+
+  return row;
+}
+
+function createConfigCard(
+  card,
+  onActionClick,
+  verifiedSteps,
+  onEyeToggle,
+) {
+  const models = card.checks.map((check) =>
+    configRowModel(check, verifiedSteps.has(check.id)),
+  );
+  const done = models.filter((model) => model.status === "ok").length;
+  const article = document.createElement("article");
+  article.className = `ds-card-tilt config-card config-card--${card.agent}`;
+
+  const face = document.createElement("div");
+  face.className = "ds-card-tilt__face config-card-face";
+  const header = document.createElement("header");
+  header.className = "config-card-header";
+  header.append(createLogo(card.logo));
+
+  const title = document.createElement("h3");
+  title.textContent = card.label;
+  const count = document.createElement("span");
+  count.textContent = `${card.checks.length} 項 / 已完成 ${done}`;
+  const copy = document.createElement("div");
+  copy.append(title, count);
+  header.append(copy);
+
+  const rows = card.checks.map((check, index) =>
+    createConfigRow(check, models[index], onActionClick, onEyeToggle),
+  );
+  const body = document.createElement("div");
+  body.className = "config-card-rows";
+  body.append(...rows);
+  face.append(header, body);
+  article.append(face);
+  return article;
+}
+
 export function renderConfigs(
   checks,
   onActionClick,
   { verifiedSteps = new Set(), onEyeToggle = () => {} } = {},
 ) {
-  const rows = checks.map((check) => {
-    const model = configRowModel(check, verifiedSteps.has(check.id));
-    const row = document.createElement("div");
-    row.className = "env-row";
-    row.dataset.status = model.status;
+  latestConfigChecks = checks;
+  latestVerifiedSteps = verifiedSteps;
 
-    const icon = document.createElement("span");
-    icon.className = "env-icon";
-    icon.textContent = model.symbol;
-    icon.setAttribute("aria-label", model.ariaLabel);
+  for (const section of groupChecks(checks)) {
+    const cards = section.cards.map((card) =>
+      createConfigCard(card, onActionClick, verifiedSteps, onEyeToggle),
+    );
+    const container = elements.sectionCards[section.sectionId];
 
-    const label = document.createElement("strong");
-    label.textContent = model.label;
-
-    const detail = document.createElement("span");
-    detail.className = "env-detail";
-    detail.textContent = model.detail;
-
-    row.append(icon, label, detail);
-
-    for (const button of model.buttons) {
-      const element = document.createElement("button");
-      element.type = "button";
-      element.className = "env-action";
-      element.dataset[button.dataName] = button.action;
-      element.dataset.step = button.step;
-      element.textContent = button.text;
-      element.addEventListener("click", () =>
-        onActionClick(button.action, element, button.step, button.options),
-      );
-      row.append(element);
+    if (cards.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty-section ds-card";
+      empty.textContent = "這個工具組合沒有此章節項目。";
+      container.replaceChildren(empty);
+    } else {
+      container.replaceChildren(...cards);
     }
+  }
 
-    // 程式驗不到的那一格，明講要回終端看什麼，看完自己勾。
-    if (model.eyeCheck !== null) {
-      const eye = document.createElement("label");
-      eye.className = "env-eye-check";
-
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.dataset.eyeStep = check.id;
-      box.addEventListener("change", () => onEyeToggle(check.id, box.checked));
-
-      const text = document.createElement("span");
-      text.textContent = `我看到了：${model.eyeCheck}`;
-
-      eye.append(box, text);
-      row.append(eye);
-    }
-
-    return row;
-  });
   elements.configResults.setAttribute("aria-busy", "false");
-  elements.configResults.replaceChildren(...rows);
+  updateProgress();
 }
 
 export function renderConfigSummary(summary) {
@@ -208,19 +405,28 @@ export function renderConfigSummary(summary) {
 }
 
 export function renderConfigLoading() {
-  const loading = document.createElement("p");
-  loading.className = "env-message";
-  loading.textContent = "檢查中…";
+  latestConfigChecks = null;
   elements.configResults.setAttribute("aria-busy", "true");
-  elements.configResults.replaceChildren(loading);
+
+  for (const container of Object.values(elements.sectionCards)) {
+    container.replaceChildren(createSkeleton());
+  }
+
+  updateProgress();
 }
 
 export function renderConfigFailure(message) {
-  const paragraph = document.createElement("p");
-  paragraph.className = "env-message failed";
-  paragraph.textContent = `規則檔檢查失敗：${message}`;
+  latestConfigChecks = [];
   elements.configResults.setAttribute("aria-busy", "false");
-  elements.configResults.replaceChildren(paragraph);
+
+  for (const container of Object.values(elements.sectionCards)) {
+    const paragraph = document.createElement("p");
+    paragraph.className = "env-message failed ds-card";
+    paragraph.textContent = `規則檔檢查失敗：${message}`;
+    container.replaceChildren(paragraph);
+  }
+
+  updateProgress();
 }
 
 export function renderBehaviorFallback(state) {
