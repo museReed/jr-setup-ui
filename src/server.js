@@ -19,6 +19,9 @@ const indexPath = new URL("../public/index.html", import.meta.url);
 // 白名單寫死，不從路徑組檔名，免得變成任意讀檔。
 const ASSETS = [
   ["/styles.css", "text/css; charset=utf-8"],
+  ["/vendor/design-system.css", "text/css; charset=utf-8"],
+  ["/vendor/loader-orbs.js", "text/javascript; charset=utf-8"],
+  ["/vendor/logos.svg", "image/svg+xml; charset=utf-8"],
   ["/app.js", "text/javascript; charset=utf-8"],
   ["/view.js", "text/javascript; charset=utf-8"],
   ["/viewmodel.js", "text/javascript; charset=utf-8"],

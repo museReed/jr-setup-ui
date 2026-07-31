@@ -30,6 +30,28 @@ const STATUS_DISPLAY = {
   unverified: { symbol: "◐", label: "待驗證" },
 };
 
+const ENV_LOGOS = {
+  claude: "logo-claude",
+  "claude-auth": "logo-claude",
+  codex: "logo-openai",
+  "codex-auth": "logo-openai",
+  git: "logo-git",
+  gh: "logo-github",
+  "gh-auth": "logo-github",
+  node: "logo-nodejs",
+  "execution-policy": "logo-powershell",
+  "powershell-version": "logo-powershell",
+  "powershell-encoding": "logo-powershell",
+  "windows-terminal": "logo-terminal",
+  ghostty: "logo-terminal",
+  terminal: "logo-terminal",
+  homebrew: "logo-homebrew",
+};
+
+export function envLogoFor(checkId) {
+  return ENV_LOGOS[checkId] ?? null;
+}
+
 // 列上的按鈕一律帶齊這三個參數。伺服器只認 action 自己宣告的那幾個、其餘忽略，
 // 所以多帶不會出事，少帶會被擋（實測：列上的「驗證回覆格式」只帶了 step 與 lang，
 // 伺服器回「options.tools 不在允許的值裡」，按鈕等於是死的）。
@@ -199,6 +221,31 @@ export function configSummary(checks, verifiedSteps = new Set()) {
     total,
     allOk: done === total,
     text: `${total} 項中 ${done} 項就緒`,
+  };
+}
+
+export function progressSummary(
+  envChecks,
+  configChecks,
+  verifiedSteps = new Set(),
+) {
+  if (envChecks === null || configChecks === null) {
+    return { loading: true, done: 0, total: 0, percent: 0 };
+  }
+
+  const envDone = envChecks.filter((check) => check.status === "ok").length;
+  const configDone = configChecks.filter(
+    (check) =>
+      configRowModel(check, verifiedSteps.has(check.id)).status === "ok",
+  ).length;
+  const total = envChecks.length + configChecks.length;
+  const done = envDone + configDone;
+
+  return {
+    loading: false,
+    done,
+    total,
+    percent: total === 0 ? 0 : Math.round((done / total) * 100),
   };
 }
 

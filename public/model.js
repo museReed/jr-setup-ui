@@ -15,6 +15,129 @@ export const CONFIG_TOOL_CHOICES = [
   { value: "claude,codex", label: "兩個都要" },
 ];
 
+export const SECTIONS = [
+  { id: "env", title: "讓 AI 能跑起來", subtitle: "環境與登入" },
+  { id: "rules", title: "讓它照你的規矩回話", subtitle: "規則檔與 hooks" },
+  { id: "skills", title: "給它技能包", subtitle: "Skills" },
+  { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
+];
+
+const RULE_CHECK_IDS = {
+  claude: new Set([
+    "claude-md",
+    "output-style",
+    "hook",
+    "allowlist",
+    "claude-namer",
+    "claude-monitor",
+  ]),
+  codex: new Set([
+    "codex-config",
+    "codex-agents",
+    "codex-namer",
+    "codex-monitor",
+  ]),
+  shared: new Set(["tab-sync"]),
+};
+
+const CARD_DEFINITIONS = {
+  rules: [
+    {
+      agent: "claude",
+      label: "Claude",
+      logo: "logo-claude",
+      includes: (id) => RULE_CHECK_IDS.claude.has(id),
+    },
+    {
+      agent: "codex",
+      label: "Codex",
+      logo: "logo-openai",
+      includes: (id) => RULE_CHECK_IDS.codex.has(id),
+    },
+    {
+      agent: "shared",
+      label: "兩邊共用",
+      logo: "logo-terminal",
+      includes: (id) => RULE_CHECK_IDS.shared.has(id),
+    },
+  ],
+  skills: [
+    {
+      agent: "claude",
+      label: "Claude",
+      logo: "logo-claude",
+      includes: (id) =>
+        id.startsWith("skill-claude-") || /^ext-.*-claude$/.test(id),
+    },
+    {
+      agent: "codex",
+      label: "Codex",
+      logo: "logo-openai",
+      includes: (id) =>
+        id.startsWith("skill-codex-") || /^ext-.*-codex$/.test(id),
+    },
+  ],
+  demo: [
+    {
+      agent: "claude",
+      label: "Claude",
+      logo: "logo-claude",
+      includes: (id) => id === "demo-claude",
+    },
+    {
+      agent: "codex",
+      label: "Codex",
+      logo: "logo-openai",
+      includes: (id) => id === "demo-codex",
+    },
+  ],
+};
+
+function sectionForCheck(id) {
+  if (id.startsWith("skill-") || id.startsWith("ext-")) {
+    return "skills";
+  }
+
+  if (id.startsWith("demo-")) {
+    return "demo";
+  }
+
+  return "rules";
+}
+
+export function groupChecks(checks) {
+  return Object.entries(CARD_DEFINITIONS).map(([sectionId, definitions]) => {
+    const sectionChecks = checks.filter(
+      (check) => sectionForCheck(check.id) === sectionId,
+    );
+    const cards = definitions
+      .map(({ agent, label, logo, includes }) => ({
+        agent,
+        label,
+        logo,
+        checks: sectionChecks.filter((check) => includes(check.id)),
+      }))
+      .filter((card) => card.checks.length > 0);
+    const knownIds = new Set(
+      cards.flatMap((card) => card.checks.map((check) => check.id)),
+    );
+    const otherChecks = sectionChecks.filter(
+      (check) => !knownIds.has(check.id),
+    );
+
+    if (otherChecks.length > 0) {
+      cards.push({
+        agent: "other",
+        label: "其他",
+        logo: "logo-terminal",
+        checks: otherChecks,
+      });
+    }
+
+    return { sectionId, cards };
+  });
+}
+
 export function configQuery({ tools, lang }) {
   const toolValues = CONFIG_TOOL_CHOICES.map((choice) => choice.value);
 
