@@ -19,15 +19,7 @@ body {
   display: none !important;
 }
 
-.wizard-header {
-  max-width: var(--layout-max);
-  margin: 0 auto;
-  padding: 48px var(--gutter) 28px;
-}
-
-.wizard-eyebrow,
-.section-kicker,
-.sidebar-label {
+.section-kicker {
   margin: 0 0 var(--space-2);
   color: var(--color-accent-hover);
   font-family: var(--font-mono);
@@ -37,7 +29,6 @@ body {
   text-transform: uppercase;
 }
 
-.wizard-header h1,
 .section-heading h2 {
   margin: 0;
   color: var(--color-text-strong);
@@ -45,62 +36,74 @@ body {
   letter-spacing: -0.03em;
 }
 
-.wizard-header h1 {
-  font-size: clamp(var(--fs-3xl), 4vw, var(--fs-5xl));
-}
-
-.wizard-header > p:last-child,
 #section-status {
   color: var(--color-text-muted);
 }
 
-.wizard-header > p:last-child {
-  margin: var(--space-3) 0 0;
-}
-
 .wizard-layout {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: var(--space-5);
   max-width: var(--layout-max);
   margin: 0 auto;
-  padding: 0 var(--gutter) var(--space-7);
+  padding: var(--space-6) var(--gutter) var(--space-7);
 }
 
-.wizard-sidebar {
-  position: sticky;
-  top: var(--space-5);
-  align-self: start;
-}
-
-.wizard-sidebar nav {
-  display: grid;
+/* 段落導覽：設計系統沒有 tab 元件，這裡用 token 自刻一條。
+   底線標示目前段落，鎖住的段落降透明度且不可點。 */
+.section-tabs {
+  display: flex;
   gap: var(--space-1);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
-.wizard-sidebar .ds-side-item {
-  width: 100%;
+.section-tab {
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.wizard-sidebar .ds-side-item span,
-.wizard-sidebar .ds-side-item small {
+.section-tab span,
+.section-tab small {
   display: block;
 }
 
-.wizard-sidebar .ds-side-item small {
+.section-tab span {
+  font-weight: 600;
+}
+
+.section-tab small {
   color: var(--color-text-faint);
   font-size: var(--fs-xs);
 }
 
-.wizard-sidebar .ds-side-item.is-locked {
+.section-tab:hover:not(.is-locked) {
+  color: var(--color-text-strong);
+}
+
+.section-tab.current {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent-hover);
+}
+
+.section-tab.current small {
+  color: var(--color-text-muted);
+}
+
+.section-tab.is-locked {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
 .section-lock-message {
+  margin: var(--space-3) 0 0;
   color: var(--color-warn);
   font-size: var(--fs-xs);
 }
@@ -119,7 +122,7 @@ body {
 }
 
 .section-heading {
-  min-height: 112px;
+  margin: var(--space-5) 0 0;
 }
 
 .section-heading h2 {
@@ -229,8 +232,19 @@ body {
   min-height: 280px;
 }
 
-.terminal-column .ds-term-title {
+.terminal-column .ds-term-chrome {
+  align-items: center;
+}
+
+.terminal-column .terminal-title {
+  margin-left: var(--space-2);
   color: var(--term-ink-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.terminal-column #cancel {
+  margin-left: auto;
 }
 
 .terminal-loader-line {
@@ -303,22 +317,8 @@ body {
 }
 
 @media (max-width: 720px) {
-  .wizard-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .wizard-sidebar {
-    position: static;
-    overflow-x: auto;
-  }
-
-  .wizard-sidebar nav {
-    display: flex;
-    min-width: max-content;
-  }
-
-  .wizard-sidebar .ds-side-item {
-    width: 176px;
+  .section-tab {
+    padding: var(--space-3);
   }
 }
 

@@ -114,9 +114,22 @@ try {
   const styles = read("styles.css");
   assert.match(
     styles,
-    /\.terminal-column \.ds-term-title\s*\{\s*color: var\(--term-ink-dim\);/,
+    /\.terminal-column \.terminal-title\s*\{[^}]*color: var\(--term-ink-dim\);/,
   );
   ok("終端標題使用設計系統的暗底次要文字色");
+
+  // .ds-term-bar / .ds-term-title 在設計系統裡不存在，用了就是沒樣式的裸 div，
+  // 標題會貼在圓角外被切掉。終端的頂欄只能用 .ds-term-chrome。
+  assert(!index.includes("ds-term-bar"));
+  assert(!index.includes("ds-term-title"));
+  assert.match(index, /class="ds-term-chrome"/);
+  ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
+
+  // 段落導覽是上方 tab，不是側欄；整頁大標已移除。
+  assert(!index.includes("wizard-header"));
+  assert(!index.includes("wizard-sidebar"));
+  assert.match(index, /<nav id="section-nav" class="section-tabs"/);
+  ok("段落導覽改成上方 tab，整頁大標已移除");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

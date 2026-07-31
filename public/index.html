@@ -17,65 +17,55 @@
           document.body.prepend(holder.firstElementChild);
         });
     </script>
-    <header class="wizard-header">
-      <p class="wizard-eyebrow">AI Agent Setup</p>
-      <h1>一次做好一件事</h1>
-      <p>左邊照卡片完成設定，右邊只說明現在發生什麼。</p>
-    </header>
     <main class="wizard-layout">
-      <aside class="wizard-sidebar" aria-label="設定章節">
-        <p class="sidebar-label">設定進度</p>
-        <nav id="section-nav">
-          <button type="button" class="ds-side-item current" data-section-target="env" aria-current="step">
-            <span>讓 AI 能跑起來</span><small>環境與登入</small>
-          </button>
-          <button type="button" class="ds-side-item" data-section-target="rules">
-            <span>讓它照你的規矩回話</span><small>規則檔與 hooks</small>
-          </button>
-          <button type="button" class="ds-side-item" data-section-target="skills">
-            <span>給它技能包</span><small>Skills</small>
-          </button>
-          <button type="button" class="ds-side-item" data-section-target="demo">
-            <span>跑一次給你看</span><small>Demo</small>
-          </button>
-        </nav>
-        <p id="section-lock-message" class="section-lock-message" hidden></p>
-      </aside>
+      <nav id="section-nav" class="section-tabs" aria-label="設定章節">
+        <button type="button" class="section-tab current" data-section-target="env" aria-current="step">
+          <span>讓 AI 能跑起來</span><small>環境與登入</small>
+        </button>
+        <button type="button" class="section-tab" data-section-target="rules">
+          <span>讓它照你的規矩回話</span><small>規則檔與 hooks</small>
+        </button>
+        <button type="button" class="section-tab" data-section-target="skills">
+          <span>給它技能包</span><small>Skills</small>
+        </button>
+        <button type="button" class="section-tab" data-section-target="demo">
+          <span>跑一次給你看</span><small>Demo</small>
+        </button>
+      </nav>
+      <p id="section-lock-message" class="section-lock-message" hidden></p>
+
+      <header class="section-heading">
+        <p id="section-kicker" class="section-kicker">環境與登入</p>
+        <h2 id="section-title">讓 AI 能跑起來</h2>
+        <p id="section-status" aria-live="polite">正在檢查目前進度…</p>
+      </header>
+
+      <div class="milestone-wrap">
+        <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
+          <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          <div id="milestone-points"></div>
+          <div id="milestone-duck" class="ds-duck walk" style="left: 0%">
+            <div class="ds-duck-hop">
+              <svg viewBox="0 0 40 40" aria-hidden="true">
+                <g class="ds-legs">
+                  <line class="ds-leg" x1="11" y1="26" x2="11" y2="34" stroke="var(--color-accent-hover)" stroke-width="2.4" stroke-linecap="round" />
+                  <line class="ds-leg2" x1="17" y1="26" x2="17" y2="34" stroke="var(--color-accent-hover)" stroke-width="2.4" stroke-linecap="round" />
+                </g>
+                <g class="ds-bodyg">
+                  <ellipse cx="16" cy="20" rx="12" ry="9" fill="var(--duck-body)" />
+                  <circle cx="25" cy="12" r="7" fill="var(--duck-body)" />
+                  <path d="M31 11 l7 2 -7 3 z" fill="var(--color-accent)" />
+                  <circle cx="26" cy="11" r="1.5" fill="var(--color-text-strong)" />
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="wizard-workspace">
         <div class="task-terminal-layout">
           <section class="task-column" data-section-panel aria-labelledby="section-title">
-            <header class="section-heading">
-              <div>
-                <p id="section-kicker" class="section-kicker">環境與登入</p>
-                <h2 id="section-title">讓 AI 能跑起來</h2>
-                <p id="section-status" aria-live="polite">正在檢查目前進度…</p>
-              </div>
-            </header>
-
-            <div class="milestone-wrap">
-              <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
-                <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-                <div id="milestone-points"></div>
-                <div id="milestone-duck" class="ds-duck walk" style="left: 0%">
-                  <div class="ds-duck-hop">
-                    <svg viewBox="0 0 40 40" aria-hidden="true">
-                      <g class="ds-legs">
-                        <line class="ds-leg" x1="11" y1="26" x2="11" y2="34" stroke="var(--color-accent-hover)" stroke-width="2.4" stroke-linecap="round" />
-                        <line class="ds-leg2" x1="17" y1="26" x2="17" y2="34" stroke="var(--color-accent-hover)" stroke-width="2.4" stroke-linecap="round" />
-                      </g>
-                      <g class="ds-bodyg">
-                        <ellipse cx="16" cy="20" rx="12" ry="9" fill="var(--duck-body)" />
-                        <circle cx="25" cy="12" r="7" fill="var(--duck-body)" />
-                        <path d="M31 11 l7 2 -7 3 z" fill="var(--color-accent)" />
-                        <circle cx="26" cy="11" r="1.5" fill="var(--color-text-strong)" />
-                      </g>
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <div id="config-choice-panel" class="config-choice-panel" hidden>
               <div>
                 <strong>要設定哪些工具？</strong>
@@ -101,8 +91,11 @@
           </section>
 
           <section id="terminal" class="ds-term ds-term--typing terminal-column" aria-label="執行狀態">
-            <div class="ds-term-bar">
-              <span class="ds-term-title">現在正在做什麼</span>
+            <div class="ds-term-chrome">
+              <span class="ds-term-dot" style="background: var(--red-4)" aria-hidden="true"></span>
+              <span class="ds-term-dot" style="background: var(--amber-4)" aria-hidden="true"></span>
+              <span class="ds-term-dot" style="background: var(--teal-4)" aria-hidden="true"></span>
+              <span class="terminal-title">現在正在做什麼</span>
               <button type="button" id="cancel" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>取消</button>
             </div>
             <div id="terminal-lines" class="ds-term-body" role="log" aria-live="polite">
