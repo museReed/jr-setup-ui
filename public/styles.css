@@ -103,6 +103,23 @@ body {
   background: var(--color-accent-bg);
 }
 
+.wizard-sidebar .ds-side-item.is-locked {
+  border: 1px dashed var(--color-border);
+  color: var(--color-text-faint);
+  cursor: help;
+  opacity: 0.72;
+}
+
+.wizard-sidebar .ds-side-item.is-locked::after {
+  content: "鎖定";
+  display: inline-block;
+  margin-top: var(--space-1);
+  color: var(--amber-6);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .wizard-sidebar .ds-side-item span,
 .wizard-sidebar .ds-side-item small {
   display: block;
@@ -119,6 +136,16 @@ body {
   color: var(--color-text-faint);
   font-size: 11px;
   font-weight: 500;
+}
+
+.section-lock-message {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2);
+  border-radius: var(--r-sm);
+  background: var(--amber-1);
+  color: var(--amber-6);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
 }
 
 .wizard-workspace {
@@ -144,10 +171,42 @@ body {
   font-size: var(--fs-md);
 }
 
+.progress-title {
+  display: grid;
+  gap: 2px;
+}
+
+.progress-title .completion-message {
+  color: var(--color-success-text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
 .progress-copy span {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+}
+
+.progress-loader {
+  position: absolute;
+  top: var(--space-2);
+  left: 50%;
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: var(--r-pill);
+  transform: translateX(-50%);
+  transition: background 0.2s ease;
+}
+
+.progress-loader > .ds-loader-orbs {
+  grid-area: 1 / 1;
+}
+
+.progress-loader.is-paused {
+  background: var(--term-bg);
 }
 
 .progress-card .ds-pbar {
@@ -233,12 +292,30 @@ body {
 
 .env-row {
   display: grid;
-  grid-template-columns: 26px 30px minmax(160px, 0.8fr) minmax(0, 1fr) auto;
+  grid-template-columns:
+    22px 26px 30px minmax(160px, 0.8fr)
+    minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
   min-height: 54px;
   padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--color-border-soft);
+}
+
+.row-loader-slot {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+}
+
+.row-loader-slot > .ds-loader-orbs {
+  grid-area: 1 / 1;
+}
+
+.row-loader-slot:has(.ds-loader-orbs--on-dark) {
+  border-radius: var(--r-pill);
+  background: var(--term-bg);
 }
 
 .env-row:last-child {
@@ -387,7 +464,9 @@ body {
 }
 
 .config-card .env-row {
-  grid-template-columns: 26px minmax(180px, 0.8fr) minmax(0, 1fr) auto;
+  grid-template-columns:
+    22px 26px minmax(180px, 0.8fr)
+    minmax(0, 1fr) auto;
 }
 
 .config-card .env-eye-check {
@@ -402,6 +481,44 @@ body {
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
   line-height: var(--lh-snug);
+}
+
+.verify-follow-up {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1) 48px;
+  color: var(--color-text-strong);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.verify-follow-up span {
+  margin-right: auto;
+}
+
+.gate-callout {
+  margin-top: var(--space-4);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-warn);
+  border-left: 4px solid var(--color-warn);
+  background: var(--amber-1);
+}
+
+.gate-callout > strong {
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  color: var(--amber-6);
+}
+
+.gate-callout .ds-check {
+  border-top-color: color-mix(
+    in srgb,
+    var(--color-warn) 36%,
+    transparent
+  );
 }
 
 .empty-section,
@@ -691,32 +808,42 @@ textarea {
 
   .env-row,
   .config-card .env-row {
-    grid-template-columns: 26px 30px minmax(0, 1fr);
+    grid-template-columns: 22px 26px 30px minmax(0, 1fr);
     padding: var(--space-3) var(--space-4);
   }
 
   .config-card .env-row {
-    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-columns: 22px 26px minmax(0, 1fr);
   }
 
   .env-detail {
-    grid-column: 3;
+    grid-column: 4;
   }
 
   .config-card .env-detail,
   .config-card .env-actions {
-    grid-column: 2;
+    grid-column: 3;
   }
 
   .env-actions {
-    grid-column: 3;
+    grid-column: 4;
     width: 100%;
     flex-wrap: wrap;
   }
 
   .env-eye-check {
     grid-column: 1 / -1;
-    padding-left: 34px;
+    padding-left: 48px;
+  }
+
+  .verify-follow-up {
+    align-items: stretch;
+    flex-wrap: wrap;
+    padding-left: 48px;
+  }
+
+  .verify-follow-up span {
+    width: 100%;
   }
 
   .progress-card .ds-pbar {

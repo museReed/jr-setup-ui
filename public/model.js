@@ -22,6 +22,50 @@ export const SECTIONS = [
   { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
 ];
 
+export const SECTION_GATES = {
+  skills: [
+    {
+      id: "rules-new-terminal",
+      title: "關掉現在的終端分頁，開一個新的",
+      detail: "wrapper 寫在 shell profile，舊分頁不會載入",
+    },
+  ],
+  demo: [
+    {
+      id: "skills-new-terminal",
+      title: "再開一次新的分頁",
+      detail: "skill 只在 session 啟動時掃目錄",
+    },
+    {
+      id: "codex-hook-trust",
+      title: "第一次跑 codex 要接受 hook 信任提示",
+      detail: "沒接受的話整組 hook 不會跑",
+      codexOnly: true,
+    },
+  ],
+};
+
+export function sectionGateState(
+  sectionId,
+  completedGateIds = new Set(),
+  tools = "claude",
+) {
+  const codexSelected = tools.split(",").includes("codex");
+  const required = (SECTION_GATES[sectionId] ?? []).filter(
+    (gate) => gate.codexOnly !== true || codexSelected,
+  );
+  const missing = required.filter((gate) => !completedGateIds.has(gate.id));
+
+  return {
+    locked: missing.length > 0,
+    missing,
+    reason:
+      missing.length === 0
+        ? ""
+        : `先完成「${missing.map((gate) => gate.title).join("」和「")}」。`,
+  };
+}
+
 const RULE_CHECK_IDS = {
   claude: new Set([
     "claude-md",

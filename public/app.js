@@ -2,18 +2,26 @@
 // 這裡只做接線與狀態保管，判斷邏輯在 viewmodel.js、畫面操作在 view.js。
 import * as api from "./api.js";
 import * as view from "./view.js";
-import { CONFIG_LANGUAGES, CONFIG_TOOL_CHOICES } from "./model.js";
+import {
+  CONFIG_LANGUAGES,
+  CONFIG_TOOL_CHOICES,
+  SECTIONS,
+  sectionGateState,
+} from "./model.js";
 import {
   LOGIN_CHECK_IDS,
   LOGIN_POLL_INTERVAL_MS,
   AUTO_VERIFY_ACTIONS,
+  LOADER_MODIFIERS,
   agentNameFor,
   behaviorFallbackState,
   configSummary,
   envButtonState,
   extractLoginHints,
+  installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
+  loaderModifier,
   loginWaitStep,
   rowRunOptions,
   runControlsState,
@@ -26,16 +34,51 @@ const state = {
   acceptsInput: false,
   agentName: "",
   activeEnvButton: null,
+  activeRunButton: null,
+  activeRunStep: null,
   currentEnvAction: null,
+  currentLoaderModifier: null,
+  loaderPaused: false,
   envCheckInProgress: false,
   configCheckInProgress: false,
   loginWait: null,
   // 這一頁開著的期間，哪幾列已經驗過行為了。重新整理就歸零——那是刻意的：
   // 驗證證明的是「那個當下生效」，換一次環境就該重驗。
   verifiedSteps: new Set(),
+  verificationPrompts: new Set(),
+  completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
 };
+
+function renderCheckingLoader() {
+  if (state.runInProgress) {
+    return;
+  }
+
+  if (state.envCheckInProgress || state.configCheckInProgress) {
+    state.loaderPaused = false;
+    view.renderLoaders({
+      modifier: loaderModifier({ checking: true }),
+      topOnly: true,
+    });
+  } else if (!state.loaderPaused) {
+    view.hideLoaders();
+  }
+}
+
+function renderNavigation() {
+  const tools = view.elements.configTools.value;
+  const lockStates = Object.fromEntries(
+    SECTIONS.map((section) => [
+      section.id,
+      sectionGateState(section.id, state.completedGateIds, tools),
+    ]),
+  );
+  view.renderSectionLocks(lockStates);
+  view.renderGateVisibility(tools.split(",").includes("codex"));
+  return lockStates;
+}
 
 function renderControls() {
   view.renderRunControls(
@@ -71,13 +114,43 @@ function setRunning(running) {
   renderEnvActionButtons();
 }
 
-function resetRun() {
+function resetRun({ keepLoader = false } = {}) {
   state.runId = null;
   state.acceptsInput = false;
   state.activeEnvButton = null;
+  state.activeRunButton = null;
+  state.activeRunStep = null;
   state.currentEnvAction = null;
   view.clearLoginHints();
+
+  if (!keepLoader) {
+    state.currentLoaderModifier = null;
+    state.loaderPaused = false;
+    view.hideLoaders();
+  }
+
   setRunning(false);
+}
+
+function renderRunLoader(modifier, paused = false) {
+  if (modifier === null) {
+    return;
+  }
+
+  if (!paused) {
+    state.currentLoaderModifier = modifier;
+  }
+
+  state.loaderPaused = paused;
+  view.renderLoaders({
+    modifier:
+      paused && state.currentLoaderModifier === null
+        ? LOADER_MODIFIERS.working
+        : state.currentLoaderModifier,
+    button: state.activeRunButton,
+    step: state.activeRunStep,
+    paused,
+  });
 }
 
 function clearLoginWait() {
@@ -107,6 +180,7 @@ async function checkEnvironment(showLoading = true) {
   state.envCheckInProgress = true;
   view.elements.recheckEnv.disabled = true;
   view.renderEnvBusy(true);
+  renderCheckingLoader();
 
   if (showLoading) {
     view.renderEnvLoading();
@@ -138,6 +212,7 @@ async function checkEnvironment(showLoading = true) {
     state.envCheckInProgress = false;
     view.renderEnvBusy(false);
     view.elements.recheckEnv.disabled = state.runInProgress;
+    renderCheckingLoader();
   }
 }
 
@@ -149,6 +224,7 @@ async function checkConfigs() {
   state.configCheckInProgress = true;
   renderControls();
   view.renderConfigLoading();
+  renderCheckingLoader();
   const tools = view.elements.configTools.value;
   const lang = view.elements.configLang.value;
 
@@ -166,6 +242,7 @@ async function checkConfigs() {
         ),
       {
         verifiedSteps: state.verifiedSteps,
+        verificationPrompts: state.verificationPrompts,
         onEyeToggle: (step, checked) => {
           if (checked) {
             state.verifiedSteps.add(step);
@@ -173,6 +250,24 @@ async function checkConfigs() {
             state.verifiedSteps.delete(step);
           }
 
+          checkConfigs();
+        },
+        onVerifyNow: (check) => {
+          state.verificationPrompts.delete(check.id);
+          run(
+            check.verifyAction,
+            undefined,
+            null,
+            rowRunOptions({
+              step: check.id,
+              lang: result.lang,
+              tools,
+              extra: check.verifyOptions,
+            }),
+          );
+        },
+        onVerifyLater: (step) => {
+          state.verificationPrompts.delete(step);
           checkConfigs();
         },
       },
@@ -185,6 +280,7 @@ async function checkConfigs() {
   } finally {
     state.configCheckInProgress = false;
     renderControls();
+    renderCheckingLoader();
   }
 }
 
@@ -235,7 +331,7 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, configAction, result, verifiedStep) {
+function handleDone(action, envButton, configAction, result, options) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -248,9 +344,45 @@ function handleDone(action, envButton, configAction, result, verifiedStep) {
   }
 
   const wasEnvAction = envButton !== null;
-  resetRun();
 
   if (!outcome.succeeded) {
+    renderRunLoader(
+      loaderModifier({ action, options, result }),
+      true,
+    );
+    resetRun({ keepLoader: true });
+    return;
+  }
+
+  const verifiedStep = options?.step;
+  const installedCheck = state.lastChecks.find(
+    (check) => check.id === verifiedStep,
+  );
+  const followUp = installVerificationFollowUp({
+    action,
+    result,
+    check: installedCheck,
+  });
+  resetRun();
+
+  if (followUp === "auto") {
+    run(
+      installedCheck.verifyAction,
+      undefined,
+      null,
+      rowRunOptions({
+        step: installedCheck.id,
+        lang: options.lang,
+        tools: options.tools,
+        extra: installedCheck.verifyOptions,
+      }),
+    );
+    return;
+  }
+
+  if (followUp === "prompt") {
+    state.verificationPrompts.add(installedCheck.id);
+    checkConfigs();
     return;
   }
 
@@ -307,7 +439,14 @@ async function run(action, promptText, button = null, options) {
   view.clearOutput();
   view.clearLoginHints();
   state.activeEnvButton = envButton;
+  state.activeRunButton = button;
+  state.activeRunStep = options?.step ?? null;
   state.currentEnvAction = envButton === null ? null : action;
+  state.loaderPaused = false;
+
+  if (action !== "install-config-step" && state.activeRunStep !== null) {
+    state.verificationPrompts.delete(state.activeRunStep);
+  }
 
   if (envButton !== null) {
     view.hideInstallStatus();
@@ -316,6 +455,9 @@ async function run(action, promptText, button = null, options) {
   state.agentName = agentNameFor(action);
   state.runId = null;
   state.acceptsInput = false;
+  state.currentLoaderModifier =
+    loaderModifier({ action, options }) ?? LOADER_MODIFIERS.working;
+  renderRunLoader(state.currentLoaderModifier);
   setRunning(true);
 
   try {
@@ -343,6 +485,15 @@ async function run(action, promptText, button = null, options) {
 
     events.addEventListener("line", (event) => {
       const line = JSON.parse(event.data);
+      const nextModifier = loaderModifier({
+        action,
+        options,
+        output: line.text,
+      });
+
+      if (nextModifier !== null) {
+        renderRunLoader(nextModifier);
+      }
 
       if (isLoginAction(action)) {
         view.showLoginHints(extractLoginHints(line.text));
@@ -364,7 +515,7 @@ async function run(action, promptText, button = null, options) {
         view.renderBehaviorFallback(behaviorFallbackState(result));
       }
 
-      handleDone(action, envButton, configAction, result, options?.step);
+      handleDone(action, envButton, configAction, result, options);
     });
 
     events.onerror = () => {
@@ -448,7 +599,34 @@ view.elements.runInput.addEventListener("submit", async (event) => {
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
-view.elements.configTools.addEventListener("change", checkConfigs);
+view.elements.configTools.addEventListener("change", () => {
+  state.verificationPrompts.clear();
+  renderNavigation();
+  view.hideSectionLockMessage();
+  checkConfigs();
+});
 view.elements.configLang.addEventListener("change", checkConfigs);
+view.onSectionSelect((sectionId) => {
+  const gate = renderNavigation()[sectionId];
+
+  if (gate.locked) {
+    view.showSectionLockMessage(gate.reason);
+    return;
+  }
+
+  view.hideSectionLockMessage();
+  view.showSection(sectionId);
+});
+view.onGateToggle((gateId, checked) => {
+  if (checked) {
+    state.completedGateIds.add(gateId);
+  } else {
+    state.completedGateIds.delete(gateId);
+  }
+
+  renderNavigation();
+  view.hideSectionLockMessage();
+});
+renderNavigation();
 checkEnvironment();
 checkConfigs();
