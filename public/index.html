@@ -18,18 +18,21 @@
         });
     </script>
     <main class="wizard-layout">
+      <!-- tab 與進度條包在同一個 sticky 容器裡。分開各自 sticky 的話，兩者之間
+           會露出一條縫，底下捲動的卡片內容會從縫裡透出來。 -->
+      <div class="sticky-top-stack">
       <nav id="section-nav" class="section-tabs" aria-label="設定章節">
         <button type="button" class="section-tab current" data-section-target="env" aria-current="step">
-          <span>讓 AI 能跑起來</span><small>環境與登入</small>
+          <span>讓 AI 能跑起來</span>
         </button>
         <button type="button" class="section-tab" data-section-target="rules">
-          <span>讓它照你的規矩回話</span><small>規則檔與 hooks</small>
+          <span>讓它照你的規矩回話</span>
         </button>
         <button type="button" class="section-tab" data-section-target="skills">
-          <span>給它技能包</span><small>Skills</small>
+          <span>給它技能包</span>
         </button>
         <button type="button" class="section-tab" data-section-target="demo">
-          <span>跑一次給你看</span><small>Demo</small>
+          <span>跑一次給你看</span>
         </button>
       </nav>
       <p id="section-lock-message" class="section-lock-message" hidden></p>
@@ -55,6 +58,7 @@
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       <div class="wizard-workspace">

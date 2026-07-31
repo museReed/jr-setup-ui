@@ -807,26 +807,6 @@ export function clearLoginHints() {
   hints.hidden = true;
 }
 
-// 收合只有兩種狀態，而且**不能**由 window.scrollY 的門檻決定。
-//
-// 原本寫 scrollY > 80，實測捲 12 步翻轉 42 次：收合讓 nav 變矮 → 文件跟著變短 →
-// 瀏覽器把 scrollY 往回拉到門檻以下 → 展開 → 文件變高 → 又超過門檻。自己餵自己。
-//
-// 改用一個高度 0 的哨兵放在 tab 上面：它的位置不受 nav 高度影響，所以觀察它有沒有
-// 捲出畫面就是一個乾淨的二值判斷，沒有回饋迴圈。
-export function setupCondensedTabs() {
-  const nav = elements.sectionNav;
-  const sentinel = document.createElement("div");
-  sentinel.className = "tabs-sentinel";
-  sentinel.setAttribute("aria-hidden", "true");
-  nav.before(sentinel);
-
-  new IntersectionObserver(
-    ([entry]) => nav.classList.toggle("is-condensed", !entry.isIntersecting),
-    { threshold: 0 },
-  ).observe(sentinel);
-}
-
 export function showVerifyModal() {
   elements.verifyModal.hidden = false;
   requestAnimationFrame(() => elements.verifyModal.classList.add("open"));

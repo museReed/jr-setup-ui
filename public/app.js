@@ -1069,7 +1069,6 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
 
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
-view.setupCondensedTabs();
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
 view.onToolSelect((tool) => {
   state.selectedTools = toggleToolSelection(state.selectedTools, tool);

@@ -25,12 +25,19 @@ body {
   padding: var(--space-6) var(--gutter) var(--space-7);
 }
 
-/* 段落導覽：設計系統沒有 tab 元件，這裡用 token 自刻一條。
-   底線標示目前段落，鎖住的段落降透明度且不可點。 */
-.section-tabs {
+/* tab 與進度條一起黏住。兩者各自 sticky 的話，中間會露出一條縫，
+   底下捲動的卡片內容會從縫裡透出來（實測）。包成一塊就不可能有縫，
+   小鴨也永遠緊貼在 tab 下面、不會被切頭。 */
+.sticky-top-stack {
   position: sticky;
   top: 0;
   z-index: 20;
+  background: var(--color-bg);
+}
+
+/* 段落導覽：設計系統沒有 tab 元件，這裡用 token 自刻一條。
+   底線標示目前段落，鎖住的段落降透明度且不可點。 */
+.section-tabs {
   display: flex;
   gap: var(--space-1);
   overflow-x: auto;
@@ -38,6 +45,7 @@ body {
   background: var(--color-bg);
 }
 
+/* 只有一列標題、沒有副標，所以也沒有收合這回事——高度自始至終固定。 */
 .section-tab {
   flex: 0 0 auto;
   padding: var(--space-3) var(--space-4);
@@ -46,48 +54,17 @@ body {
   background: transparent;
   color: var(--color-text-muted);
   font-family: inherit;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
-  /* 只有 hover 換色會動。收合本身不做動畫——它是兩種狀態的切換，
-     加了 padding / 陰影的過渡看起來就像跟著捲動距離漸變。 */
+  /* 只有 hover 換色會動。 */
   transition:
     color 0.15s ease,
     border-color 0.15s ease;
 }
 
-.section-tab span,
-.section-tab small {
-  display: block;
-}
-
 .section-tab span {
-  font-weight: 600;
-}
-
-.section-tab small {
-  color: var(--color-text-faint);
-  font-size: var(--fs-xs);
-  max-height: var(--space-5);
-  overflow: hidden;
-}
-
-/* 高度 0 的哨兵：捲出畫面就代表該收合。放在 tab 前面，位置不受 tab 高度影響，
-   所以不會像 scrollY 門檻那樣自己餵自己造成閃爍。 */
-.tabs-sentinel {
-  height: 0;
-}
-
-.section-tabs.is-condensed {
-  box-shadow: var(--shadow-md);
-}
-
-.section-tabs.is-condensed .section-tab {
-  padding-block: var(--space-2);
-}
-
-.section-tabs.is-condensed .section-tab small {
-  max-height: 0;
-  opacity: 0;
+  display: block;
 }
 
 .section-tab:hover:not(.is-locked) {
@@ -97,10 +74,6 @@ body {
 .section-tab.current {
   border-bottom-color: var(--color-accent);
   color: var(--color-accent-hover);
-}
-
-.section-tab.current small {
-  color: var(--color-text-muted);
 }
 
 .section-tab.is-locked {
@@ -135,19 +108,9 @@ body {
   font-size: var(--fs-xs);
 }
 
-/* 進度條跟著 tab 一起黏住。不黏的話小鴨會鑽到 tab 底下，被不透明的 tab 背景
-   切掉頭（實測捲動後被蓋住 15–23px）。黏在 tab 下緣就永遠露在外面。 */
+/* 上緣的留白就是小鴨站的地方——貼齊 tab 下緣，小鴨剛好在 tab 底下不被切到。 */
 .milestone-wrap {
-  position: sticky;
-  top: 64px;
-  z-index: 15;
-  padding: 38px 24px 52px;
-  background: var(--color-bg);
-}
-
-.section-tabs.is-condensed ~ .milestone-wrap,
-.wizard-layout:has(.section-tabs.is-condensed) .milestone-wrap {
-  top: 46px;
+  padding: 30px 24px 24px;
 }
 
 .ds-milestone:has(.ds-milestone-card.is-pinned),
