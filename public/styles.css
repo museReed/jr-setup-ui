@@ -118,6 +118,17 @@ body {
   z-index: 5;
 }
 
+/* 卡片展開時關掉圓點的 hover 放大。
+   設計系統的圓點 hover 會 scale(1.18)，卡片是圓點的子元素所以跟著被撐大，
+   CSS 再用 scale(1/1.18) 反向抵銷回來。滑到卡片上時父層仍算 hover → 放大 →
+   幾何位移 → 滑鼠可能離開 → 縮回 → 又進入，來回抖動。
+   直接把設計系統自己的 --dot-hover-scale 設成 1（改它的變數，不覆寫它的規則），
+   放大與反向抵銷會一起歸零，不會失衡。 */
+.ds-milestone.is-active,
+.ds-milestone:has(.ds-milestone-card.is-pinned) {
+  --dot-hover-scale: 1;
+}
+
 .ds-milestone.is-locked,
 .ds-milestone:disabled {
   cursor: not-allowed;
@@ -217,6 +228,14 @@ body {
   display: flex;
   justify-content: flex-end;
   padding: 0 var(--space-5) var(--space-5);
+}
+
+/* 清單文字降一級。glitch 變體用 var(--fs-base) 配等寬字與字距，在卡片這種
+   窄欄位裡顯得過大。改的是 token 的值、不是元件的規則——契約檔要的就是這個方向
+   （調配色也只動上層 token，不動元件）。這個 scope 內用到 --fs-base 的只有
+   .ds-check-text。 */
+.current-task-card .ds-checklist {
+  --fs-base: var(--fs-sm);
 }
 
 .current-task-card .ds-checklist {

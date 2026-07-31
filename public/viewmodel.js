@@ -190,12 +190,21 @@ export function envRowModel(check, installed = false) {
   };
 }
 
+// 一張合併卡有兩個檢查（CLI + 登入），結果要一項一行。
+// 原本用「；」串成一段，兩件事黏在一起、換行處還會斷在奇怪的地方。
+export function cardResultItems(card, resultTexts = new Map()) {
+  return (card.checks ?? (card.check == null ? [] : [card.check])).map(
+    (check) => ({
+      id: check.id,
+      label: check.label,
+      value: resultTexts.get(check.id) ?? check.detail,
+    }),
+  );
+}
+
 export function cardResultText(card, resultTexts = new Map()) {
-  return (card.checks ?? (card.check == null ? [] : [card.check]))
-    .map(
-      (check) =>
-        resultTexts.get(check.id) ?? `${check.label}：${check.detail}`,
-    )
+  return cardResultItems(card, resultTexts)
+    .map(({ label, value }) => `${label}：${value}`)
     .join("；");
 }
 
@@ -230,6 +239,7 @@ export function envCardRowModel(card, installedSteps = new Set()) {
 
   return {
     detail: cardResultText(card),
+    results: cardResultItems(card),
     buttons,
   };
 }

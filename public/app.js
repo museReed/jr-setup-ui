@@ -18,6 +18,7 @@ import {
   agentNameFor,
   behaviorFallbackState,
   cardIsComplete,
+  cardResultItems,
   cardResultText,
   cardStatusModel,
   checklistGroups,
@@ -241,7 +242,11 @@ function renderWizard() {
           })
         : null;
   if (row !== null) {
-    row = { ...row, detail: cardResultText(card, state.resultTexts) };
+    row = {
+      ...row,
+      detail: cardResultText(card, state.resultTexts),
+      results: cardResultItems(card, state.resultTexts),
+    };
   }
   const activeCheckId =
     state.activeRunStep ??

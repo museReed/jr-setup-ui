@@ -233,30 +233,17 @@ function checklistElement(groups, onManualToggle) {
     "is-complete",
     items.length > 0 && checked === items.length,
   );
+  // 不放標題列與分組標題——兩組靠顏色分（青=系統驗的、橘=你自己勾的），
+  // 標題只是把同一件事再講一次，還把卡片撐高。只留右上角的計數。
   const head = document.createElement("header");
   head.className = "ds-checklist-head";
-  const title = document.createElement("strong");
-  title.className = "ds-checklist-title";
-  title.textContent = "驗證後自查";
   const count = document.createElement("span");
   count.className = "ds-checklist-count";
   count.textContent = `${checked} / ${items.length}`;
-  head.append(title, count);
+  head.append(count);
   checklist.append(head);
 
-  for (const [heading, group] of [
-    ["系統驗過的", groups.system],
-    ["請你自己確認", groups.manual],
-  ]) {
-    if (group.length === 0) continue;
-    const groupTitle = document.createElement("div");
-    groupTitle.className = "ds-checklist-head";
-    const groupName = document.createElement("span");
-    groupName.className = "ds-checklist-title";
-    groupName.textContent = heading;
-    groupTitle.append(groupName);
-    checklist.append(groupTitle);
-
+  for (const group of [groups.system, groups.manual]) {
     for (const item of group) {
       const label = document.createElement("label");
       label.className = "ds-check";
@@ -372,10 +359,23 @@ function renderCard(model) {
   } else {
     const body = document.createElement("div");
     body.className = "current-task-body";
-    const result = document.createElement("p");
-    result.className = "execution-result";
-    result.textContent = model.row.detail;
-    body.append(result);
+    // 結果一項一行，用設計系統的重點清單（ds-kp-label + ds-kp）。
+    // 原本把幾個檢查用「；」串成一段，兩件事黏在一起、還會在奇怪的位置換行。
+    const resultLabel = document.createElement("p");
+    resultLabel.className = "ds-kp-label";
+    resultLabel.textContent = "結果";
+    const results = document.createElement("ul");
+    results.className = "ds-kp execution-result";
+
+    for (const item of model.row.results ?? []) {
+      const li = document.createElement("li");
+      const name = document.createElement("strong");
+      name.textContent = item.label;
+      li.append(name, document.createTextNode(`：${item.value}`));
+      results.append(li);
+    }
+
+    body.append(resultLabel, results);
     if (model.showChecklist) {
       body.append(checklistElement(model.checklist, model.onManualToggle));
     }

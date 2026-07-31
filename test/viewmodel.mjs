@@ -9,6 +9,7 @@ import {
   appendTermLine,
   behaviorFallbackState,
   cardIsComplete,
+  cardResultItems,
   cardResultText,
   cardStatusModel,
   checklistGroups,
@@ -364,6 +365,19 @@ try {
 
   assert.notEqual(mergedCard.detail, cardResultText(mergedCard));
   ok("卡片 description 與執行結果使用不同文字");
+
+  // 合併卡有兩個檢查，結果要一項一行——串成一段的話兩件事會黏在一起。
+  const resultItems = cardResultItems(mergedCard);
+  assert.equal(resultItems.length, 2);
+  assert.deepEqual(
+    resultItems.map(({ label, value }) => ({ label, value })),
+    mergedCard.checks.map((check) => ({
+      label: check.label,
+      value: check.detail,
+    })),
+  );
+  assert(resultItems.every(({ value }) => !String(value).includes("；")));
+  ok("執行結果一個檢查一項，不用分號串成一段");
 
   assert.deepEqual(
     [
