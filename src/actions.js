@@ -286,7 +286,10 @@ Object.assign(actions, {
     kind: "fixed",
     label: "登入 Codex",
     cmd: "codex",
-    args: ["login"],
+    // --device-auth：印出網址與一次性代碼，不要自己開瀏覽器。
+    // 不帶這個旗標的話 codex 會起本機 callback 並直接彈出網頁，學生根本來不及看到
+    // 卡片上的「開啟 OpenAI 授權頁」按鈕，也拿不到可以複製的代碼（VM 實測）。
+    args: ["login", "--device-auth"],
     acceptsInput: true,
     description: "登入 Codex。",
   },

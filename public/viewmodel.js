@@ -136,13 +136,26 @@ export function agentNameFor(action) {
 }
 
 // 登入指令把網址和代碼混在一般輸出裡，要挑出來變成可點的連結與可複製的代碼。
+//
+// 兩個踩過的坑（2026-07-31 用 codex login --device-auth 的真實輸出驗出來）：
+//
+// 1. CLI 會上色，色碼會黏在網址尾巴——撈到的是
+//    `https://auth.openai.com/codex/device\x1b[0m`，href 直接是壞的。
+//    所以先把 ANSI 逃逸序列清掉再比對。
+//
+// 2. 代碼長度不能寫死。原本寫 [A-Z0-9]{4}-[A-Z0-9]{4}，但 OpenAI 給的是
+//    `1REC-UZZL1`（4 碼-5 碼）。更糟的是後面的 \b 遇到第 5 個字元不算邊界，
+//    整條匹配失敗——不是撈到半截，是**完全撈不到**，畫面只剩網址按鈕、
+//    沒有代碼可複製。
 export function extractLoginHints(text) {
   if (typeof text !== "string") {
     return { url: null, code: null };
   }
 
-  const urlMatch = text.match(/https:\/\/\S+/);
-  const codeMatch = text.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/i);
+  const plain = text.replace(/\u001b\[[0-9;]*m/g, "");
+  const urlMatch = plain.match(/https:\/\/\S+/);
+  // 不加 /i：裝置代碼一律大寫，加了會撈到說明文字裡的 "one-time" 這種英文連字詞。
+  const codeMatch = plain.match(/\b[A-Z0-9]{3,6}-[A-Z0-9]{3,6}\b/);
 
   return {
     url: urlMatch === null ? null : urlMatch[0].replace(/[.,)]+$/, ""),

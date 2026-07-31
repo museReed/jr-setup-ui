@@ -135,7 +135,9 @@ ok("目前平台只有受支援的安裝器會進入 fixed action 白名單");
 
 const expectedLoginActions = {
   "login-claude": { cmd: "claude", args: ["auth", "login"] },
-  "login-codex": { cmd: "codex", args: ["login"] },
+  // --device-auth 不能拿掉：少了它 codex 會起本機 callback 直接彈瀏覽器，
+  // 卡片上的「開啟 OpenAI 授權頁」按鈕與代碼複製區就沒有意義了（VM 實測）。
+  "login-codex": { cmd: "codex", args: ["login", "--device-auth"] },
   "login-gh": {
     cmd: "gh",
     args: [
