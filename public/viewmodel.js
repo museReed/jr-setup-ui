@@ -450,15 +450,21 @@ export function milestoneModels(cards, completedCardIds, currentIndex) {
   return cards.map((card, index) => {
     const completed = done[index];
     const unlocked = completed || done.slice(0, index).every(Boolean);
+    const percent = Math.round(((index + 1) / cards.length) * 100);
 
     return {
       ...card,
       index,
-      percent: Math.round(((index + 1) / cards.length) * 100),
+      percent,
       completed,
       unlocked,
       reached: completed,
       current: index === currentIndex,
+      // 卡片往哪邊展開看這一站落在條上的哪半邊，不是它排第幾顆。
+      // 用「第幾顆」的話，只有一站時那顆（percent 100、貼最右）會被判成往右開，
+      // 直接溢出畫面。
+      edgeClass:
+        percent > 50 ? "ds-milestone--edge-end" : "ds-milestone--edge-start",
     };
   });
 }
@@ -472,7 +478,20 @@ export function sectionStatus(cards, completedCardIds, currentIndex) {
 }
 
 export function appendTermLine(lines, next) {
-  return lines.at(-1)?.text === next.text ? lines : [...lines, next];
+  if (lines.at(-1)?.text === next.text) {
+    return lines;
+  }
+
+  // 同一則失敗訊息只講一次。輪詢重試時畫面會「正在檢查／失敗」交替，兩者都不連續，
+  // 只擋連續重複的話同一句 Failed to fetch 會洗滿整個終端（實測連出六次）。
+  // 進度行照舊只擋連續重複——它重複出現是有意義的，錯誤重複則沒有新資訊。
+  const isFailure = next.className?.includes("ds-term-line--err") === true;
+
+  if (isFailure && lines.some((line) => line.text === next.text)) {
+    return lines;
+  }
+
+  return [...lines, next];
 }
 
 export function checklistGroups({

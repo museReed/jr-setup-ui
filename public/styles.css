@@ -69,9 +69,12 @@ body {
   font-size: var(--fs-xs);
   max-height: var(--space-5);
   overflow: hidden;
-  transition:
-    max-height 0.2s ease,
-    opacity 0.2s ease;
+}
+
+/* 高度 0 的哨兵：捲出畫面就代表該收合。放在 tab 前面，位置不受 tab 高度影響，
+   所以不會像 scrollY 門檻那樣自己餵自己造成閃爍。 */
+.tabs-sentinel {
+  height: 0;
 }
 
 .section-tabs.is-condensed {
@@ -132,8 +135,19 @@ body {
   font-size: var(--fs-xs);
 }
 
+/* 進度條跟著 tab 一起黏住。不黏的話小鴨會鑽到 tab 底下，被不透明的 tab 背景
+   切掉頭（實測捲動後被蓋住 15–23px）。黏在 tab 下緣就永遠露在外面。 */
 .milestone-wrap {
+  position: sticky;
+  top: 64px;
+  z-index: 15;
   padding: 38px 24px 52px;
+  background: var(--color-bg);
+}
+
+.section-tabs.is-condensed ~ .milestone-wrap,
+.wizard-layout:has(.section-tabs.is-condensed) .milestone-wrap {
+  top: 46px;
 }
 
 .ds-milestone:has(.ds-milestone-card.is-pinned),

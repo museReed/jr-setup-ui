@@ -234,6 +234,22 @@ try {
   );
   ok("走過但沒通過的圓點不算走過");
 
+  // 卡片往哪邊展開要看落在條上的哪半邊。用「第幾顆」判的話，只有一站時那顆
+  // （percent 100、貼最右）會被判成往右開，直接溢出畫面。
+  assert.deepEqual(
+    milestoneModels(cards, new Set(), 0).map(({ edgeClass }) => edgeClass),
+    [
+      "ds-milestone--edge-start",
+      "ds-milestone--edge-end",
+      "ds-milestone--edge-end",
+    ],
+  );
+  assert.equal(
+    milestoneModels([cards[0]], new Set(), 0)[0].edgeClass,
+    "ds-milestone--edge-end",
+  );
+  ok("里程碑卡片往內側展開，只有一站時也不會往右溢出");
+
   assert.equal(sectionStatus(cards, allIds, 2), "這一段已完成。");
   assert.equal(sectionStatus(cards, allIds, 0), "還有 2 張要做。");
   assert.equal(sectionStatus(cards, new Set(["one"]), 1), "還有 2 張要做。");
@@ -254,6 +270,23 @@ try {
     [checkingLine, otherLine, checkingLine],
   );
   ok("終端白話只略過連續重複，中間有別行時仍會追加");
+
+  // 輪詢重試時「正在檢查／失敗」交替出現，兩者都不連續，只擋連續重複會讓同一句
+  // 錯誤洗滿終端（實測連出六次）。同一則失敗訊息全域只留一則。
+  const failLine = {
+    className: "ds-term-line ds-term-line--err",
+    text: "環境檢查失敗：Failed to fetch",
+  };
+  const spam = [checkingLine, failLine, checkingLine].reduce(
+    appendTermLine,
+    [],
+  );
+  assert.deepEqual(appendTermLine(spam, failLine), spam);
+  assert.equal(
+    spam.filter((line) => line.text === failLine.text).length,
+    1,
+  );
+  ok("同一則失敗訊息只記一次，不會被輪詢洗版");
 
   const groupedChecklist = checklistGroups({
     check: {
