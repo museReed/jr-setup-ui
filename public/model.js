@@ -45,6 +45,93 @@ export const SECTION_GATES = {
   ],
 };
 
+export const GUIDANCE = {
+  hook: {
+    symptom: "跑 `echo a && echo b` 時，兩個指令都照常執行了",
+    expected: "畫面出現「一次只跑一個指令」，第二個指令不會執行",
+    checks: [
+      "關掉舊的終端分頁，再開一個新分頁",
+      "確認 Claude Code 是從新分頁裡啟動",
+    ],
+    diagnose: null,
+  },
+  "claude-namer": {
+    symptom: "送出第一句話後，終端分頁標題沒有變",
+    expected: "分頁標題會變成「emoji + 中文名稱」",
+    checks: [
+      "安裝後有沒有關掉舊分頁，再開一個新分頁",
+      "命名時如果跳出執行權限提示，有沒有允許那條指令",
+    ],
+    diagnose: "diagnose-naming-block",
+  },
+  "codex-namer": {
+    symptom: "送出第一句話後，終端分頁標題沒有變",
+    expected: "分頁標題會變成「emoji + 中文名稱」",
+    checks: [
+      "安裝後有沒有關掉舊分頁，再開一個新分頁",
+      "第一次使用 Codex 時，有沒有接受 hook 信任提示",
+    ],
+    diagnose: null,
+  },
+  "tab-sync": {
+    symptom: "名字已經寫進同步檔，但終端分頁標題沒有動",
+    expected: "同步檔一出現新名字，分頁標題就跟著更新",
+    checks: [
+      "shell profile 裡有沒有載入 claude / codex wrapper",
+      "安裝 wrapper 後有沒有關掉舊分頁，再開一個新分頁",
+    ],
+    diagnose: "diagnose-title-path",
+  },
+  "skill-claude-handoff": {
+    symptom: "交接檔已經寫出來，分頁標題卻沒有變成 📦",
+    expected: "交接檔完成後，分頁標題會改成「📦 + 交接主題」",
+    checks: [
+      "有沒有在新終端分頁啟動 Claude Code",
+      "執行改名指令時如果跳出權限提示，有沒有允許",
+    ],
+    diagnose: "diagnose-naming-block",
+  },
+  "skill-codex-handoff": {
+    symptom: "交接檔已經寫出來，分頁標題卻沒有變成 📦",
+    expected: "交接檔完成後，分頁標題會改成「📦 + 交接主題」",
+    checks: [
+      "有沒有在新終端分頁啟動 Codex",
+      "第一次使用 Codex 時，有沒有接受 hook 信任提示",
+    ],
+    diagnose: null,
+  },
+  "ext-frontend-design-claude": {
+    symptom: "第三方 frontend-design skill 安裝失敗",
+    expected: "重新檢查時顯示「已安裝」，可以在 Claude Code 裡使用",
+    checks: ["確認目前可以連上網路", "確認 Node.js 版本是 18 或更新版本"],
+    diagnose: null,
+  },
+  "ext-frontend-design-codex": {
+    symptom: "第三方 frontend-design skill 安裝失敗",
+    expected: "重新檢查時顯示「已安裝」，可以在 Codex 裡使用",
+    checks: ["確認目前可以連上網路", "確認 Node.js 版本是 18 或更新版本"],
+    diagnose: null,
+  },
+  "ext-skill-creator-claude": {
+    symptom: "第三方 skill-creator 安裝失敗",
+    expected: "重新檢查時顯示「已安裝」，可以在 Claude Code 裡使用",
+    checks: ["確認目前可以連上網路", "確認 Node.js 版本是 18 或更新版本"],
+    diagnose: null,
+  },
+  "ext-playwright-codex": {
+    symptom: "第三方 Playwright skill 安裝失敗",
+    expected: "重新檢查時顯示「已安裝」，可以在 Codex 裡使用",
+    checks: ["確認目前可以連上網路", "確認 Node.js 版本是 18 或更新版本"],
+    diagnose: null,
+  },
+  "ext-playwright-claude": {
+    symptom: "第三方 Playwright MCP 安裝失敗",
+    expected: "重新檢查時顯示「已註冊 MCP server：playwright」",
+    checks: ["確認目前可以連上網路", "確認 Node.js 版本是 18 或更新版本"],
+    diagnose: null,
+  },
+};
+
 export function sectionGateState(
   sectionId,
   completedGateIds = new Set(),

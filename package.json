@@ -10,6 +10,6 @@
     "jr-setup-ui": "bin/jr-setup-ui.js"
   },
   "scripts": {
-    "test": "node test/parser.mjs && node test/command.mjs && node test/viewmodel.mjs && node test/frontend-layers.mjs && node test/sections.mjs && node test/flow.mjs && node test/events.mjs && node test/progress-state.mjs && node test/config-install.mjs && node test/config-check.mjs && node test/hooks-install.mjs && node test/skills-install.mjs && node test/paths.mjs && node test/spawn-command.mjs && node test/execution-policy.mjs && node test/login-hints.mjs && node test/env-path.mjs && node test/powershell-env.mjs && node test/env.mjs && node test/installers.mjs && node test/ps1-encoding.mjs && node test/tab-sync-watcher.mjs && node test/emoji-guard.mjs && node test/verify-in-terminal.mjs && node test/smoke.mjs"
+    "test": "node test/parser.mjs && node test/command.mjs && node test/viewmodel.mjs && node test/guidance.mjs && node test/frontend-layers.mjs && node test/sections.mjs && node test/flow.mjs && node test/events.mjs && node test/progress-state.mjs && node test/config-install.mjs && node test/config-check.mjs && node test/hooks-install.mjs && node test/skills-install.mjs && node test/paths.mjs && node test/spawn-command.mjs && node test/execution-policy.mjs && node test/login-hints.mjs && node test/env-path.mjs && node test/powershell-env.mjs && node test/env.mjs && node test/installers.mjs && node test/ps1-encoding.mjs && node test/tab-sync-watcher.mjs && node test/emoji-guard.mjs && node test/verify-in-terminal.mjs && node test/smoke.mjs"
   }
 }

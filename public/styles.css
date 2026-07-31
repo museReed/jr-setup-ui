@@ -498,6 +498,69 @@ body {
   margin-right: auto;
 }
 
+.failure-guidance {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-4) 48px;
+}
+
+.failure-guidance .ds-transform {
+  font-size: var(--fs-sm);
+}
+
+.failure-guidance .ds-transform-side {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.failure-guidance .ds-transform-side strong {
+  color: var(--color-text-strong);
+}
+
+.guidance-checks {
+  overflow: hidden;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--r-lg);
+  background: var(--color-bg-elevated);
+}
+
+.guidance-checks .ds-check:first-child {
+  border-top: 0;
+}
+
+.guidance-diagnose {
+  justify-self: start;
+}
+
+.failure-explanation {
+  margin: 0;
+  border-left-color: var(--color-warn);
+  background: var(--amber-1);
+}
+
+.failure-explanation strong {
+  color: var(--amber-6);
+}
+
+.guidance-terminal {
+  margin: 0;
+}
+
+.guidance-terminal summary {
+  padding: 10px 14px;
+  background: var(--term-bg-2);
+  color: var(--term-ink);
+  cursor: pointer;
+}
+
+.guidance-terminal .ds-term-body {
+  overflow: auto;
+  max-height: 220px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .gate-callout {
   margin-top: var(--space-4);
   padding: 0;
@@ -786,6 +849,10 @@ textarea {
 
   .wizard-sidebar .ds-side-item {
     width: 176px;
+  }
+
+  .failure-guidance {
+    padding-left: 0;
   }
 }
 

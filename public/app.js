@@ -18,6 +18,7 @@ import {
   configSummary,
   envButtonState,
   extractLoginHints,
+  guidanceModel,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
@@ -48,6 +49,7 @@ const state = {
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
+  availableActions: new Set(["diagnose-naming-block"]),
 };
 
 async function rememberVerifiedStep(step) {
@@ -249,6 +251,10 @@ async function checkConfigs() {
   try {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
+    state.availableActions = new Set([
+      "diagnose-naming-block",
+      ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
+    ]);
     view.renderConfigs(
       result.checks,
       (action, button, step, extra) =>
@@ -288,6 +294,7 @@ async function checkConfigs() {
           state.verificationPrompts.delete(step);
           checkConfigs();
         },
+        availableActions: state.availableActions,
       },
     );
     view.renderConfigSummary(
@@ -349,7 +356,14 @@ function startLoginWait(action) {
   );
 }
 
-async function handleDone(action, envButton, configAction, result, options) {
+async function handleDone(
+  action,
+  envButton,
+  configAction,
+  result,
+  options,
+  runContext,
+) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -364,6 +378,36 @@ async function handleDone(action, envButton, configAction, result, options) {
   const wasEnvAction = envButton !== null;
 
   if (!outcome.succeeded) {
+    const guidance = guidanceModel({
+      step: runContext.step,
+      status: "missing",
+      failed: true,
+      availableActions: state.availableActions,
+    });
+
+    if (guidance !== null || result.explanationPending === true) {
+      view.renderFailureGuidance({
+        button: runContext.button,
+        step: runContext.step,
+        guidance,
+        rawOutput:
+          result.explanationPending === true
+            ? runContext.rawOutput.join("\n")
+            : "",
+        onActionClick: (nextAction, nextButton, step) =>
+          run(
+            nextAction,
+            undefined,
+            nextButton,
+            rowRunOptions({
+              step,
+              lang: view.elements.configLang.value,
+              tools: view.elements.configTools.value,
+            }),
+          ),
+      });
+    }
+
     renderRunLoader(
       loaderModifier({ action, options, result }),
       true,
@@ -461,6 +505,14 @@ async function run(action, promptText, button = null, options) {
   state.activeRunStep = options?.step ?? null;
   state.currentEnvAction = envButton === null ? null : action;
   state.loaderPaused = false;
+  const runContext = {
+    button,
+    step:
+      options?.step ??
+      (action.startsWith("install-") ? action.slice("install-".length) : null),
+    rawOutput: [],
+    explanation: null,
+  };
 
   if (action !== "install-config-step" && state.activeRunStep !== null) {
     state.verificationPrompts.delete(state.activeRunStep);
@@ -503,6 +555,7 @@ async function run(action, promptText, button = null, options) {
 
     events.addEventListener("line", (event) => {
       const line = JSON.parse(event.data);
+      runContext.rawOutput.push(line.text);
       const nextModifier = loaderModifier({
         action,
         options,
@@ -533,27 +586,117 @@ async function run(action, promptText, button = null, options) {
       }
     });
 
+    events.addEventListener("explain", (event) => {
+      const explanation = JSON.parse(event.data);
+      const targetButton =
+        runContext.button?.isConnected === true ? runContext.button : null;
+
+      if (explanation.kind === "start") {
+        runContext.explanation = null;
+
+        if (!state.runInProgress) {
+          view.renderLoaders({
+            modifier: LOADER_MODIFIERS.composing,
+            button: targetButton,
+            step: runContext.step,
+          });
+        }
+      } else {
+        runContext.explanation = explanation.text;
+        events.close();
+
+        if (!state.runInProgress) {
+          state.currentLoaderModifier = null;
+          state.loaderPaused = false;
+          view.hideLoaders();
+        }
+      }
+
+      view.renderFailureGuidance({
+        button: targetButton,
+        step: runContext.step,
+        guidance: guidanceModel({
+          step: runContext.step,
+          status: "missing",
+          failed: true,
+          availableActions: state.availableActions,
+        }),
+        explanation: runContext.explanation,
+        rawOutput: runContext.rawOutput.join("\n"),
+        translating: explanation.kind === "start",
+        onActionClick: (nextAction, nextButton, step) =>
+          run(
+            nextAction,
+            undefined,
+            nextButton,
+            rowRunOptions({
+              step,
+              lang: view.elements.configLang.value,
+              tools: view.elements.configTools.value,
+            }),
+          ),
+      });
+      renderControls();
+    });
+
     events.addEventListener("done", async (event) => {
       done = true;
-      events.close();
       const result = JSON.parse(event.data);
+
+      if (result.explanationPending !== true) {
+        events.close();
+      }
 
       if (action === "verify-behavior") {
         view.renderBehaviorFallback(behaviorFallbackState(result));
       }
 
-      await handleDone(action, envButton, configAction, result, options);
+      await handleDone(
+        action,
+        envButton,
+        configAction,
+        result,
+        options,
+        runContext,
+      );
     });
 
     events.onerror = () => {
+      events.close();
+
       if (!done) {
         view.addLine("串流連線中斷", "failed");
-        events.close();
         resetRun();
       }
     };
   } catch (error) {
     view.addLine(`無法執行：${error.message}`, "failed");
+    const guidance = guidanceModel({
+      step: options?.step,
+      status: "missing",
+      failed: true,
+      availableActions: state.availableActions,
+    });
+
+    if (guidance !== null) {
+      view.renderFailureGuidance({
+        button: state.activeRunButton,
+        step: options?.step,
+        guidance,
+        onActionClick: (nextAction, nextButton, step) =>
+          run(
+            nextAction,
+            undefined,
+            nextButton,
+            rowRunOptions({
+              step,
+              lang: view.elements.configLang.value,
+              tools: view.elements.configTools.value,
+            }),
+          ),
+      });
+    }
+
     resetRun();
   }
 }
