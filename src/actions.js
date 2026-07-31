@@ -29,6 +29,34 @@ const verifyInTerminalScript = moduleFile(
   "../scripts/verify-in-terminal.mjs",
   import.meta.url,
 );
+const diagnoseNamingBlockScript = moduleFile(
+  "../scripts/diagnose-naming-block.mjs",
+  import.meta.url,
+);
+const diagnoseTitlePathScript = moduleFile(
+  "../scripts/diagnose-title-path.ps1",
+  import.meta.url,
+);
+
+export function shouldExplainOutput({ action, options = null, result }) {
+  const succeeded =
+    result.signal == null &&
+    (result.exitCode === 0 || result.benign === true);
+
+  if (succeeded) {
+    return false;
+  }
+
+  if (action.startsWith("ext-")) {
+    return true;
+  }
+
+  if (action === "install-config-step") {
+    return options?.step?.startsWith("ext-") === true;
+  }
+
+  return action.startsWith("install-");
+}
 
 // 這張表是 action 白名單本體，之後真正的安裝步驟會加在這裡。
 // 網路端只會傳 key，指令內容永遠寫死在本檔。
@@ -122,9 +150,39 @@ if (process.platform === "win32") {
     args: EXECUTION_POLICY_FIX.args,
     description: "將目前使用者的 PowerShell 執行原則改為 RemoteSigned。",
   };
+  actions["diagnose-title-path"] = {
+    kind: "fixed",
+    label: "診斷終端標題",
+    cmd: "cmd.exe",
+    options: { step: ["tab-sync"] },
+    args: [
+      "/c",
+      "start",
+      "",
+      "wt.exe",
+      "powershell.exe",
+      "-NoExit",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      diagnoseTitlePathScript,
+    ],
+    description: "開啟 Windows Terminal，逐段檢查標題同步路徑。",
+  };
 }
 
 Object.assign(actions, {
+  "diagnose-naming-block": {
+    kind: "fixed",
+    label: "診斷命名白名單",
+    cmd: process.execPath,
+    options: {
+      step: ["claude-namer", "skill-claude-handoff"],
+    },
+    args: [diagnoseNamingBlockScript],
+    description: "檢查命名指令卡在白名單、hook 或 Claude Code 內建防護。",
+  },
   "install-config-step": {
     kind: "fixed",
     label: "安裝這一步",

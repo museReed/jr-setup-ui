@@ -44,6 +44,21 @@ export async function fetchConfigs({ tools, lang }) {
   return response.json();
 }
 
+export async function fetchState() {
+  const response = await fetch(withToken("/state"));
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return response.json();
+}
+
+export async function saveVerifiedStep(step) {
+  const response = await postJson("/state", { step });
+  return response.json();
+}
+
 export async function startRun(body) {
   const response = await postJson("/run", body);
   return response.json();

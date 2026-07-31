@@ -439,6 +439,7 @@ export function renderEnv(os, checks, onActionClick) {
     const row = document.createElement("div");
     row.className = "env-row";
     row.dataset.status = model.status;
+    row.dataset.envStep = check.id;
     const loaderSlot = document.createElement("span");
     loaderSlot.className = "row-loader-slot";
 
@@ -506,6 +507,105 @@ export function renderConfigChoices(toolChoices, languages) {
   });
   elements.configTools.replaceChildren(...toolOptions);
   elements.configLang.replaceChildren(...languageOptions);
+}
+
+function createGuidance(
+  guidance,
+  { explanation = null, rawOutput = "", translating = false } = {},
+  onActionClick = () => {},
+) {
+  const container = document.createElement("section");
+  container.className = "failure-guidance";
+
+  if (guidance !== null) {
+    const transform = document.createElement("div");
+    transform.className = "ds-transform";
+    const before = document.createElement("div");
+    before.className = "ds-transform-side ds-transform-side--before";
+    const beforeTitle = document.createElement("strong");
+    beforeTitle.textContent = "你現在看到的";
+    const beforeText = document.createElement("span");
+    beforeText.textContent = guidance.symptom;
+    before.append(beforeTitle, beforeText);
+    const arrow = document.createElement("div");
+    arrow.className = "ds-transform-arrow";
+    arrow.textContent = "→";
+    arrow.setAttribute("aria-hidden", "true");
+    const after = document.createElement("div");
+    after.className = "ds-transform-side ds-transform-side--after";
+    const afterTitle = document.createElement("strong");
+    afterTitle.textContent = "修好之後";
+    const afterText = document.createElement("span");
+    afterText.textContent = guidance.expected;
+    after.append(afterTitle, afterText);
+    transform.append(before, arrow, after);
+    container.append(transform);
+
+    const checklist = document.createElement("div");
+    checklist.className = "guidance-checks";
+
+    for (const check of guidance.checks) {
+      const label = document.createElement("label");
+      label.className = "ds-check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.setAttribute("aria-label", check);
+      const box = document.createElement("span");
+      box.className = "ds-check-box";
+      const text = document.createElement("span");
+      text.className = "ds-check-text";
+      text.textContent = check;
+      label.append(input, box, text);
+      checklist.append(label);
+    }
+
+    container.append(checklist);
+
+    if (guidance.diagnoseButton !== null) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "env-action guidance-diagnose";
+      button.dataset.diagnoseAction = guidance.diagnoseButton.action;
+      button.dataset.step = guidance.diagnoseButton.step;
+      button.textContent = guidance.diagnoseButton.text;
+      button.addEventListener("click", () =>
+        onActionClick(
+          guidance.diagnoseButton.action,
+          button,
+          guidance.diagnoseButton.step,
+        ),
+      );
+      container.append(button);
+    }
+  }
+
+  if (translating || explanation !== null) {
+    const callout = document.createElement("aside");
+    callout.className = "ds-callout failure-explanation";
+    const title = document.createElement("strong");
+    title.textContent = translating ? "正在翻譯第三方輸出" : "這段輸出在說";
+    const text = document.createElement("span");
+    text.textContent =
+      translating && explanation === null
+        ? "正在請你的 Claude 整理成一句話…"
+        : explanation;
+    callout.append(title, text);
+    container.append(callout);
+  }
+
+  if (rawOutput.length > 0) {
+    const terminal = document.createElement("details");
+    terminal.className = "ds-term guidance-terminal";
+    const summary = document.createElement("summary");
+    summary.textContent = "查看第三方原始輸出";
+    const body = document.createElement("pre");
+    body.className = "ds-term-body";
+    body.textContent = rawOutput;
+    terminal.append(summary, body);
+    container.append(terminal);
+  }
+
+  return container;
 }
 
 function createConfigRow(
@@ -592,6 +692,10 @@ function createConfigRow(
     row.append(prompt);
   }
 
+  if (model.guidance !== null) {
+    row.append(createGuidance(model.guidance, {}, onActionClick));
+  }
+
   return row;
 }
 
@@ -601,11 +705,14 @@ function createConfigCard(
   verifiedSteps,
   onEyeToggle,
   verificationPrompts,
+  availableActions,
   onVerifyNow,
   onVerifyLater,
 ) {
   const models = card.checks.map((check) =>
-    configRowModel(check, verifiedSteps.has(check.id)),
+    configRowModel(check, verifiedSteps.has(check.id), {
+      availableActions,
+    }),
   );
   const done = models.filter((model) => model.status === "ok").length;
   const article = document.createElement("article");
@@ -653,6 +760,7 @@ export function renderConfigs(
     onEyeToggle = () => {},
     onVerifyNow = () => {},
     onVerifyLater = () => {},
+    availableActions = null,
   } = {},
 ) {
   latestConfigChecks = checks;
@@ -666,6 +774,7 @@ export function renderConfigs(
         verifiedSteps,
         onEyeToggle,
         verificationPrompts,
+        availableActions,
         onVerifyNow,
         onVerifyLater,
       ),
@@ -684,6 +793,47 @@ export function renderConfigs(
 
   elements.configResults.setAttribute("aria-busy", "false");
   updateProgress();
+}
+
+export function renderFailureGuidance({
+  button = null,
+  step = null,
+  guidance = null,
+  explanation = null,
+  rawOutput = "",
+  translating = false,
+  onActionClick = () => {},
+}) {
+  const row =
+    button?.closest(".env-row") ??
+    [
+      ...document.querySelectorAll("[data-config-step], [data-env-step]"),
+    ].find(
+      (candidate) =>
+        candidate.dataset.configStep === step ||
+        candidate.dataset.envStep === step,
+    );
+
+  if (row === null || row === undefined) {
+    return;
+  }
+
+  row.dataset.status = "missing";
+  const icon = row.querySelector(".env-icon");
+
+  if (icon !== null) {
+    icon.textContent = "✗";
+    icon.setAttribute("aria-label", "執行失敗");
+  }
+
+  row.querySelector(".failure-guidance")?.remove();
+  row.append(
+    createGuidance(
+      guidance,
+      { explanation, rawOutput, translating },
+      onActionClick,
+    ),
+  );
 }
 
 export function renderConfigSummary(summary) {
@@ -738,7 +888,7 @@ export function renderBehaviorFallback(state) {
 export function configActionButtons() {
   return [
     ...elements.configResults.querySelectorAll(
-      "[data-install-action], [data-merge-action], [data-verify-action], [data-verify-now], [data-verify-later]",
+      "[data-install-action], [data-merge-action], [data-verify-action], [data-diagnose-action], [data-verify-now], [data-verify-later]",
     ),
   ];
 }

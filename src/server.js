@@ -4,16 +4,27 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
-import { actions, buildAgentCommand } from "./actions.js";
+import {
+  actions,
+  buildAgentCommand,
+  shouldExplainOutput,
+} from "./actions.js";
 import { spawnEnv } from "./env-path.js";
 import { isBenignExit } from "./installers.js";
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
-import { ensureWorkDir } from "./paths.js";
+import { ensureWorkDir, moduleFile } from "./paths.js";
+import { loadVerifiedSteps, markStepVerified } from "./progress-state.js";
 import { resolveLaunch } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
+const explainOutputScript = moduleFile(
+  "../scripts/explain-output.mjs",
+  import.meta.url,
+);
+const JR_EVENT_PREFIX = "@@JR ";
+const EXPLAIN_FALLBACK = "（無法翻譯，請看下方原始輸出）";
 
 // 前端拆成 View / ViewModel / Model 之後要當成靜態檔送出去。
 // 白名單寫死，不從路徑組檔名，免得變成任意讀檔。
@@ -124,6 +135,36 @@ function writeEvent(response, event, data) {
   response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+export function parseJrEventLine(line) {
+  if (!line.startsWith(JR_EVENT_PREFIX)) {
+    return null;
+  }
+
+  try {
+    const event = JSON.parse(line.slice(JR_EVENT_PREFIX.length));
+
+    return event !== null &&
+      typeof event === "object" &&
+      !Array.isArray(event) &&
+      typeof event.kind === "string"
+      ? event
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOutputLine(response, stream, line) {
+  const event = parseJrEventLine(line);
+
+  if (event !== null) {
+    writeEvent(response, "jr", event);
+    return;
+  }
+
+  writeEvent(response, "line", { stream, text: line });
+}
+
 function streamLines(readable, onLine) {
   let buffered = "";
   readable.setEncoding("utf8");
@@ -200,6 +241,49 @@ function launchWindow(command, env, runId, runs, response) {
   response.end();
 }
 
+function explainOutput(output, env) {
+  return new Promise((resolve) => {
+    const launch = resolveLaunch(process.execPath, [explainOutputScript], {
+      env,
+    });
+    let stdout = "";
+    let settled = false;
+    let child;
+    const finish = (text) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(text);
+    };
+
+    try {
+      child = spawn(launch.cmd, launch.args, {
+        shell: false,
+        stdio: ["pipe", "pipe", "ignore"],
+        env,
+        ...(launch.spawnOptions ?? {}),
+      });
+    } catch {
+      finish(EXPLAIN_FALLBACK);
+      return;
+    }
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.once("error", () => finish(EXPLAIN_FALLBACK));
+    child.once("close", (code) => {
+      const text = stdout.replace(/\s+/g, " ").trim();
+      finish(code === 0 && text.length > 0 ? text : EXPLAIN_FALLBACK);
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(output);
+  });
+}
+
 async function runAction(
   run,
   runId,
@@ -273,10 +357,13 @@ async function runAction(
   }
 
   run.child = child;
+  const rawOutput = [];
 
   const flushStdout = streamLines(child.stdout, (line) => {
+    rawOutput.push(line);
+
     if (action.kind === "fixed") {
-      writeEvent(response, "line", { stream: "stdout", text: line });
+      writeOutputLine(response, "stdout", line);
       return;
     }
 
@@ -287,10 +374,11 @@ async function runAction(
     }
   });
   const flushStderr = streamLines(child.stderr, (line) => {
-    writeEvent(response, "line", { stream: "stderr", text: line });
+    rawOutput.push(line);
+    writeOutputLine(response, "stderr", line);
   });
 
-  const finish = (exitCode, signal) => {
+  const finish = async (exitCode, signal) => {
     if (run.finished) {
       return;
     }
@@ -302,12 +390,29 @@ async function runAction(
     }
     flushStdout();
     flushStderr();
-    runs.delete(runId);
-    writeEvent(response, "done", {
+    const result = {
       exitCode,
       signal,
       benign: isBenignExit(command.cmd, exitCode),
+    };
+    const explanationPending = shouldExplainOutput({
+      action: run.actionName,
+      options: run.options,
+      result,
     });
+
+    runs.delete(runId);
+    writeEvent(response, "done", {
+      ...result,
+      explanationPending,
+    });
+
+    if (explanationPending) {
+      writeEvent(response, "explain", { kind: "start" });
+      const text = await explainOutput(rawOutput.join("\n"), env);
+      writeEvent(response, "explain", { kind: "result", text });
+    }
+
     response.end();
   };
 
@@ -316,6 +421,7 @@ async function runAction(
       error.code === "ENOENT"
         ? `找不到 ${command.cmd} 指令，請先安裝並確認它在 PATH 裡`
         : error.message;
+    rawOutput.push(text);
     writeEvent(response, "agent", { kind: "error", text });
     finish(null, null);
   });
@@ -383,7 +489,45 @@ export async function startServer({
       }
 
       response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, await runConfigCheck({ tools, lang }));
+      sendJson(response, 200, {
+        ...(await runConfigCheck({ tools, lang })),
+        platform: process.platform,
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/state") {
+      response.setHeader("Cache-Control", "no-store");
+      sendJson(response, 200, { verified: await loadVerifiedSteps() });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/state") {
+      let body;
+
+      try {
+        body = await readJson(request);
+      } catch {
+        sendText(response, 400, "JSON 格式不正確");
+        return;
+      }
+
+      const step =
+        body !== null && typeof body === "object" ? body.step : undefined;
+
+      if (typeof step !== "string") {
+        sendText(response, 400, "step 必須是字串");
+        return;
+      }
+
+      try {
+        await markStepVerified(step);
+      } catch (error) {
+        sendText(response, 400, error.message);
+        return;
+      }
+
+      sendJson(response, 200, { step, verified: true });
       return;
     }
 
@@ -453,6 +597,7 @@ export async function startServer({
       const runId = randomBytes(16).toString("hex");
       runs.set(runId, {
         action,
+        actionName,
         options,
         child: null,
         finished: false,

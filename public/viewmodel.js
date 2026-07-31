@@ -1,6 +1,7 @@
 // ViewModel：畫面「該長什麼樣」的所有判斷都在這裡。
 // 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
 // View 只負責把這裡算出來的結果畫出去。
+import { GUIDANCE } from "./model.js";
 
 export const LOGIN_CHECK_IDS = {
   "login-claude": "claude-auth",
@@ -26,6 +27,12 @@ export const LOADER_MODIFIERS = {
 const BEHAVIOR_COMPOSING_LINE = "正在請它回答一題標準問題";
 const BEHAVIOR_SOLVING_LINE = "正在請它對照規則判定自己的回答";
 const TERMINAL_LISTENING_LINE = "已開啟一個新的終端視窗";
+const STAGE_MODIFIERS = {
+  asking: LOADER_MODIFIERS.composing,
+  judging: LOADER_MODIFIERS.solving,
+  waiting: LOADER_MODIFIERS.listening,
+  shaping: LOADER_MODIFIERS.shaping,
+};
 
 // 這五條要跟 scripts/verify-behavior.mjs 裡 AI 判定用的規則一字對得上，
 // 否則學生照清單自己看，會跟按鈕跑出來的結果不一致。
@@ -150,7 +157,42 @@ export function envRowModel(check) {
 // 結構齊全但行為還沒驗過的列不給綠燈：綠燈就沒有安裝按鈕，學生連重跑的機會都
 // 沒有。實測踩過四次「裝好了、綠燈、就是不生效」，詳見
 // docs/wizard-verification-design.md。
-export function configRowModel(check, verified = false) {
+export function guidanceModel({
+  step,
+  status,
+  failed = false,
+  availableActions = null,
+}) {
+  const guidance = GUIDANCE[step];
+
+  if (
+    guidance === undefined ||
+    (!failed && status !== "missing" && status !== "warn")
+  ) {
+    return null;
+  }
+
+  const diagnoseAvailable =
+    guidance.diagnose !== null &&
+    (availableActions === null || availableActions.has(guidance.diagnose));
+
+  return {
+    ...guidance,
+    diagnoseButton: diagnoseAvailable
+      ? {
+          action: guidance.diagnose,
+          text: "一鍵診斷",
+          step,
+        }
+      : null,
+  };
+}
+
+export function configRowModel(
+  check,
+  verified = false,
+  { failed = false, availableActions = null } = {},
+) {
   const pending =
     check.status === "ok" &&
     !verified &&
@@ -209,6 +251,12 @@ export function configRowModel(check, verified = false) {
     // 只有真終端看得到的那一格：程式驗不到，讓學生看完回來勾。
     eyeCheck: pending && check.eyeCheck != null ? check.eyeCheck : null,
     verified,
+    guidance: guidanceModel({
+      step: check.id,
+      status,
+      failed,
+      availableActions,
+    }),
   };
 }
 
@@ -285,6 +333,7 @@ export function loaderModifier({
   action = "",
   options = null,
   output = "",
+  jrEvent = null,
   result = null,
 } = {}) {
   if (
@@ -296,6 +345,10 @@ export function loaderModifier({
 
   if (checking) {
     return LOADER_MODIFIERS.searching;
+  }
+
+  if (jrEvent?.kind === "stage") {
+    return STAGE_MODIFIERS[jrEvent.stage] ?? null;
   }
 
   if (action === "verify-in-terminal" && options?.case === "demo") {

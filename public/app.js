@@ -18,6 +18,7 @@ import {
   configSummary,
   envButtonState,
   extractLoginHints,
+  guidanceModel,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
@@ -42,14 +43,33 @@ const state = {
   envCheckInProgress: false,
   configCheckInProgress: false,
   loginWait: null,
-  // 這一頁開著的期間，哪幾列已經驗過行為了。重新整理就歸零——那是刻意的：
-  // 驗證證明的是「那個當下生效」，換一次環境就該重驗。
+  // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
   verificationPrompts: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
+  availableActions: new Set(["diagnose-naming-block"]),
 };
+
+async function rememberVerifiedStep(step) {
+  state.verifiedSteps.add(step);
+
+  try {
+    await api.saveVerifiedStep(step);
+  } catch (error) {
+    view.addLine(`無法保存驗證進度：${error.message}`, "failed");
+  }
+}
+
+async function loadVerifiedSteps() {
+  try {
+    const result = await api.fetchState();
+    state.verifiedSteps = new Set(result.verified);
+  } catch {
+    state.verifiedSteps = new Set();
+  }
+}
 
 function renderCheckingLoader() {
   if (state.runInProgress) {
@@ -231,6 +251,10 @@ async function checkConfigs() {
   try {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
+    state.availableActions = new Set([
+      "diagnose-naming-block",
+      ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
+    ]);
     view.renderConfigs(
       result.checks,
       (action, button, step, extra) =>
@@ -243,9 +267,9 @@ async function checkConfigs() {
       {
         verifiedSteps: state.verifiedSteps,
         verificationPrompts: state.verificationPrompts,
-        onEyeToggle: (step, checked) => {
+        onEyeToggle: async (step, checked) => {
           if (checked) {
-            state.verifiedSteps.add(step);
+            await rememberVerifiedStep(step);
           } else {
             state.verifiedSteps.delete(step);
           }
@@ -270,6 +294,7 @@ async function checkConfigs() {
           state.verificationPrompts.delete(step);
           checkConfigs();
         },
+        availableActions: state.availableActions,
       },
     );
     view.renderConfigSummary(
@@ -331,7 +356,14 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, configAction, result, options) {
+async function handleDone(
+  action,
+  envButton,
+  configAction,
+  result,
+  options,
+  runContext,
+) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -346,6 +378,36 @@ function handleDone(action, envButton, configAction, result, options) {
   const wasEnvAction = envButton !== null;
 
   if (!outcome.succeeded) {
+    const guidance = guidanceModel({
+      step: runContext.step,
+      status: "missing",
+      failed: true,
+      availableActions: state.availableActions,
+    });
+
+    if (guidance !== null || result.explanationPending === true) {
+      view.renderFailureGuidance({
+        button: runContext.button,
+        step: runContext.step,
+        guidance,
+        rawOutput:
+          result.explanationPending === true
+            ? runContext.rawOutput.join("\n")
+            : "",
+        onActionClick: (nextAction, nextButton, step) =>
+          run(
+            nextAction,
+            undefined,
+            nextButton,
+            rowRunOptions({
+              step,
+              lang: view.elements.configLang.value,
+              tools: view.elements.configTools.value,
+            }),
+          ),
+      });
+    }
+
     renderRunLoader(
       loaderModifier({ action, options, result }),
       true,
@@ -400,7 +462,7 @@ function handleDone(action, envButton, configAction, result, options) {
     verifiedStep !== undefined &&
     verifiedCheck?.eyeCheck == null
   ) {
-    state.verifiedSteps.add(verifiedStep);
+    await rememberVerifiedStep(verifiedStep);
     checkConfigs();
     return;
   }
@@ -443,6 +505,14 @@ async function run(action, promptText, button = null, options) {
   state.activeRunStep = options?.step ?? null;
   state.currentEnvAction = envButton === null ? null : action;
   state.loaderPaused = false;
+  const runContext = {
+    button,
+    step:
+      options?.step ??
+      (action.startsWith("install-") ? action.slice("install-".length) : null),
+    rawOutput: [],
+    explanation: null,
+  };
 
   if (action !== "install-config-step" && state.activeRunStep !== null) {
     state.verificationPrompts.delete(state.activeRunStep);
@@ -485,6 +555,7 @@ async function run(action, promptText, button = null, options) {
 
     events.addEventListener("line", (event) => {
       const line = JSON.parse(event.data);
+      runContext.rawOutput.push(line.text);
       const nextModifier = loaderModifier({
         action,
         options,
@@ -506,27 +577,126 @@ async function run(action, promptText, button = null, options) {
       view.addAgentEvent(JSON.parse(event.data), state.agentName);
     });
 
-    events.addEventListener("done", (event) => {
+    events.addEventListener("jr", (event) => {
+      const jrEvent = JSON.parse(event.data);
+      const nextModifier = loaderModifier({ action, options, jrEvent });
+
+      if (nextModifier !== null) {
+        renderRunLoader(nextModifier);
+      }
+    });
+
+    events.addEventListener("explain", (event) => {
+      const explanation = JSON.parse(event.data);
+      const targetButton =
+        runContext.button?.isConnected === true ? runContext.button : null;
+
+      if (explanation.kind === "start") {
+        runContext.explanation = null;
+
+        if (!state.runInProgress) {
+          view.renderLoaders({
+            modifier: LOADER_MODIFIERS.composing,
+            button: targetButton,
+            step: runContext.step,
+          });
+        }
+      } else {
+        runContext.explanation = explanation.text;
+        events.close();
+
+        if (!state.runInProgress) {
+          state.currentLoaderModifier = null;
+          state.loaderPaused = false;
+          view.hideLoaders();
+        }
+      }
+
+      view.renderFailureGuidance({
+        button: targetButton,
+        step: runContext.step,
+        guidance: guidanceModel({
+          step: runContext.step,
+          status: "missing",
+          failed: true,
+          availableActions: state.availableActions,
+        }),
+        explanation: runContext.explanation,
+        rawOutput: runContext.rawOutput.join("\n"),
+        translating: explanation.kind === "start",
+        onActionClick: (nextAction, nextButton, step) =>
+          run(
+            nextAction,
+            undefined,
+            nextButton,
+            rowRunOptions({
+              step,
+              lang: view.elements.configLang.value,
+              tools: view.elements.configTools.value,
+            }),
+          ),
+      });
+      renderControls();
+    });
+
+    events.addEventListener("done", async (event) => {
       done = true;
-      events.close();
       const result = JSON.parse(event.data);
+
+      if (result.explanationPending !== true) {
+        events.close();
+      }
 
       if (action === "verify-behavior") {
         view.renderBehaviorFallback(behaviorFallbackState(result));
       }
 
-      handleDone(action, envButton, configAction, result, options);
+      await handleDone(
+        action,
+        envButton,
+        configAction,
+        result,
+        options,
+        runContext,
+      );
     });
 
     events.onerror = () => {
+      events.close();
+
       if (!done) {
         view.addLine("串流連線中斷", "failed");
-        events.close();
         resetRun();
       }
     };
   } catch (error) {
     view.addLine(`無法執行：${error.message}`, "failed");
+    const guidance = guidanceModel({
+      step: options?.step,
+      status: "missing",
+      failed: true,
+      availableActions: state.availableActions,
+    });
+
+    if (guidance !== null) {
+      view.renderFailureGuidance({
+        button: state.activeRunButton,
+        step: options?.step,
+        guidance,
+        onActionClick: (nextAction, nextButton, step) =>
+          run(
+            nextAction,
+            undefined,
+            nextButton,
+            rowRunOptions({
+              step,
+              lang: view.elements.configLang.value,
+              tools: view.elements.configTools.value,
+            }),
+          ),
+      });
+    }
+
     resetRun();
   }
 }
@@ -628,5 +798,11 @@ view.onGateToggle((gateId, checked) => {
   view.hideSectionLockMessage();
 });
 renderNavigation();
-checkEnvironment();
-checkConfigs();
+
+async function initialize() {
+  await loadVerifiedSteps();
+  checkEnvironment();
+  checkConfigs();
+}
+
+initialize();
