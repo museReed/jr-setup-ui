@@ -513,6 +513,7 @@ export function checklistGroups({
   verificationFailed = false,
   manualItems = [],
   checkedManualIds = new Set(),
+  resultTexts = new Map(),
 }) {
   const system = [];
 
@@ -520,6 +521,9 @@ export function checklistGroups({
     system.push({
       id: `system-${candidate.id}`,
       text: candidate.label,
+      // 執行結果就掛在這一項底下，不另外開一塊「結果」——同一個檢查的名稱與結果
+      // 分兩個地方講，讀的人要自己配對。
+      detail: resultTexts.get(candidate.id) ?? candidate.detail ?? "",
       checked:
         verifiedCheckIds === null
           ? verified

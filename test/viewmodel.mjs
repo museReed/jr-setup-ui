@@ -379,6 +379,21 @@ try {
   assert(resultItems.every(({ value }) => !String(value).includes("；")));
   ok("執行結果一個檢查一項，不用分號串成一段");
 
+  // 結果掛在自查清單每一項底下，不另外開一塊——名稱與結果分兩處講，讀的人要自己配對。
+  const withResults = checklistGroups({
+    checks: mergedCard.checks,
+    verifiedCheckIds: new Set(),
+    resultTexts: new Map([["claude", "2.1.220 (Claude Code)"]]),
+  });
+  assert.deepEqual(
+    withResults.system.map(({ text, detail }) => ({ text, detail })),
+    [
+      { text: "Claude Code CLI", detail: "2.1.220 (Claude Code)" },
+      { text: "Claude Code 登入狀態", detail: "未登入" },
+    ],
+  );
+  ok("自查清單每一項底下就是那個檢查的執行結果");
+
   assert.deepEqual(
     [
       cardStatusModel(),

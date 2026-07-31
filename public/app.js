@@ -181,6 +181,7 @@ function renderWizard() {
     verificationFailed: state.failedVerificationSteps.has(card.checkId),
     manualItems,
     checkedManualIds: state.manualCheckedIds,
+    resultTexts: state.resultTexts,
   });
   const installChecks = cardChecks.filter(
     (check) => !check.id.endsWith("-auth"),

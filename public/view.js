@@ -359,23 +359,8 @@ function renderCard(model) {
   } else {
     const body = document.createElement("div");
     body.className = "current-task-body";
-    // 結果一項一行，用設計系統的重點清單（ds-kp-label + ds-kp）。
-    // 原本把幾個檢查用「；」串成一段，兩件事黏在一起、還會在奇怪的位置換行。
-    const resultLabel = document.createElement("p");
-    resultLabel.className = "ds-kp-label";
-    resultLabel.textContent = "結果";
-    const results = document.createElement("ul");
-    results.className = "ds-kp execution-result";
-
-    for (const item of model.row.results ?? []) {
-      const li = document.createElement("li");
-      const name = document.createElement("strong");
-      name.textContent = item.label;
-      li.append(name, document.createTextNode(`：${item.value}`));
-      results.append(li);
-    }
-
-    body.append(resultLabel, results);
+    // 執行結果不另外開一塊——它掛在自查清單每一項底下（見 checklistGroups），
+    // 同一個檢查的名稱與結果放在一起，讀的人不用自己配對。
     if (model.showChecklist) {
       body.append(checklistElement(model.checklist, model.onManualToggle));
     }
