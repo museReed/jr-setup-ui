@@ -1,6 +1,7 @@
 // View：只負責把 ViewModel 算好的東西畫到畫面上，不做任何判斷。
 import { groupChecks } from "./model.js";
 import {
+  LOADER_MODIFIERS,
   configRowModel,
   envLogoFor,
   envRowModel,
@@ -43,6 +44,12 @@ const elements = {
   progressFill: document.querySelector("#progress-fill"),
   progressDuck: document.querySelector("#progress-duck"),
   progressSummary: document.querySelector("#progress-summary"),
+  progressLoader: document.querySelector("#progress-loader"),
+  completionMessage: document.querySelector("#completion-message"),
+  rowLoaderPool: document.querySelector("#row-loader-pool"),
+  sectionLockMessage: document.querySelector("#section-lock-message"),
+  gateInputs: [...document.querySelectorAll("[data-gate-id]")],
+  codexGate: document.querySelector("[data-codex-gate]"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
@@ -55,8 +62,9 @@ let activeText = null;
 let latestEnvChecks = null;
 let latestConfigChecks = null;
 let latestVerifiedSteps = new Set();
+let completionShown = false;
 
-function showSection(sectionId) {
+export function showSection(sectionId) {
   for (const button of elements.sectionButtons) {
     const current = button.dataset.sectionTarget === sectionId;
     button.classList.toggle("current", current);
@@ -75,10 +83,211 @@ function showSection(sectionId) {
   elements.configToolbar.hidden = sectionId === "env";
 }
 
-for (const button of elements.sectionButtons) {
-  button.addEventListener("click", () =>
-    showSection(button.dataset.sectionTarget),
+export function onSectionSelect(handler) {
+  for (const button of elements.sectionButtons) {
+    button.addEventListener("click", () =>
+      handler(button.dataset.sectionTarget),
+    );
+  }
+}
+
+export function onGateToggle(handler) {
+  for (const input of elements.gateInputs) {
+    input.addEventListener("change", () =>
+      handler(input.dataset.gateId, input.checked),
+    );
+  }
+}
+
+export function renderSectionLocks(lockStates) {
+  for (const button of elements.sectionButtons) {
+    const locked = lockStates[button.dataset.sectionTarget]?.locked === true;
+    button.classList.toggle("is-locked", locked);
+
+    if (locked) {
+      button.setAttribute("aria-disabled", "true");
+    } else {
+      button.removeAttribute("aria-disabled");
+    }
+  }
+}
+
+export function showSectionLockMessage(message) {
+  elements.sectionLockMessage.textContent = message;
+  elements.sectionLockMessage.hidden = false;
+}
+
+export function hideSectionLockMessage() {
+  elements.sectionLockMessage.hidden = true;
+}
+
+export function renderGateVisibility(codexSelected) {
+  elements.codexGate.hidden = !codexSelected;
+}
+
+function appendDots(parent, count) {
+  for (let index = 0; index < count; index += 1) {
+    const dot = document.createElement("i");
+    dot.style.setProperty("--i", index);
+    dot.setAttribute("aria-hidden", "true");
+    parent.append(dot);
+  }
+}
+
+function createLoader(modifier, small) {
+  const loader = document.createElement("span");
+  loader.className = `ds-loader-orbs ${modifier}${
+    small ? " ds-loader-orbs--sm" : ""
+  }`;
+  loader.setAttribute("role", "status");
+
+  if (modifier === LOADER_MODIFIERS.working) {
+    const definitions = small
+      ? [
+          ["-22deg", "2.7s"],
+          ["48deg", "2.2s"],
+        ]
+      : [
+          ["-24deg", "3.4s"],
+          ["32deg", "2.7s"],
+          ["78deg", "4.1s"],
+        ];
+
+    for (const [tilt, duration] of definitions) {
+      const orbit = document.createElement("span");
+      orbit.className = "ds-loader-orbs__orbit";
+      orbit.style.setProperty("--tilt", tilt);
+      orbit.style.setProperty("--orbit-duration", duration);
+      orbit.setAttribute("aria-hidden", "true");
+      appendDots(orbit, 6);
+      loader.append(orbit);
+    }
+  } else if (modifier === LOADER_MODIFIERS.searching) {
+    const counts = small ? [2, 4, 2] : [4, 8, 4];
+
+    counts.forEach((count, row) => {
+      const latitude = document.createElement("span");
+      latitude.className = "ds-loader-orbs__latitude";
+      latitude.style.setProperty("--row", row);
+      latitude.style.setProperty("--mid", (count - 1) / 2);
+      latitude.style.setProperty("--step", small ? "4.5px" : "7.5px");
+      latitude.style.setProperty(
+        "--delay-step",
+        `${(-1.6 / count).toFixed(3)}s`,
+      );
+      latitude.setAttribute("aria-hidden", "true");
+      appendDots(latitude, count);
+      loader.append(latitude);
+    });
+  } else if (modifier === LOADER_MODIFIERS.listening) {
+    const radii = small ? [3, 7] : [8, 16, 25];
+
+    radii.forEach((radius, ringIndex) => {
+      const ring = document.createElement("span");
+      ring.className = "ds-loader-orbs__ring";
+      ring.style.setProperty("--ring", ringIndex);
+      ring.style.setProperty("--ring-radius", `${radius}px`);
+      ring.setAttribute("aria-hidden", "true");
+      appendDots(ring, 6);
+      loader.append(ring);
+    });
+  }
+
+  return loader;
+}
+
+const loaderLabels = {
+  [LOADER_MODIFIERS.working]: "安裝中",
+  [LOADER_MODIFIERS.searching]: "檢查中",
+  [LOADER_MODIFIERS.listening]: "等待終端結果",
+  [LOADER_MODIFIERS.solving]: "判定中",
+  [LOADER_MODIFIERS.composing]: "回答問題中",
+  [LOADER_MODIFIERS.shaping]: "產出網頁中",
+};
+const topLoaders = new Map();
+const rowLoaders = new Map();
+
+for (const modifier of Object.keys(loaderLabels)) {
+  const topLoader = createLoader(modifier, false);
+  const rowLoader = createLoader(modifier, true);
+  topLoader.hidden = true;
+  rowLoader.hidden = true;
+  elements.progressLoader.append(topLoader);
+  elements.rowLoaderPool.append(rowLoader);
+  topLoaders.set(modifier, topLoader);
+  rowLoaders.set(modifier, rowLoader);
+}
+
+function resetLoader(loader) {
+  loader.classList.remove(LOADER_MODIFIERS.paused, "is-paused");
+  loader.hidden = true;
+}
+
+export function hideLoaders() {
+  for (const loader of topLoaders.values()) {
+    resetLoader(loader);
+  }
+
+  for (const loader of rowLoaders.values()) {
+    resetLoader(loader);
+    elements.rowLoaderPool.append(loader);
+  }
+
+  elements.progressLoader.classList.remove("is-paused");
+}
+
+export function renderLoaders({
+  modifier,
+  button = null,
+  step = null,
+  paused = false,
+  topOnly = false,
+}) {
+  hideLoaders();
+  const topLoader = topLoaders.get(modifier);
+
+  if (topLoader === undefined) {
+    return;
+  }
+
+  topLoader.setAttribute(
+    "aria-label",
+    paused ? "處理已停止" : loaderLabels[modifier],
   );
+  topLoader.hidden = false;
+
+  if (paused) {
+    topLoader.classList.add(LOADER_MODIFIERS.paused, "is-paused");
+    elements.progressLoader.classList.add("is-paused");
+  }
+
+  if (topOnly) {
+    return;
+  }
+
+  const row =
+    button?.closest(".env-row") ??
+    [...elements.configResults.querySelectorAll("[data-config-step]")].find(
+      (candidate) => candidate.dataset.configStep === step,
+    );
+  const slot = row?.querySelector(".row-loader-slot");
+
+  if (slot === null || slot === undefined) {
+    return;
+  }
+
+  const rowLoader = rowLoaders.get(modifier);
+  rowLoader.setAttribute(
+    "aria-label",
+    paused ? "處理已停止" : loaderLabels[modifier],
+  );
+
+  if (paused) {
+    rowLoader.classList.add(LOADER_MODIFIERS.paused, "is-paused");
+  }
+
+  slot.append(rowLoader);
+  rowLoader.hidden = false;
 }
 
 function createLogo(logo) {
@@ -106,12 +315,32 @@ function updateProgress() {
     elements.progressSummary.textContent = "正在計算…";
     elements.progressFill.style.width = "";
     elements.progressDuck.style.left = "0%";
+    elements.completionMessage.hidden = true;
     return;
   }
 
   elements.progressSummary.textContent = `${summary.done} / ${summary.total} 項就緒`;
   elements.progressFill.style.width = `${summary.percent}%`;
   elements.progressDuck.style.left = `${summary.percent}%`;
+  const complete = summary.total > 0 && summary.done === summary.total;
+  elements.completionMessage.hidden = !complete;
+
+  if (complete && !completionShown) {
+    completionShown = true;
+    const firework = document.createElement("span");
+    firework.className = "ds-firework";
+    firework.style.setProperty("--firework-at", "100%");
+    firework.setAttribute("aria-hidden", "true");
+
+    for (let ray = 0; ray < 10; ray += 1) {
+      const particle = document.createElement("i");
+      particle.style.setProperty("--ray", `${ray * 36}deg`);
+      firework.append(particle);
+    }
+
+    elements.progressBar.append(firework);
+    window.setTimeout(() => firework.remove(), 800);
+  }
 }
 
 function createSkeleton() {
@@ -210,6 +439,8 @@ export function renderEnv(os, checks, onActionClick) {
     const row = document.createElement("div");
     row.className = "env-row";
     row.dataset.status = model.status;
+    const loaderSlot = document.createElement("span");
+    loaderSlot.className = "row-loader-slot";
 
     const icon = document.createElement("span");
     icon.className = "env-icon";
@@ -234,7 +465,7 @@ export function renderEnv(os, checks, onActionClick) {
     detail.className = "env-detail";
     detail.textContent = model.detail;
 
-    row.prepend(icon);
+    row.prepend(loaderSlot, icon);
     row.append(label, detail);
 
     const actions = document.createElement("div");
@@ -277,10 +508,21 @@ export function renderConfigChoices(toolChoices, languages) {
   elements.configLang.replaceChildren(...languageOptions);
 }
 
-function createConfigRow(check, model, onActionClick, onEyeToggle) {
+function createConfigRow(
+  check,
+  model,
+  onActionClick,
+  onEyeToggle,
+  showVerifyPrompt,
+  onVerifyNow,
+  onVerifyLater,
+) {
   const row = document.createElement("div");
   row.className = "env-row";
   row.dataset.status = model.status;
+  row.dataset.configStep = check.id;
+  const loaderSlot = document.createElement("span");
+  loaderSlot.className = "row-loader-slot";
 
   const icon = document.createElement("span");
   icon.className = "env-icon";
@@ -294,7 +536,7 @@ function createConfigRow(check, model, onActionClick, onEyeToggle) {
   detail.className = "env-detail";
   detail.textContent = model.detail;
 
-  row.append(icon, label, detail);
+  row.append(loaderSlot, icon, label, detail);
 
   const actions = document.createElement("div");
   actions.className = "env-actions";
@@ -331,6 +573,25 @@ function createConfigRow(check, model, onActionClick, onEyeToggle) {
     row.append(eye);
   }
 
+  if (showVerifyPrompt) {
+    const prompt = document.createElement("div");
+    prompt.className = "verify-follow-up";
+    const text = document.createElement("span");
+    text.textContent = "要現在開終端驗證嗎？";
+    const now = document.createElement("button");
+    now.type = "button";
+    now.dataset.verifyNow = check.id;
+    now.textContent = "現在驗";
+    now.addEventListener("click", () => onVerifyNow(check));
+    const later = document.createElement("button");
+    later.type = "button";
+    later.dataset.verifyLater = check.id;
+    later.textContent = "稍後";
+    later.addEventListener("click", () => onVerifyLater(check.id));
+    prompt.append(text, now, later);
+    row.append(prompt);
+  }
+
   return row;
 }
 
@@ -339,6 +600,9 @@ function createConfigCard(
   onActionClick,
   verifiedSteps,
   onEyeToggle,
+  verificationPrompts,
+  onVerifyNow,
+  onVerifyLater,
 ) {
   const models = card.checks.map((check) =>
     configRowModel(check, verifiedSteps.has(check.id)),
@@ -362,7 +626,15 @@ function createConfigCard(
   header.append(copy);
 
   const rows = card.checks.map((check, index) =>
-    createConfigRow(check, models[index], onActionClick, onEyeToggle),
+    createConfigRow(
+      check,
+      models[index],
+      onActionClick,
+      onEyeToggle,
+      verificationPrompts.has(check.id),
+      onVerifyNow,
+      onVerifyLater,
+    ),
   );
   const body = document.createElement("div");
   body.className = "config-card-rows";
@@ -375,14 +647,28 @@ function createConfigCard(
 export function renderConfigs(
   checks,
   onActionClick,
-  { verifiedSteps = new Set(), onEyeToggle = () => {} } = {},
+  {
+    verifiedSteps = new Set(),
+    verificationPrompts = new Set(),
+    onEyeToggle = () => {},
+    onVerifyNow = () => {},
+    onVerifyLater = () => {},
+  } = {},
 ) {
   latestConfigChecks = checks;
   latestVerifiedSteps = verifiedSteps;
 
   for (const section of groupChecks(checks)) {
     const cards = section.cards.map((card) =>
-      createConfigCard(card, onActionClick, verifiedSteps, onEyeToggle),
+      createConfigCard(
+        card,
+        onActionClick,
+        verifiedSteps,
+        onEyeToggle,
+        verificationPrompts,
+        onVerifyNow,
+        onVerifyLater,
+      ),
     );
     const container = elements.sectionCards[section.sectionId];
 
@@ -452,7 +738,7 @@ export function renderBehaviorFallback(state) {
 export function configActionButtons() {
   return [
     ...elements.configResults.querySelectorAll(
-      "[data-install-action], [data-merge-action]",
+      "[data-install-action], [data-merge-action], [data-verify-action], [data-verify-now], [data-verify-later]",
     ),
   ];
 }

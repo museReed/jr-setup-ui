@@ -13,6 +13,20 @@ export const LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
 
 export const BEHAVIOR_QUESTION =
   "我想開始經營個人品牌，Instagram 和 YouTube 我該先從哪個開始？";
+export const LOADER_MODIFIERS = {
+  working: "ds-loader-orbs--working",
+  searching: "ds-loader-orbs--searching",
+  listening: "ds-loader-orbs--listening",
+  solving: "ds-loader-orbs--solving",
+  composing: "ds-loader-orbs--composing",
+  shaping: "ds-loader-orbs--shaping",
+  paused: "ds-loader-orbs--on-dark",
+};
+
+const BEHAVIOR_COMPOSING_LINE = "正在請它回答一題標準問題";
+const BEHAVIOR_SOLVING_LINE = "正在請它對照規則判定自己的回答";
+const TERMINAL_LISTENING_LINE = "已開啟一個新的終端視窗";
+
 // 這五條要跟 scripts/verify-behavior.mjs 裡 AI 判定用的規則一字對得上，
 // 否則學生照清單自己看，會跟按鈕跑出來的結果不一致。
 export const BEHAVIOR_CHECKLIST = [
@@ -249,6 +263,64 @@ export function progressSummary(
   };
 }
 
+export function installVerificationFollowUp({ action, result, check }) {
+  if (
+    action !== "install-config-step" ||
+    result.signal != null ||
+    (result.exitCode !== 0 && result.benign !== true) ||
+    check?.verifyAction == null
+  ) {
+    return "none";
+  }
+
+  if (check.verifyKind === "page") {
+    return "auto";
+  }
+
+  return check.verifyKind === "terminal" ? "prompt" : "none";
+}
+
+export function loaderModifier({
+  checking = false,
+  action = "",
+  options = null,
+  output = "",
+  result = null,
+} = {}) {
+  if (
+    result !== null &&
+    (result.signal != null || result.exitCode !== 0)
+  ) {
+    return LOADER_MODIFIERS.paused;
+  }
+
+  if (checking) {
+    return LOADER_MODIFIERS.searching;
+  }
+
+  if (action === "verify-in-terminal" && options?.case === "demo") {
+    return LOADER_MODIFIERS.shaping;
+  }
+
+  if (output.includes(BEHAVIOR_SOLVING_LINE)) {
+    return LOADER_MODIFIERS.solving;
+  }
+
+  if (output.includes(BEHAVIOR_COMPOSING_LINE)) {
+    return LOADER_MODIFIERS.composing;
+  }
+
+  if (output.includes(TERMINAL_LISTENING_LINE)) {
+    return LOADER_MODIFIERS.listening;
+  }
+
+  if (action.startsWith("install-")) {
+    return LOADER_MODIFIERS.working;
+  }
+
+  return null;
+}
+
 // 環境檢查那一區的按鈕：跑東西時全部鎖住，正在跑的那顆改成「安裝中…」，
 // 等登入結果的那顆改成「等待登入中…」。
 export function envButtonState({
@@ -296,7 +368,9 @@ export function runControlsState({
 
 // benign：安裝器回報「已經裝好了／沒有可用更新」，那不是失敗。
 export function runOutcome(result) {
-  const succeeded = result.exitCode === 0 || result.benign === true;
+  const succeeded =
+    result.signal == null &&
+    (result.exitCode === 0 || result.benign === true);
 
   return {
     succeeded,

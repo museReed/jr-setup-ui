@@ -64,14 +64,21 @@
             <small>Demo</small>
           </button>
         </nav>
+        <p id="section-lock-message" class="section-lock-message" hidden></p>
       </aside>
 
       <div class="wizard-workspace">
         <section class="ds-card progress-card" aria-label="總設定進度">
           <div class="progress-copy">
-            <strong>總進度</strong>
+            <div class="progress-title">
+              <strong>總進度</strong>
+              <span id="completion-message" class="completion-message" hidden>
+                設定完成，可以開始用了
+              </span>
+            </div>
             <span id="progress-summary" aria-live="polite">正在計算…</span>
           </div>
+          <div id="progress-loader" class="progress-loader"></div>
           <div class="ds-pbar ds-pbar--indeterminate" id="progress-bar">
             <div class="ds-pbar-fill" id="progress-fill"></div>
             <div class="ds-duck walk" id="progress-duck">
@@ -206,6 +213,21 @@
                 </div>
               </div>
             </div>
+            <aside class="ds-callout gate-callout" aria-label="前往 Skills 前">
+              <strong>進入下一段前</strong>
+              <label class="ds-check">
+                <input type="checkbox" data-gate-id="rules-new-terminal" />
+                <span class="ds-check-box" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+                <span class="ds-check-text">
+                  關掉現在的終端分頁，開一個新的
+                  <small>wrapper 寫在 shell profile，舊分頁不會載入</small>
+                </span>
+              </label>
+            </aside>
           </section>
 
           <section
@@ -230,6 +252,33 @@
                 </div>
               </div>
             </div>
+            <aside class="ds-callout gate-callout" aria-label="前往 Demo 前">
+              <strong>進入下一段前</strong>
+              <label class="ds-check">
+                <input type="checkbox" data-gate-id="skills-new-terminal" />
+                <span class="ds-check-box" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+                <span class="ds-check-text">
+                  再開一次新的分頁
+                  <small>skill 只在 session 啟動時掃目錄</small>
+                </span>
+              </label>
+              <label class="ds-check" data-codex-gate>
+                <input type="checkbox" data-gate-id="codex-hook-trust" />
+                <span class="ds-check-box" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M5 12.5 10 17l9-10" />
+                  </svg>
+                </span>
+                <span class="ds-check-text">
+                  第一次跑 codex 要接受 hook 信任提示
+                  <small>沒接受的話整組 hook 不會跑</small>
+                </span>
+              </label>
+            </aside>
           </section>
 
           <section
@@ -336,6 +385,7 @@
         </section>
       </div>
     </main>
+    <div id="row-loader-pool" hidden></div>
     <script src="/vendor/loader-orbs.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
