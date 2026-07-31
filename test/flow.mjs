@@ -58,19 +58,19 @@ try {
     [{ checking: true }, LOADER_MODIFIERS.searching],
     [{ action: "install-config-step" }, LOADER_MODIFIERS.working],
     [
-      { output: "正在請它回答一題標準問題…（要等十幾秒）" },
+      { jrEvent: { kind: "stage", stage: "asking" } },
       LOADER_MODIFIERS.composing,
     ],
     [
-      { output: "正在請它對照規則判定自己的回答…" },
+      { jrEvent: { kind: "stage", stage: "judging" } },
       LOADER_MODIFIERS.solving,
     ],
     [
-      { output: "已開啟一個新的終端視窗，正在跑驗證。" },
+      { jrEvent: { kind: "stage", stage: "waiting" } },
       LOADER_MODIFIERS.listening,
     ],
     [
-      { action: "verify-in-terminal", options: { case: "demo" } },
+      { jrEvent: { kind: "stage", stage: "shaping" } },
       LOADER_MODIFIERS.shaping,
     ],
     [
@@ -87,6 +87,15 @@ try {
     assert.equal(loaderModifier(context), expected);
   }
   ok("檢查、安裝、行為驗證、終端等待、demo 與停止狀態各用正確動畫");
+
+  for (const [output, expected] of [
+    ["正在請它回答一題標準問題", LOADER_MODIFIERS.composing],
+    ["正在請它對照規則判定自己的回答", LOADER_MODIFIERS.solving],
+    ["已開啟一個新的終端視窗", LOADER_MODIFIERS.listening],
+  ]) {
+    assert.equal(loaderModifier({ output }), expected);
+  }
+  ok("舊版腳本的中文輸出仍可切換動畫");
 
   const gateId = "rules-new-terminal";
   assert.equal(sectionGateState("skills", new Set(), "claude").locked, true);
@@ -123,20 +132,19 @@ try {
     "utf8",
   );
 
-  for (const text of [
-    "正在請它回答一題標準問題",
-    "正在請它對照規則判定自己的回答",
-  ]) {
+  for (const stage of ["asking", "judging"]) {
     assert(
-      behaviorScript.includes(text),
-      `verify-behavior.mjs 缺少動畫切換字串「${text}」`,
+      behaviorScript.includes(`stage: "${stage}"`),
+      `verify-behavior.mjs 缺少 stage 事件「${stage}」`,
     );
   }
-  assert(
-    terminalScript.includes("已開啟一個新的終端視窗"),
-    "verify-in-terminal.mjs 缺少動畫切換字串",
-  );
-  ok("三個動畫切換字串真的存在於對應腳本");
+  for (const stage of ["waiting", "shaping"]) {
+    assert(
+      terminalScript.includes(`"${stage}"`),
+      `verify-in-terminal.mjs 缺少 stage 事件「${stage}」`,
+    );
+  }
+  ok("四個 stage 事件真的存在於對應腳本");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

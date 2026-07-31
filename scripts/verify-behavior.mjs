@@ -30,6 +30,10 @@ const RULES = [
   ["追問清單", "結尾有「你可能會想問」之類的追問清單"],
 ];
 
+function emitJr(event) {
+  console.log(`@@JR ${JSON.stringify(event)}`);
+}
+
 // ⚠️ prompt 一律走 stdin，不放進指令參數。
 // 判定那一步要把整篇回答餵回去，裡面有換行、引號、表格的 |——Windows 上指令要繞
 // cmd.exe，這些字元會被 shell 吃掉，AI 收到的就是被截斷的內容（實測：codex 回
@@ -173,6 +177,7 @@ function extractJson(text) {
 async function verifyEngine(engine, env) {
   console.log("");
   console.log(`── ${engine.label} ──`);
+  emitJr({ kind: "stage", stage: "asking" });
   console.log("正在請它回答一題標準問題…（要等十幾秒）");
   const answer = await runEngine(engine, QUESTION, env);
 
@@ -190,6 +195,7 @@ async function verifyEngine(engine, env) {
   }
 
   console.log("");
+  emitJr({ kind: "stage", stage: "judging" });
   console.log("正在請它對照規則判定自己的回答…");
   const verdict = await runEngine(engine, judgePrompt(answer.text), env);
 
@@ -216,7 +222,14 @@ async function verifyEngine(engine, env) {
     }
 
     const mark = result?.pass === true ? "PASS" : "FAIL";
-    console.log(`${mark}  ${name}：${result?.reason ?? "沒有判定結果"}`);
+    const reason = result?.reason ?? "沒有判定結果";
+    console.log(`${mark}  ${name}：${reason}`);
+    emitJr({
+      kind: "rule",
+      name,
+      pass: result?.pass === true,
+      reason,
+    });
   }
 
   const ok = passed >= PASS_THRESHOLD;
@@ -249,6 +262,11 @@ const selected = (args.tools ?? "claude")
 
 if (selected.length === 0) {
   console.error("沒有指定要驗哪個工具（--tools=claude,codex）");
+  emitJr({
+    kind: "result",
+    ok: false,
+    summary: "沒有指定要驗哪個工具。",
+  });
   process.exit(1);
 }
 
@@ -268,7 +286,17 @@ console.log("");
 if (failures > 0) {
   console.log(`${failures} 個工具沒通過。`);
   console.log("回上面看對應的那幾列是不是綠的——規則檔沒裝好，行為就不會變。");
+  emitJr({
+    kind: "result",
+    ok: false,
+    summary: `${failures} 個工具沒通過。`,
+  });
   process.exit(1);
 }
 
 console.log("行為驗證通過——設定確實生效了。");
+emitJr({
+  kind: "result",
+  ok: true,
+  summary: "行為驗證通過——設定確實生效了。",
+});

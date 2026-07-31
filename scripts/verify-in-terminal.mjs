@@ -34,6 +34,10 @@ const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
 const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
 
+function emitJr(event) {
+  console.log(`@@JR ${JSON.stringify(event)}`);
+}
+
 // 每個情境的提問都要「只逼出這一件事」。實測踩過三種寫壞的方式：
 //   - 命名那題寫了「不要執行任何指令」→ 模型連命名 hook 要它跑的那條也跳過了
 //   - context 那題叫它讀五個檔案 → 家目錄根本沒有，模型花整段在澄清
@@ -217,6 +221,11 @@ const agent = args.agent === "codex" ? "codex" : "claude";
 
 if (testCase === undefined) {
   console.log(`FAIL  不認得的驗證情境：${caseName}`);
+  emitJr({
+    kind: "result",
+    ok: false,
+    summary: `不認得的驗證情境：${caseName}`,
+  });
   process.exit(1);
 }
 
@@ -366,6 +375,10 @@ const child = spawn(cmd, openArgs, { stdio: "ignore", detached: true });
 child.unref();
 
 console.log(`已開啟一個新的終端視窗，正在跑「${testCase.label}」驗證。`);
+emitJr({
+  kind: "stage",
+  stage: caseName === "demo" ? "shaping" : "waiting",
+});
 console.log("");
 // demo 是唯一要人動手的情境（選項要你選），其他格一律「看就好」——寫錯這句學生
 // 會乾等，以為卡住了。
@@ -380,6 +393,11 @@ console.log("");
 if (expect === null) {
   console.log("這個情境沒有程式抓得到的副產物，看到了就回來把勾選框勾起來。");
   console.log(`（視窗跑完可以直接關掉。啟動腳本：${launcher}）`);
+  emitJr({
+    kind: "result",
+    ok: true,
+    summary: "已開啟終端視窗，請人工確認。",
+  });
   process.exit(0);
 }
 
@@ -394,6 +412,11 @@ while (Date.now() - startedAt < timeoutMs) {
   if (evidence !== null) {
     console.log("");
     console.log(`PASS  ${evidence.detail}`);
+    emitJr({
+      kind: "result",
+      ok: true,
+      summary: `驗證通過：${evidence.detail}`,
+    });
     process.exit(0);
   }
 
@@ -410,4 +433,9 @@ console.log(
       : `      應該要有新檔案出現在：${namesDir}`,
 );
 console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
+emitJr({
+  kind: "result",
+  ok: false,
+  summary: "等待副產物逾時，無法確認。",
+});
 process.exit(1);

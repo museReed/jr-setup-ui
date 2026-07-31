@@ -26,6 +26,15 @@ import { resolveLaunch } from "../src/spawn-command.js";
 const HOME = homedir();
 const MATERIALS = materialsDir();
 
+function emitJr(event) {
+  console.log(`@@JR ${JSON.stringify(event)}`);
+}
+
+function logProgress(text) {
+  console.log(`✓ ${text}`);
+  emitJr({ kind: "progress", text });
+}
+
 function parseArgs(argv) {
   const args = {};
 
@@ -92,7 +101,7 @@ async function copyStep(step) {
   await mkdir(path.dirname(step.target), { recursive: true });
   await backup(step.target);
   await copyFile(source, step.target);
-  console.log(`✓ ${step.label} → ${step.target}`);
+  logProgress(`${step.label} → ${step.target}`);
 }
 
 async function outputStyleStep(step) {
@@ -101,7 +110,7 @@ async function outputStyleStep(step) {
     styleName: step.styleName,
   });
   await writeSettings(step.settingsTarget, settings);
-  console.log(`✓ 已在 settings.json 啟用「${step.styleName}」`);
+  logProgress(`已在 settings.json 啟用「${step.styleName}」`);
 }
 
 async function hookStep(step) {
@@ -109,7 +118,7 @@ async function hookStep(step) {
   await mkdir(path.dirname(step.target), { recursive: true });
   await copyFile(source, step.target);
   await chmod(step.target, 0o755);
-  console.log(`✓ hook 檔案 → ${step.target}`);
+  logProgress(`hook 檔案 → ${step.target}`);
 
   // 只複製檔案不算裝好：沒註冊進 settings.json 的話 hook 不會擋，
   // 而且不會有任何錯誤訊息。兩件事要一起做完才算數。
@@ -117,7 +126,7 @@ async function hookStep(step) {
     hookPath: step.target,
   });
   await writeSettings(step.settingsTarget, settings);
-  console.log("✓ 已註冊到 settings.json 的 PreToolUse");
+  logProgress("已註冊到 settings.json 的 PreToolUse");
 }
 
 async function allowlistStep(step) {
@@ -128,7 +137,7 @@ async function allowlistStep(step) {
     { allowRules: rules },
   );
   await writeSettings(step.settingsTarget, settings);
-  console.log(`✓ ${step.label}：新增 ${addedRules} 條（共 ${rules.length} 條）`);
+  logProgress(`${step.label}：新增 ${addedRules} 條（共 ${rules.length} 條）`);
 }
 
 async function tabSyncStep(step) {
@@ -154,8 +163,8 @@ async function tabSyncStep(step) {
       ? `\ufeff${next.replace(/^\ufeff/, "")}`
       : next;
   await writeFile(step.rcTarget, rcContent);
-  console.log(`✓ watcher → ${step.target}`);
-  console.log(`✓ shell function → ${step.rcTarget}`);
+  logProgress(`watcher → ${step.target}`);
+  logProgress(`shell function → ${step.rcTarget}`);
 }
 
 async function agentHooksStep(step) {
@@ -170,7 +179,7 @@ async function agentHooksStep(step) {
       await chmod(file.target, 0o755);
     }
 
-    console.log(`✓ hook 檔案 → ${file.target}`);
+    logProgress(`hook 檔案 → ${file.target}`);
   }
 
   let settings = mergeAgentHookRegistrations(
@@ -190,12 +199,12 @@ async function agentHooksStep(step) {
     settings = merged.settings;
 
     if (merged.addedRules > 0) {
-      console.log(`✓ 已把命名指令加進白名單`);
+      logProgress("已把命名指令加進白名單");
     }
   }
 
   await writeSettings(step.settingsTarget, settings);
-  console.log(`✓ 已註冊 3 筆 hook → ${step.settingsTarget}`);
+  logProgress(`已註冊 3 筆 hook → ${step.settingsTarget}`);
 }
 
 async function skillStep(step) {
@@ -208,10 +217,10 @@ async function skillStep(step) {
       step.substitutions,
     );
     await writeFile(file.target, content);
-    console.log(`✓ ${file.target}`);
+    logProgress(file.target);
   }
 
-  console.log(`✓ ${step.label} 已安裝`);
+  logProgress(`${step.label} 已安裝`);
 }
 
 // 第三方 skill 用它們自己 GitHub 上定義的裝法，我們只負責把指令跑起來、把失敗
@@ -243,7 +252,7 @@ async function externalSkillStep(step) {
     );
     child.once("close", (exitCode) => {
       if (exitCode === 0) {
-        console.log(`✓ ${step.label} 安裝完成`);
+        logProgress(`${step.label} 安裝完成`);
         resolve();
         return;
       }
@@ -283,8 +292,14 @@ try {
 } catch (error) {
   // 學生看到的是這一行，不是一整串 stack trace。
   console.error(error.message);
+  emitJr({ kind: "result", ok: false, summary: error.message });
   process.exit(1);
 }
 
 console.log("");
 console.log("這一步完成。設定要開新的 session 才會生效。");
+emitJr({
+  kind: "result",
+  ok: true,
+  summary: "這一步完成。設定要開新的 session 才會生效。",
+});

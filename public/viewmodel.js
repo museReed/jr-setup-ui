@@ -26,6 +26,12 @@ export const LOADER_MODIFIERS = {
 const BEHAVIOR_COMPOSING_LINE = "正在請它回答一題標準問題";
 const BEHAVIOR_SOLVING_LINE = "正在請它對照規則判定自己的回答";
 const TERMINAL_LISTENING_LINE = "已開啟一個新的終端視窗";
+const STAGE_MODIFIERS = {
+  asking: LOADER_MODIFIERS.composing,
+  judging: LOADER_MODIFIERS.solving,
+  waiting: LOADER_MODIFIERS.listening,
+  shaping: LOADER_MODIFIERS.shaping,
+};
 
 // 這五條要跟 scripts/verify-behavior.mjs 裡 AI 判定用的規則一字對得上，
 // 否則學生照清單自己看，會跟按鈕跑出來的結果不一致。
@@ -285,6 +291,7 @@ export function loaderModifier({
   action = "",
   options = null,
   output = "",
+  jrEvent = null,
   result = null,
 } = {}) {
   if (
@@ -296,6 +303,10 @@ export function loaderModifier({
 
   if (checking) {
     return LOADER_MODIFIERS.searching;
+  }
+
+  if (jrEvent?.kind === "stage") {
+    return STAGE_MODIFIERS[jrEvent.stage] ?? null;
   }
 
   if (action === "verify-in-terminal" && options?.case === "demo") {

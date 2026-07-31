@@ -42,14 +42,32 @@ const state = {
   envCheckInProgress: false,
   configCheckInProgress: false,
   loginWait: null,
-  // 這一頁開著的期間，哪幾列已經驗過行為了。重新整理就歸零——那是刻意的：
-  // 驗證證明的是「那個當下生效」，換一次環境就該重驗。
+  // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
   verificationPrompts: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
 };
+
+async function rememberVerifiedStep(step) {
+  state.verifiedSteps.add(step);
+
+  try {
+    await api.saveVerifiedStep(step);
+  } catch (error) {
+    view.addLine(`無法保存驗證進度：${error.message}`, "failed");
+  }
+}
+
+async function loadVerifiedSteps() {
+  try {
+    const result = await api.fetchState();
+    state.verifiedSteps = new Set(result.verified);
+  } catch {
+    state.verifiedSteps = new Set();
+  }
+}
 
 function renderCheckingLoader() {
   if (state.runInProgress) {
@@ -243,9 +261,9 @@ async function checkConfigs() {
       {
         verifiedSteps: state.verifiedSteps,
         verificationPrompts: state.verificationPrompts,
-        onEyeToggle: (step, checked) => {
+        onEyeToggle: async (step, checked) => {
           if (checked) {
-            state.verifiedSteps.add(step);
+            await rememberVerifiedStep(step);
           } else {
             state.verifiedSteps.delete(step);
           }
@@ -331,7 +349,7 @@ function startLoginWait(action) {
   );
 }
 
-function handleDone(action, envButton, configAction, result, options) {
+async function handleDone(action, envButton, configAction, result, options) {
   const outcome = runOutcome(result);
   view.addLine(outcome.summary, outcome.className);
 
@@ -400,7 +418,7 @@ function handleDone(action, envButton, configAction, result, options) {
     verifiedStep !== undefined &&
     verifiedCheck?.eyeCheck == null
   ) {
-    state.verifiedSteps.add(verifiedStep);
+    await rememberVerifiedStep(verifiedStep);
     checkConfigs();
     return;
   }
@@ -506,7 +524,16 @@ async function run(action, promptText, button = null, options) {
       view.addAgentEvent(JSON.parse(event.data), state.agentName);
     });
 
-    events.addEventListener("done", (event) => {
+    events.addEventListener("jr", (event) => {
+      const jrEvent = JSON.parse(event.data);
+      const nextModifier = loaderModifier({ action, options, jrEvent });
+
+      if (nextModifier !== null) {
+        renderRunLoader(nextModifier);
+      }
+    });
+
+    events.addEventListener("done", async (event) => {
       done = true;
       events.close();
       const result = JSON.parse(event.data);
@@ -515,7 +542,7 @@ async function run(action, promptText, button = null, options) {
         view.renderBehaviorFallback(behaviorFallbackState(result));
       }
 
-      handleDone(action, envButton, configAction, result, options);
+      await handleDone(action, envButton, configAction, result, options);
     });
 
     events.onerror = () => {
@@ -628,5 +655,11 @@ view.onGateToggle((gateId, checked) => {
   view.hideSectionLockMessage();
 });
 renderNavigation();
-checkEnvironment();
-checkConfigs();
+
+async function initialize() {
+  await loadVerifiedSteps();
+  checkEnvironment();
+  checkConfigs();
+}
+
+initialize();
