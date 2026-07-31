@@ -207,8 +207,28 @@ try {
   );
   ok("前面有未完成卡時，後面的里程碑保持鎖定");
 
-  assert.equal(sectionStatus(cards, new Set(["one", "two", "three"])), "這一段已完成。");
-  assert.equal(sectionStatus(cards, new Set(["one"])), "還有 2 張要做。");
+  const allIds = new Set(["one", "two", "three"]);
+
+  // 本機環境全綠（三張卡的檢查都通過）但小鴨還在第一站：後面兩顆不能亮。
+  const atFirst = milestoneModels(cards, allIds, 0);
+  assert.deepEqual(
+    atFirst.map(({ reached }) => reached),
+    [true, false, false],
+  );
+  assert.equal(atFirst[2].unlocked, false);
+  ok("小鴨沒走到的圓點不算走過，就算那些檢查本來就通過");
+
+  // 走到第 2 站、第 2 張的檢查沒過：那一顆不能亮。
+  const secondNotDone = milestoneModels(cards, new Set(["one"]), 1);
+  assert.deepEqual(
+    secondNotDone.map(({ reached }) => reached),
+    [true, false, false],
+  );
+  ok("走過但沒通過的圓點不算走過");
+
+  assert.equal(sectionStatus(cards, allIds, 2), "這一段已完成。");
+  assert.equal(sectionStatus(cards, allIds, 0), "還有 2 張要做。");
+  assert.equal(sectionStatus(cards, new Set(["one"]), 1), "還有 2 張要做。");
   ok("段落狀態依未完成卡片數顯示完成或剩餘張數");
 
   const checkingLine = {

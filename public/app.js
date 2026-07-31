@@ -260,7 +260,11 @@ function renderWizard() {
   };
   view.renderWizard({
     section,
-    sectionStatus: sectionStatus(cardSection.cards, completedCardIds),
+    sectionStatus: sectionStatus(
+      cardSection.cards,
+      completedCardIds,
+      currentIndex,
+    ),
     milestones,
     cardModel,
     onMilestoneSelect: (index) => {

@@ -343,14 +343,24 @@ export function currentCardIndex(cards, verifiedSteps = new Set()) {
   return firstIncomplete === -1 ? cards.length - 1 : firstIncomplete;
 }
 
+// 一張卡要算完成，光是「這台機器上本來就裝好了」不夠——使用者還得走到那裡。
+// 少了後面那半，本機環境全綠時整條進度條會在小鴨還停在第一站時就全部亮起來，
+// 段落也會在第 2/10 站就宣告「已完成」。
+//
+// 小鴨當前那一張算不算，交給 completedCardIds 決定：呼叫端只有在該卡真的做完
+// （裝好 + 該驗的驗過 + 手動項勾完）時才會把它放進去。
+function cardsDone(cards, completedCardIds, currentIndex) {
+  return cards.map(
+    (card, index) => completedCardIds.has(card.checkId) && index <= currentIndex,
+  );
+}
+
 export function milestoneModels(cards, completedCardIds, currentIndex) {
+  const done = cardsDone(cards, completedCardIds, currentIndex);
+
   return cards.map((card, index) => {
-    const completed = completedCardIds.has(card.checkId);
-    const unlocked =
-      completed ||
-      cards
-        .slice(0, index)
-        .every((previous) => completedCardIds.has(previous.checkId));
+    const completed = done[index];
+    const unlocked = completed || done.slice(0, index).every(Boolean);
 
     return {
       ...card,
@@ -358,15 +368,15 @@ export function milestoneModels(cards, completedCardIds, currentIndex) {
       percent: Math.round(((index + 1) / cards.length) * 100),
       completed,
       unlocked,
-      reached: completed || index <= currentIndex,
+      reached: completed,
       current: index === currentIndex,
     };
   });
 }
 
-export function sectionStatus(cards, completedCardIds) {
-  const remaining = cards.filter(
-    (card) => !completedCardIds.has(card.checkId),
+export function sectionStatus(cards, completedCardIds, currentIndex) {
+  const remaining = cardsDone(cards, completedCardIds, currentIndex).filter(
+    (done) => !done,
   ).length;
 
   return remaining === 0 ? "這一段已完成。" : `還有 ${remaining} 張要做。`;
