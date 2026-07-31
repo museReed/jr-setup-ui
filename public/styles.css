@@ -19,27 +19,6 @@ body {
   display: none !important;
 }
 
-.section-kicker {
-  margin: 0 0 var(--space-2);
-  color: var(--color-accent-hover);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.section-heading h2 {
-  margin: 0;
-  color: var(--color-text-strong);
-  line-height: var(--lh-tight);
-  letter-spacing: -0.03em;
-}
-
-#section-status {
-  color: var(--color-text-muted);
-}
-
 .wizard-layout {
   max-width: var(--layout-max);
   margin: 0 auto;
@@ -49,10 +28,15 @@ body {
 /* 段落導覽：設計系統沒有 tab 元件，這裡用 token 自刻一條。
    底線標示目前段落，鎖住的段落降透明度且不可點。 */
 .section-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   gap: var(--space-1);
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg);
+  transition: box-shadow 0.2s ease;
 }
 
 .section-tab {
@@ -67,7 +51,8 @@ body {
   cursor: pointer;
   transition:
     color 0.15s ease,
-    border-color 0.15s ease;
+    border-color 0.15s ease,
+    padding 0.2s ease;
 }
 
 .section-tab span,
@@ -82,6 +67,24 @@ body {
 .section-tab small {
   color: var(--color-text-faint);
   font-size: var(--fs-xs);
+  max-height: var(--space-5);
+  overflow: hidden;
+  transition:
+    max-height 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.section-tabs.is-condensed {
+  box-shadow: var(--shadow-md);
+}
+
+.section-tabs.is-condensed .section-tab {
+  padding-block: var(--space-2);
+}
+
+.section-tabs.is-condensed .section-tab small {
+  max-height: 0;
+  opacity: 0;
 }
 
 .section-tab:hover:not(.is-locked) {
@@ -121,22 +124,21 @@ body {
   align-items: start;
 }
 
-.section-heading {
-  margin: var(--space-5) 0 0;
-}
-
-.section-heading h2 {
-  font-size: clamp(var(--fs-2xl), 3vw, var(--fs-4xl));
-}
-
 #section-status {
-  margin: var(--space-2) 0 0;
+  display: block;
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
 
 .milestone-wrap {
   padding: 38px 24px 52px;
+}
+
+.ds-milestone:has(.ds-milestone-card.is-pinned),
+.ds-milestone.is-active {
+  z-index: 5;
 }
 
 .ds-milestone.is-locked,
@@ -182,6 +184,11 @@ body {
   padding: var(--space-4) var(--space-5);
 }
 
+.config-card-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
 .config-card-header .ds-toollogo-mark {
   width: 32px;
   height: 32px;
@@ -199,6 +206,22 @@ body {
   margin-top: var(--space-1);
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
+}
+
+.config-card-header .ds-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.config-card-header .ds-pill-success {
+  color: var(--color-success-text);
+}
+
+.config-card-header .card-status-danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+  color: var(--red-6);
 }
 
 .current-task-body {
@@ -221,6 +244,27 @@ body {
 
 .current-task-card .ds-checklist {
   margin-top: var(--space-2);
+}
+
+.current-task-card .ds-check.is-manual {
+  --gl-ink: var(--color-accent);
+}
+
+/* 已完成的按鈕要看起來按不下去。設計系統的 .ds-btn 沒有 disabled 樣式（查過
+   design-system.css，沒有任何 :disabled 規則），而契約檔禁止覆寫既有 ds-* selector，
+   所以掛在本 repo 自己的 .is-done 上，只用 token。
+   styles.css 在 design-system.css 之後載入，同 specificity 後者勝。 */
+.is-done {
+  border-color: var(--color-border-soft);
+  background: var(--color-bg-inset);
+  box-shadow: none;
+  color: var(--color-text-faint);
+  cursor: not-allowed;
+}
+
+.is-done:hover {
+  background: var(--color-bg-inset);
+  box-shadow: none;
 }
 
 .terminal-column {
@@ -276,12 +320,35 @@ body {
 
 .login-hints,
 #run-input {
-  margin: var(--space-3) var(--space-4);
+  margin: 0;
+}
+
+.login-hints,
+#login-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+#login-code-row {
+  width: 100%;
+}
+
+#login-code {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+  color: var(--color-text-strong);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  letter-spacing: 0.08em;
 }
 
 #run-input {
   display: flex;
   gap: var(--space-2);
+  width: 100%;
 }
 
 #run-input input {
@@ -323,6 +390,12 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .section-tabs,
+  .section-tab,
+  .section-tab small {
+    transition: none;
+  }
+
   .term-shake {
     animation: none;
   }

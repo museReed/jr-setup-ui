@@ -34,16 +34,10 @@
       </nav>
       <p id="section-lock-message" class="section-lock-message" hidden></p>
 
-      <header class="section-heading">
-        <p id="section-kicker" class="section-kicker">環境與登入</p>
-        <h2 id="section-title">讓 AI 能跑起來</h2>
-        <p id="section-status" aria-live="polite">正在檢查目前進度…</p>
-      </header>
-
       <div class="milestone-wrap">
+        <small id="section-status" aria-live="polite">正在檢查目前進度…</small>
         <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
           <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-          <div id="milestone-points"></div>
           <div id="milestone-duck" class="ds-duck walk" style="left: 0%">
             <div class="ds-duck-hop">
               <svg viewBox="0 0 40 40" aria-hidden="true">
@@ -65,7 +59,7 @@
 
       <div class="wizard-workspace">
         <div class="task-terminal-layout">
-          <section class="task-column" data-section-panel aria-labelledby="section-title">
+          <section class="task-column" data-section-panel aria-label="目前設定卡片">
             <div id="config-choice-panel" class="config-choice-panel" hidden>
               <div>
                 <strong>要設定哪些工具？</strong>
@@ -105,17 +99,6 @@
               <summary>看原始輸出</summary>
               <pre id="output"></pre>
             </details>
-            <div id="login-hints" class="login-hints" hidden>
-              <a id="login-url" target="_blank" rel="noopener noreferrer" hidden></a>
-              <div id="login-code-row" hidden>
-                <span id="login-code"></span>
-                <button type="button" id="copy-login-code">複製</button>
-              </div>
-            </div>
-            <form id="run-input" hidden>
-              <input id="run-input-text" type="text" maxlength="500" autocomplete="off" placeholder="把授權代碼貼在這裡，再按送出" />
-              <button type="submit">送出</button>
-            </form>
           </section>
         </div>
       </div>

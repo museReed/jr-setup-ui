@@ -125,6 +125,12 @@ try {
   assert.match(index, /class="ds-term-chrome"/);
   ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
 
+  // 設計系統的 .ds-btn 沒有 disabled 樣式，置灰得靠本 repo 的 .is-done。
+  // 契約檔禁止覆寫既有 ds-* selector，所以選擇器裡不能出現 .ds-btn。
+  assert.match(styles, /^\.is-done\s*\{[^}]*cursor: not-allowed;/m);
+  assert.doesNotMatch(styles, /\.ds-btn[\w-]*:disabled/);
+  ok("已完成按鈕用本 repo 的 .is-done 置灰，沒覆寫設計系統 selector");
+
   // 段落導覽是上方 tab，不是側欄；整頁大標已移除。
   assert(!index.includes("wizard-header"));
   assert(!index.includes("wizard-sidebar"));

@@ -214,14 +214,9 @@ try {
   assert.match(page, /<div\s+id="behavior-fallback"[^>]*\shidden(?:\s|>)/);
   ok("首頁包含預設隱藏的行為驗證手動退路");
 
-  assert.match(page, /id="login-hints"/);
-  assert.match(page, /target="_blank"/);
-  assert.match(page, /rel="noopener noreferrer"/);
-  assert.match(page, /id="run-input"/);
-  // 那格原本只有 aria-label，同學看到的是一個空白框，不知道要貼什麼。
-  assert(page.includes("把授權代碼貼在這裡"));
+  assert.doesNotMatch(page, /id="login-hints"/);
   assert(!page.includes("終端機視窗"));
-  ok("首頁包含登入提示與輸入列且移除終端機視窗文案");
+  ok("登入提示已從右欄終端移除");
 
   // 前端拆成 View / ViewModel / Model 之後，首頁只剩標記。
   assert(!page.includes("<style>"));
@@ -246,9 +241,14 @@ try {
   ok("樣式與前端模組不帶 token 也取得到");
 
   const viewSource = await (await fetch(`${baseUrl}/view.js`)).text();
+  assert(viewSource.includes('hints.id = "login-hints"'));
+  assert(viewSource.includes('link.target = "_blank"'));
+  assert(viewSource.includes('link.rel = "noopener noreferrer"'));
+  assert(viewSource.includes('form.id = "run-input"'));
+  assert(viewSource.includes("把授權代碼貼在這裡"));
   assert(viewSource.includes("完成後這裡會自動更新"));
   assert(viewSource.includes("停止等待"));
-  ok("View 含登入自動更新與停止等待提示");
+  ok("View 在卡片內建立登入提示、輸入列與等待狀態");
 
   const viewModelSource = await (await fetch(`${baseUrl}/viewmodel.js`)).text();
   assert(viewModelSource.includes("狀態已更新"));

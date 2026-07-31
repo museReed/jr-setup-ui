@@ -14,13 +14,6 @@ const elements = {
   recheckEnv: document.querySelector("#recheck-env"),
   installStatus: document.querySelector("#install-status"),
   loginWaitStatus: document.querySelector("#login-wait-status"),
-  loginHints: document.querySelector("#login-hints"),
-  loginUrl: document.querySelector("#login-url"),
-  loginCodeRow: document.querySelector("#login-code-row"),
-  loginCode: document.querySelector("#login-code"),
-  copyLoginCode: document.querySelector("#copy-login-code"),
-  runInput: document.querySelector("#run-input"),
-  runInputText: document.querySelector("#run-input-text"),
   configTools: document.querySelector("#config-tools"),
   configLang: document.querySelector("#config-lang"),
   configChoicePanel: document.querySelector("#config-choice-panel"),
@@ -30,13 +23,10 @@ const elements = {
   sectionNav: document.querySelector("#section-nav"),
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
   sectionPanel: document.querySelector("[data-section-panel]"),
-  sectionTitle: document.querySelector("#section-title"),
-  sectionKicker: document.querySelector("#section-kicker"),
   sectionStatus: document.querySelector("#section-status"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
   milestoneFill: document.querySelector("#milestone-fill"),
-  milestonePoints: document.querySelector("#milestone-points"),
   milestoneDuck: document.querySelector("#milestone-duck"),
   sectionLockMessage: document.querySelector("#section-lock-message"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
@@ -53,8 +43,11 @@ export { elements };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let renderedStation = null;
+let pinnedStation = null;
+let milestoneBusy = false;
 let stationTimer = null;
 let arrivalTimer = null;
+let fireworkTimer = null;
 
 function createLogo(logo) {
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -79,24 +72,37 @@ function checkMark() {
   return box;
 }
 
-function firework(percent) {
-  if (reducedMotion.matches) {
-    return;
+function unpinAll() {
+  for (const point of elements.milestoneBar.querySelectorAll(
+    ".ds-milestone",
+  )) {
+    point.querySelector(".ds-milestone-card").classList.remove("is-pinned");
+    point.setAttribute("aria-hidden", "true");
   }
+}
 
-  const burst = document.createElement("span");
-  burst.className = "ds-firework";
-  burst.style.setProperty("--firework-at", `${percent}%`);
-  burst.setAttribute("aria-hidden", "true");
+function pin(point, key) {
+  point.querySelector(".ds-milestone-card").classList.add("is-pinned");
+  point.removeAttribute("aria-hidden");
+  pinnedStation = key;
+  milestoneBusy = false;
+}
 
+function finishArrival(point, station, key) {
+  const firework = document.createElement("span");
+  firework.className = "ds-firework";
+  firework.style.setProperty("--firework-at", `${station.percent}%`);
+  firework.setAttribute("aria-hidden", "true");
   for (let ray = 0; ray < 10; ray += 1) {
     const particle = document.createElement("i");
     particle.style.setProperty("--ray", `${ray * 36}deg`);
-    burst.append(particle);
+    firework.append(particle);
   }
-
-  elements.milestoneBar.append(burst);
-  window.setTimeout(() => burst.remove(), 800);
+  elements.milestoneBar.append(firework);
+  fireworkTimer = window.setTimeout(() => {
+    firework.remove();
+    pin(point, key);
+  }, 800);
 }
 
 function moveDuck(sectionId, station) {
@@ -108,13 +114,28 @@ function moveDuck(sectionId, station) {
   renderedStation = { key: nextKey, sectionId, index: station.index };
   window.clearTimeout(stationTimer);
   window.clearTimeout(arrivalTimer);
+  window.clearTimeout(fireworkTimer);
+  elements.milestoneBar.querySelector(".ds-firework")?.remove();
   elements.milestoneDuck.classList.toggle("left", station.index < previousIndex);
   elements.milestoneDuck.style.left = `${station.percent}%`;
   elements.milestoneFill.style.width = `${station.percent}%`;
   elements.milestoneFill.setAttribute("aria-valuenow", String(station.percent));
 
-  if (!moving || reducedMotion.matches) {
+  const point = elements.milestoneBar.querySelector(
+    `[data-card-index="${station.index}"]`,
+  );
+
+  if (!moving) {
     elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    if (pinnedStation === nextKey) pin(point, nextKey);
+    return;
+  }
+
+  unpinAll();
+  milestoneBusy = true;
+  if (reducedMotion.matches) {
+    elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    pin(point, nextKey);
     return;
   }
 
@@ -124,23 +145,21 @@ function moveDuck(sectionId, station) {
     elements.milestoneDuck.classList.add("is-arriving");
     arrivalTimer = window.setTimeout(() => {
       elements.milestoneDuck.classList.remove("is-arriving");
-      firework(station.percent);
+      finishArrival(point, station, nextKey);
     }, 420);
   }, 1000);
 }
 
 function renderMilestones(sectionId, milestones, onSelect) {
   const points = milestones.map((station) => {
-    const point = document.createElement("button");
-    point.type = "button";
-    point.className = "ds-milestone";
+    const point = document.createElement("span");
+    point.className = "ds-milestone wizard-milestone";
     point.style.setProperty("--at", `${station.percent}%`);
     point.dataset.value = String(station.percent);
     point.dataset.cardIndex = String(station.index);
     point.classList.toggle("is-reached", station.reached);
     point.classList.toggle("is-locked", !station.unlocked);
-    point.disabled = !station.unlocked;
-    point.setAttribute("aria-label", `${station.label}，第 ${station.index + 1} / ${milestones.length} 張`);
+    point.setAttribute("aria-hidden", "true");
 
     if (station.index < Math.ceil(milestones.length / 2)) {
       point.classList.add("ds-milestone--edge-start");
@@ -150,8 +169,10 @@ function renderMilestones(sectionId, milestones, onSelect) {
 
     const preview = document.createElement("span");
     preview.className = "ds-milestone-card";
-    const close = document.createElement("span");
+    const close = document.createElement("button");
     close.className = "ds-milestone-card-close";
+    close.type = "button";
+    close.setAttribute("aria-label", "關閉");
     close.textContent = "×";
     const name = document.createElement("strong");
     name.className = "ds-milestone-card-name";
@@ -166,10 +187,23 @@ function renderMilestones(sectionId, milestones, onSelect) {
     point.append(preview);
     point.addEventListener("mouseenter", () => point.classList.add("is-active"));
     point.addEventListener("mouseleave", () => point.classList.remove("is-active"));
-    point.addEventListener("click", () => onSelect(station.index));
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      preview.classList.remove("is-pinned");
+      point.setAttribute("aria-hidden", "true");
+      pinnedStation = null;
+    });
+    point.addEventListener("click", () => {
+      if (!milestoneBusy && station.unlocked) onSelect(station.index);
+    });
     return point;
   });
-  elements.milestonePoints.replaceChildren(...points);
+  for (const point of elements.milestoneBar.querySelectorAll(
+    ".wizard-milestone",
+  )) {
+    point.remove();
+  }
+  elements.milestoneDuck.before(...points);
 
   const current = milestones.find((station) => station.current);
   if (current !== undefined) {
@@ -183,6 +217,8 @@ function actionButton(spec, onActionClick) {
   button.className = `ds-btn ds-btn-sm ${spec.className ?? "ds-btn-primary"}`;
   button.dataset[spec.dataName] = spec.action;
   button.dataset.step = spec.step ?? "";
+  button.dataset.idleText = spec.text;
+  button.dataset.permanentlyDisabled = String(spec.disabled === true);
   button.textContent = spec.text;
   button.disabled = spec.disabled === true;
   button.classList.toggle("is-done", spec.done === true);
@@ -228,15 +264,17 @@ function checklistElement(groups, onManualToggle) {
     for (const item of group) {
       const label = document.createElement("label");
       label.className = "ds-check";
+      label.classList.add(item.automatic ? "is-system" : "is-manual");
       const input = document.createElement("input");
       input.type = "checkbox";
       input.checked = item.checked;
+      input.disabled = item.disabled;
       input.dataset.checklistId = item.id;
       const text = document.createElement("span");
       text.className = "ds-check-text";
       const visible = document.createElement("span");
       visible.className = "ds-check-label";
-      visible.dataset.text = item.text;
+      visible.setAttribute("data-text", item.text);
       visible.textContent = item.text;
       text.append(visible);
 
@@ -246,10 +284,7 @@ function checklistElement(groups, onManualToggle) {
         text.append(small);
       }
 
-      if (item.automatic) {
-        label.style.pointerEvents = "none";
-        input.setAttribute("aria-disabled", "true");
-      } else {
+      if (!item.automatic) {
         input.addEventListener("change", () =>
           onManualToggle(item.id, input.checked),
         );
@@ -261,6 +296,56 @@ function checklistElement(groups, onManualToggle) {
   }
 
   return checklist;
+}
+
+function loginControlsElement(model) {
+  const hints = document.createElement("div");
+  hints.id = "login-hints";
+  hints.className = "login-hints";
+  hints.hidden = !model.showLink && !model.showCode;
+  const link = document.createElement("a");
+  link.id = "login-url";
+  link.className = "ds-btn ds-btn-primary";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = model.linkText;
+  link.hidden = !model.showLink;
+  if (model.url !== null) link.href = model.url;
+  const codeRow = document.createElement("div");
+  codeRow.id = "login-code-row";
+  codeRow.hidden = !model.showCode;
+  const code = document.createElement("code");
+  code.id = "login-code";
+  code.textContent = model.code ?? "";
+  const copy = document.createElement("button");
+  copy.id = "copy-login-code";
+  copy.type = "button";
+  copy.className = "ds-btn ds-btn-ghost ds-btn-sm";
+  copy.textContent = "複製";
+  copy.addEventListener("click", () =>
+    model.onCopyLoginCode(code.textContent, copy),
+  );
+  codeRow.append(code, copy);
+  const form = document.createElement("form");
+  form.id = "run-input";
+  form.hidden = !model.showInput;
+  const input = document.createElement("input");
+  input.id = "run-input-text";
+  input.type = "text";
+  input.maxLength = 500;
+  input.autocomplete = "off";
+  input.placeholder = "把授權代碼貼在這裡，再按送出";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "ds-btn ds-btn-primary ds-btn-sm";
+  submit.textContent = "送出";
+  form.append(input, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    model.onLoginInput(input.value, input);
+  });
+  hints.append(link, codeRow, form);
+  return hints;
 }
 
 function renderCard(model) {
@@ -276,7 +361,11 @@ function renderCard(model) {
   const detail = document.createElement("span");
   detail.textContent = model.card.detail;
   copy.append(title, detail);
-  header.append(copy);
+  const pill = document.createElement("span");
+  pill.className = model.status.className;
+  pill.textContent = model.status.text;
+  pill.dataset.cardStatus = model.status.status;
+  header.append(copy, pill);
   article.append(header);
 
   if (model.card.kind === "setup") {
@@ -287,10 +376,13 @@ function renderCard(model) {
   } else {
     const body = document.createElement("div");
     body.className = "current-task-body";
-    const status = document.createElement("p");
-    status.textContent = model.row.detail;
-    status.dataset.status = model.row.status;
-    body.append(status);
+    const result = document.createElement("p");
+    result.className = "execution-result";
+    result.textContent = model.row.detail;
+    body.append(result);
+    if (model.showChecklist) {
+      body.append(checklistElement(model.checklist, model.onManualToggle));
+    }
     const actions = document.createElement("div");
     actions.className = "env-actions";
     for (const spec of model.row.buttons) {
@@ -300,13 +392,19 @@ function renderCard(model) {
       const retest = document.createElement("button");
       retest.type = "button";
       retest.className = "ds-btn ds-btn-ghost ds-btn-sm";
-      retest.textContent = "Re-test";
+      retest.textContent = "再 check 一次";
       retest.addEventListener("click", model.onRetest);
       actions.append(retest);
     }
     body.append(actions);
-    if (model.showChecklist) {
-      body.append(checklistElement(model.checklist, model.onManualToggle));
+    if (model.login !== null) {
+      body.append(
+        loginControlsElement({
+          ...model.login,
+          onCopyLoginCode: model.onCopyLoginCode,
+          onLoginInput: model.onLoginInput,
+        }),
+      );
     }
     article.append(body);
   }
@@ -327,8 +425,6 @@ function renderCard(model) {
 }
 
 export function renderWizard(model) {
-  elements.sectionTitle.textContent = model.section.title;
-  elements.sectionKicker.textContent = model.section.subtitle;
   elements.sectionStatus.textContent = model.sectionStatus;
   showSection(model.section.id);
   renderMilestones(model.section.id, model.milestones, model.onMilestoneSelect);
@@ -640,10 +736,16 @@ export function renderRunControls(state) {
   elements.recheckConfigs.disabled = state.configControlsDisabled;
   for (const button of elements.configTools.querySelectorAll("button")) button.disabled = state.configControlsDisabled;
   for (const button of elements.configLang.querySelectorAll("button")) button.disabled = state.configControlsDisabled;
-  for (const button of configActionButtons()) button.disabled = state.configControlsDisabled || button.classList.contains("is-done");
+  for (const button of configActionButtons()) {
+    button.disabled =
+      state.configControlsDisabled ||
+      button.classList.contains("is-done") ||
+      button.dataset.permanentlyDisabled === "true";
+  }
   elements.cancel.hidden = state.cancelHidden;
   elements.cancel.disabled = state.cancelDisabled;
-  elements.runInput.hidden = state.inputHidden;
+  const runInput = elements.currentCard.querySelector("#run-input");
+  if (runInput !== null && state.inputHidden) runInput.hidden = true;
 }
 
 export function showInstallStatus(message) {
@@ -671,27 +773,49 @@ export function finishLoginWaiting(text, failed) {
 
 export function hideLoginWaiting() {}
 
-export function showLoginHints(hints) {
-  if (hints.url !== null) {
-    elements.loginUrl.href = hints.url;
-    elements.loginUrl.textContent = hints.url;
-    elements.loginUrl.hidden = false;
+export function showLoginHints(model) {
+  if (model === null) return;
+  const hints = elements.currentCard.querySelector("#login-hints");
+  const link = elements.currentCard.querySelector("#login-url");
+  const codeRow = elements.currentCard.querySelector("#login-code-row");
+  const code = elements.currentCard.querySelector("#login-code");
+  const runInput = elements.currentCard.querySelector("#run-input");
+  if (hints === null) return;
+  if (model.url !== null) {
+    link.href = model.url;
+    link.textContent = model.linkText;
+    link.hidden = false;
   }
-  if (hints.code !== null) {
-    elements.loginCode.textContent = hints.code;
-    elements.loginCodeRow.hidden = false;
+  if (model.code !== null) {
+    code.textContent = model.code;
+    codeRow.hidden = false;
   }
-  elements.loginHints.hidden = elements.loginUrl.hidden && elements.loginCodeRow.hidden;
+  runInput.hidden = !model.showInput;
+  hints.hidden = link.hidden && codeRow.hidden;
 }
 
 export function clearLoginHints() {
-  elements.loginUrl.hidden = true;
-  elements.loginUrl.removeAttribute("href");
-  elements.loginUrl.textContent = "";
-  elements.loginCodeRow.hidden = true;
-  elements.loginCode.textContent = "";
-  elements.copyLoginCode.textContent = "複製";
-  elements.loginHints.hidden = true;
+  const hints = elements.currentCard.querySelector("#login-hints");
+  if (hints === null) return;
+  const link = hints.querySelector("#login-url");
+  const codeRow = hints.querySelector("#login-code-row");
+  const code = hints.querySelector("#login-code");
+  const copy = hints.querySelector("#copy-login-code");
+  const runInput = hints.querySelector("#run-input");
+  link.hidden = true;
+  link.removeAttribute("href");
+  codeRow.hidden = true;
+  code.textContent = "";
+  copy.textContent = "複製";
+  runInput.hidden = true;
+  hints.hidden = true;
+}
+
+export function setupCondensedTabs() {
+  const update = () =>
+    elements.sectionNav.classList.toggle("is-condensed", window.scrollY > 80);
+  window.addEventListener("scroll", update, { passive: true });
+  update();
 }
 
 export function showVerifyModal() {

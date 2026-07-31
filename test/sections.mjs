@@ -21,6 +21,47 @@ try {
     ["env", "rules", "skills", "demo"],
   );
 
+  const mergedEnv = section(
+    flattenCheckCards(groupChecks([]), [
+      check("claude"),
+      { ...check("claude-auth"), label: "Claude Code 登入狀態" },
+    ]),
+    "env",
+  );
+  const claudeCard = mergedEnv.cards.find(({ checkId }) => checkId === "claude");
+  assert.equal(
+    mergedEnv.cards.filter(({ checkId }) =>
+      ["claude", "claude-auth"].includes(checkId),
+    ).length,
+    1,
+  );
+  assert.deepEqual(
+    claudeCard.checks.map(({ id }) => id),
+    ["claude", "claude-auth"],
+  );
+
+  const envSequence = section(
+    flattenCheckCards(
+      groupChecks([]),
+      [
+        "claude",
+        "claude-auth",
+        "codex",
+        "codex-auth",
+        "git",
+        "gh",
+        "gh-auth",
+        "node",
+        "ghostty",
+      ].map(check),
+    ),
+    "env",
+  );
+  assert.deepEqual(
+    envSequence.cards.map(({ checkId }) => checkId),
+    ["env-config", "claude", "codex", "git", "gh", "node", "ghostty"],
+  );
+
   const rules = section(
     groupChecks([
       check("codex-config"),

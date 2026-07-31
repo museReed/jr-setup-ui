@@ -18,18 +18,21 @@ import {
   agentNameFor,
   behaviorFallbackState,
   cardIsComplete,
+  cardResultText,
+  cardStatusModel,
   checklistGroups,
   configRowModel,
   configSummary,
   currentCardIndex,
   envButtonState,
-  envRowModel,
+  envCardRowModel,
   extractLoginHints,
   guidanceModel,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
   loaderModifier,
+  loginCardModel,
   loginWaitStep,
   rowRunOptions,
   runControlsState,
@@ -70,11 +73,14 @@ const state = {
   installedSteps: new Set(),
   verificationAttempted: new Set(),
   failedVerificationSteps: new Set(),
+  failedSteps: new Set(),
+  resultTexts: new Map(),
   deferredVerificationSteps: new Set(),
   manualCheckedIds: new Set(),
   selectedTools: ["claude"],
   selectedLanguage: "zh-TW",
   pendingModalCheck: null,
+  loginHints: { url: null, code: null },
 };
 
 async function rememberVerifiedStep(step) {
@@ -159,22 +165,33 @@ function renderWizard() {
     cardSection.cards.length,
     toolSelectionValue(state.selectedTools),
   );
+  const cardChecks = card.checks ?? (card.check == null ? [] : [card.check]);
+  const verifiedCheckIds = new Set(
+    cardChecks
+      .filter((check) =>
+        card.kind === "env" ? check.status === "ok" : verified.has(check.id),
+      )
+      .map((check) => check.id),
+  );
   const groups = checklistGroups({
-    check: card.check,
-    verified:
-      card.kind === "env"
-        ? card.check.status === "ok"
-        : verified.has(card.checkId),
+    checks: cardChecks,
+    verifiedCheckIds,
     verificationAttempted: state.verificationAttempted.has(card.checkId),
     verificationFailed: state.failedVerificationSteps.has(card.checkId),
     manualItems,
     checkedManualIds: state.manualCheckedIds,
   });
+  const installChecks = cardChecks.filter(
+    (check) => !check.id.endsWith("-auth"),
+  );
   const installed =
     card.kind === "setup" ||
-    state.installedSteps.has(card.checkId) ||
-    card.check?.status === "ok" ||
-    (card.kind === "config" && card.check?.noInstall === true);
+    installChecks.every(
+      (check) =>
+        state.installedSteps.has(check.id) ||
+        check.status === "ok" ||
+        (card.kind === "config" && check.noInstall === true),
+    );
   const verificationRequired =
     card.check?.verifyAction != null || card.check?.eyeCheck != null;
   const verificationAttempted =
@@ -184,7 +201,10 @@ function renderWizard() {
   const nextUnlocked =
     card.kind === "setup"
       ? true
-      : nextCardUnlocked({
+      : card.kind === "env"
+        ? cardIsComplete(card, verified) &&
+          groups.manual.every((item) => item.checked)
+        : nextCardUnlocked({
           installed,
           verificationRequired,
           verificationAttempted,
@@ -206,41 +226,93 @@ function renderWizard() {
     completedCardIds,
     currentIndex,
   );
-  const row =
+  let row =
     card.kind === "env"
-      ? envRowModel(card.check, state.installedSteps.has(card.checkId))
+      ? envCardRowModel(card, state.installedSteps)
       : card.kind === "config"
         ? configRowModel(card.check, verified.has(card.checkId), {
             availableActions: state.availableActions,
             installed: state.installedSteps.has(card.checkId),
+            verificationAttempted: state.verificationAttempted.has(
+              card.checkId,
+            ),
             verificationFailed: state.failedVerificationSteps.has(card.checkId),
             verificationDeferred: state.deferredVerificationSteps.has(card.checkId),
           })
         : null;
+  if (row !== null) {
+    row = { ...row, detail: cardResultText(card, state.resultTexts) };
+  }
+  const activeCheckId =
+    state.activeRunStep ??
+    LOGIN_CHECK_IDS[state.currentEnvAction] ??
+    (state.currentEnvAction?.startsWith("install-")
+      ? state.currentEnvAction.slice("install-".length)
+      : null);
+  const status = cardStatusModel({
+    completed: cardIsComplete(card, verified),
+    running:
+      state.runInProgress &&
+      (card.kind === "setup" ||
+        cardChecks.some((check) => check.id === activeCheckId)),
+    failed: cardChecks.some(
+      (check) =>
+        state.failedSteps.has(check.id) ||
+        state.failedVerificationSteps.has(check.id),
+    ),
+    installed,
+  });
+  const login = loginCardModel({
+    checks: cardChecks,
+    hints: state.loginHints,
+    acceptsInput: state.acceptsInput,
+    runInProgress: state.runInProgress,
+    runId: state.runId,
+  });
   const cardModel = {
     card,
     row,
+    status,
+    login,
     checklist: groups,
-    showChecklist:
-      card.kind !== "setup" &&
-      (verificationAttempted ||
-        state.failedVerificationSteps.has(card.checkId) ||
-        state.deferredVerificationSteps.has(card.checkId) ||
-        groups.manual.length > 0),
-    showRetest: row?.showRetest === true,
+    showChecklist: card.kind !== "setup",
+    showRetest: card.kind === "env" || row?.showRetest === true,
     showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") run(action, undefined, button);
       else runConfigCheckAction(card.check, action, button, extra);
     },
-    onRetest: () =>
+    onRetest: () => {
+      if (card.kind === "env") {
+        checkEnvironment();
+        return;
+      }
       runConfigCheckAction(
         card.check,
         card.check.verifyAction,
         null,
         card.check.verifyOptions,
-      ),
+      );
+    },
+    onCopyLoginCode: async (code, button) => {
+      try {
+        await navigator.clipboard.writeText(code);
+        button.textContent = "已複製";
+      } catch (error) {
+        view.addLine(`無法複製：${error.message}`, "failed");
+      }
+    },
+    onLoginInput: async (text, input) => {
+      if (state.runId === null || !state.acceptsInput) return;
+      try {
+        await api.sendInput(state.runId, text);
+        view.addLine(`> ${text}`, "agent-status");
+        input.value = "";
+      } catch (error) {
+        view.addLine(`無法送出：${error.message}`, "failed");
+      }
+    },
     onManualToggle: (id, checked) => {
       if (checked) {
         state.manualCheckedIds.add(id);
@@ -325,6 +397,7 @@ function renderEnvActionButtons() {
       envButtonState({
         action,
         idleText: button.dataset.idleText,
+        permanentlyDisabled: button.dataset.permanentlyDisabled === "true",
         runInProgress: state.runInProgress,
         currentEnvAction: state.currentEnvAction,
         waitingAction: state.loginWait?.action ?? null,
@@ -335,6 +408,7 @@ function renderEnvActionButtons() {
 
 function setRunning(running) {
   state.runInProgress = running;
+  renderWizard();
   renderControls();
   renderEnvActionButtons();
 }
@@ -346,6 +420,7 @@ function resetRun({ keepLoader = false } = {}) {
   state.activeRunButton = null;
   state.activeRunStep = null;
   state.currentEnvAction = null;
+  state.loginHints = { url: null, code: null };
   view.clearLoginHints();
 
   if (!keepLoader) {
@@ -564,6 +639,14 @@ async function handleDone(
       state.failedVerificationSteps.add(step);
       state.deferredVerificationSteps.delete(step);
     }
+    if (step !== null && step !== undefined) {
+      state.failedSteps.add(step);
+      const reason = runContext.rawOutput.findLast((line) => line.trim() !== "");
+      state.resultTexts.set(
+        step,
+        `${check?.label ?? "這個項目"}：${reason ?? outcome.summary}`,
+      );
+    }
 
     view.addTerminalLines(
       terminalOutcomeLines({ action, succeeded: false, check, guidance }),
@@ -617,6 +700,10 @@ async function handleDone(
     (action.startsWith("install-") || action === "merge-config-step")
   ) {
     state.installedSteps.add(step);
+  }
+  if (step !== null && step !== undefined) {
+    state.failedSteps.delete(step);
+    state.resultTexts.delete(step);
   }
   if (
     verifiedStep !== undefined &&
@@ -714,6 +801,7 @@ async function run(action, promptText, button = null, options) {
     button,
     step:
       options?.step ??
+      LOGIN_CHECK_IDS[action] ??
       (action.startsWith("install-") ? action.slice("install-".length) : null),
     rawOutput: [],
     explanation: null,
@@ -772,7 +860,22 @@ async function run(action, promptText, button = null, options) {
       }
 
       if (isLoginAction(action)) {
-        view.showLoginHints(extractLoginHints(line.text));
+        const hints = extractLoginHints(line.text);
+        state.loginHints = {
+          url: hints.url ?? state.loginHints.url,
+          code: hints.code ?? state.loginHints.code,
+        };
+        view.showLoginHints(
+          loginCardModel({
+            checks: state.envChecks.filter(
+              (check) => check.id === LOGIN_CHECK_IDS[action],
+            ),
+            hints: state.loginHints,
+            acceptsInput: state.acceptsInput,
+            runInProgress: state.runInProgress,
+            runId: state.runId,
+          }),
+        );
       }
 
       view.addRawLine(line.text);
@@ -871,11 +974,31 @@ async function run(action, promptText, button = null, options) {
 
       if (!done) {
         view.addLine("串流連線中斷", "failed");
+        if (runContext.step !== null && runContext.step !== undefined) {
+          const failedCheck = [...state.lastChecks, ...state.envChecks].find(
+            (candidate) => candidate.id === runContext.step,
+          );
+          state.failedSteps.add(runContext.step);
+          state.resultTexts.set(
+            runContext.step,
+            `${failedCheck?.label ?? "這個項目"}：串流連線中斷`,
+          );
+        }
         resetRun();
       }
     };
   } catch (error) {
     view.addLine(`無法執行：${error.message}`, "failed");
+    if (runContext.step !== null && runContext.step !== undefined) {
+      const failedCheck = [...state.lastChecks, ...state.envChecks].find(
+        (candidate) => candidate.id === runContext.step,
+      );
+      state.failedSteps.add(runContext.step);
+      state.resultTexts.set(
+        runContext.step,
+        `${failedCheck?.label ?? "這個項目"}：無法執行，${error.message}`,
+      );
+    }
     const guidance = guidanceModel({
       step: options?.step,
       status: "missing",
@@ -933,15 +1056,6 @@ view.elements.cancel.addEventListener("click", async () => {
   }
 });
 
-view.elements.copyLoginCode.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(view.elements.loginCode.textContent);
-    view.elements.copyLoginCode.textContent = "已複製";
-  } catch (error) {
-    view.addLine(`無法複製：${error.message}`, "failed");
-  }
-});
-
 view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(
@@ -953,26 +1067,9 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
   }
 });
 
-view.elements.runInput.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  if (state.runId === null || !state.acceptsInput) {
-    return;
-  }
-
-  const text = view.elements.runInputText.value;
-
-  try {
-    await api.sendInput(state.runId, text);
-    view.addLine(`> ${text}`, "agent-status");
-    view.elements.runInputText.value = "";
-  } catch (error) {
-    view.addLine(`無法送出：${error.message}`, "failed");
-  }
-});
-
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
+view.setupCondensedTabs();
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
 view.onToolSelect((tool) => {
   state.selectedTools = toggleToolSelection(state.selectedTools, tool);

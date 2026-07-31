@@ -270,21 +270,72 @@ export function groupChecks(checks) {
 }
 
 const ENV_CARD_META = {
-  claude: { agent: "claude", logo: "logo-claude" },
-  "claude-auth": { agent: "claude", logo: "logo-claude" },
-  codex: { agent: "codex", logo: "logo-openai" },
-  "codex-auth": { agent: "codex", logo: "logo-openai" },
-  git: { agent: "shared", logo: "logo-git" },
-  gh: { agent: "shared", logo: "logo-github" },
-  "gh-auth": { agent: "shared", logo: "logo-github" },
-  node: { agent: "shared", logo: "logo-nodejs" },
-  homebrew: { agent: "shared", logo: "logo-homebrew" },
-  "execution-policy": { agent: "other", logo: "logo-powershell" },
-  "powershell-version": { agent: "other", logo: "logo-powershell" },
-  "powershell-encoding": { agent: "other", logo: "logo-powershell" },
-  "windows-terminal": { agent: "other", logo: "logo-terminal" },
-  ghostty: { agent: "other", logo: "logo-terminal" },
-  terminal: { agent: "other", logo: "logo-terminal" },
+  claude: {
+    agent: "claude",
+    label: "Claude Code",
+    logo: "logo-claude",
+    description: "安裝並登入 Claude Code，才能直接請它協助完成課堂任務。",
+    checkIds: ["claude", "claude-auth"],
+  },
+  codex: {
+    agent: "codex",
+    label: "Codex CLI",
+    logo: "logo-openai",
+    description: "安裝並登入 Codex CLI，讓它能在這台電腦上協助寫程式。",
+    checkIds: ["codex", "codex-auth"],
+  },
+  git: {
+    agent: "shared",
+    logo: "logo-git",
+    description: "安裝 Git，才能保存每次修改並和 GitHub 同步。",
+  },
+  gh: {
+    agent: "shared",
+    label: "GitHub CLI",
+    logo: "logo-github",
+    description: "安裝並登入 GitHub CLI，才能從這裡管理遠端專案。",
+    checkIds: ["gh", "gh-auth"],
+  },
+  node: {
+    agent: "shared",
+    logo: "logo-nodejs",
+    description: "確認 Node.js 可用，課堂工具與專案才跑得起來。",
+  },
+  homebrew: {
+    agent: "shared",
+    logo: "logo-homebrew",
+    description: "確認 Homebrew 可用，才能安裝課堂需要的 macOS 工具。",
+  },
+  "execution-policy": {
+    agent: "other",
+    logo: "logo-powershell",
+    description: "調整 PowerShell 權限，讓課堂安裝指令可以執行。",
+  },
+  "powershell-version": {
+    agent: "other",
+    logo: "logo-powershell",
+    description: "確認 PowerShell 版本符合課堂工具的執行需求。",
+  },
+  "powershell-encoding": {
+    agent: "other",
+    logo: "logo-powershell",
+    description: "確認 PowerShell 使用正確編碼，避免中文輸出變成亂碼。",
+  },
+  "windows-terminal": {
+    agent: "other",
+    logo: "logo-terminal",
+    description: "安裝 Windows Terminal，讓課堂指令有一致的執行環境。",
+  },
+  ghostty: {
+    agent: "other",
+    logo: "logo-terminal",
+    description: "安裝 Ghostty，讓你有一個好用的終端機執行課堂指令。",
+  },
+  terminal: {
+    agent: "other",
+    logo: "logo-terminal",
+    description: "確認終端機可用，才能執行接下來的課堂指令。",
+  },
 };
 
 const AGENT_ORDER = ["claude", "codex", "shared", "other"];
@@ -296,20 +347,38 @@ function checkCard(sectionId, card, check) {
     agent: card.agent,
     label: check.label,
     logo: card.logo,
-    detail: check.detail,
+    detail:
+      card.description ??
+      `設定 ${check.label}，讓這項功能能在接下來的課程中正常使用。`,
     check,
+    checks: [check],
     kind: sectionId === "env" ? "env" : "config",
   };
 }
 
 export function flattenCheckCards(groupedSections, envChecks = []) {
+  const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
+  const mergedCheckIds = new Set(
+    Object.values(ENV_CARD_META).flatMap(({ checkIds = [] }) =>
+      checkIds.slice(1),
+    ),
+  );
   const envCards = envChecks
+    .filter((check) => !mergedCheckIds.has(check.id))
     .map((check) => {
       const meta = ENV_CARD_META[check.id] ?? {
         agent: "other",
         logo: "logo-terminal",
+        description: `準備 ${check.label}，讓後面的課堂步驟可以正常進行。`,
       };
-      return checkCard("env", meta, check);
+      const checks = (meta.checkIds ?? [check.id])
+        .map((id) => envChecksById.get(id))
+        .filter((candidate) => candidate !== undefined);
+      return {
+        ...checkCard("env", meta, checks[0]),
+        label: meta.label ?? checks[0].label,
+        checks,
+      };
     })
     .sort(
       (left, right) =>
@@ -327,6 +396,7 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
           logo: "logo-terminal",
           detail: "先選這次要設定的工具與規則檔語言。",
           check: null,
+          checks: [],
           kind: "setup",
         },
         ...envCards,

@@ -8,6 +8,9 @@ import {
   agentNameFor,
   appendTermLine,
   behaviorFallbackState,
+  cardIsComplete,
+  cardResultText,
+  cardStatusModel,
   checklistGroups,
   currentCardIndex,
   configRowModel,
@@ -17,6 +20,7 @@ import {
   extractLoginHints,
   installStatusMessage,
   isLoginAction,
+  loginCardModel,
   loginWaitStep,
   milestoneModels,
   nextCardUnlocked,
@@ -148,8 +152,12 @@ try {
     true,
   );
   assert.equal(verified.status, "ok");
-  assert.deepEqual(verified.buttons, []);
-  ok("驗過之後才變綠，按鈕收起來");
+  assert.deepEqual(
+    verified.buttons.map(({ text, disabled }) => ({ text, disabled })),
+    [{ text: "✅ 安裝", disabled: true }],
+  );
+  assert.equal(verified.showRetest, true);
+  ok("驗過之後才變綠，安裝按鈕置灰並可再次驗證");
 
   const cards = [
     {
@@ -290,6 +298,57 @@ try {
     true,
   );
   ok("checklist 正確分組，手動項全勾才解鎖且系統失敗不阻擋");
+
+  assert.equal(groupedChecklist.system[0].disabled, true);
+  assert(
+    groupedChecklist.manual.every(({ disabled }) => disabled === false),
+  );
+  ok("系統 checklist 項帶 disabled，人工項保持可操作");
+
+  const mergedCard = {
+    kind: "env",
+    checkId: "claude",
+    detail: "安裝並登入 Claude Code，才能開始課堂任務。",
+    checks: [
+      { id: "claude", label: "Claude Code CLI", status: "ok", detail: "1.2.3" },
+      {
+        id: "claude-auth",
+        label: "Claude Code 登入狀態",
+        status: "warn",
+        detail: "未登入",
+      },
+    ],
+  };
+  assert.equal(cardIsComplete(mergedCard), false);
+  assert.equal(
+    cardIsComplete({
+      ...mergedCard,
+      checks: mergedCard.checks.map((check) => ({ ...check, status: "ok" })),
+    }),
+    true,
+  );
+  ok("合併卡必須 CLI 與登入兩個 check 都通過才完成");
+
+  assert.notEqual(mergedCard.detail, cardResultText(mergedCard));
+  ok("卡片 description 與執行結果使用不同文字");
+
+  assert.deepEqual(
+    [
+      cardStatusModel(),
+      cardStatusModel({ running: true }),
+      cardStatusModel({ installed: true }),
+      cardStatusModel({ completed: true }),
+      cardStatusModel({ failed: true }),
+    ].map(({ text, className }) => ({ text, className })),
+    [
+      { text: "未安裝", className: "ds-pill" },
+      { text: "安裝中…", className: "ds-pill" },
+      { text: "待驗證", className: "ds-pill" },
+      { text: "已完成", className: "ds-pill ds-pill-success" },
+      { text: "失敗", className: "ds-pill card-status-danger" },
+    ],
+  );
+  ok("status 徽章五種狀態對到正確文字與 class");
 
   assert.deepEqual(sectionManualItems("rules", 0, 2, "claude"), []);
   assert.deepEqual(
@@ -472,6 +531,48 @@ try {
   assert.deepEqual(extractLoginHints(null), { url: null, code: null });
   ok("認得出裝置代碼，非字串輸入不會炸");
 
+  const loginChecks = [{ id: "codex-auth" }];
+  assert.equal(
+    loginCardModel({
+      checks: loginChecks,
+      hints: { url: "https://example.com", code: null },
+      acceptsInput: true,
+      runInProgress: true,
+      runId: "run-1",
+    }).showInput,
+    false,
+  );
+  assert.deepEqual(
+    loginCardModel({
+      checks: loginChecks,
+      hints: { url: "https://example.com", code: "ABCD-1234" },
+      acceptsInput: true,
+      runInProgress: true,
+      runId: "run-1",
+    }),
+    {
+      action: "login-codex",
+      linkText: "開啟 OpenAI 授權頁",
+      authCheckId: "codex-auth",
+      url: "https://example.com",
+      code: "ABCD-1234",
+      showLink: true,
+      showCode: true,
+      showInput: true,
+    },
+  );
+  assert.equal(
+    loginCardModel({
+      checks: loginChecks,
+      hints: { url: null, code: "ABCD-1234" },
+      acceptsInput: false,
+      runInProgress: true,
+      runId: "run-1",
+    }).showInput,
+    false,
+  );
+  ok("登入卡撈到代碼且 action 接受輸入時才顯示複製區與輸入格");
+
   assert.equal(isLoginAction("login-claude"), true);
   assert.equal(isLoginAction("install-claude"), false);
   assert.equal(agentNameFor("claude-free"), "Claude");
@@ -517,9 +618,9 @@ try {
   });
   assert.deepEqual(
     auth.buttons.map((button) => button.text),
-    ["登入"],
+    ["開始登入"],
   );
-  ok("執行原則是「修正」、登入狀態是「登入」");
+  ok("執行原則是「修正」、登入狀態是「開始登入」");
 
   // 迴歸：逾時曾被歸成 missing，長出安裝按鈕叫人重裝已經裝好的東西。
   const timedOut = envRowModel({

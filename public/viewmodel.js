@@ -51,6 +51,33 @@ const STATUS_DISPLAY = {
   unverified: { symbol: "◐", label: "待驗證" },
 };
 
+const CARD_STATUS_DISPLAY = {
+  uninstalled: { text: "未安裝", className: "ds-pill" },
+  installing: { text: "安裝中…", className: "ds-pill" },
+  pending: { text: "待驗證", className: "ds-pill" },
+  complete: { text: "已完成", className: "ds-pill ds-pill-success" },
+  failed: { text: "失敗", className: "ds-pill card-status-danger" },
+};
+
+export function cardStatusModel({
+  completed = false,
+  running = false,
+  failed = false,
+  installed = false,
+} = {}) {
+  const status = running
+    ? "installing"
+    : completed
+      ? "complete"
+      : failed
+        ? "failed"
+        : installed
+          ? "pending"
+          : "uninstalled";
+
+  return { status, ...CARD_STATUS_DISPLAY[status] };
+}
+
 const ENV_LOGOS = {
   claude: "logo-claude",
   "claude-auth": "logo-claude",
@@ -149,7 +176,7 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: check.fixAction,
       dataName: "fixAction",
-      text: check.id === "execution-policy" ? "修正" : "登入",
+      text: check.id === "execution-policy" ? "修正" : "開始登入",
     });
   }
 
@@ -159,6 +186,50 @@ export function envRowModel(check, installed = false) {
     ariaLabel: display.label,
     label: check.label,
     detail: check.detail,
+    buttons,
+  };
+}
+
+export function cardResultText(card, resultTexts = new Map()) {
+  return (card.checks ?? (card.check == null ? [] : [card.check]))
+    .map(
+      (check) =>
+        resultTexts.get(check.id) ?? `${check.label}：${check.detail}`,
+    )
+    .join("；");
+}
+
+export function envCardRowModel(card, installedSteps = new Set()) {
+  const checks = card.checks ?? [card.check];
+  const primary = checks.find((check) => !check.id.endsWith("-auth"));
+  const buttons = [];
+
+  if (primary !== undefined) {
+    const installed =
+      installedSteps.has(primary.id) || primary.status === "ok";
+    const install = envRowModel(primary, installed).buttons.find(
+      (button) => button.dataName === "installAction",
+    );
+    buttons.push(
+      install ?? {
+        action: "",
+        dataName: "installAction",
+        text: "安裝",
+        disabled: true,
+      },
+    );
+  }
+
+  for (const check of checks) {
+    buttons.push(
+      ...envRowModel(check, installedSteps.has(check.id)).buttons.filter(
+        (button) => button.dataName !== "installAction",
+      ),
+    );
+  }
+
+  return {
+    detail: cardResultText(card),
     buttons,
   };
 }
@@ -204,10 +275,12 @@ export function configRowModel(
     failed = false,
     availableActions = null,
     installed = false,
+    verificationAttempted = false,
     verificationFailed = false,
     verificationDeferred = false,
   } = {},
 ) {
+  const installationDone = installed || verified;
   const pending =
     check.status === "ok" &&
     !verified &&
@@ -226,9 +299,18 @@ export function configRowModel(
     buttons.push({
       action: installAction,
       dataName: "installAction",
-      text: installed ? "✅ 安裝" : "安裝",
+      text: installationDone ? "✅ 安裝" : "安裝",
       step: check.id,
-      ...(installed ? { disabled: true, done: true } : {}),
+      ...(installationDone ? { disabled: true, done: true } : {}),
+    });
+  } else {
+    buttons.push({
+      action: "",
+      dataName: "installAction",
+      text: installationDone ? "✅ 安裝" : "安裝",
+      step: check.id,
+      disabled: true,
+      ...(installationDone ? { done: true } : {}),
     });
   }
 
@@ -269,7 +351,12 @@ export function configRowModel(
     // 只有真終端看得到的那一格：程式驗不到，讓學生看完回來勾。
     eyeCheck: pending && check.eyeCheck != null ? check.eyeCheck : null,
     verified,
-    showRetest: verificationFailed || verificationDeferred,
+    showRetest:
+      check.verifyAction != null &&
+      (verified ||
+        verificationAttempted ||
+        verificationFailed ||
+        verificationDeferred),
     guidance: guidanceModel({
       step: check.id,
       status,
@@ -323,13 +410,15 @@ export function cardIsComplete(card, verifiedSteps = new Set()) {
   }
 
   if (card.kind === "env") {
-    return card.check.status === "ok";
+    return (card.checks ?? [card.check]).every(
+      (check) => check.status === "ok",
+    );
   }
 
-  return configRowModel(
-    card.check,
-    verifiedSteps.has(card.checkId),
-  ).status === "ok";
+  return (card.checks ?? [card.check]).every(
+    (check) =>
+      configRowModel(check, verifiedSteps.has(check.id)).status === "ok",
+  );
 }
 
 export function currentCardIndex(cards, verifiedSteps = new Set()) {
@@ -388,7 +477,9 @@ export function appendTermLine(lines, next) {
 
 export function checklistGroups({
   check,
+  checks = check == null ? [] : [check],
   verified = false,
+  verifiedCheckIds = null,
   verificationAttempted = false,
   verificationFailed = false,
   manualItems = [],
@@ -396,12 +487,16 @@ export function checklistGroups({
 }) {
   const system = [];
 
-  if (check !== null && check !== undefined) {
+  for (const candidate of checks) {
     system.push({
-      id: `system-${check.id}`,
-      text: check.label,
-      checked: verified,
+      id: `system-${candidate.id}`,
+      text: candidate.label,
+      checked:
+        verifiedCheckIds === null
+          ? verified
+          : verifiedCheckIds.has(candidate.id),
       automatic: true,
+      disabled: true,
       failedReason:
         verificationAttempted && verificationFailed
           ? "自動驗證沒有通過，修正後可以重新測試。"
@@ -410,23 +505,66 @@ export function checklistGroups({
   }
 
   const manual = [
-    ...(check?.eyeCheck == null
-      ? []
-      : [
-          {
-            id: `eye-${check.id}`,
-            text: check.eyeCheck,
-            detail: "這一項需要你看畫面確認。",
-          },
-        ]),
+    ...checks.filter((candidate) => candidate.eyeCheck != null).map(
+      (candidate) =>
+        ({
+          id: `eye-${candidate.id}`,
+          text: candidate.eyeCheck,
+          detail: "這一項需要你看畫面確認。",
+        }),
+    ),
     ...manualItems,
   ].map((item) => ({
     ...item,
     checked: checkedManualIds.has(item.id),
     automatic: false,
+    disabled: false,
   }));
 
   return { system, manual };
+}
+
+const LOGIN_CARD_SERVICES = {
+  "claude-auth": {
+    action: "login-claude",
+    linkText: "開啟 Anthropic 授權頁",
+  },
+  "codex-auth": {
+    action: "login-codex",
+    linkText: "開啟 OpenAI 授權頁",
+  },
+  "gh-auth": {
+    action: "login-gh",
+    linkText: "開啟 GitHub 授權頁",
+  },
+};
+
+export function loginCardModel({
+  checks = [],
+  hints = { url: null, code: null },
+  acceptsInput = false,
+  runInProgress = false,
+  runId = null,
+} = {}) {
+  const authCheck = checks.find((check) => LOGIN_CARD_SERVICES[check.id]);
+
+  if (authCheck === undefined) {
+    return null;
+  }
+
+  const service = LOGIN_CARD_SERVICES[authCheck.id];
+  const showCode = hints.code !== null;
+
+  return {
+    ...service,
+    authCheckId: authCheck.id,
+    url: hints.url,
+    code: hints.code,
+    showLink: hints.url !== null,
+    showCode,
+    showInput:
+      showCode && acceptsInput && runInProgress && runId !== null,
+  };
 }
 
 export function nextCardUnlocked({
@@ -608,10 +746,15 @@ export function loaderModifier({
 export function envButtonState({
   action,
   idleText,
+  permanentlyDisabled = false,
   runInProgress,
   currentEnvAction,
   waitingAction,
 }) {
+  if (permanentlyDisabled) {
+    return { disabled: true, text: idleText };
+  }
+
   const waiting = waitingAction === action;
 
   if (waiting) {

@@ -190,22 +190,24 @@ assert.equal(codexOnly.at(-1), "demo-codex");
 const demo = describeStep("demo-claude", { lang: "zh-TW", home: HOME });
 assert.equal(demo.kind, "demo");
 
-// 這一列沒有東西可裝，所以不能有安裝按鈕——補了按下去只會失敗。
+// 每張卡都保留安裝按鈕；這一列沒有東西可裝，所以按鈕必須鎖住。
 const demoCheck = withActions(checkDemo(demo));
 assert.equal(demoCheck.noInstall, true);
 assert.equal(demoCheck.status, "ok");
 
 const demoRow = configRowModel(demoCheck, false);
-assert.equal(demoRow.buttons.length, 1);
-assert.equal(demoRow.buttons[0].dataName, "verifyAction");
-assert.equal(demoRow.buttons[0].text, "開終端跑");
+assert.equal(demoRow.buttons.length, 2);
+assert.equal(demoRow.buttons[0].dataName, "installAction");
+assert.equal(demoRow.buttons[0].disabled, true);
+assert.equal(demoRow.buttons[1].dataName, "verifyAction");
+assert.equal(demoRow.buttons[1].text, "開終端跑");
 // 沒驗過之前不給綠燈，跟其他列同一條規則。
 assert.equal(demoRow.status, "unverified");
 assert.equal(configRowModel(demoCheck, true).status, "ok");
 // 第三段「逐字打 code、右邊長出網頁」是純畫面，程式判不到——要有勾選框讓學生確認。
 // 有 eyeCheck 的列不會被自動標綠（app.js 那條規則），綠燈以勾選為準。
 assert(demoRow.eyeCheck != null, "demo 那列要有人眼確認的勾選框");
-console.log("ok - demo 那列只有開終端的按鈕，且附人眼確認的勾選框");
+console.log("ok - demo 那列鎖住安裝按鈕，並附開終端與人眼確認");
 
 // demo 第 3 步：內建的是自走版（產出的頁面打開就自己演，零依賴）。原版 type_hl.py
 // 要 python playwright + chromium，現場多兩個安裝步驟，所以不帶——這裡釘住「帶的是
