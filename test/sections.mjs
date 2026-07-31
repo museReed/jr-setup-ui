@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { SECTIONS, groupChecks } from "../public/model.js";
+import {
+  SECTIONS,
+  flattenCheckCards,
+  groupChecks,
+} from "../public/model.js";
 import { envLogoFor, progressSummary } from "../public/viewmodel.js";
 
 function check(id) {
@@ -105,7 +109,34 @@ try {
   assert.equal(envLogoFor("execution-policy"), "logo-powershell");
   assert.equal(envLogoFor("unknown"), null);
 
-  console.log("ok - sections 分組、進度、logo 與未知 step fallback");
+  const flattened = flattenCheckCards(
+    groupChecks([
+      check("tab-sync"),
+      check("codex-config"),
+      check("claude-md"),
+      check("future-config-step"),
+    ]),
+    [check("node"), check("codex"), check("claude")],
+  );
+  assert.equal(section(flattened, "env").cards.length, 4);
+  assert.deepEqual(
+    section(flattened, "env").cards.map(({ checkId }) => checkId),
+    ["env-config", "claude", "codex", "node"],
+  );
+  assert.deepEqual(
+    section(flattened, "rules").cards.map(({ checkId, agent }) => ({
+      checkId,
+      agent,
+    })),
+    [
+      { checkId: "claude-md", agent: "claude" },
+      { checkId: "codex-config", agent: "codex" },
+      { checkId: "tab-sync", agent: "shared" },
+      { checkId: "future-config-step", agent: "other" },
+    ],
+  );
+
+  console.log("ok - sections 分組、單卡順序、進度、logo 與未知 step fallback");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

@@ -5,6 +5,8 @@ import * as view from "./view.js";
 import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
+  flattenCheckCards,
+  groupChecks,
   SECTIONS,
   sectionGateState,
 } from "./model.js";
@@ -15,8 +17,13 @@ import {
   LOADER_MODIFIERS,
   agentNameFor,
   behaviorFallbackState,
+  cardIsComplete,
+  checklistGroups,
+  configRowModel,
   configSummary,
+  currentCardIndex,
   envButtonState,
+  envRowModel,
   extractLoginHints,
   guidanceModel,
   installVerificationFollowUp,
@@ -27,6 +34,13 @@ import {
   rowRunOptions,
   runControlsState,
   runOutcome,
+  sectionManualItems,
+  sectionStatus,
+  milestoneModels,
+  nextCardUnlocked,
+  terminalOutcomeLines,
+  toggleToolSelection,
+  toolSelectionValue,
 } from "./viewmodel.js";
 
 const state = {
@@ -45,11 +59,22 @@ const state = {
   loginWait: null,
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
-  verificationPrompts: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
   availableActions: new Set(["diagnose-naming-block"]),
+  envChecks: [],
+  activeSectionId: "env",
+  viewingCardIndex: {},
+  setupCompleted: false,
+  installedSteps: new Set(),
+  verificationAttempted: new Set(),
+  failedVerificationSteps: new Set(),
+  deferredVerificationSteps: new Set(),
+  manualCheckedIds: new Set(),
+  selectedTools: ["claude"],
+  selectedLanguage: "zh-TW",
+  pendingModalCheck: null,
 };
 
 async function rememberVerifiedStep(step) {
@@ -71,6 +96,182 @@ async function loadVerifiedSteps() {
   }
 }
 
+function effectiveVerifiedSteps() {
+  const verified = new Set(state.verifiedSteps);
+
+  for (const id of state.manualCheckedIds) {
+    if (id.startsWith("eye-")) {
+      verified.add(id.slice("eye-".length));
+    }
+  }
+
+  return verified;
+}
+
+function allCardSections() {
+  return flattenCheckCards(groupChecks(state.lastChecks), state.envChecks).map(
+    (section) => ({
+      ...section,
+      cards: section.cards.map((card) =>
+        card.kind === "setup"
+          ? { ...card, completed: state.setupCompleted }
+          : card,
+      ),
+    }),
+  );
+}
+
+function runConfigCheckAction(check, action, button, extra) {
+  run(
+    action,
+    undefined,
+    button,
+    rowRunOptions({
+      step: check.id,
+      lang: state.selectedLanguage,
+      tools: toolSelectionValue(state.selectedTools),
+      extra,
+    }),
+  );
+}
+
+function renderWizard() {
+  const section = SECTIONS.find(({ id }) => id === state.activeSectionId);
+  const cardSection = allCardSections().find(
+    ({ sectionId }) => sectionId === state.activeSectionId,
+  );
+
+  if (section === undefined || cardSection === undefined || cardSection.cards.length === 0) {
+    return;
+  }
+
+  const verified = effectiveVerifiedSteps();
+  const derivedIndex = currentCardIndex(cardSection.cards, verified);
+  const requestedIndex = state.viewingCardIndex[state.activeSectionId];
+  const currentIndex =
+    requestedIndex === undefined
+      ? derivedIndex
+      : Math.min(requestedIndex, cardSection.cards.length - 1);
+  const card = cardSection.cards[currentIndex];
+  const manualItems = sectionManualItems(
+    section.id,
+    currentIndex,
+    cardSection.cards.length,
+    toolSelectionValue(state.selectedTools),
+  );
+  const groups = checklistGroups({
+    check: card.check,
+    verified:
+      card.kind === "env"
+        ? card.check.status === "ok"
+        : verified.has(card.checkId),
+    verificationAttempted: state.verificationAttempted.has(card.checkId),
+    verificationFailed: state.failedVerificationSteps.has(card.checkId),
+    manualItems,
+    checkedManualIds: state.manualCheckedIds,
+  });
+  const installed =
+    card.kind === "setup" ||
+    state.installedSteps.has(card.checkId) ||
+    card.check?.status === "ok" ||
+    (card.kind === "config" && card.check?.noInstall === true);
+  const verificationRequired =
+    card.check?.verifyAction != null || card.check?.eyeCheck != null;
+  const verificationAttempted =
+    !verificationRequired ||
+    verified.has(card.checkId) ||
+    state.verificationAttempted.has(card.checkId);
+  const nextUnlocked =
+    card.kind === "setup"
+      ? true
+      : nextCardUnlocked({
+          installed,
+          verificationRequired,
+          verificationAttempted,
+          manualItems: groups.manual,
+        });
+  const completedCardIds = new Set(
+    cardSection.cards
+      .filter((candidate) => {
+        if (candidate.kind === "setup") return candidate.completed === true;
+        if (cardIsComplete(candidate, verified)) return true;
+        if (candidate.checkId === card.checkId) return nextUnlocked;
+        return state.verificationAttempted.has(candidate.checkId) &&
+          state.installedSteps.has(candidate.checkId);
+      })
+      .map(({ checkId }) => checkId),
+  );
+  const milestones = milestoneModels(
+    cardSection.cards,
+    completedCardIds,
+    currentIndex,
+  );
+  const row =
+    card.kind === "env"
+      ? envRowModel(card.check, state.installedSteps.has(card.checkId))
+      : card.kind === "config"
+        ? configRowModel(card.check, verified.has(card.checkId), {
+            availableActions: state.availableActions,
+            installed: state.installedSteps.has(card.checkId),
+            verificationFailed: state.failedVerificationSteps.has(card.checkId),
+            verificationDeferred: state.deferredVerificationSteps.has(card.checkId),
+          })
+        : null;
+  const cardModel = {
+    card,
+    row,
+    checklist: groups,
+    showChecklist:
+      card.kind !== "setup" &&
+      (verificationAttempted ||
+        state.failedVerificationSteps.has(card.checkId) ||
+        state.deferredVerificationSteps.has(card.checkId) ||
+        groups.manual.length > 0),
+    showRetest: row?.showRetest === true,
+    showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
+    nextUnlocked,
+    onActionClick: (action, button, step, extra) => {
+      if (card.kind === "env") run(action, undefined, button);
+      else runConfigCheckAction(card.check, action, button, extra);
+    },
+    onRetest: () =>
+      runConfigCheckAction(
+        card.check,
+        card.check.verifyAction,
+        null,
+        card.check.verifyOptions,
+      ),
+    onManualToggle: (id, checked) => {
+      if (checked) {
+        state.manualCheckedIds.add(id);
+        state.completedGateIds.add(id);
+      } else {
+        state.manualCheckedIds.delete(id);
+        state.completedGateIds.delete(id);
+      }
+      renderNavigation();
+      renderWizard();
+    },
+    onNext: () => {
+      if (card.kind === "setup") state.setupCompleted = true;
+      state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
+      renderWizard();
+    },
+  };
+  view.renderWizard({
+    section,
+    sectionStatus: sectionStatus(cardSection.cards, completedCardIds),
+    milestones,
+    cardModel,
+    onMilestoneSelect: (index) => {
+      if (!milestones[index].unlocked) return;
+      state.viewingCardIndex[state.activeSectionId] = index;
+      renderWizard();
+    },
+  });
+  renderControls();
+}
+
 function renderCheckingLoader() {
   if (state.runInProgress) {
     return;
@@ -88,7 +289,7 @@ function renderCheckingLoader() {
 }
 
 function renderNavigation() {
-  const tools = view.elements.configTools.value;
+  const tools = toolSelectionValue(state.selectedTools);
   const lockStates = Object.fromEntries(
     SECTIONS.map((section) => [
       section.id,
@@ -208,7 +409,9 @@ async function checkEnvironment(showLoading = true) {
 
   try {
     const { os, checks } = await api.fetchEnv();
-    view.renderEnv(os, checks, (action, button) => run(action, undefined, button));
+    state.envChecks = checks;
+    view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
+    renderWizard();
     renderEnvActionButtons();
 
     if (state.loginWait !== null) {
@@ -226,6 +429,7 @@ async function checkEnvironment(showLoading = true) {
 
     return checks;
   } catch (error) {
+    state.envChecks = [];
     view.renderEnvFailure(error.message);
     return null;
   } finally {
@@ -245,8 +449,8 @@ async function checkConfigs() {
   renderControls();
   view.renderConfigLoading();
   renderCheckingLoader();
-  const tools = view.elements.configTools.value;
-  const lang = view.elements.configLang.value;
+  const tools = toolSelectionValue(state.selectedTools);
+  const lang = state.selectedLanguage;
 
   try {
     const result = await api.fetchConfigs({ tools, lang });
@@ -255,48 +459,7 @@ async function checkConfigs() {
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
     ]);
-    view.renderConfigs(
-      result.checks,
-      (action, button, step, extra) =>
-        run(
-          action,
-          undefined,
-          button,
-          rowRunOptions({ step, lang: result.lang, tools, extra }),
-        ),
-      {
-        verifiedSteps: state.verifiedSteps,
-        verificationPrompts: state.verificationPrompts,
-        onEyeToggle: async (step, checked) => {
-          if (checked) {
-            await rememberVerifiedStep(step);
-          } else {
-            state.verifiedSteps.delete(step);
-          }
-
-          checkConfigs();
-        },
-        onVerifyNow: (check) => {
-          state.verificationPrompts.delete(check.id);
-          run(
-            check.verifyAction,
-            undefined,
-            null,
-            rowRunOptions({
-              step: check.id,
-              lang: result.lang,
-              tools,
-              extra: check.verifyOptions,
-            }),
-          );
-        },
-        onVerifyLater: (step) => {
-          state.verificationPrompts.delete(step);
-          checkConfigs();
-        },
-        availableActions: state.availableActions,
-      },
-    );
+    renderWizard();
     view.renderConfigSummary(
       configSummary(result.checks, state.verifiedSteps),
     );
@@ -365,7 +528,12 @@ async function handleDone(
   runContext,
 ) {
   const outcome = runOutcome(result);
-  view.addLine(outcome.summary, outcome.className);
+  view.addRawLine(outcome.summary);
+  const step = options?.step ?? runContext.step;
+  const check =
+    state.lastChecks.find((candidate) => candidate.id === step) ??
+    state.envChecks.find((candidate) => candidate.id === step) ??
+    null;
 
   if (state.activeEnvButton !== null) {
     const message = installStatusMessage(action, result);
@@ -384,6 +552,19 @@ async function handleDone(
       failed: true,
       availableActions: state.availableActions,
     });
+    const verification =
+      action.startsWith("verify-") || AUTO_VERIFY_ACTIONS.has(action);
+
+    if (verification && step !== null && step !== undefined) {
+      state.verificationAttempted.add(step);
+      state.failedVerificationSteps.add(step);
+      state.deferredVerificationSteps.delete(step);
+    }
+
+    view.addTerminalLines(
+      terminalOutcomeLines({ action, succeeded: false, check, guidance }),
+    );
+    view.shakeTerminal();
 
     if (guidance !== null || result.explanationPending === true) {
       view.renderFailureGuidance({
@@ -401,8 +582,8 @@ async function handleDone(
             nextButton,
             rowRunOptions({
               step,
-              lang: view.elements.configLang.value,
-              tools: view.elements.configTools.value,
+              lang: state.selectedLanguage,
+              tools: toolSelectionValue(state.selectedTools),
             }),
           ),
       });
@@ -413,6 +594,7 @@ async function handleDone(
       true,
     );
     resetRun({ keepLoader: true });
+    renderWizard();
     return;
   }
 
@@ -425,6 +607,24 @@ async function handleDone(
     result,
     check: installedCheck,
   });
+  if (
+    step !== null &&
+    step !== undefined &&
+    (action.startsWith("install-") || action === "merge-config-step")
+  ) {
+    state.installedSteps.add(step);
+  }
+  if (
+    verifiedStep !== undefined &&
+    (action.startsWith("verify-") || AUTO_VERIFY_ACTIONS.has(action))
+  ) {
+    state.verificationAttempted.add(verifiedStep);
+    state.failedVerificationSteps.delete(verifiedStep);
+    state.deferredVerificationSteps.delete(verifiedStep);
+  }
+  view.addTerminalLines(
+    terminalOutcomeLines({ action, succeeded: true, check }),
+  );
   resetRun();
 
   if (followUp === "auto") {
@@ -443,8 +643,9 @@ async function handleDone(
   }
 
   if (followUp === "prompt") {
-    state.verificationPrompts.add(installedCheck.id);
-    checkConfigs();
+    state.pendingModalCheck = installedCheck;
+    view.showVerifyModal();
+    renderWizard();
     return;
   }
 
@@ -463,12 +664,12 @@ async function handleDone(
     verifiedCheck?.eyeCheck == null
   ) {
     await rememberVerifiedStep(verifiedStep);
-    checkConfigs();
+    await checkConfigs();
     return;
   }
 
   if (configAction) {
-    checkConfigs();
+    await checkConfigs();
     return;
   }
 
@@ -487,7 +688,7 @@ async function handleDone(
     view.showInstallStatus(message);
   }
 
-  checkEnvironment();
+  await checkEnvironment();
 }
 
 async function run(action, promptText, button = null, options) {
@@ -515,7 +716,7 @@ async function run(action, promptText, button = null, options) {
   };
 
   if (action !== "install-config-step" && state.activeRunStep !== null) {
-    state.verificationPrompts.delete(state.activeRunStep);
+    state.deferredVerificationSteps.delete(state.activeRunStep);
   }
 
   if (envButton !== null) {
@@ -570,7 +771,7 @@ async function run(action, promptText, button = null, options) {
         view.showLoginHints(extractLoginHints(line.text));
       }
 
-      view.addLine(line.text, line.stream === "stderr" ? "stderr" : "");
+      view.addRawLine(line.text);
     });
 
     events.addEventListener("agent", (event) => {
@@ -631,8 +832,8 @@ async function run(action, promptText, button = null, options) {
             nextButton,
             rowRunOptions({
               step,
-              lang: view.elements.configLang.value,
-              tools: view.elements.configTools.value,
+              lang: state.selectedLanguage,
+              tools: toolSelectionValue(state.selectedTools),
             }),
           ),
       });
@@ -690,8 +891,8 @@ async function run(action, promptText, button = null, options) {
             nextButton,
             rowRunOptions({
               step,
-              lang: view.elements.configLang.value,
-              tools: view.elements.configTools.value,
+              lang: state.selectedLanguage,
+              tools: toolSelectionValue(state.selectedTools),
             }),
           ),
       });
@@ -769,13 +970,19 @@ view.elements.runInput.addEventListener("submit", async (event) => {
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
-view.elements.configTools.addEventListener("change", () => {
-  state.verificationPrompts.clear();
+view.onToolSelect((tool) => {
+  state.selectedTools = toggleToolSelection(state.selectedTools, tool);
+  view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  state.viewingCardIndex = {};
   renderNavigation();
   view.hideSectionLockMessage();
   checkConfigs();
 });
-view.elements.configLang.addEventListener("change", checkConfigs);
+view.onLanguageSelect((language) => {
+  state.selectedLanguage = language;
+  view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  checkConfigs();
+});
 view.onSectionSelect((sectionId) => {
   const gate = renderNavigation()[sectionId];
 
@@ -785,18 +992,28 @@ view.onSectionSelect((sectionId) => {
   }
 
   view.hideSectionLockMessage();
-  view.showSection(sectionId);
+  state.activeSectionId = sectionId;
+  renderWizard();
 });
-view.onGateToggle((gateId, checked) => {
-  if (checked) {
-    state.completedGateIds.add(gateId);
-  } else {
-    state.completedGateIds.delete(gateId);
-  }
-
-  renderNavigation();
-  view.hideSectionLockMessage();
-});
+view.onVerifyModal(
+  () => {
+    const check = state.pendingModalCheck;
+    state.pendingModalCheck = null;
+    view.hideVerifyModal();
+    if (check !== null) {
+      runConfigCheckAction(check, check.verifyAction, null, check.verifyOptions);
+    }
+  },
+  () => {
+    const check = state.pendingModalCheck;
+    state.pendingModalCheck = null;
+    view.hideVerifyModal();
+    if (check !== null) {
+      state.deferredVerificationSteps.add(check.id);
+      renderWizard();
+    }
+  },
+);
 renderNavigation();
 
 async function initialize() {

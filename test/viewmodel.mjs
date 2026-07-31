@@ -6,7 +6,10 @@ import {
   LOGIN_WAIT_TIMEOUT_MS,
   AUTO_VERIFY_ACTIONS,
   agentNameFor,
+  appendTermLine,
   behaviorFallbackState,
+  checklistGroups,
+  currentCardIndex,
   configRowModel,
   configSummary,
   envButtonState,
@@ -15,9 +18,16 @@ import {
   installStatusMessage,
   isLoginAction,
   loginWaitStep,
+  milestoneModels,
+  nextCardUnlocked,
   rowRunOptions,
   runControlsState,
   runOutcome,
+  sectionManualItems,
+  sectionStatus,
+  terminalOutcomeLines,
+  toggleToolSelection,
+  toolSelectionValue,
 } from "../public/viewmodel.js";
 import {
   CONFIG_LANGUAGES,
@@ -52,6 +62,14 @@ try {
     assert.throws(() => configQuery(input));
   }
   ok("規則檔查詢拒絕不合法的工具與語言");
+
+  assert.deepEqual(toggleToolSelection(["claude"], "claude"), ["claude"]);
+  assert.deepEqual(toggleToolSelection(["claude"], "codex"), [
+    "claude",
+    "codex",
+  ]);
+  assert.equal(toolSelectionValue(["codex", "claude"]), "claude,codex");
+  ok("工具 chips 至少保留一個，且送出值固定 Claude 在前");
 
   const configChecks = [
     { status: "ok", symbol: "✓", ariaLabel: "通過" },
@@ -132,6 +150,166 @@ try {
   assert.equal(verified.status, "ok");
   assert.deepEqual(verified.buttons, []);
   ok("驗過之後才變綠，按鈕收起來");
+
+  const cards = [
+    {
+      kind: "config",
+      checkId: "one",
+      check: { id: "one", label: "一", status: "ok", detail: "完成" },
+    },
+    {
+      kind: "config",
+      checkId: "two",
+      check: { id: "two", label: "二", status: "ok", detail: "完成" },
+    },
+    {
+      kind: "config",
+      checkId: "three",
+      check: {
+        id: "three",
+        label: "三",
+        status: "missing",
+        detail: "未完成",
+      },
+    },
+  ];
+  assert.equal(currentCardIndex(cards, new Set()), 2);
+  assert.equal(
+    currentCardIndex(
+      cards.map((card) => ({
+        ...card,
+        check: { ...card.check, status: "missing" },
+      })),
+    ),
+    0,
+  );
+  assert.equal(
+    currentCardIndex(
+      cards.map((card) => ({
+        ...card,
+        check: { ...card.check, status: "ok" },
+      })),
+    ),
+    2,
+  );
+  ok("目前卡片會推導成第一張未完成卡，整段完成則停在最後一張");
+
+  const milestones = milestoneModels(
+    cards,
+    new Set(["one"]),
+    1,
+  );
+  assert.equal(milestones[1].unlocked, true);
+  assert.equal(milestones[2].unlocked, false);
+  assert.deepEqual(
+    milestones.map(({ percent }) => percent),
+    [33, 67, 100],
+  );
+  ok("前面有未完成卡時，後面的里程碑保持鎖定");
+
+  assert.equal(sectionStatus(cards, new Set(["one", "two", "three"])), "這一段已完成。");
+  assert.equal(sectionStatus(cards, new Set(["one"])), "還有 2 張要做。");
+  ok("段落狀態依未完成卡片數顯示完成或剩餘張數");
+
+  const checkingLine = {
+    className: "ds-term-line ds-term-line--dim",
+    text: "正在檢查目前狀態。",
+  };
+  const otherLine = {
+    className: "ds-term-line ds-term-line--ok",
+    text: "檢查完成。",
+  };
+  const once = appendTermLine([], checkingLine);
+  assert.strictEqual(appendTermLine(once, checkingLine), once);
+  assert.deepEqual(
+    appendTermLine(appendTermLine(once, otherLine), checkingLine),
+    [checkingLine, otherLine, checkingLine],
+  );
+  ok("終端白話只略過連續重複，中間有別行時仍會追加");
+
+  const groupedChecklist = checklistGroups({
+    check: {
+      id: "tab-sync",
+      label: "終端標題同步",
+      eyeCheck: "分頁標題已改變",
+    },
+    verified: false,
+    verificationAttempted: true,
+    verificationFailed: true,
+    manualItems: [{ id: "gate", text: "開新終端" }],
+    checkedManualIds: new Set(["eye-tab-sync"]),
+  });
+  assert.deepEqual(
+    groupedChecklist.system.map(({ id, automatic }) => ({ id, automatic })),
+    [{ id: "system-tab-sync", automatic: true }],
+  );
+  assert.deepEqual(
+    groupedChecklist.manual.map(({ id, automatic }) => ({ id, automatic })),
+    [
+      { id: "eye-tab-sync", automatic: false },
+      { id: "gate", automatic: false },
+    ],
+  );
+  assert.equal(
+    nextCardUnlocked({
+      verificationRequired: true,
+      verificationAttempted: true,
+      manualItems: groupedChecklist.manual,
+    }),
+    false,
+  );
+  assert.equal(
+    nextCardUnlocked({
+      verificationRequired: true,
+      verificationAttempted: true,
+      manualItems: groupedChecklist.manual.map((item) => ({
+        ...item,
+        checked: true,
+      })),
+    }),
+    true,
+  );
+  ok("checklist 正確分組，手動項全勾才解鎖且系統失敗不阻擋");
+
+  assert.deepEqual(sectionManualItems("rules", 0, 2, "claude"), []);
+  assert.deepEqual(
+    sectionManualItems("rules", 1, 2, "claude").map(({ id }) => id),
+    ["rules-new-terminal"],
+  );
+  assert.deepEqual(
+    sectionManualItems("skills", 1, 2, "claude,codex").map(({ id }) => id),
+    ["skills-new-terminal", "codex-hook-trust"],
+  );
+  ok("SECTION_GATES 只出現在段落最後一張，並依工具篩選");
+
+  assert.deepEqual(
+    terminalOutcomeLines({
+      action: "install-config-step",
+      succeeded: true,
+      check: { label: "規則檔" },
+    }),
+    [
+      {
+        className: "ds-term-line ds-term-line--ok",
+        text: "✅ 安裝成功，已完成規則檔。",
+      },
+    ],
+  );
+  const failedTerminal = terminalOutcomeLines({
+    action: "verify-behavior",
+    succeeded: false,
+    check: { label: "回覆格式" },
+    guidance: {
+      symptom: "跑 `echo a && echo b` 時格式不對",
+      expected: "第一行是結論",
+      checks: ["重新開啟終端"],
+    },
+  });
+  assert.equal(failedTerminal[0].className, "ds-term-line ds-term-line--err");
+  assert.match(failedTerminal[0].text, /格式不對/);
+  assert.doesNotMatch(failedTerminal[0].text, /echo a/);
+  assert(failedTerminal.some((line) => line.text.includes("第一行是結論")));
+  ok("終端成功與失敗都產生中文白話 class 與文案");
 
   // 程式驗不到的那一格要明講看什麼，不能只留一個空的勾選框。
   const eyeOnly = configRowModel({

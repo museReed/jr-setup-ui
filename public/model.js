@@ -269,6 +269,83 @@ export function groupChecks(checks) {
   });
 }
 
+const ENV_CARD_META = {
+  claude: { agent: "claude", logo: "logo-claude" },
+  "claude-auth": { agent: "claude", logo: "logo-claude" },
+  codex: { agent: "codex", logo: "logo-openai" },
+  "codex-auth": { agent: "codex", logo: "logo-openai" },
+  git: { agent: "shared", logo: "logo-git" },
+  gh: { agent: "shared", logo: "logo-github" },
+  "gh-auth": { agent: "shared", logo: "logo-github" },
+  node: { agent: "shared", logo: "logo-nodejs" },
+  homebrew: { agent: "shared", logo: "logo-homebrew" },
+  "execution-policy": { agent: "other", logo: "logo-powershell" },
+  "powershell-version": { agent: "other", logo: "logo-powershell" },
+  "powershell-encoding": { agent: "other", logo: "logo-powershell" },
+  "windows-terminal": { agent: "other", logo: "logo-terminal" },
+  ghostty: { agent: "other", logo: "logo-terminal" },
+  terminal: { agent: "other", logo: "logo-terminal" },
+};
+
+const AGENT_ORDER = ["claude", "codex", "shared", "other"];
+
+function checkCard(sectionId, card, check) {
+  return {
+    sectionId,
+    checkId: check.id,
+    agent: card.agent,
+    label: check.label,
+    logo: card.logo,
+    detail: check.detail,
+    check,
+    kind: sectionId === "env" ? "env" : "config",
+  };
+}
+
+export function flattenCheckCards(groupedSections, envChecks = []) {
+  const envCards = envChecks
+    .map((check) => {
+      const meta = ENV_CARD_META[check.id] ?? {
+        agent: "other",
+        logo: "logo-terminal",
+      };
+      return checkCard("env", meta, check);
+    })
+    .sort(
+      (left, right) =>
+        AGENT_ORDER.indexOf(left.agent) - AGENT_ORDER.indexOf(right.agent),
+    );
+  const sections = [
+    {
+      sectionId: "env",
+      cards: [
+        {
+          sectionId: "env",
+          checkId: "env-config",
+          agent: "shared",
+          label: "選工具 + 選語言",
+          logo: "logo-terminal",
+          detail: "先選這次要設定的工具與規則檔語言。",
+          check: null,
+          kind: "setup",
+        },
+        ...envCards,
+      ],
+    },
+  ];
+
+  for (const section of groupedSections) {
+    sections.push({
+      sectionId: section.sectionId,
+      cards: section.cards.flatMap((card) =>
+        card.checks.map((check) => checkCard(section.sectionId, card, check)),
+      ),
+    });
+  }
+
+  return sections;
+}
+
 export function configQuery({ tools, lang }) {
   const toolValues = CONFIG_TOOL_CHOICES.map((choice) => choice.value);
 

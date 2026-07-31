@@ -94,6 +94,29 @@ try {
   }
   assert(server.includes('"/app.js"'));
   ok("每一層的檔案都在 server 的靜態白名單裡");
+
+  assert(!files.view.includes('classList.toggle("is-active", station.current)'));
+  assert(files.view.includes('addEventListener("mouseenter"'));
+  assert(files.view.includes('addEventListener("mouseleave"'));
+  ok("里程碑預覽只在 hover 時切換 is-active");
+
+  const index = readFileSync(
+    new URL("../public/index.html", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    index,
+    /id="config-choice-panel" class="config-choice-panel"/,
+  );
+  assert(files.view.includes("body.append(elements.configChoicePanel)"));
+  ok("設定 chips 與下一張按鈕共用同一張 ds-card");
+
+  const styles = read("styles.css");
+  assert.match(
+    styles,
+    /\.terminal-column \.ds-term-title\s*\{\s*color: var\(--term-ink-dim\);/,
+  );
+  ok("終端標題使用設計系統的暗底次要文字色");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

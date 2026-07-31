@@ -1,7 +1,7 @@
 // ViewModel：畫面「該長什麼樣」的所有判斷都在這裡。
 // 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
 // View 只負責把這裡算出來的結果畫出去。
-import { GUIDANCE } from "./model.js";
+import { GUIDANCE, SECTION_GATES, SECTIONS } from "./model.js";
 
 export const LOGIN_CHECK_IDS = {
   "login-claude": "claude-auth",
@@ -124,7 +124,7 @@ export function extractLoginHints(text) {
 }
 
 // 一列環境檢查結果要畫成什麼：圖示、文字、後面掛哪幾顆按鈕。
-export function envRowModel(check) {
+export function envRowModel(check, installed = false) {
   const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
   const buttons = [];
 
@@ -132,7 +132,16 @@ export function envRowModel(check) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: "安裝",
+      text: installed ? "✅ 安裝" : "安裝",
+      ...(installed ? { disabled: true, done: true } : {}),
+    });
+  } else if (installed) {
+    buttons.push({
+      action: "",
+      dataName: "installAction",
+      text: "✅ 安裝",
+      disabled: true,
+      done: true,
     });
   }
 
@@ -191,7 +200,13 @@ export function guidanceModel({
 export function configRowModel(
   check,
   verified = false,
-  { failed = false, availableActions = null } = {},
+  {
+    failed = false,
+    availableActions = null,
+    installed = false,
+    verificationFailed = false,
+    verificationDeferred = false,
+  } = {},
 ) {
   const pending =
     check.status === "ok" &&
@@ -211,22 +226,25 @@ export function configRowModel(
     buttons.push({
       action: installAction,
       dataName: "installAction",
-      text: "安裝",
+      text: installed ? "✅ 安裝" : "安裝",
       step: check.id,
+      ...(installed ? { disabled: true, done: true } : {}),
     });
   }
 
-  if (check.verifyAction != null && !verified) {
+  if (
+    check.verifyAction != null &&
+    !verified &&
+    (check.verifyKind !== "terminal" || check.noInstall === true)
+  ) {
     buttons.push({
       action: check.verifyAction,
       dataName: "verifyAction",
       // demo 那列按下去是「跑給你看」不是「驗證有沒有裝好」，按鈕跟著改字。
       text:
-        check.verifyKind !== "terminal"
-          ? "驗證"
-          : check.noInstall === true
-            ? "開終端跑"
-            : "開終端驗證",
+        check.verifyKind === "terminal" && check.noInstall === true
+          ? "開終端跑"
+          : "驗證",
       step: check.id,
       options: check.verifyOptions ?? undefined,
     });
@@ -251,6 +269,7 @@ export function configRowModel(
     // 只有真終端看得到的那一格：程式驗不到，讓學生看完回來勾。
     eyeCheck: pending && check.eyeCheck != null ? check.eyeCheck : null,
     verified,
+    showRetest: verificationFailed || verificationDeferred,
     guidance: guidanceModel({
       step: check.id,
       status,
@@ -258,6 +277,206 @@ export function configRowModel(
       availableActions,
     }),
   };
+}
+
+export function sectionManualItems(sectionId, cardIndex, cardCount, tools) {
+  if (cardIndex !== cardCount - 1) {
+    return [];
+  }
+
+  const sectionIndex = SECTIONS.findIndex((section) => section.id === sectionId);
+  const nextSection = SECTIONS[sectionIndex + 1];
+
+  if (nextSection === undefined) {
+    return [];
+  }
+
+  const codexSelected = tools.split(",").includes("codex");
+  return (SECTION_GATES[nextSection.id] ?? [])
+    .filter((gate) => gate.codexOnly !== true || codexSelected)
+    .map((gate) => ({ id: gate.id, text: gate.title, detail: gate.detail }));
+}
+
+export function toggleToolSelection(selectedTools, tool) {
+  const selected = new Set(selectedTools);
+
+  if (selected.has(tool)) {
+    if (selected.size > 1) {
+      selected.delete(tool);
+    }
+  } else {
+    selected.add(tool);
+  }
+
+  return ["claude", "codex"].filter((value) => selected.has(value));
+}
+
+export function toolSelectionValue(selectedTools) {
+  return ["claude", "codex"]
+    .filter((value) => selectedTools.includes(value))
+    .join(",");
+}
+
+export function cardIsComplete(card, verifiedSteps = new Set()) {
+  if (card.kind === "setup") {
+    return card.completed === true;
+  }
+
+  if (card.kind === "env") {
+    return card.check.status === "ok";
+  }
+
+  return configRowModel(
+    card.check,
+    verifiedSteps.has(card.checkId),
+  ).status === "ok";
+}
+
+export function currentCardIndex(cards, verifiedSteps = new Set()) {
+  if (cards.length === 0) {
+    return 0;
+  }
+
+  const firstIncomplete = cards.findIndex(
+    (card) => !cardIsComplete(card, verifiedSteps),
+  );
+  return firstIncomplete === -1 ? cards.length - 1 : firstIncomplete;
+}
+
+export function milestoneModels(cards, completedCardIds, currentIndex) {
+  return cards.map((card, index) => {
+    const completed = completedCardIds.has(card.checkId);
+    const unlocked =
+      completed ||
+      cards
+        .slice(0, index)
+        .every((previous) => completedCardIds.has(previous.checkId));
+
+    return {
+      ...card,
+      index,
+      percent: Math.round(((index + 1) / cards.length) * 100),
+      completed,
+      unlocked,
+      reached: completed || index <= currentIndex,
+      current: index === currentIndex,
+    };
+  });
+}
+
+export function sectionStatus(cards, completedCardIds) {
+  const remaining = cards.filter(
+    (card) => !completedCardIds.has(card.checkId),
+  ).length;
+
+  return remaining === 0 ? "這一段已完成。" : `還有 ${remaining} 張要做。`;
+}
+
+export function appendTermLine(lines, next) {
+  return lines.at(-1)?.text === next.text ? lines : [...lines, next];
+}
+
+export function checklistGroups({
+  check,
+  verified = false,
+  verificationAttempted = false,
+  verificationFailed = false,
+  manualItems = [],
+  checkedManualIds = new Set(),
+}) {
+  const system = [];
+
+  if (check !== null && check !== undefined) {
+    system.push({
+      id: `system-${check.id}`,
+      text: check.label,
+      checked: verified,
+      automatic: true,
+      failedReason:
+        verificationAttempted && verificationFailed
+          ? "自動驗證沒有通過，修正後可以重新測試。"
+          : "",
+    });
+  }
+
+  const manual = [
+    ...(check?.eyeCheck == null
+      ? []
+      : [
+          {
+            id: `eye-${check.id}`,
+            text: check.eyeCheck,
+            detail: "這一項需要你看畫面確認。",
+          },
+        ]),
+    ...manualItems,
+  ].map((item) => ({
+    ...item,
+    checked: checkedManualIds.has(item.id),
+    automatic: false,
+  }));
+
+  return { system, manual };
+}
+
+export function nextCardUnlocked({
+  installed = true,
+  verificationRequired = false,
+  verificationAttempted = false,
+  manualItems = [],
+}) {
+  return (
+    installed &&
+    (!verificationRequired || verificationAttempted) &&
+    manualItems.every((item) => item.checked)
+  );
+}
+
+export function terminalOutcomeLines({
+  action,
+  succeeded,
+  check = null,
+  guidance = null,
+}) {
+  const label = check?.label ?? "這個項目";
+  const plain = (text) => text.replace(/`[^`]+`/g, "指定測試");
+
+  if (succeeded) {
+    const verification =
+      action.startsWith("verify-") || action.startsWith("diagnose-");
+    return [
+      {
+        className: "ds-term-line ds-term-line--ok",
+        text: verification
+          ? `✅ 驗證成功，已確認${label}可以正常使用。`
+          : `✅ 安裝成功，已完成${label}。`,
+      },
+    ];
+  }
+
+  if (guidance === null) {
+    return [
+      {
+        className: "ds-term-line ds-term-line--err",
+        text: `沒有完成${label}，請檢查原始輸出後再試一次。`,
+      },
+    ];
+  }
+
+  return [
+    {
+      className: "ds-term-line ds-term-line--err",
+      text: `現在的狀況：${plain(guidance.symptom)}`,
+    },
+    {
+      className: "ds-term-line ds-term-line--dim",
+      text: `完成後應該看到：${plain(guidance.expected)}`,
+    },
+    ...guidance.checks.map((text) => ({
+      className: "ds-term-line ds-term-line--dim",
+      text: `請確認：${plain(text)}`,
+    })),
+  ];
 }
 
 export function configSummary(checks, verifiedSteps = new Set()) {
