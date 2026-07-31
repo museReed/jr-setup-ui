@@ -131,6 +131,17 @@ try {
   assert.doesNotMatch(styles, /\.ds-btn[\w-]*:disabled/);
   ok("已完成按鈕用本 repo 的 .is-done 置灰，沒覆寫設計系統 selector");
 
+  // 收合是兩種狀態的切換，不做動畫。tab 只有 hover 換色會動——padding / max-height /
+  // box-shadow 一旦加了過渡，看起來就像跟著捲動距離漸變。
+  const tabRule = styles.match(/^\.section-tab \{[^}]*\}/m)?.[0] ?? "";
+  assert.match(tabRule, /transition:\s*\n?\s*color[^;]*;/);
+  assert.doesNotMatch(tabRule, /transition:[^;]*padding/);
+  assert.doesNotMatch(
+    styles.match(/^\.section-tabs \{[^}]*\}/m)?.[0] ?? "",
+    /transition:/,
+  );
+  ok("tab 收合不做動畫，只有 hover 換色有過渡");
+
   // 段落導覽是上方 tab，不是側欄；整頁大標已移除。
   assert(!index.includes("wizard-header"));
   assert(!index.includes("wizard-sidebar"));

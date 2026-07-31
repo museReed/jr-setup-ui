@@ -36,7 +36,6 @@ body {
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border-soft);
   background: var(--color-bg);
-  transition: box-shadow 0.2s ease;
 }
 
 .section-tab {
@@ -49,10 +48,11 @@ body {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  /* 只有 hover 換色會動。收合本身不做動畫——它是兩種狀態的切換，
+     加了 padding / 陰影的過渡看起來就像跟著捲動距離漸變。 */
   transition:
     color 0.15s ease,
-    border-color 0.15s ease,
-    padding 0.2s ease;
+    border-color 0.15s ease;
 }
 
 .section-tab span,
@@ -404,9 +404,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .section-tabs,
-  .section-tab,
-  .section-tab small {
+  .section-tab {
     transition: none;
   }
 
