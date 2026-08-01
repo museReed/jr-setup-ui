@@ -186,13 +186,21 @@ function renderWizard() {
   const installChecks = cardChecks.filter(
     (check) => !check.id.endsWith("-auth"),
   );
+  // installedSteps 只是「這一輪按過安裝」的樂觀記憶，不能凌駕伺服器回來的權威狀態。
+  //
+  // 原本 installedSteps.has() 擺在最前面當 OR，於是只要按過一次安裝，按鈕就永久
+  // 置灰——即使安裝其實失敗、伺服器回的還是 missing。學生看到一顆灰掉的「✅ 安裝」
+  // 和一個裝不起來的項目，連重試的機會都沒有（VM 實測：gh 的 status 是 missing，
+  // 按鈕卻是灰的）。這是這個 repo 踩過很多次的假綠燈。
+  //
+  // 規則改成：權威狀態說 ok 才算裝好；樂觀記憶只在權威狀態還沒否定它時有效。
   const installed =
     card.kind === "setup" ||
     installChecks.every(
       (check) =>
-        state.installedSteps.has(check.id) ||
         check.status === "ok" ||
-        (card.kind === "config" && check.noInstall === true),
+        (card.kind === "config" && check.noInstall === true) ||
+        (state.installedSteps.has(check.id) && check.status !== "missing"),
     );
   const verificationRequired =
     card.check?.verifyAction != null || card.check?.eyeCheck != null;

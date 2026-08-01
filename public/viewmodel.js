@@ -227,8 +227,13 @@ export function envCardRowModel(card, installedSteps = new Set()) {
   const buttons = [];
 
   if (primary !== undefined) {
+    // installedSteps 只是「這一輪按過安裝」的樂觀記憶，不能凌駕伺服器的權威狀態。
+    // 擺成單純的 OR 會讓按過一次安裝的項目永久置灰，就算安裝其實失敗、伺服器回的
+    // 還是 missing——學生看到灰掉的「✅ 安裝」和裝不起來的項目，連重試都沒得按
+    // （VM 實測：gh 的 status 是 missing，按鈕卻是灰的）。
     const installed =
-      installedSteps.has(primary.id) || primary.status === "ok";
+      primary.status === "ok" ||
+      (installedSteps.has(primary.id) && primary.status !== "missing");
     const install = envRowModel(primary, installed).buttons.find(
       (button) => button.dataName === "installAction",
     );

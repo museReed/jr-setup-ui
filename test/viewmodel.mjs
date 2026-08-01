@@ -17,6 +17,7 @@ import {
   configRowModel,
   configSummary,
   envButtonState,
+  envCardRowModel,
   envRowModel,
   extractLoginHints,
   installStatusMessage,
@@ -362,6 +363,51 @@ try {
     true,
   );
   ok("合併卡必須 CLI 與登入兩個 check 都通過才完成");
+
+  // 假綠燈防線：按過安裝不等於裝好。伺服器仍回 missing 時，安裝按鈕必須留著可按，
+  // 否則學生看到一顆灰掉的「✅ 安裝」和一個裝不起來的項目，連重試都沒得按
+  // （VM 實測 gh 就是這樣）。
+  const ghMissing = {
+    id: "gh",
+    label: "GitHub CLI",
+    status: "missing",
+    detail: "未安裝",
+    installAction: "install-gh",
+    fixAction: null,
+  };
+  const ghAuthBlocked = {
+    id: "gh-auth",
+    label: "GitHub 登入狀態",
+    status: "missing",
+    detail: "需要先安裝",
+    installAction: null,
+    fixAction: null,
+  };
+  assert.deepEqual(
+    envCardRowModel(
+      { kind: "env", checkId: "gh", checks: [ghMissing, ghAuthBlocked] },
+      new Set(["gh"]),
+    ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
+    [{ text: "安裝", disabled: false }],
+  );
+  assert.deepEqual(
+    envCardRowModel(
+      {
+        kind: "env",
+        checkId: "gh",
+        checks: [
+          { ...ghMissing, status: "ok", detail: "gh 2.87.2" },
+          { ...ghAuthBlocked, status: "warn", fixAction: "login-gh" },
+        ],
+      },
+      new Set(["gh"]),
+    ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
+    [
+      { text: "✅ 安裝", disabled: true },
+      { text: "開始登入", disabled: false },
+    ],
+  );
+  ok("按過安裝但伺服器仍回 missing 時，安裝按鈕不置灰，學生能重試");
 
   assert.notEqual(mergedCard.detail, cardResultText(mergedCard));
   ok("卡片 description 與執行結果使用不同文字");
