@@ -11,8 +11,20 @@
 # macOS 的 setup.sh 不受影響——curl 不看 content-type。
 $ErrorActionPreference = "Stop"
 
+# 學生那條 one-liner 抓的永遠是 main。驗 PR 時在同一行前面設 $JrBranch 就會改抓
+# 那個分支——這支腳本本身仍是從 main 抓的，所以 PR 若動到 bootstrap 自己，要另外驗。
+#
+#   $JrBranch="feature/ui-cards"; irm .../docs/setup.ps1 | iex
+#
+# 為什麼不做成 docs/setup-pr.ps1：那會變成第二份要跟著改的 bootstrap，而 bootstrap
+# 的踩雷點（編碼、PATH 快照、多一層資料夾）都只在真的跑 irm | iex 時才現形——
+# 兩份就是兩倍的沒被驗到。
+$branch = if ($JrBranch) { $JrBranch } else { "main" }
+
 $appDir = Join-Path $HOME ".jr-setup\app"
-$zipUrl = "https://codeload.github.com/museReed/jr-setup-ui/zip/refs/heads/main"
+$zipUrl = "https://codeload.github.com/museReed/jr-setup-ui/zip/refs/heads/$branch"
+# GitHub 的 zip 解出來會多包一層 {repo}-{branch}，分支名裡的 / 會換成 -。
+$extractedName = "jr-setup-ui-" + ($branch -replace "/", "-")
 
 function Say($text) {
   Write-Host ""
@@ -55,7 +67,7 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
   Install-Node
 }
 
-Say "下載嚮導"
+Say "下載嚮導（$branch）"
 $zipPath = Join-Path $env:TEMP "jr-setup-ui.zip"
 $extractDir = Join-Path $env:TEMP "jr-setup-ui-extract"
 Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
@@ -71,8 +83,7 @@ if (Test-Path $appDir) {
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path $appDir) | Out-Null
-# zip 解出來會多包一層 jr-setup-ui-main，直接把那層搬成 app。
-Move-Item (Join-Path $extractDir "jr-setup-ui-main") $appDir
+Move-Item (Join-Path $extractDir $extractedName) $appDir
 Remove-Item -Recurse -Force $extractDir
 Remove-Item -Force $zipPath
 

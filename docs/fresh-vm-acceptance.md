@@ -32,6 +32,28 @@ irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 |
 **常見失敗**：Windows 上這一步的編碼問題只在真的用 `irm | iex` 時現形，把檔案下載
 下來手動跑是驗不到的。
 
+### 驗 PR 分支
+
+上面兩行抓的都是 `main`——那是學生會打的那一行，不動它。要驗還沒合併的分支，在同
+一行前面指定分支就好，其餘完全一樣：
+
+macOS：
+
+```bash
+JR_BRANCH=feature/ui-cards curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | bash
+```
+
+Windows：
+
+```powershell
+$JrBranch="feature/ui-cards"; irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 | iex
+```
+
+**要看到**：「下載嚮導」那行後面括號印的是你指定的分支，不是 `main`。
+
+⚠️ bootstrap 腳本**自己**還是從 `main` 抓的。PR 若動到 `setup.ps1` / `setup.sh`
+本身，這條路徑驗不到那個改動——那種 PR 要合併進 `main` 之後再照本文件重跑一次。
+
 ## 二、環境檢查
 
 **要看到**：每一列都有明確狀態，缺的給安裝按鈕。逐項按到全綠。
