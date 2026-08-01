@@ -183,7 +183,10 @@ const CASES = {
   demo: {
     label: "一條龍 demo",
     env: () => ({}),
-    timeoutMs: 900_000,
+    // 30 分鐘。實測 15 分鐘不夠：這一格是整條 demo——問四題、生一份完整網頁、再產
+    // 出自走版，中間還夾著學生自己回答問題的時間。逾時判失敗的代價很高：東西可能
+    // 只差最後一步就好了，學生卻看到紅字。
+    timeoutMs: 1_800_000,
     needsAnswer: true,
     // ⚠️ 第 3 步的路徑在 prompt 裡寫的是上游 repo 的位置（installer/demo/），學生
     //    機器上沒有那個 repo——不覆蓋掉的話每個人都會卡在那裡先 find 一輪（VM 實測，
@@ -200,6 +203,8 @@ const CASES = {
         // python3.exe），要用 py -3 那個啟動器。
         `改用這支自走版：${process.platform === "win32" ? "py -3" : "python3"} ${path.join(demoDir, "live-preview-self", "self_play.py")} ~/demo-page.html，` +
         "它只用標準函式庫、不需要安裝任何東西，跑完把產出的檔案用瀏覽器打開就會自己演。" +
+        "第 1、2 步不要開瀏覽器、也不要用 Playwright 預覽或截圖——只有第 3 步最後" +
+        "那次才開，那一次是要給人看的。" +
         "先執行第 1 步。"
       );
     },
