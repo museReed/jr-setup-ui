@@ -226,13 +226,29 @@ function actionButton(spec, onActionClick) {
 
 // 貼上證明用的欄位。貼對了那一格自己打勾——這是整份嚮導唯一「學生交得出副產物」
 // 的人工項目，其餘的人眼判定只能靠自己說了算。
-function pasteProofElement({ prompt, value, matched, onInput }) {
+function pasteProofElement({ prompt, value, matched, onInput, onOpen }) {
   const wrap = document.createElement("div");
   wrap.className = "paste-proof";
 
+  // 兩顆都只是「幫學生把終端開起來」——方框沒辦法代按，但至少不用叫學生自己去找
+  // 終端、自己打 claude。第一顆開空的讓方框跳出來，第二顆連那句話一起送進去。
+  const openRow = document.createElement("div");
+  openRow.className = "paste-proof-actions";
+  for (const [testCase, label] of [
+    ["fullscreen-open", "開啟 Claude Code（讓方框跳出來）"],
+    ["fullscreen-proof", "開啟並自動送出這句話"],
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ds-btn ds-btn-secondary ds-btn-sm";
+    button.textContent = label;
+    button.addEventListener("click", () => onOpen(testCase));
+    openRow.append(button);
+  }
+
   const hint = document.createElement("p");
   hint.className = "paste-proof-hint";
-  hint.textContent = "在終端機貼這一句給 Claude：";
+  hint.textContent = "或自己在終端機貼這一句給 Claude：";
 
   const command = document.createElement("code");
   command.className = "paste-proof-command";
@@ -255,7 +271,7 @@ function pasteProofElement({ prompt, value, matched, onInput }) {
       ? ""
       : "跟代碼對不起來，再圈選一次整行試試。";
 
-  wrap.append(hint, command, field, status);
+  wrap.append(openRow, hint, command, field, status);
   return wrap;
 }
 

@@ -250,6 +250,8 @@ Object.assign(actions, {
         "skill-handoff",
         "skill-questions",
         "demo",
+        "fullscreen-open",
+        "fullscreen-proof",
       ],
       agent: ["claude", "codex"],
     },

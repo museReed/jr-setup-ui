@@ -348,6 +348,12 @@ body {
   width: 100%;
 }
 
+.paste-proof-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .paste-proof-hint {
   margin: 0;
   color: var(--color-text-muted);

@@ -378,6 +378,11 @@ function renderWizard() {
             value: state.pasteProofValue,
             matched: matchesFullscreenProof(state.pasteProofValue),
             onInput: (value) => cardModel.onPasteProofInput(value),
+            onOpen: (testCase) =>
+              run("verify-in-terminal", undefined, undefined, {
+                case: testCase,
+                agent: "claude",
+              }),
           }
         : null,
     showRetest: card.kind === "env" || row?.showRetest === true,

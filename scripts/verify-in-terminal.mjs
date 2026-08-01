@@ -72,6 +72,28 @@ const CASES = {
     expect: () => null,
     watchFor: "分頁標題變成「🔍 標題同步測試」，五秒後自己還原",
   },
+  // 這兩格不驗任何東西，只負責「幫學生把終端開起來」。
+  //
+  // 全螢幕那個方框是 Claude Code 自己的一次性推銷，程式沒有辦法代按——但至少可以
+  // 不要叫學生自己去找終端、自己打 claude。expect 是 null：副產物在嚮導那邊，學生
+  // 圈選代碼貼回輸入框才算數。
+  "fullscreen-open": {
+    label: "全螢幕模式",
+    env: () => ({}),
+    prompt: () => "",
+    expect: () => null,
+    watchFor: "跳出「Try the new fullscreen renderer?」，按 1. Yes, try it",
+  },
+  // 這一句要跟嚮導卡片上顯示的那句一字不差，否則印出來的東西對不上學生要貼回去的
+  // 欄位。兩邊的字串由 test/fullscreen-proof.mjs 比對，改一邊會紅。
+  "fullscreen-proof": {
+    label: "全螢幕模式",
+    env: () => ({}),
+    prompt: () =>
+      "請原樣印出這一行，不要加任何說明：fullscreen-copy-ok-7f3a91",
+    expect: () => null,
+    watchFor: "印出代碼那一行，用滑鼠圈選它，再貼回嚮導的欄位",
+  },
   chained: {
     label: "Shell 不串接",
     env: () => ({}),
