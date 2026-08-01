@@ -64,20 +64,9 @@ try {
     ),
     "env",
   );
-  // fullscreen 一定排在環境段最後：那個「換不換新畫面模式」的方框是第一次跑
-  // claude 才跳，排在規則段的行為驗證之前才擋得住它中途彈出來吃掉腳本送的句子。
   assert.deepEqual(
     envSequence.cards.map(({ checkId }) => checkId),
-    [
-      "env-config",
-      "claude",
-      "codex",
-      "git",
-      "gh",
-      "node",
-      "ghostty",
-      "fullscreen",
-    ],
+    ["env-config", "claude", "codex", "git", "gh", "node", "ghostty"],
   );
 
   const rules = section(
@@ -202,10 +191,10 @@ try {
     ]),
     [check("node"), check("codex"), check("claude")],
   );
-  assert.equal(section(flattened, "env").cards.length, 5);
+  assert.equal(section(flattened, "env").cards.length, 4);
   assert.deepEqual(
     section(flattened, "env").cards.map(({ checkId }) => checkId),
-    ["env-config", "claude", "codex", "node", "fullscreen"],
+    ["env-config", "claude", "codex", "node"],
   );
   assert.deepEqual(
     section(flattened, "rules").cards.map(({ checkId, agent }) => ({
@@ -223,28 +212,36 @@ try {
 
   console.log("ok - sections 分組、單卡順序、進度、logo 與未知 step fallback");
 
-  // 全螢幕模式那張卡：整張都是人工項目，勾滿才算走完。
-  const fullscreenCard = section(flattened, "env").cards.at(-1);
-  assert.equal(fullscreenCard.kind, "manual");
-  assert.deepEqual(fullscreenCard.manualIds, [
+  // 全螢幕的三項掛在 Claude Code 那張卡上：裝好、登入了都還不算完，那三項也要
+  // 勾完——不然那個 modal 會留到規則段的行為驗證中途才彈出來吃掉腳本送的句子。
+  const claudeManualCard = section(flattened, "env").cards.find(
+    ({ checkId }) => checkId === "claude",
+  );
+  assert.deepEqual(claudeManualCard.manualIds, [
     "fullscreen-yes",
     "fullscreen-mouse",
     "fullscreen-copy",
   ]);
-  assert.equal(cardIsComplete(fullscreenCard, new Set(), new Set()), false);
+  assert.equal(cardIsComplete(claudeManualCard, new Set(), new Set()), false);
   assert.equal(
     cardIsComplete(
-      fullscreenCard,
+      claudeManualCard,
       new Set(),
       new Set(["fullscreen-yes", "fullscreen-mouse"]),
     ),
     false,
   );
   assert.equal(
-    cardIsComplete(fullscreenCard, new Set(), new Set(fullscreenCard.manualIds)),
+    cardIsComplete(claudeManualCard, new Set(), new Set(claudeManualCard.manualIds)),
     true,
   );
-  console.log("ok - 全螢幕模式卡勾滿三項才算完成");
+  // 其他環境卡沒掛人工項目，維持「裝好就算完」。
+  const nodeCard = section(flattened, "env").cards.find(
+    ({ checkId }) => checkId === "node",
+  );
+  assert.deepEqual(nodeCard.manualIds, []);
+  assert.equal(cardIsComplete(nodeCard, new Set(), new Set()), true);
+  console.log("ok - Claude Code 卡要連全螢幕三項一起勾完才算完成");
 
   // 貼回來的代碼前後常黏到空白或換行——圈選很難剛好停在字尾。
   assert.equal(matchesFullscreenProof(FULLSCREEN_PROOF), true);

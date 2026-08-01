@@ -372,7 +372,7 @@ function renderWizard() {
     checklist: groups,
     showChecklist: card.kind !== "setup",
     pasteProof:
-      card.checkId === "fullscreen"
+      card.checkId === "claude"
         ? {
             prompt: FULLSCREEN_PROMPT,
             value: state.pasteProofValue,

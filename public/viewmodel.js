@@ -465,8 +465,9 @@ export function cardIsComplete(
   }
 
   if (card.kind === "env") {
-    return (card.checks ?? [card.check]).every(
-      (check) => check.status === "ok",
+    return (
+      (card.checks ?? [card.check]).every((check) => check.status === "ok") &&
+      (card.manualIds ?? []).every((id) => checkedManualIds.has(id))
     );
   }
 

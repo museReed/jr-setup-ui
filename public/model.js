@@ -75,7 +75,9 @@ export const FULLSCREEN_ITEMS = [
 ];
 
 export const CARD_GATES = {
-  fullscreen: FULLSCREEN_ITEMS,
+  // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
+  // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
+  claude: FULLSCREEN_ITEMS,
   "codex-namer": [
     {
       id: "codex-hook-trust",
@@ -459,6 +461,9 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
         ...checkCard("env", meta, checks[0]),
         label: meta.label ?? checks[0].label,
         checks,
+        // 掛了人工項目的環境卡（Claude Code 的全螢幕選擇），裝好＋登入了還不算完，
+        // 那三項也要勾完——不然那個 modal 會留到規則段的行為驗證中途才彈出來。
+        manualIds: (CARD_GATES[check.id] ?? []).map((gate) => gate.id),
       };
     })
     .sort(
@@ -481,24 +486,6 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
           kind: "setup",
         },
         ...envCards,
-        // 排在環境段最後：那個「換不換新畫面模式」的方框是第一次跑 claude 才跳，
-        // 而第一次跑 claude 就是規則段的行為驗證。不先處理掉，它會在驗證跑到一半
-        // 時彈出來，把腳本送進去的那句話當成選項吃掉——腳本以為問了，其實沒有，
-        // 然後一路等到逾時判失敗。學生看到「驗證失敗」，完全不知道是被廣告攔胡的
-        // （VM 實測）。
-        {
-          sectionId: "env",
-          checkId: "fullscreen",
-          agent: "claude",
-          label: "全螢幕模式",
-          logo: "logo-claude",
-          detail:
-            "第一次跑 claude 會問要不要換新的畫面模式。先在這裡處理掉，順便學會它的滑鼠操作。",
-          check: null,
-          checks: [],
-          kind: "manual",
-          manualIds: FULLSCREEN_ITEMS.map((item) => item.id),
-        },
       ],
     },
   ];
