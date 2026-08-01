@@ -263,9 +263,17 @@ function withActions(check) {
     "gh-auth": check.status === "warn" ? "login-gh" : null,
   };
   const fixAction = fixActions[check.id] ?? null;
+  // installAction 在項目裝好之後也會變 null（installer 只在 missing 時才解析），
+  // 所以前端光看它分不出「已經裝好」與「這根本不是可以安裝的東西」。
+  // execution-policy 這種設定類項目沒有 installer，卡片上不該出現安裝按鈕——
+  // 硬塞一顆永遠置灰的「安裝」只會讓學生問「安裝什麼？」（Reed 實測提問）。
+  const hasInstaller =
+    check.installable !== false &&
+    resolveInstaller(check.id, process.platform) !== null;
 
   return {
     ...check,
+    hasInstaller,
     installAction: installer === null ? null : installActionId(check.id),
     fixAction:
       fixAction !== null && Object.hasOwn(actions, fixAction)

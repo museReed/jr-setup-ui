@@ -175,7 +175,10 @@ export function envRowModel(check, installed = false) {
       text: installed ? "✅ 安裝" : "安裝",
       ...(installed ? { disabled: true, done: true } : {}),
     });
-  } else if (installed) {
+  } else if (installed && check.hasInstaller !== false) {
+    // installAction 裝好之後會變 null，所以「已裝好」這一態要靠這裡補出 ✅ 安裝。
+    // 但設定類項目（execution-policy）根本沒有 installer，補了就是一顆意義不明的
+    // 灰按鈕——hasInstaller 由伺服器標記，false 就什麼都不放。
     buttons.push({
       action: "",
       dataName: "installAction",
@@ -237,14 +240,18 @@ export function envCardRowModel(card, installedSteps = new Set()) {
     const install = envRowModel(primary, installed).buttons.find(
       (button) => button.dataName === "installAction",
     );
-    buttons.push(
-      install ?? {
+    // 沒有 installer 的項目（execution-policy 這種設定類）不放安裝按鈕。
+    // 它要的是「修正」，補一顆永遠按不下去的「安裝」只會讓學生問安裝什麼。
+    if (install !== undefined) {
+      buttons.push(install);
+    } else if (primary.hasInstaller !== false) {
+      buttons.push({
         action: "",
         dataName: "installAction",
         text: "安裝",
         disabled: true,
-      },
-    );
+      });
+    }
   }
 
   for (const check of checks) {

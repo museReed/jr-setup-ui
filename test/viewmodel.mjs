@@ -409,6 +409,61 @@ try {
   );
   ok("按過安裝但伺服器仍回 missing 時，安裝按鈕不置灰，學生能重試");
 
+  // 設定類項目（execution-policy）沒有 installer，它要的是「修正」。
+  // 補一顆永遠按不下去的「安裝」只會讓學生問「安裝什麼？」（Reed 實測提問）。
+  const policyCheck = {
+    id: "execution-policy",
+    label: "PowerShell 執行原則",
+    status: "ok",
+    detail: "目前是 RemoteSigned",
+    installAction: null,
+    fixAction: null,
+    hasInstaller: false,
+  };
+  const policyCard = (check) => ({
+    kind: "env",
+    checkId: "execution-policy",
+    checks: [check],
+  });
+  assert.deepEqual(
+    envCardRowModel(policyCard(policyCheck), new Set(["execution-policy"])).buttons,
+    [],
+  );
+  assert.deepEqual(
+    envCardRowModel(
+      policyCard({
+        ...policyCheck,
+        status: "warn",
+        fixAction: "fix-execution-policy",
+      }),
+      new Set(),
+    ).buttons.map(({ text }) => text),
+    ["修正"],
+  );
+  // 對照組：真的有 installer 的項目，裝好之後還是要留下已完成的 ✅ 安裝。
+  assert.deepEqual(
+    envCardRowModel(
+      {
+        kind: "env",
+        checkId: "node",
+        checks: [
+          {
+            id: "node",
+            label: "Node.js",
+            status: "ok",
+            detail: "v24",
+            installAction: null,
+            fixAction: null,
+            hasInstaller: true,
+          },
+        ],
+      },
+      new Set(["node"]),
+    ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
+    [{ text: "✅ 安裝", disabled: true }],
+  );
+  ok("沒有 installer 的設定類項目不放安裝按鈕，只放修正");
+
   assert.notEqual(mergedCard.detail, cardResultText(mergedCard));
   ok("卡片 description 與執行結果使用不同文字");
 
