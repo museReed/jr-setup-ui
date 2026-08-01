@@ -554,6 +554,20 @@ export function appendTermLine(lines, next) {
   return [...lines, next];
 }
 
+// 清單第一格（程式驗證那一列）該不該打勾。
+//
+// 三種情況都要對，而且它們曾經各錯過一次：
+//   整列已經綠了            → 勾（configRowModel 說 ok）
+//   程式那半驗過、列還是好的 → 勾（有眼睛勾選框的列不會變 ok，但程式那半確實過了）
+//   程式那半驗過、列壞掉了   → 不勾 ← 這格漏了會變成「1/1 全綠卻沒有下一張」
+//
+// 最後那個是實測踩到的：codex-config 驗過之後檔案又變成「需要合併」（status warn），
+// behaviorVerified 是開頁時載入的、不會跟著更新，於是照著上一輪的結論打勾。
+export function systemRowChecked(check, { rowVerified, behaviorVerified }) {
+  if (configRowModel(check, rowVerified).status === "ok") return true;
+  return behaviorVerified && check.status === "ok";
+}
+
 export function checklistGroups({
   check,
   checks = check == null ? [] : [check],

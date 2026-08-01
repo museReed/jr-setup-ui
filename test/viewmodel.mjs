@@ -30,6 +30,7 @@ import {
   runControlsState,
   runOutcome,
   sectionManualItems,
+  systemRowChecked,
   sectionStatus,
   terminalOutcomeLines,
   toggleToolSelection,
@@ -536,6 +537,31 @@ try {
   );
   assert.ok(CARD_HINTS["codex-namer"].lines.length >= 2);
   ok("codex 的兩題改用 CARD_HINTS 照原樣印出來，不再多一格勾選框");
+
+  // 清單第一格該不該打勾——三種情況各錯過一次，所以三種都釘住。
+  const okRow = { id: "x", label: "x", status: "ok", detail: "" };
+  assert.equal(
+    systemRowChecked(okRow, { rowVerified: true, behaviorVerified: false }),
+    true,
+  );
+  // 有眼睛勾選框的列不會變成 ok，但程式那半確實過了——第一格要立刻反映。
+  const eyeRow = { ...okRow, eyeCheck: "看畫面" };
+  assert.equal(
+    systemRowChecked(eyeRow, { rowVerified: false, behaviorVerified: true }),
+    true,
+  );
+  assert.equal(
+    systemRowChecked(eyeRow, { rowVerified: false, behaviorVerified: false }),
+    false,
+  );
+  // 驗過之後檔案又壞了（needsMerge / 被改掉）：不能再照著上一輪的結論打勾，
+  // 否則畫面會是「1/1 全綠卻沒有下一張」（VM 實測 codex-config）。
+  const mergeRow = { ...okRow, status: "warn", detail: "已有你自己的版本，需要合併" };
+  assert.equal(
+    systemRowChecked(mergeRow, { rowVerified: false, behaviorVerified: true }),
+    false,
+  );
+  ok("程式驗過的勾，只在那一列現在還是好的時候才算數");
 
   assert.deepEqual(
     terminalOutcomeLines({
