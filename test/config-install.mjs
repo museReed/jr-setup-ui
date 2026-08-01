@@ -96,7 +96,9 @@ try {
     "claude-code/en/output-styles/concise-structured.md",
   );
   assert.equal(describeStep("codex-config", AT).protectExisting, true);
-  assert.equal(describeStep("codex-agents", AT).protectExisting, undefined);
+  // 三個規則檔都是學生會往裡面加東西的：安裝直接覆蓋就弄丟了，只留一個 .bak，
+  // 而學生不會知道要去翻備份。
+  assert.equal(describeStep("codex-agents", AT).protectExisting, true);
   ok("每步知道自己的來源與目標，會蓋掉使用者內容的步驟有標記");
 
   const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });

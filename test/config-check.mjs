@@ -151,6 +151,25 @@ process.stdin.on("end", () => {
   assert.equal((await checkCopyStep(MATERIALS, codexStep)).status, "warn");
   ok("工作坊那段少一行就不算併好");
 
+  // Markdown 的 # 是標題不是註解，不能跟 TOML 一樣丟掉——丟了的話學生把整份章節
+  // 標題砍光也會被判成併好。AGENTS.md 也是 protectExisting（學生會往裡面加規則）。
+  const agentsStep = describeStep("codex-agents", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  const agentsTpl = readFileSync(path.join(MATERIALS, agentsStep.source), "utf8");
+  mkdirSync(path.dirname(agentsStep.target), { recursive: true });
+  writeFileSync(agentsStep.target, `${agentsTpl}\n## 我自己的規則\n- 一律用繁體\n`);
+  assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "ok");
+
+  const firstHeading = agentsTpl
+    .split("\n")
+    .find((line) => line.trim().startsWith("#"));
+  writeFileSync(agentsStep.target, agentsTpl.replace(firstHeading, ""));
+  assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "warn");
+  ok("AGENTS.md 也受保護，且 Markdown 標題算實質內容");
+
   installFrom(tabStep.watcherSource, tabStep.target);
   assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");
   ok("tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");

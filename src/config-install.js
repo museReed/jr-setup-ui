@@ -534,6 +534,9 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         kind: "copy",
         source: `codex/${lang}/AGENTS.md`,
         target: `${codexDir}/AGENTS.md`,
+        // 跟 CLAUDE.md 同一個理由：學生會在自己的規則檔裡加東西，安裝直接覆蓋
+        // 就弄丟了。原本只留一個 .bak，但學生不會知道要去翻備份。
+        protectExisting: true,
       };
 
     case "tab-sync": {
