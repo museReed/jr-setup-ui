@@ -96,6 +96,14 @@ const EXTERNAL_SKILL_STEPS = {
   },
   // Claude 這邊的 Playwright 不是 skill 而是 MCP server，落點在 ~/.claude.json，
   // 所以驗證方式跟上面四列不同（見 config-check.js 的 checkExternalSkill）。
+  //
+  // 為什麼兩邊機制不一樣，查過了：anthropics/skills 底下十七支 skill 裡沒有
+  // playwright。最接近的是 webapp-testing，但它走 Python 的 playwright.sync_api、
+  // 預設 headless，是拿來測本機網頁應用的——課堂要的是「學生看得到瀏覽器自己動」，
+  // 而且它會多拉一條 Python 依賴，等於在安裝流程裡再開一個會壞的地方。
+  //
+  // 要統一的話唯一已知可行的方向是「兩邊都用 MCP」（Codex 支援 MCP，config.toml
+  // 的 [mcp_servers.*] 就是），不是「兩邊都用 skill」。目前決定維持現狀。
   "ext-playwright-claude": {
     label: "第三方：Playwright MCP（Claude）",
     agent: "claude",
