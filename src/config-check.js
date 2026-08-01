@@ -142,7 +142,14 @@ export const VERIFICATION = {
     terminal: { case: "title", agent: "claude" },
     eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
   },
-  "claude-namer": { terminal: { case: "naming", agent: "claude" } },
+  // 程式驗得到的是「名字有沒有被產生」（hook 會寫檔），不是「標題有沒有變」。
+  // 這兩件事會分岔——VM 實測：名字寫出來了，但 watcher 沒掛上，標題一直是預設值。
+  // 卡片對學生的承諾是「你的分頁會自動命名」，所以標題那一半要有人看。
+  // 驗收文件的「眼睛的」那節本來就要求看這個，是嚮導漏了問。
+  "claude-namer": {
+    terminal: { case: "naming", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+  },
   "claude-monitor": { terminal: { case: "context", agent: "claude" } },
   "codex-namer": {
     terminal: { case: "naming", agent: "codex" },
@@ -151,8 +158,10 @@ export const VERIFICATION = {
   "codex-monitor": { terminal: { case: "context", agent: "codex" } },
   // skill 的行為驗證跟 hook 同一個判準：要嘛留下只有 skill 跑過才會有的副產物，
   // 要嘛就老實承認驗不到、交給學生看。
+  // 同上：這支 skill 的成果就是「標題變了」，程式只驗得到名字有沒有落地。
   "skill-claude-auto-rename": {
     terminal: { case: "skill-rename", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
   },
   "skill-codex-auto-rename": {
     terminal: { case: "skill-rename", agent: "codex" },
