@@ -19,7 +19,8 @@
    ```bash
    python3 <嚮導路徑>/materials/skills/demo/live-preview-self/self_play.py ~/demo-page.html
    ```
-   - 這支只用 Python 標準函式庫，不需要安裝任何東西（`python3` 叫不動時改用 `py` 或 `python`）
+   - 這支只用 Python 標準函式庫，不需要安裝任何東西
+   - **Windows 上用 `py -3`**：那裡沒有 `python3.exe`，那個名字會撞到 Windows Store 的殼——它跑得起來、跳出商店頁面，然後失敗
    - 找不到路徑就先定位：`find ~ -name self_play.py -path '*live-preview-self*' 2>/dev/null`
    - 跑完把它印出來的那份 `*-self-play.html` 用瀏覽器打開，就會開始演（右上角有「重播」）
    - 想調速度：`CSS_SECONDS=15 BODY_SECONDS=70 python3 .../self_play.py ~/demo-page.html`

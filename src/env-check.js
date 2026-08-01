@@ -462,6 +462,40 @@ async function checkVersion(id, label, cmd, args) {
   }
 }
 
+// Python 在 Windows 上叫什麼，取決於誰裝的：
+//
+//   py -3        python.org 的安裝檔（winget 裝的就是它）附的啟動器，最可靠
+//   python       同一個安裝檔會產生，但 PATH 上可能先撞到 Store 的殼
+//   python3      **Windows 上根本不會有** ——那是 Unix 的慣例。python.org 的安裝檔
+//                不產生 python3.exe，所以那個名字永遠指向 Store 的殼
+//
+// Store 的殼很難纏：它存在、跑得起來、跳出商店頁面，exit code 非零但也不是 ENOENT
+// ——所以 checkVersion 會判成「檢查失敗」而不是「未安裝」。實測就是這樣：winget 明明
+// 印了 Successfully installed、exit code 0，卡片還是紅的。
+//
+// 依序試，第一個 exit 0 的算數。macOS / Linux 只有 python3 一個候選。
+async function checkPython() {
+  const candidates =
+    process.platform === "win32"
+      ? [
+          ["py", ["-3", "--version"]],
+          ["python", ["--version"]],
+        ]
+      : [["python3", ["--version"]]];
+
+  let last = null;
+
+  for (const [cmd, args] of candidates) {
+    last = await checkVersion("python", "Python 3", cmd, args);
+
+    if (last.status === "ok") {
+      return last;
+    }
+  }
+
+  return last;
+}
+
 async function checkClaudeAuth(installed) {
   const id = "claude-auth";
   const label = "Claude Code 登入狀態";
@@ -585,10 +619,7 @@ export async function runEnvCheck() {
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
-    // Windows 上一律問 python3，不問 python：裸的 python 會撞到 Windows Store 的
-    // 殼——它存在、跑得起來、還會跳出商店頁面要你安裝，exit code 卻不是 ENOENT，
-    // 檢查會誤判成「裝好了」（VM 實測）。python3 沒有那層殼。
-    const python = checkVersion("python", "Python 3", "python3", ["--version"]);
+    const python = checkPython();
     const checksToRun = [
       claude,
       checkClaudeAuth(claude),
