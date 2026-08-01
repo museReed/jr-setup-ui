@@ -628,7 +628,10 @@ try {
     }),
     {
       action: "login-codex",
-      linkText: "開啟 OpenAI 授權頁",
+      // codex 一定會自己開瀏覽器（不吃 BROWSER，--device-auth 要帳號層級開關），
+      // 所以連結是備援不是主要入口，文案與樣式都跟另外兩個服務不同。
+      linkText: "瀏覽器沒開？點這裡開啟 OpenAI 授權頁",
+      autoOpens: true,
       authCheckId: "codex-auth",
       url: "https://example.com",
       code: "ABCD-1234",

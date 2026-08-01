@@ -298,10 +298,19 @@ Object.assign(actions, {
     kind: "fixed",
     label: "登入 Codex",
     cmd: "codex",
-    // --device-auth：印出網址與一次性代碼，不要自己開瀏覽器。
-    // 不帶這個旗標的話 codex 會起本機 callback 並直接彈出網頁，學生根本來不及看到
-    // 卡片上的「開啟 OpenAI 授權頁」按鈕，也拿不到可以複製的代碼（VM 實測）。
-    args: ["login", "--device-auth"],
+    // ⚠️ 不要再加 --device-auth。
+    //
+    // 它確實會印出網址與一次性代碼、也不自己開瀏覽器，但那個模式需要**每個帳號**
+    // 先去 ChatGPT Security Settings 打開「device code authorization」，沒開的人
+    // 走到授權頁只會看到一段紅字要他去改設定（VM 實測）。對課堂學生是死路。
+    //
+    // 也沒辦法像 claude / gh 那樣用 BROWSER 擋掉自動開啟：codex 用 Rust 的
+    // webbrowser crate，macOS 直接叫 Safari/Chrome、Windows 走 ShellExecute，
+    // 二進位檔裡根本沒有 BROWSER 這個字串。
+    //
+    // 所以 codex 就是會自己開瀏覽器。卡片那邊不放「開啟授權頁」主按鈕假裝是使用者
+    // 控制的，改成說明 + 備援連結（見 viewmodel 的 LOGIN_CARD_SERVICES）。
+    args: ["login"],
     acceptsInput: true,
     description: "登入 Codex。",
   },

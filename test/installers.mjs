@@ -135,9 +135,9 @@ ok("目前平台只有受支援的安裝器會進入 fixed action 白名單");
 
 const expectedLoginActions = {
   "login-claude": { cmd: "claude", args: ["auth", "login"] },
-  // --device-auth 不能拿掉：少了它 codex 會起本機 callback 直接彈瀏覽器，
-  // 卡片上的「開啟 OpenAI 授權頁」按鈕與代碼複製區就沒有意義了（VM 實測）。
-  "login-codex": { cmd: "codex", args: ["login", "--device-auth"] },
+  // ⚠️ 不要加 --device-auth：那個模式需要每個帳號先去 ChatGPT Security Settings
+  // 打開裝置碼授權，沒開的人在授權頁只會看到紅字要他改設定（VM 實測），對學生是死路。
+  "login-codex": { cmd: "codex", args: ["login"] },
   "login-gh": {
     cmd: "gh",
     args: [

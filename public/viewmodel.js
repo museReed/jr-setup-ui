@@ -577,7 +577,11 @@ const LOGIN_CARD_SERVICES = {
   },
   "codex-auth": {
     action: "login-codex",
-    linkText: "開啟 OpenAI 授權頁",
+    // codex 一定會自己開瀏覽器（不吃 BROWSER，--device-auth 又要帳號層級先開關，
+    // 詳見 src/actions.js 的說明）。所以這裡不假裝連結是主要入口，改成備援用字：
+    // 自動開了就不用點，沒開才點。
+    linkText: "瀏覽器沒開？點這裡開啟 OpenAI 授權頁",
+    autoOpens: true,
   },
   "gh-auth": {
     action: "login-gh",

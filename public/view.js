@@ -288,7 +288,10 @@ function loginControlsElement(model) {
   hints.hidden = !model.showLink && !model.showCode;
   const link = document.createElement("a");
   link.id = "login-url";
-  link.className = "ds-btn ds-btn-primary";
+  // 會自己開瀏覽器的服務（codex），連結只是備援，不該長得像主要入口。
+  link.className = model.autoOpens
+    ? "ds-btn ds-btn-ghost ds-btn-sm"
+    : "ds-btn ds-btn-primary";
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = model.linkText;
