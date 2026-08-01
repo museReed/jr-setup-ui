@@ -4,6 +4,7 @@ import * as api from "./api.js";
 import * as view from "./view.js";
 import {
   CONFIG_LANGUAGES,
+  CARD_HINTS,
   CONFIG_TOOL_CHOICES,
   flattenCheckCards,
   FULLSCREEN_PROMPT,
@@ -383,6 +384,7 @@ function renderWizard() {
     login,
     checklist: groups,
     showChecklist: card.kind !== "setup",
+    hints: CARD_HINTS[card.checkId] ?? null,
     pasteProof:
       card.checkId === "claude"
         ? {

@@ -74,6 +74,21 @@ export const FULLSCREEN_ITEMS = [
   },
 ];
 
+// 第一次跑 codex 會連續跳兩個問句，兩個都選錯就整組 hook 不跑、後面 codex 那幾格
+// 全部失敗——而失敗訊息只會說「驗證沒過」，不會說「你剛才那兩個選項選錯了」。
+//
+// 勾選框只寫「要接受信任提示」，但學生根本還沒看過那個畫面，不知道長什麼樣、有幾
+// 個選項、哪一個是對的。所以照原樣把它們印出來，學生對照著選就好。
+export const CARD_HINTS = {
+  "codex-namer": {
+    title: "第一次跑 codex 會問這兩題，照這樣選：",
+    lines: [
+      "Allow this hook to run? → Yes（不接受的話整組 hook 都不會跑）",
+      "Select sandbox mode?   → default（課堂用預設就好）",
+    ],
+  },
+};
+
 export const CARD_GATES = {
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。

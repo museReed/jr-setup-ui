@@ -418,6 +418,18 @@ function renderCard(model) {
     if (model.showChecklist) {
       body.append(checklistElement(model.checklist, model.onManualToggle));
     }
+    if (model.hints !== null && model.hints !== undefined) {
+      const hints = document.createElement("div");
+      hints.className = "card-hints";
+      const title = document.createElement("p");
+      title.className = "paste-proof-hint";
+      title.textContent = model.hints.title;
+      const block = document.createElement("code");
+      block.className = "paste-proof-command card-hints-block";
+      block.textContent = model.hints.lines.join("\n");
+      hints.append(title, block);
+      body.append(hints);
+    }
     if (model.pasteProof !== null && model.pasteProof !== undefined) {
       body.append(pasteProofElement(model.pasteProof));
     }

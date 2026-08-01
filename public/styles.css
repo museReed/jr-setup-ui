@@ -348,6 +348,19 @@ body {
   width: 100%;
 }
 
+.card-hints {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+/* 兩題照原樣印出來，換行要保留，寬度不夠時橫向捲而不是折行——折了就對不上畫面。 */
+.card-hints-block {
+  white-space: pre;
+  overflow-x: auto;
+}
+
 .paste-proof-actions {
   display: flex;
   flex-wrap: wrap;
