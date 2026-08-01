@@ -338,7 +338,12 @@ export function configRowModel(
       step: check.id,
       ...(installationDone ? { disabled: true, done: true } : {}),
     });
-  } else {
+  } else if (check.noInstall !== true) {
+    // 沒有安裝動作時補一顆停用的佔位，讓每一列的按鈕位置對齊。
+    //
+    // 但 demo 那種 noInstall 的列不補：它從頭到尾就沒有「安裝」這個概念，補一顆
+    // 按不動的按鈕只會讓學生盯著它想「是不是要先按這個」（VM 實測）。那一列的動作
+    // 是「開終端跑」，那顆自己會在。
     buttons.push({
       action: "",
       dataName: "installAction",

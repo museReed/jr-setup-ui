@@ -145,6 +145,27 @@ try {
   assert.equal(pending.showRetest, true);
   ok("結構齊全但沒驗過行為的列不給綠燈，且沒有會閃現的「驗證」按鈕");
 
+  // demo 那種 noInstall 的列從頭到尾沒有「安裝」這個概念。原本會補一顆按不動的
+  // 佔位按鈕（為了讓每列的按鈕位置對齊），學生盯著它想「是不是要先按這個」。
+  const demoRow = configRowModel({
+    id: "demo-claude",
+    label: "跑一條龍 demo（Claude）",
+    status: "ok",
+    detail: "按右邊開終端跑一次",
+    noInstall: true,
+    installAction: null,
+    verifyAction: "verify-in-terminal",
+    verifyKind: "terminal",
+    verifyOptions: { case: "demo", agent: "claude" },
+    eyeCheck: "左邊逐字打 code、右邊即時長出網頁",
+  });
+  assert.deepEqual(
+    demoRow.buttons.map(({ text }) => text),
+    ["開終端跑"],
+  );
+  assert.equal(demoRow.showRetest, false);
+  ok("noInstall 的列只有「開終端跑」，不補按不動的安裝佔位");
+
   const verified = configRowModel(
     {
       id: "hook",

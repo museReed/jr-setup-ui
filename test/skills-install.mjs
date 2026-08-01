@@ -190,17 +190,19 @@ assert.equal(codexOnly.at(-1), "demo-codex");
 const demo = describeStep("demo-claude", { lang: "zh-TW", home: HOME });
 assert.equal(demo.kind, "demo");
 
-// 每張卡都保留安裝按鈕；這一列沒有東西可裝，所以按鈕必須鎖住。
+// 這一列沒有東西可裝，連鎖住的安裝按鈕都不補。
+//
+// 原本補一顆按不動的佔位（為了讓每列的按鈕位置對齊），但 demo 從頭到尾就沒有
+// 「安裝」這個概念——學生會盯著那顆想「是不是要先按這個」（VM 實測）。那一列的
+// 動作是「開終端跑」，那顆自己會在。
 const demoCheck = withActions(checkDemo(demo));
 assert.equal(demoCheck.noInstall, true);
 assert.equal(demoCheck.status, "ok");
 
 const demoRow = configRowModel(demoCheck, false);
-assert.equal(demoRow.buttons.length, 2);
-assert.equal(demoRow.buttons[0].dataName, "installAction");
-assert.equal(demoRow.buttons[0].disabled, true);
-assert.equal(demoRow.buttons[1].dataName, "verifyAction");
-assert.equal(demoRow.buttons[1].text, "開終端跑");
+assert.equal(demoRow.buttons.length, 1);
+assert.equal(demoRow.buttons[0].dataName, "verifyAction");
+assert.equal(demoRow.buttons[0].text, "開終端跑");
 // 沒驗過之前不給綠燈，跟其他列同一條規則。
 assert.equal(demoRow.status, "unverified");
 assert.equal(configRowModel(demoCheck, true).status, "ok");
