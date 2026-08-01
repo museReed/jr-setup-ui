@@ -488,6 +488,19 @@ function renderCheckingLoader() {
   }
 }
 
+// 這一段裡還沒完成的卡，帶著名稱與第幾張——擋人的時候要指名，不能只說「這段沒
+// 做完」（學生站在最後一張、畫面顯示已完成，那句話等於叫他自己一張張往回翻）。
+function incompleteCards(cards, verified) {
+  return cards
+    .map((card, index) => ({ card, index }))
+    .filter(({ card }) =>
+      card.kind === "setup"
+        ? card.completed !== true
+        : !cardIsComplete(card, verified, state.manualCheckedIds),
+    )
+    .map(({ card, index }) => ({ label: card.label, index }));
+}
+
 // 每一段是不是真的做完了——不是問學生，是看每張卡的實際狀態。
 // 資料還沒回來時回 undefined，讓閘門知道「還不確定」而不是「沒做完」，
 // 免得載入中把人鎖在外面。
@@ -503,15 +516,7 @@ function sectionCompletion() {
         return [section.id, undefined];
       }
 
-      return [
-        section.id,
-        found.cards.every(
-          (card) =>
-            card.kind === "setup"
-              ? card.completed === true
-              : cardIsComplete(card, verified, state.manualCheckedIds),
-        ),
-      ];
+      return [section.id, incompleteCards(found.cards, verified).length === 0];
     }),
   );
 }
@@ -519,10 +524,24 @@ function sectionCompletion() {
 function renderNavigation() {
   const tools = toolSelectionValue(state.selectedTools);
   const done = sectionCompletion();
+  const verified = effectiveVerifiedSteps();
+  const sections = allCardSections();
+  const blockers = Object.fromEntries(
+    sections.map(({ sectionId, cards }) => [
+      sectionId,
+      incompleteCards(cards, verified),
+    ]),
+  );
   const lockStates = Object.fromEntries(
     SECTIONS.map((section) => [
       section.id,
-      sectionGateState(section.id, state.completedGateIds, tools, done),
+      sectionGateState(
+        section.id,
+        state.completedGateIds,
+        tools,
+        done,
+        blockers,
+      ),
     ]),
   );
   view.renderSectionLocks(lockStates);

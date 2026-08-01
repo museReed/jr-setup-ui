@@ -198,6 +198,7 @@ export function sectionGateState(
   completedGateIds = new Set(),
   tools = "claude",
   sectionDone = {},
+  sectionBlockers = {},
 ) {
   const codexSelected = tools.split(",").includes("codex");
   const required = (SECTION_GATES[sectionId] ?? []).filter(
@@ -214,10 +215,31 @@ export function sectionGateState(
       ? previous
       : null;
 
+  // 「先把上一段做完」對學生沒有用——他人在那一段的最後一張，畫面顯示已完成，被
+  // 告知這段沒做完卻無從下手，只能一張一張往回翻（VM 實測）。
+  //
+  // 會走到這裡通常是因為「下一張」放行了沒完成的卡：那顆按鈕只要求驗證「試過」，
+  // 不要求通過（刻意的，否則過不了的驗證會把人卡死）。放行就放行，但擋人的時候
+  // 得說清楚是哪一張。
+  //
+  // 只點名前兩張，後面用「等 N 張」帶過——列滿七張只會變成另一種看不懂。
+  const blocked = previousPending === null
+    ? []
+    : (sectionBlockers[previousPending.id] ?? []);
+  const named = blocked
+    .slice(0, 2)
+    .map(({ label, index }) => `「${label}」（第 ${index + 1} 張）`)
+    .join("、");
+  const rest = blocked.length > 2 ? `等 ${blocked.length} 張` : "";
+
   const reasons = [
     ...(previousPending === null
       ? []
-      : [`先把「${previousPending.title}」做完`]),
+      : [
+          named === ""
+            ? `先把「${previousPending.title}」做完`
+            : `先回去做完${named}${rest}`,
+        ]),
     ...missing.map((gate) => `完成「${gate.title}」`),
   ];
 

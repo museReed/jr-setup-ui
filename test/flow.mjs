@@ -108,6 +108,44 @@ try {
   );
   ok("人工關卡未勾時鎖住下一段，勾選後解鎖");
 
+  // 擋人的時候要指名是哪一張卡。只說「先把上一段做完」的話，學生站在那一段的最後
+  // 一張、畫面顯示已完成，卻被告知這段沒做完——只能一張一張往回翻（VM 實測）。
+  const blockedOne = sectionGateState(
+    "skills",
+    new Set(),
+    "claude",
+    { rules: false },
+    { rules: [{ label: "Claude 自動命名 hook", index: 5 }] },
+  );
+  assert.equal(blockedOne.locked, true);
+  assert.match(blockedOne.reason, /Claude 自動命名 hook/);
+  assert.match(blockedOne.reason, /第 6 張/);
+  ok("鎖定訊息指名還沒完成的那張卡與它是第幾張");
+
+  // 列滿七張只會變成另一種看不懂，所以只點名前兩張。
+  const blockedMany = sectionGateState(
+    "skills",
+    new Set(),
+    "claude",
+    { rules: false },
+    {
+      rules: [
+        { label: "A", index: 0 },
+        { label: "B", index: 1 },
+        { label: "C", index: 2 },
+      ],
+    },
+  );
+  assert.match(blockedMany.reason, /「A」（第 1 張）、「B」（第 2 張）等 3 張/);
+  ok("沒完成的卡超過兩張時只點名前兩張，其餘用張數帶過");
+
+  // 拿不到清單時仍要有話講，不能變成空訊息。
+  const noBlockers = sectionGateState("skills", new Set(), "claude", {
+    rules: false,
+  });
+  assert.match(noBlockers.reason, /讓它照你的規矩回話/);
+  ok("沒有卡片清單時退回原本的段落名稱訊息");
+
   assert.equal(
     sectionGateState(
       "demo",
