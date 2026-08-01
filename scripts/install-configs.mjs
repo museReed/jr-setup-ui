@@ -20,6 +20,7 @@ import {
   mergeOutputStyle,
   upsertBlock,
 } from "../src/config-install.js";
+import { checkExternalSkill } from "../src/config-check.js";
 import { materialsDir } from "../src/paths.js";
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
@@ -275,9 +276,25 @@ async function externalSkillStep(step) {
         ),
       ),
     );
-    child.once("close", (exitCode) => {
+    child.once("close", async (exitCode) => {
       if (exitCode === 0) {
         logProgress(`${step.label} 安裝完成`);
+        resolve();
+        return;
+      }
+
+      // exit code 不是權威狀態，落點才是。
+      //
+      // `claude mcp add` 對「已經註冊過」回 exit 1（訊息是 MCP server playwright
+      // already exists in user config）。照著 exit code 判就會變成：東西明明裝好
+      // 了，卡片卻是紅的「安裝失敗，多半是網路問題」——猜錯原因，還把學生推去查
+      // 網路（VM 實測）。重按一次也永遠是同一個結果。
+      //
+      // 所以先去問 checkExternalSkill：它在就是在，指令回什麼都不重要。
+      const actual = await checkExternalSkill(step);
+
+      if (actual.status === "ok") {
+        logProgress(`${step.label} 本來就裝好了（${actual.detail}）`);
         resolve();
         return;
       }
