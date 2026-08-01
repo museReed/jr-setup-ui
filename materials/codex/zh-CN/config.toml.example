@@ -13,10 +13,13 @@
 # sandbox_mode / approval_policy：Codex 的 Auto 模式，等同 Claude Code 的
 # acceptEdits——工作区内的文件修改自动套用，不必逐次接受；超出工作区、动网络或
 # 高风险操作才会停下来问你。
-#   sandbox_mode    "workspace-write"    工作区内可写（课堂用这个）
-#                   "danger-full-access" 整台机器都能动，不要用
-#   approval_policy "on-request"         需要时才问（课堂用这个）
+#   sandbox_mode    "read-only"          只读，什么都不能改
+#                   "workspace-write"    工作区内可写（课堂用这个）
+#                   "danger-full-access" 整台机器与网络都不设限，不要用
+#   approval_policy "untrusted"          有风险的操作才问
+#                   "on-request"         需要时才问（课堂用这个）
 #                   "never"              什么都不问，连工作区外也不问，不要用
+#                   "granular"           分类逐项设定，课堂用不到
 
 personality = "pragmatic"
 instructions = "回复必须严格遵守 AGENTS.md 的 Output Style 规则：结论先行（粗体）、3-5 bullet、比较用表格、不用 emoji/庆祝语气、中等长度不灌水、白话原则。每次回复前自检。"
