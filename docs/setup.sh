@@ -10,7 +10,10 @@ set -euo pipefail
 # 版本寫死比動態解析可靠：開課前手動更新這一行就好。
 NODE_VERSION="v24.18.0"
 APP_DIR="$HOME/.jr-setup/app"
-TARBALL="https://codeload.github.com/museReed/jr-setup-ui/tar.gz/refs/heads/main"
+# 學生那條 one-liner 抓的永遠是 main。驗 PR 時前面加 JR_BRANCH=... 就會改抓那個
+# 分支（Windows 的 setup.ps1 用 $JrBranch，同一個意思）。
+BRANCH="${JR_BRANCH:-main}"
+TARBALL="https://codeload.github.com/museReed/jr-setup-ui/tar.gz/refs/heads/${BRANCH}"
 
 say() {
   printf '\n\033[1m▸ %s\033[0m\n' "$1"
@@ -64,7 +67,7 @@ else
   install_homebrew
 fi
 
-say "下載嚮導"
+say "下載嚮導（${BRANCH}）"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR"
 curl -fsSL "$TARBALL" | tar -xz -C "$APP_DIR" --strip-components=1
