@@ -224,6 +224,41 @@ function actionButton(spec, onActionClick) {
   return button;
 }
 
+// 貼上證明用的欄位。貼對了那一格自己打勾——這是整份嚮導唯一「學生交得出副產物」
+// 的人工項目，其餘的人眼判定只能靠自己說了算。
+function pasteProofElement({ prompt, value, matched, onInput }) {
+  const wrap = document.createElement("div");
+  wrap.className = "paste-proof";
+
+  const hint = document.createElement("p");
+  hint.className = "paste-proof-hint";
+  hint.textContent = "在終端機貼這一句給 Claude：";
+
+  const command = document.createElement("code");
+  command.className = "paste-proof-command";
+  command.textContent = prompt;
+
+  const field = document.createElement("input");
+  field.type = "text";
+  field.className = "ds-input paste-proof-input";
+  field.placeholder = "把圈選到的那一行貼在這裡";
+  field.value = value;
+  field.addEventListener("input", (event) => onInput(event.target.value));
+
+  const status = document.createElement("span");
+  status.className = matched
+    ? "paste-proof-status is-matched"
+    : "paste-proof-status";
+  status.textContent = matched
+    ? "對上了，這一項算過。"
+    : value.trim() === ""
+      ? ""
+      : "跟代碼對不起來，再圈選一次整行試試。";
+
+  wrap.append(hint, command, field, status);
+  return wrap;
+}
+
 function checklistElement(groups, onManualToggle) {
   const items = [...groups.system, ...groups.manual];
   const checked = items.filter((item) => item.checked).length;
@@ -366,6 +401,9 @@ function renderCard(model) {
     // 同一個檢查的名稱與結果放在一起，讀的人不用自己配對。
     if (model.showChecklist) {
       body.append(checklistElement(model.checklist, model.onManualToggle));
+    }
+    if (model.pasteProof !== null && model.pasteProof !== undefined) {
+      body.append(pasteProofElement(model.pasteProof));
     }
     const actions = document.createElement("div");
     actions.className = "env-actions";

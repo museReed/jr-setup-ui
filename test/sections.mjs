@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 
 import {
+  FULLSCREEN_PROMPT,
+  FULLSCREEN_PROOF,
   SECTIONS,
   flattenCheckCards,
   groupChecks,
+  matchesFullscreenProof,
 } from "../public/model.js";
-import { envLogoFor, progressSummary } from "../public/viewmodel.js";
+import {
+  cardIsComplete,
+  envLogoFor,
+  progressSummary,
+} from "../public/viewmodel.js";
 
 function check(id) {
   return { id, label: id, status: "ok", detail: "已安裝" };
@@ -57,9 +64,20 @@ try {
     ),
     "env",
   );
+  // fullscreen 一定排在環境段最後：那個「換不換新畫面模式」的方框是第一次跑
+  // claude 才跳，排在規則段的行為驗證之前才擋得住它中途彈出來吃掉腳本送的句子。
   assert.deepEqual(
     envSequence.cards.map(({ checkId }) => checkId),
-    ["env-config", "claude", "codex", "git", "gh", "node", "ghostty"],
+    [
+      "env-config",
+      "claude",
+      "codex",
+      "git",
+      "gh",
+      "node",
+      "ghostty",
+      "fullscreen",
+    ],
   );
 
   const rules = section(
@@ -184,10 +202,10 @@ try {
     ]),
     [check("node"), check("codex"), check("claude")],
   );
-  assert.equal(section(flattened, "env").cards.length, 4);
+  assert.equal(section(flattened, "env").cards.length, 5);
   assert.deepEqual(
     section(flattened, "env").cards.map(({ checkId }) => checkId),
-    ["env-config", "claude", "codex", "node"],
+    ["env-config", "claude", "codex", "node", "fullscreen"],
   );
   assert.deepEqual(
     section(flattened, "rules").cards.map(({ checkId, agent }) => ({
@@ -204,6 +222,41 @@ try {
   );
 
   console.log("ok - sections 分組、單卡順序、進度、logo 與未知 step fallback");
+
+  // 全螢幕模式那張卡：整張都是人工項目，勾滿才算走完。
+  const fullscreenCard = section(flattened, "env").cards.at(-1);
+  assert.equal(fullscreenCard.kind, "manual");
+  assert.deepEqual(fullscreenCard.manualIds, [
+    "fullscreen-yes",
+    "fullscreen-mouse",
+    "fullscreen-copy",
+  ]);
+  assert.equal(cardIsComplete(fullscreenCard, new Set(), new Set()), false);
+  assert.equal(
+    cardIsComplete(
+      fullscreenCard,
+      new Set(),
+      new Set(["fullscreen-yes", "fullscreen-mouse"]),
+    ),
+    false,
+  );
+  assert.equal(
+    cardIsComplete(fullscreenCard, new Set(), new Set(fullscreenCard.manualIds)),
+    true,
+  );
+  console.log("ok - 全螢幕模式卡勾滿三項才算完成");
+
+  // 貼回來的代碼前後常黏到空白或換行——圈選很難剛好停在字尾。
+  assert.equal(matchesFullscreenProof(FULLSCREEN_PROOF), true);
+  assert.equal(matchesFullscreenProof(`  ${FULLSCREEN_PROOF}\n`), true);
+  assert.equal(matchesFullscreenProof(`${FULLSCREEN_PROOF} 這一行`), false);
+  assert.equal(matchesFullscreenProof(""), false);
+  assert.equal(matchesFullscreenProof(undefined), false);
+  console.log("ok - 貼上的代碼去掉前後空白後才比對，多貼到別的字不算過");
+
+  // 那一句要學生原樣貼進終端的話裡，一定要含代碼本身，否則印出來的東西對不上。
+  assert.ok(FULLSCREEN_PROMPT.includes(FULLSCREEN_PROOF));
+  console.log("ok - 給學生貼的那句話含有要比對的代碼");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

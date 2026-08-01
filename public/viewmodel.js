@@ -450,9 +450,18 @@ export function toolSelectionValue(selectedTools) {
     .join(",");
 }
 
-export function cardIsComplete(card, verifiedSteps = new Set()) {
+export function cardIsComplete(
+  card,
+  verifiedSteps = new Set(),
+  checkedManualIds = new Set(),
+) {
   if (card.kind === "setup") {
     return card.completed === true;
+  }
+
+  // 整張卡都是人工項目，沒有安裝也沒有程式驗證——勾滿才算走完。
+  if (card.kind === "manual") {
+    return (card.manualIds ?? []).every((id) => checkedManualIds.has(id));
   }
 
   if (card.kind === "env") {
@@ -467,13 +476,17 @@ export function cardIsComplete(card, verifiedSteps = new Set()) {
   );
 }
 
-export function currentCardIndex(cards, verifiedSteps = new Set()) {
+export function currentCardIndex(
+  cards,
+  verifiedSteps = new Set(),
+  checkedManualIds = new Set(),
+) {
   if (cards.length === 0) {
     return 0;
   }
 
   const firstIncomplete = cards.findIndex(
-    (card) => !cardIsComplete(card, verifiedSteps),
+    (card) => !cardIsComplete(card, verifiedSteps, checkedManualIds),
   );
   return firstIncomplete === -1 ? cards.length - 1 : firstIncomplete;
 }

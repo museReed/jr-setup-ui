@@ -59,6 +59,12 @@ export async function saveVerifiedStep(step) {
   return response.json();
 }
 
+// 人工勾選整份覆蓋：取消勾選也要存得回去，逐筆新增做不到。
+export async function saveManualChecked(ids) {
+  const response = await postJson("/state", { manual: ids });
+  return response.json();
+}
+
 // 程式那半驗過了。有眼睛勾選框的列也送這一筆——整列綠不綠是 saveVerifiedStep 的事。
 export async function saveBehaviorVerified(step) {
   const response = await postJson("/state", { step, kind: "behavior" });

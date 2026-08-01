@@ -122,6 +122,28 @@ export async function loadSelection(options = {}) {
   };
 }
 
+// 人工勾選跟 selection 一樣不受指紋管轄：它是「學生說他看到了」的宣稱，不是
+// 「裝過而且還有效」——重裝檔案不該讓人重看一次畫面。
+export async function loadManualChecked(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.manual)
+    ? state.manual.filter((id) => typeof id === "string")
+    : [];
+}
+
+export async function saveManualChecked(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.manual = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.manual;
+}
+
 export async function saveSelection(selection, options = {}) {
   const resolved = locations(options);
   const state = await readStoredState(resolved.stateFile);

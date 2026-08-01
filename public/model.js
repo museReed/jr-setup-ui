@@ -45,7 +45,37 @@ export const SECTION_GATES = {
 // codex 的信任提示原本掛在「進 Demo 之前」，但整組 codex hook 的驗證在規則段就要
 // 用到它——沒接受的話規則段的 codex hook 一定驗不過，而提醒卻排在兩段之後。
 // 學生被推進一個必然失敗的驗證，跟終端機標題同步排太後面是同一種錯位（VM 實測）。
+// 學生要圈選、貼回來的那串代碼。固定字串就夠——這一格要抓的是「auto-copy 沒生效」，
+// 不是防作弊；硬打字打得出來也代表他看到了那一行。
+export const FULLSCREEN_PROOF = "fullscreen-copy-ok-7f3a91";
+
+export const FULLSCREEN_PROMPT = `請原樣印出這一行，不要加任何說明：${FULLSCREEN_PROOF}`;
+
+// 貼回來的東西前後常常黏到空白或換行（圈選很難剛好停在字尾），比對前先清乾淨。
+export function matchesFullscreenProof(pasted) {
+  return typeof pasted === "string" && pasted.trim() === FULLSCREEN_PROOF;
+}
+
+export const FULLSCREEN_ITEMS = [
+  {
+    id: "fullscreen-yes",
+    title: "跳出方框時按 1. Yes, try it",
+    detail: "畫面會整個重畫一次，方框消失",
+  },
+  {
+    id: "fullscreen-mouse",
+    title: "打一句話，用滑鼠點那句話中間",
+    detail: "游標會跳到你點的位置，不用按左右鍵移過去",
+  },
+  {
+    id: "fullscreen-copy",
+    title: "圈選代碼那一行，貼進下面的欄位",
+    detail: "放開滑鼠就複製好了，不要按 Ctrl+C——在這個模式下它是中斷執行",
+  },
+];
+
 export const CARD_GATES = {
+  fullscreen: FULLSCREEN_ITEMS,
   "codex-namer": [
     {
       id: "codex-hook-trust",
@@ -451,6 +481,24 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
           kind: "setup",
         },
         ...envCards,
+        // 排在環境段最後：那個「換不換新畫面模式」的方框是第一次跑 claude 才跳，
+        // 而第一次跑 claude 就是規則段的行為驗證。不先處理掉，它會在驗證跑到一半
+        // 時彈出來，把腳本送進去的那句話當成選項吃掉——腳本以為問了，其實沒有，
+        // 然後一路等到逾時判失敗。學生看到「驗證失敗」，完全不知道是被廣告攔胡的
+        // （VM 實測）。
+        {
+          sectionId: "env",
+          checkId: "fullscreen",
+          agent: "claude",
+          label: "全螢幕模式",
+          logo: "logo-claude",
+          detail:
+            "第一次跑 claude 會問要不要換新的畫面模式。先在這裡處理掉，順便學會它的滑鼠操作。",
+          check: null,
+          checks: [],
+          kind: "manual",
+          manualIds: FULLSCREEN_ITEMS.map((item) => item.id),
+        },
       ],
     },
   ];

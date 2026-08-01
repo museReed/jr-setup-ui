@@ -17,10 +17,12 @@ import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir, moduleFile } from "./paths.js";
 import {
   loadBehaviorVerifiedSteps,
+  loadManualChecked,
   loadSelection,
   loadVerifiedSteps,
   markBehaviorVerified,
   markStepVerified,
+  saveManualChecked,
   saveSelection,
 } from "./progress-state.js";
 import { resolveLaunch } from "./spawn-command.js";
@@ -510,6 +512,7 @@ export async function startServer({
       sendJson(response, 200, {
         verified: await loadVerifiedSteps(),
         behavior: await loadBehaviorVerifiedSteps(),
+        manual: await loadManualChecked(),
         selection: await loadSelection(),
       });
       return;
@@ -542,6 +545,21 @@ export async function startServer({
         }
 
         await saveSelection({ tools, lang });
+        sendJson(response, 200, { ok: true });
+        return;
+      }
+
+      // 整份覆蓋：取消勾選也要存得回去。
+      if (payload.manual !== undefined) {
+        if (
+          !Array.isArray(payload.manual) ||
+          payload.manual.some((id) => typeof id !== "string")
+        ) {
+          sendText(response, 400, "manual 需要字串陣列");
+          return;
+        }
+
+        await saveManualChecked(payload.manual);
         sendJson(response, 200, { ok: true });
         return;
       }

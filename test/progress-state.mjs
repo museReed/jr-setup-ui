@@ -5,10 +5,12 @@ import path from "node:path";
 
 import {
   loadBehaviorVerifiedSteps,
+  loadManualChecked,
   loadSelection,
   loadVerifiedSteps,
   markBehaviorVerified,
   markStepVerified,
+  saveManualChecked,
   saveSelection,
 } from "../src/progress-state.js";
 
@@ -85,6 +87,23 @@ try {
   );
   assert.deepEqual(await loadBehaviorVerifiedSteps(options), []);
   ok("舊版 state.json 少了 behavior 欄位仍讀得動");
+
+  // 人工勾選：整份覆蓋，取消勾選也要存得回去。逐筆新增的話取消就寫不進去。
+  assert.deepEqual(await loadManualChecked(options), []);
+  await saveManualChecked(["fullscreen-yes", "fullscreen-copy"], options);
+  assert.deepEqual(await loadManualChecked(options), [
+    "fullscreen-yes",
+    "fullscreen-copy",
+  ]);
+  await saveManualChecked(["fullscreen-yes"], options);
+  assert.deepEqual(await loadManualChecked(options), ["fullscreen-yes"]);
+  ok("人工勾選整份覆蓋，取消勾選存得回去");
+
+  // 不受指紋管轄：它是「學生說他看到了」，重裝檔案不該叫人重看一次畫面。
+  await writeFile(target, "installed-v7\n");
+  assert.deepEqual(await loadVerifiedSteps(options), []);
+  assert.deepEqual(await loadManualChecked(options), ["fullscreen-yes"]);
+  ok("驗證因指紋失效時，人工勾選不會跟著被清掉");
 } finally {
   await rm(home, { recursive: true, force: true });
 }

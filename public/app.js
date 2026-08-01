@@ -6,7 +6,9 @@ import {
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   flattenCheckCards,
+  FULLSCREEN_PROMPT,
   groupChecks,
+  matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
 } from "./model.js";
@@ -95,6 +97,7 @@ const state = {
   resultTexts: new Map(),
   deferredVerificationSteps: new Set(),
   manualCheckedIds: new Set(),
+  pasteProofValue: "",
   selectedTools: ["claude"],
   selectedLanguage: "zh-TW",
   pendingModalCheck: null,
@@ -109,6 +112,22 @@ async function rememberVerifiedStep(step) {
   } catch (error) {
     view.addLine(`無法保存驗證進度：${error.message}`, "failed");
   }
+}
+
+// 人工勾選也存伺服器。以前只存在瀏覽器記憶體，重整一次全部退回未勾——「全螢幕
+// 模式」那張卡整張都是人工項目，重整就等於整張重做。
+function setManualChecked(id, checked) {
+  if (checked) {
+    state.manualCheckedIds.add(id);
+    state.completedGateIds.add(id);
+  } else {
+    state.manualCheckedIds.delete(id);
+    state.completedGateIds.delete(id);
+  }
+
+  api
+    .saveManualChecked([...state.manualCheckedIds])
+    .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
 }
 
 // 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
@@ -128,6 +147,11 @@ async function loadVerifiedSteps() {
     const result = await api.fetchState();
     state.verifiedSteps = new Set(result.verified);
     state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
+    state.manualCheckedIds = new Set(result.manual ?? []);
+
+    for (const id of state.manualCheckedIds) {
+      state.completedGateIds.add(id);
+    }
 
     // 伺服器記著上次選的工具與語言，開頁時要套回來。
     if (result.selection?.tools?.length > 0) {
@@ -140,6 +164,7 @@ async function loadVerifiedSteps() {
   } catch {
     state.verifiedSteps = new Set();
     state.behaviorVerifiedSteps = new Set();
+    state.manualCheckedIds = new Set();
   }
 }
 
@@ -193,7 +218,7 @@ function renderWizard() {
   }
 
   const verified = effectiveVerifiedSteps();
-  const derivedIndex = currentCardIndex(cardSection.cards, verified);
+  const derivedIndex = currentCardIndex(cardSection.cards, verified, state.manualCheckedIds);
   const requestedIndex = state.viewingCardIndex[state.activeSectionId];
   const currentIndex =
     requestedIndex === undefined
@@ -268,7 +293,7 @@ function renderWizard() {
     card.kind === "setup"
       ? true
       : card.kind === "env"
-        ? cardIsComplete(card, verified) &&
+        ? cardIsComplete(card, verified, state.manualCheckedIds) &&
           groups.manual.every((item) => item.checked)
         : nextCardUnlocked({
           installed,
@@ -280,7 +305,7 @@ function renderWizard() {
     cardSection.cards
       .filter((candidate) => {
         if (candidate.kind === "setup") return candidate.completed === true;
-        if (cardIsComplete(candidate, verified)) return true;
+        if (cardIsComplete(candidate, verified, state.manualCheckedIds)) return true;
         if (candidate.checkId === card.checkId) return nextUnlocked;
         return state.verificationAttempted.has(candidate.checkId) &&
           state.installedSteps.has(candidate.checkId);
@@ -320,7 +345,7 @@ function renderWizard() {
       ? state.currentEnvAction.slice("install-".length)
       : null);
   const status = cardStatusModel({
-    completed: cardIsComplete(card, verified),
+    completed: cardIsComplete(card, verified, state.manualCheckedIds),
     running:
       state.runInProgress &&
       (card.kind === "setup" ||
@@ -346,6 +371,15 @@ function renderWizard() {
     login,
     checklist: groups,
     showChecklist: card.kind !== "setup",
+    pasteProof:
+      card.checkId === "fullscreen"
+        ? {
+            prompt: FULLSCREEN_PROMPT,
+            value: state.pasteProofValue,
+            matched: matchesFullscreenProof(state.pasteProofValue),
+            onInput: (value) => cardModel.onPasteProofInput(value),
+          }
+        : null,
     showRetest: card.kind === "env" || row?.showRetest === true,
     showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
     nextUnlocked,
@@ -384,13 +418,14 @@ function renderWizard() {
       }
     },
     onManualToggle: (id, checked) => {
-      if (checked) {
-        state.manualCheckedIds.add(id);
-        state.completedGateIds.add(id);
-      } else {
-        state.manualCheckedIds.delete(id);
-        state.completedGateIds.delete(id);
-      }
+      setManualChecked(id, checked);
+      renderNavigation();
+      renderWizard();
+    },
+    // 貼對了就自己打勾，貼錯或清空就取消——學生不用再多按一次勾選框。
+    onPasteProofInput: (value) => {
+      state.pasteProofValue = value;
+      setManualChecked("fullscreen-copy", matchesFullscreenProof(value));
       renderNavigation();
       renderWizard();
     },
@@ -455,7 +490,7 @@ function sectionCompletion() {
           (card) =>
             card.kind === "setup"
               ? card.completed === true
-              : cardIsComplete(card, verified),
+              : cardIsComplete(card, verified, state.manualCheckedIds),
         ),
       ];
     }),
