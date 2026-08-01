@@ -523,9 +523,29 @@ try {
   );
   assert.deepEqual(
     sectionManualItems("skills", 1, 2, "claude,codex").map(({ id }) => id),
-    ["skills-new-terminal", "codex-hook-trust"],
+    ["skills-new-terminal"],
   );
   ok("SECTION_GATES 只出現在段落最後一張，並依工具篩選");
+
+  // codex 的信任提示要掛在真正需要它的那張卡上，不能等進 Demo 前才提醒——
+  // 整組 codex hook 的驗證在規則段就要用到它，提醒排在兩段之後等於必然失敗。
+  assert.deepEqual(
+    sectionManualItems("rules", 0, 5, "claude,codex", "codex-namer").map(
+      ({ id }) => id,
+    ),
+    ["codex-hook-trust"],
+  );
+  // 沒選 codex 的人不該看到它。
+  assert.deepEqual(
+    sectionManualItems("rules", 0, 5, "claude", "codex-namer"),
+    [],
+  );
+  // 別張卡也不該冒出來。
+  assert.deepEqual(
+    sectionManualItems("rules", 0, 5, "claude,codex", "claude-md"),
+    [],
+  );
+  ok("codex 信任提示掛在 codex-namer 那張卡上，且只給有選 codex 的人");
 
   assert.deepEqual(
     terminalOutcomeLines({

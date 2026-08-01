@@ -113,15 +113,33 @@ try {
     ).locked,
     false,
   );
+  ok("Demo 段的人工關卡勾完就解鎖");
+
+  // 解鎖還要看前一段是不是真的做完，不能只看勾選框——勾選框是學生自己宣告，
+  // 擋不住「前面根本沒做完」。規則段沒裝好就跳去裝技能包，skill 裝了也叫不動。
+  assert.equal(
+    sectionGateState("rules", new Set(), "claude", { env: false }).locked,
+    true,
+  );
+  assert.equal(
+    sectionGateState("rules", new Set(), "claude", { env: true }).locked,
+    false,
+  );
   assert.equal(
     sectionGateState(
-      "demo",
-      new Set(["skills-new-terminal"]),
-      "codex",
+      "skills",
+      new Set(["rules-new-terminal"]),
+      "claude",
+      { rules: false },
     ).locked,
     true,
   );
-  ok("Codex hook 信任關卡只在選了 Codex 時生效");
+  // 資料還沒回來時是 undefined，不該把人鎖在外面。
+  assert.equal(
+    sectionGateState("rules", new Set(), "claude", {}).locked,
+    false,
+  );
+  ok("前一段沒真的完成就鎖住下一段，狀態未知時不擋");
 
   const behaviorScript = readFileSync(
     new URL("../scripts/verify-behavior.mjs", import.meta.url),

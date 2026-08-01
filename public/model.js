@@ -36,10 +36,21 @@ export const SECTION_GATES = {
       title: "再開一次新的分頁",
       detail: "skill 只在 session 啟動時掃目錄",
     },
+  ],
+};
+
+// 掛在「特定一張卡」上的人工關卡，跟段落閘門不同：段落閘門是走完一段才提醒，
+// 這裡是在真正需要它的那張卡上就提醒。
+//
+// codex 的信任提示原本掛在「進 Demo 之前」，但整組 codex hook 的驗證在規則段就要
+// 用到它——沒接受的話規則段的 codex hook 一定驗不過，而提醒卻排在兩段之後。
+// 學生被推進一個必然失敗的驗證，跟終端機標題同步排太後面是同一種錯位（VM 實測）。
+export const CARD_GATES = {
+  "codex-namer": [
     {
       id: "codex-hook-trust",
       title: "第一次跑 codex 要接受 hook 信任提示",
-      detail: "沒接受的話整組 hook 不會跑",
+      detail: "沒接受的話整組 hook 都不會跑，這一列與後面的 codex 驗證都會失敗",
       codexOnly: true,
     },
   ],
@@ -132,10 +143,20 @@ export const GUIDANCE = {
   },
 };
 
+// 解鎖一段要看兩件事：人工關卡勾了沒，以及**前一段是不是真的全部完成**。
+//
+// 先前只看勾選框，於是學生勾一勾就能跳段：
+//   - 規則段從一開始就開著（它沒有任何 gate），CLI 都還沒裝就能去裝規則檔
+//   - 技能包那段只要勾「我開了新分頁」就放行，但 auto-rename 那支 skill 呼叫的是
+//     規則段裝的命名 hook，規則沒裝好裝了也叫不動（驗收文件早就寫了這條）
+//
+// 勾選框是「學生自己宣告做了什麼」，擋不住「前面根本沒做完」。所以再加一道用實際
+// 狀態判斷的閘門。
 export function sectionGateState(
   sectionId,
   completedGateIds = new Set(),
   tools = "claude",
+  sectionDone = {},
 ) {
   const codexSelected = tools.split(",").includes("codex");
   const required = (SECTION_GATES[sectionId] ?? []).filter(
@@ -143,13 +164,27 @@ export function sectionGateState(
   );
   const missing = required.filter((gate) => !completedGateIds.has(gate.id));
 
+  const index = SECTIONS.findIndex((section) => section.id === sectionId);
+  const previous = SECTIONS[index - 1];
+  // undefined 代表「還不知道」（資料還沒回來），那就不要擋——寧可放行也不要在
+  // 載入中把人鎖在外面。
+  const previousPending =
+    previous !== undefined && sectionDone[previous.id] === false
+      ? previous
+      : null;
+
+  const reasons = [
+    ...(previousPending === null
+      ? []
+      : [`先把「${previousPending.title}」做完`]),
+    ...missing.map((gate) => `完成「${gate.title}」`),
+  ];
+
   return {
-    locked: missing.length > 0,
+    locked: reasons.length > 0,
     missing,
-    reason:
-      missing.length === 0
-        ? ""
-        : `先完成「${missing.map((gate) => gate.title).join("」和「")}」。`,
+    previousPending,
+    reason: reasons.length === 0 ? "" : `${reasons.join("，再")}。`,
   };
 }
 

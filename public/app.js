@@ -190,6 +190,7 @@ function renderWizard() {
     currentIndex,
     cardSection.cards.length,
     toolSelectionValue(state.selectedTools),
+    card.checkId,
   );
   const cardChecks = card.checks ?? (card.check == null ? [] : [card.check]);
   // 清單的勾要跟卡片右上角的狀態徽章講同一件事。
@@ -413,12 +414,41 @@ function renderCheckingLoader() {
   }
 }
 
+// 每一段是不是真的做完了——不是問學生，是看每張卡的實際狀態。
+// 資料還沒回來時回 undefined，讓閘門知道「還不確定」而不是「沒做完」，
+// 免得載入中把人鎖在外面。
+function sectionCompletion() {
+  const verified = effectiveVerifiedSteps();
+  const sections = allCardSections();
+
+  return Object.fromEntries(
+    SECTIONS.map((section) => {
+      const found = sections.find((s) => s.sectionId === section.id);
+
+      if (found === undefined || found.cards.length === 0) {
+        return [section.id, undefined];
+      }
+
+      return [
+        section.id,
+        found.cards.every(
+          (card) =>
+            card.kind === "setup"
+              ? card.completed === true
+              : cardIsComplete(card, verified),
+        ),
+      ];
+    }),
+  );
+}
+
 function renderNavigation() {
   const tools = toolSelectionValue(state.selectedTools);
+  const done = sectionCompletion();
   const lockStates = Object.fromEntries(
     SECTIONS.map((section) => [
       section.id,
-      sectionGateState(section.id, state.completedGateIds, tools),
+      sectionGateState(section.id, state.completedGateIds, tools, done),
     ]),
   );
   view.renderSectionLocks(lockStates);

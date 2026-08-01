@@ -1,7 +1,7 @@
 // ViewModel：畫面「該長什麼樣」的所有判斷都在這裡。
 // 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
 // View 只負責把這裡算出來的結果畫出去。
-import { GUIDANCE, SECTION_GATES, SECTIONS } from "./model.js";
+import { CARD_GATES, GUIDANCE, SECTION_GATES, SECTIONS } from "./model.js";
 
 export const LOGIN_CHECK_IDS = {
   "login-claude": "claude-auth",
@@ -400,22 +400,34 @@ export function configRowModel(
   };
 }
 
-export function sectionManualItems(sectionId, cardIndex, cardCount, tools) {
+export function sectionManualItems(
+  sectionId,
+  cardIndex,
+  cardCount,
+  tools,
+  cardId = null,
+) {
+  const codexSelected = tools.split(",").includes("codex");
+  const usable = (gates) =>
+    gates
+      .filter((gate) => gate.codexOnly !== true || codexSelected)
+      .map((gate) => ({ id: gate.id, text: gate.title, detail: gate.detail }));
+
+  // 掛在這張卡上的關卡：在真正需要它的那一張就提醒，不是等走完整段。
+  const cardGates = usable(CARD_GATES[cardId] ?? []);
+
   if (cardIndex !== cardCount - 1) {
-    return [];
+    return cardGates;
   }
 
   const sectionIndex = SECTIONS.findIndex((section) => section.id === sectionId);
   const nextSection = SECTIONS[sectionIndex + 1];
 
   if (nextSection === undefined) {
-    return [];
+    return cardGates;
   }
 
-  const codexSelected = tools.split(",").includes("codex");
-  return (SECTION_GATES[nextSection.id] ?? [])
-    .filter((gate) => gate.codexOnly !== true || codexSelected)
-    .map((gate) => ({ id: gate.id, text: gate.title, detail: gate.detail }));
+  return [...cardGates, ...usable(SECTION_GATES[nextSection.id] ?? [])];
 }
 
 export function toggleToolSelection(selectedTools, tool) {
