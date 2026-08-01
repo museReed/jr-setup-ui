@@ -407,7 +407,10 @@ function renderCard(model) {
     }
     const actions = document.createElement("div");
     actions.className = "env-actions";
-    for (const spec of model.row.buttons) {
+    // 純人工的卡（全螢幕模式）沒有 row：沒有安裝也沒有驗證，自然沒有按鈕。
+    // 這裡少一個 ?. 會讓整個 render 中止，畫面停在上一張、「下一張」按了沒反應——
+    // 而且錯誤只留在 console，學生只看到按鈕壞掉（VM 實測）。
+    for (const spec of model.row?.buttons ?? []) {
       actions.append(actionButton(spec, model.onActionClick));
     }
     if (model.showRetest) {
