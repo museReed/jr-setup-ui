@@ -33,6 +33,8 @@ import { materialsDir } from "../src/paths.js";
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
 const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
+// 截圖存這裡：跟其他驗證的副產物放一起，重跑時的新舊判斷也沿用同一套 mtime 比對。
+const MCP_SHOT = path.join(RESULT_DIR, "mcp-playwright.png");
 
 function emitJr(event) {
   console.log(`@@JR ${JSON.stringify(event)}`);
@@ -207,6 +209,25 @@ const CASES = {
     }),
     watchFor:
       "跳出選項讓你選（網頁類型 / 主色調 / 風格 / 字體），回答完會生成網頁，最後逐字打 code 現場長出來",
+  },
+  // Playwright MCP 這格的證據力比其他格都高：要求存一張截圖。
+  //
+  // 頁面標題那種東西模型自己就答得出來（"Google" 誰不知道），寫進檔案只證明它會
+  // 打字。截圖檔不一樣——那個檔案要存在，就得真的有一顆瀏覽器被開起來、真的導到
+  // 那個網址、真的截了圖。MCP 沒接上就生不出來。
+  "mcp-playwright": {
+    label: "第三方：Playwright",
+    env: () => ({}),
+    // 兩邊的機制不一樣：Claude 走 MCP server，Codex 走 openai/skills 的 playwright
+    // skill。講錯名字模型會去找一個不存在的東西，然後回報「找不到」。
+    prompt: ({ agent }) =>
+      (agent === "codex"
+        ? "請用 playwright skill 開啟 https://www.google.com ，"
+        : "請用 Playwright MCP 開啟 https://www.google.com ，") +
+      `等頁面載入完成後把整頁截圖存成 ${MCP_SHOT}。` +
+      "只做這件事，不要問我問題，存好就結束。",
+    expect: () => ({ kind: "file", file: MCP_SHOT }),
+    watchFor: "跳出一個瀏覽器視窗、自己連到 Google 首頁",
   },
   "skill-questions": {
     label: "Skill：結構化提問",

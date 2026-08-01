@@ -185,6 +185,18 @@ export const VERIFICATION = {
   "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
+  // 第三方 skill 一律只認落點在不在（那是別人的東西，我們不比對內容），唯獨 MCP
+  // 這一格例外：它的落點只是 settings.json 裡多一行設定，那一行寫對了、npx 卻拉不
+  // 到套件、瀏覽器沒裝起來，畫面上一樣是綠的。而學生要到 demo 段才會發現它是死的。
+  //
+  // 截圖檔是這整份嚮導證據力最高的副產物：那個檔案要存在，就得真的有一顆瀏覽器被
+  // 開起來、真的導到那個網址、真的截了圖。模型編不出一個 PNG。
+  "ext-playwright-claude": {
+    terminal: { case: "mcp-playwright", agent: "claude" },
+  },
+  "ext-playwright-codex": {
+    terminal: { case: "mcp-playwright", agent: "codex" },
+  },
   // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
   "tab-sync": {
     terminal: { case: "title", agent: "claude" },
