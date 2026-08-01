@@ -7,7 +7,6 @@ import {
   CARD_HINTS,
   CONFIG_TOOL_CHOICES,
   flattenCheckCards,
-  FULLSCREEN_PROMPT,
   groupChecks,
   matchesFullscreenProof,
   SECTIONS,
@@ -391,7 +390,6 @@ function renderWizard() {
     pasteProof:
       card.checkId === "claude"
         ? {
-            prompt: FULLSCREEN_PROMPT,
             value: state.pasteProofValue,
             matched: matchesFullscreenProof(state.pasteProofValue),
             onInput: (value) => cardModel.onPasteProofInput(value),

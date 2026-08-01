@@ -226,7 +226,10 @@ function actionButton(spec, onActionClick) {
 
 // 貼上證明用的欄位。貼對了那一格自己打勾——這是整份嚮導唯一「學生交得出副產物」
 // 的人工項目，其餘的人眼判定只能靠自己說了算。
-function pasteProofElement({ prompt, value, matched, onInput, onOpen }) {
+// 不顯示那句要貼進終端的話：按鈕已經會把它送進去了，印出來只是多一份要學生自己
+// 一字不差複製的東西——而那正是按鈕要取代的手動步驟。字串本身仍然由
+// test/fullscreen-proof.mjs 釘住，確保按鈕送的跟要比對的一致。
+function pasteProofElement({ value, matched, onInput, onOpen }) {
   const wrap = document.createElement("div");
   wrap.className = "paste-proof";
 
@@ -246,14 +249,6 @@ function pasteProofElement({ prompt, value, matched, onInput, onOpen }) {
     openRow.append(button);
   }
 
-  const hint = document.createElement("p");
-  hint.className = "paste-proof-hint";
-  hint.textContent = "或自己在終端機貼這一句給 Claude：";
-
-  const command = document.createElement("code");
-  command.className = "paste-proof-command";
-  command.textContent = prompt;
-
   const field = document.createElement("input");
   field.type = "text";
   field.className = "ds-input paste-proof-input";
@@ -271,7 +266,7 @@ function pasteProofElement({ prompt, value, matched, onInput, onOpen }) {
       ? ""
       : "跟代碼對不起來，再圈選一次整行試試。";
 
-  wrap.append(openRow, hint, command, field, status);
+  wrap.append(openRow, field, status);
   return wrap;
 }
 
