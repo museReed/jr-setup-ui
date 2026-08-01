@@ -15,7 +15,12 @@ import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir, moduleFile } from "./paths.js";
-import { loadVerifiedSteps, markStepVerified } from "./progress-state.js";
+import {
+  loadSelection,
+  loadVerifiedSteps,
+  markStepVerified,
+  saveSelection,
+} from "./progress-state.js";
 import { resolveLaunch } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
@@ -500,7 +505,10 @@ export async function startServer({
 
     if (request.method === "GET" && url.pathname === "/state") {
       response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, { verified: await loadVerifiedSteps() });
+      sendJson(response, 200, {
+        verified: await loadVerifiedSteps(),
+        selection: await loadSelection(),
+      });
       return;
     }
 
@@ -514,8 +522,28 @@ export async function startServer({
         return;
       }
 
-      const step =
-        body !== null && typeof body === "object" ? body.step : undefined;
+      const payload = body !== null && typeof body === "object" ? body : {};
+
+      // 工具／語言的選擇也走這支，存在 state.json 才撐得過重開伺服器（port 會變，
+      // localStorage 綁 origin 等於存不住）。
+      if (payload.selection !== undefined) {
+        const { tools, lang } = payload.selection ?? {};
+        const validTools =
+          Array.isArray(tools) &&
+          tools.length > 0 &&
+          tools.every((tool) => tool === "claude" || tool === "codex");
+
+        if (!validTools || typeof lang !== "string") {
+          sendText(response, 400, "selection 需要 tools 陣列與 lang 字串");
+          return;
+        }
+
+        await saveSelection({ tools, lang });
+        sendJson(response, 200, { ok: true });
+        return;
+      }
+
+      const step = payload.step;
 
       if (typeof step !== "string") {
         sendText(response, 400, "step 必須是字串");

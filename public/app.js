@@ -47,6 +47,22 @@ import {
   toolSelectionValue,
 } from "./viewmodel.js";
 
+// 工具與語言的選擇存在伺服器的 state.json，不是 localStorage。
+//
+// localStorage 綁在 origin 上，而這個伺服器每次啟動都換 port——重開一次 origin 就
+// 變了，存的東西等於不見。學生勾了 Codex、重開嚮導就默默退回只有 Claude，卡片少
+// 一半也沒有任何提示（實測踩到）。
+async function saveSelection() {
+  try {
+    await api.saveSelection({
+      tools: state.selectedTools,
+      lang: state.selectedLanguage,
+    });
+  } catch {
+    // 存不進去就算了，這一輪還是照常運作。
+  }
+}
+
 const state = {
   runInProgress: false,
   runId: null,
@@ -98,6 +114,15 @@ async function loadVerifiedSteps() {
   try {
     const result = await api.fetchState();
     state.verifiedSteps = new Set(result.verified);
+
+    // 伺服器記著上次選的工具與語言，開頁時要套回來。
+    if (result.selection?.tools?.length > 0) {
+      state.selectedTools = result.selection.tools;
+    }
+
+    if (CONFIG_LANGUAGES.includes(result.selection?.lang)) {
+      state.selectedLanguage = result.selection.lang;
+    }
   } catch {
     state.verifiedSteps = new Set();
   }
@@ -167,10 +192,20 @@ function renderWizard() {
     toolSelectionValue(state.selectedTools),
   );
   const cardChecks = card.checks ?? (card.check == null ? [] : [card.check]);
+  // 清單的勾要跟卡片右上角的狀態徽章講同一件事。
+  //
+  // 原本 config 卡只看 verified.has()，於是「不需要行為驗證」的項目（裝好就算數，
+  // 沒有 verifyAction 也沒有 eyeCheck）永遠不會被勾——畫面變成徽章寫「已完成」、
+  // 清單卻是 0/1（VM 實測 CLAUDE.md 那張）。
+  //
+  // 改成用 configRowModel 的最終狀態判斷：它已經把「裝好了但還沒驗行為」算成
+  // unverified，所以不會放過真的該驗的項目。
   const verifiedCheckIds = new Set(
     cardChecks
       .filter((check) =>
-        card.kind === "env" ? check.status === "ok" : verified.has(check.id),
+        card.kind === "env"
+          ? check.status === "ok"
+          : configRowModel(check, verified.has(check.id)).status === "ok",
       )
       .map((check) => check.id),
   );
@@ -1086,6 +1121,7 @@ view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
 view.onToolSelect((tool) => {
   state.selectedTools = toggleToolSelection(state.selectedTools, tool);
+  saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
   state.viewingCardIndex = {};
   renderNavigation();
@@ -1094,6 +1130,7 @@ view.onToolSelect((tool) => {
 });
 view.onLanguageSelect((language) => {
   state.selectedLanguage = language;
+  saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
   checkConfigs();
 });
@@ -1132,6 +1169,9 @@ renderNavigation();
 
 async function initialize() {
   await loadVerifiedSteps();
+  // 選擇是 loadVerifiedSteps 從伺服器帶回來的，所以 chips 要在它之後才套。
+  // 擺在前面的話畫面永遠停在預設值，卡片卻照著存下來的選擇跑，兩邊對不上。
+  view.setConfigSelection(state.selectedTools, state.selectedLanguage);
   checkEnvironment();
   checkConfigs();
 }

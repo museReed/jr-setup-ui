@@ -349,19 +349,20 @@ export function configRowModel(
     });
   }
 
+  // 不放「驗證」按鈕：安裝完會自動接驗證，那顆按鈕只會閃一下就消失，學生根本
+  // 不知道到底驗了沒（Reed 實測）。要重驗一律走一直都在的「再 check 一次」。
+  //
+  // 唯一的例外是 demo 那種 noInstall 的列：按下去是「跑給你看」不是驗證，
+  // 沒有安裝動作可以接，所以那顆要留著。
   if (
     check.verifyAction != null &&
-    !verified &&
-    (check.verifyKind !== "terminal" || check.noInstall === true)
+    check.verifyKind === "terminal" &&
+    check.noInstall === true
   ) {
     buttons.push({
       action: check.verifyAction,
       dataName: "verifyAction",
-      // demo 那列按下去是「跑給你看」不是「驗證有沒有裝好」，按鈕跟著改字。
-      text:
-        check.verifyKind === "terminal" && check.noInstall === true
-          ? "開終端跑"
-          : "驗證",
+      text: "開終端跑",
       step: check.id,
       options: check.verifyOptions ?? undefined,
     });
@@ -386,12 +387,10 @@ export function configRowModel(
     // 只有真終端看得到的那一格：程式驗不到，讓學生看完回來勾。
     eyeCheck: pending && check.eyeCheck != null ? check.eyeCheck : null,
     verified,
-    showRetest:
-      check.verifyAction != null &&
-      (verified ||
-        verificationAttempted ||
-        verificationFailed ||
-        verificationDeferred),
+    // 「再 check 一次」一直都在（只要這一列有得驗）。既然拿掉了會閃現的「驗證」
+    // 按鈕，這顆就是學生唯一的重驗入口，不能等驗過一次才出現——上一輪重新整理
+    // 之後就沒有安裝事件可以接，會變成完全驗不了。
+    showRetest: check.verifyAction != null && check.noInstall !== true,
     guidance: guidanceModel({
       step: check.id,
       status,

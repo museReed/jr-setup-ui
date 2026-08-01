@@ -75,6 +75,45 @@ async function readStoredState(stateFile) {
   }
 }
 
+// selection 不受指紋管轄，所以要在寫入 verified 時原樣帶著，別被蓋掉。
+
+// 工具與語言的選擇存在 state.json，不是瀏覽器。
+//
+// localStorage 綁在 origin 上，而這個伺服器每次啟動都換一個 port——重開伺服器
+// origin 就變了，存的東西等於不見。學生勾了 Codex、重開一次嚮導就默默退回只有
+// Claude，卡片少了一半也沒有任何提示（Reed 實測踩到）。
+//
+// 這裡不需要指紋失效：它是使用者的偏好，不是「裝過而且還有效」的宣稱。
+export async function loadSelection(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+  const selection = state.selection;
+
+  if (selection === null || typeof selection !== "object") {
+    return null;
+  }
+
+  const tools = Array.isArray(selection.tools)
+    ? selection.tools.filter((tool) => tool === "claude" || tool === "codex")
+    : [];
+
+  return {
+    tools: tools.length > 0 ? tools : null,
+    lang: typeof selection.lang === "string" ? selection.lang : null,
+  };
+}
+
+export async function saveSelection(selection, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.selection = selection;
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return selection;
+}
+
 export async function fingerprintStep(
   stepId,
   { home, lang = "zh-TW", platform = process.platform, stateFile } = {},

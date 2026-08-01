@@ -134,11 +134,14 @@ try {
   });
   assert.equal(pending.status, "unverified");
   assert.match(pending.detail, /尚未驗證/);
+  // 不放「驗證」按鈕：安裝完會自動接驗證，那顆只會閃一下就消失，學生不知道驗了沒
+  // （Reed 實測）。重驗一律走「再 check 一次」，而它一直都在。
   assert.deepEqual(
     pending.buttons.map((button) => button.text),
-    ["安裝", "驗證"],
+    ["安裝"],
   );
-  ok("結構齊全但沒驗過行為的列不給綠燈，安裝與驗證按鈕都在");
+  assert.equal(pending.showRetest, true);
+  ok("結構齊全但沒驗過行為的列不給綠燈，且沒有會閃現的「驗證」按鈕");
 
   const verified = configRowModel(
     {

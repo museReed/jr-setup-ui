@@ -59,6 +59,12 @@ export async function saveVerifiedStep(step) {
   return response.json();
 }
 
+// 工具／語言的選擇也存伺服器：port 每次啟動都變，localStorage 綁 origin 存不住。
+export async function saveSelection(selection) {
+  const response = await postJson("/state", { selection });
+  return response.json();
+}
+
 export async function startRun(body) {
   const response = await postJson("/run", body);
   return response.json();
