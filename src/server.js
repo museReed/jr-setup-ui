@@ -14,7 +14,7 @@ import { isBenignExit } from "./installers.js";
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
-import { ensureWorkDir, moduleFile } from "./paths.js";
+import { ensureWorkDir, moduleFile, verifyShotPath } from "./paths.js";
 import {
   loadBehaviorVerifiedSteps,
   loadManualChecked,
@@ -504,6 +504,24 @@ export async function startServer({
         ...(await runConfigCheck({ tools, lang })),
         platform: process.platform,
       });
+      return;
+    }
+
+    // 驗證留下的截圖。學生看得到那張圖，才知道「真的有一顆瀏覽器被開起來」不是
+    // 一句空話——這一格的證據本來就是那個檔案，那就把它端出來。
+    //
+    // 只發這一個固定路徑，不吃任何參數：接受檔名等於開一個讀任意檔案的洞。
+    if (request.method === "GET" && url.pathname === "/verify-shot") {
+      try {
+        const png = await readFile(verifyShotPath());
+        response.writeHead(200, {
+          "Content-Type": "image/png",
+          "Cache-Control": "no-store",
+        });
+        response.end(png);
+      } catch {
+        sendText(response, 404, "還沒有截圖");
+      }
       return;
     }
 

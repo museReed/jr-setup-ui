@@ -3,6 +3,12 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Playwright 驗證存的那張截圖。這裡與 verify-in-terminal.mjs 各有一份路徑會走鐘，
+// 所以定在這支共用檔裡，兩邊都從這裡拿。
+export function verifyShotPath() {
+  return resolve(homedir(), ".jr-setup", "verify", "mcp-playwright.png");
+}
+
 export function ensureWorkDir() {
   const workDir = resolve(homedir(), ".jr-setup", "workdir");
   mkdirSync(workDir, { recursive: true });

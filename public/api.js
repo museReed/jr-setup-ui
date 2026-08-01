@@ -4,6 +4,11 @@ import { configQuery } from "./model.js";
 
 const token = new URLSearchParams(window.location.search).get("t") ?? "";
 
+// <img src> 由瀏覽器自己發請求，沒辦法走 fetch 那條路加 header——網址得自己帶 token。
+export function urlWithToken(path) {
+  return withToken(path);
+}
+
 function withToken(path) {
   return `${path}${path.includes("?") ? "&" : "?"}t=${encodeURIComponent(token)}`;
 }

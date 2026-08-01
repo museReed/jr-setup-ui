@@ -28,13 +28,13 @@ import {
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { materialsDir } from "../src/paths.js";
+import { materialsDir, verifyShotPath } from "../src/paths.js";
 
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
 const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
-// 截圖存這裡：跟其他驗證的副產物放一起，重跑時的新舊判斷也沿用同一套 mtime 比對。
-const MCP_SHOT = path.join(RESULT_DIR, "mcp-playwright.png");
+// 路徑定在 paths.js：伺服器要把這張圖端到網頁上，兩邊各寫一份會走鐘。
+const MCP_SHOT = verifyShotPath();
 
 function emitJr(event) {
   console.log(`@@JR ${JSON.stringify(event)}`);
@@ -220,14 +220,17 @@ const CASES = {
     env: () => ({}),
     // 兩邊的機制不一樣：Claude 走 MCP server，Codex 走 openai/skills 的 playwright
     // skill。講錯名字模型會去找一個不存在的東西，然後回報「找不到」。
+    // 網址挑 Pinterest：截出來是一整片圖牆，學生一眼就知道「這台機器真的去抓了
+    // 網頁回來」。Google 首頁截出來只有一個搜尋框，跟一張空白圖分不出差別。
     prompt: ({ agent }) =>
       (agent === "codex"
-        ? "請用 playwright skill 開啟 https://www.google.com ，"
-        : "請用 Playwright MCP 開啟 https://www.google.com ，") +
-      `等頁面載入完成後把整頁截圖存成 ${MCP_SHOT}。` +
+        ? "請用 playwright skill 開啟 https://www.pinterest.com ，"
+        : "請用 Playwright MCP 開啟 https://www.pinterest.com ，") +
+      "等頁面圖片載入完成後（可以多等幾秒）" +
+      `把整頁截圖存成 ${MCP_SHOT}。` +
       "只做這件事，不要問我問題，存好就結束。",
     expect: () => ({ kind: "file", file: MCP_SHOT }),
-    watchFor: "跳出一個瀏覽器視窗、自己連到 Google 首頁",
+    watchFor: "跳出一個瀏覽器視窗、自己連到 Pinterest，畫面長出一整片圖",
   },
   "skill-questions": {
     label: "Skill：結構化提問",

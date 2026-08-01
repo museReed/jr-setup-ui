@@ -348,6 +348,29 @@ body {
   width: 100%;
 }
 
+.verify-shot {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.verify-shot img {
+  width: 100%;
+  /* 整頁截圖很長，限高再讓它自己裁——不然一張圖就把卡片撐到看不到按鈕。 */
+  max-height: 320px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+}
+
+.verify-shot figcaption {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
 .card-hints {
   display: flex;
   flex-direction: column;

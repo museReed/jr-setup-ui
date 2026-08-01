@@ -77,6 +77,12 @@ export const FULLSCREEN_ITEMS = [
 //
 // 勾選框只寫「要接受信任提示」，但學生根本還沒看過那個畫面，不知道長什麼樣、有幾
 // 個選項、哪一個是對的。所以照原樣把它們印出來，學生對照著選就好。
+// 這兩列驗證完會留一張截圖，卡片要把它貼出來。
+export const PLAYWRIGHT_CHECK_IDS = new Set([
+  "ext-playwright-claude",
+  "ext-playwright-codex",
+]);
+
 export const CARD_HINTS = {
   "codex-namer": {
     title: "第一次跑 codex 會問這兩題，照這樣選：",

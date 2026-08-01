@@ -413,6 +413,22 @@ function renderCard(model) {
     if (model.showChecklist) {
       body.append(checklistElement(model.checklist, model.onManualToggle));
     }
+    // 驗證留下的截圖直接貼在卡片上。這一格的證據就是那個檔案，看得到那片圖牆，
+    // 「真的有一顆瀏覽器被開起來」才不只是一句話。
+    if (model.verifyShot !== null && model.verifyShot !== undefined) {
+      const figure = document.createElement("figure");
+      figure.className = "verify-shot";
+      const image = document.createElement("img");
+      image.src = model.verifyShot;
+      image.alt = "Playwright 驗證時抓到的網頁截圖";
+      image.loading = "lazy";
+      // 檔案不在（還沒驗過、或被刪了）就整塊收掉，不要留一個破圖示。
+      image.addEventListener("error", () => figure.remove());
+      const caption = document.createElement("figcaption");
+      caption.textContent = "這張圖是剛才那顆瀏覽器截的";
+      figure.append(image, caption);
+      body.append(figure);
+    }
     if (model.hints !== null && model.hints !== undefined) {
       const hints = document.createElement("div");
       hints.className = "card-hints";

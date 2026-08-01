@@ -6,6 +6,7 @@ import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
   CONFIG_TOOL_CHOICES,
+  PLAYWRIGHT_CHECK_IDS,
   flattenCheckCards,
   groupChecks,
   matchesFullscreenProof,
@@ -99,6 +100,8 @@ const state = {
   deferredVerificationSteps: new Set(),
   manualCheckedIds: new Set(),
   pasteProofValue: "",
+  // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
+  verifyShotVersion: 0,
   selectedTools: ["claude"],
   selectedLanguage: "zh-TW",
   pendingModalCheck: null,
@@ -387,6 +390,11 @@ function renderWizard() {
     checklist: groups,
     showChecklist: card.kind !== "setup",
     hints: CARD_HINTS[card.checkId] ?? null,
+    // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
+    // 新的那張，瀏覽器不會因為網址一樣就拿舊的。
+    verifyShot: PLAYWRIGHT_CHECK_IDS.has(card.checkId)
+      ? api.urlWithToken(`/verify-shot?v=${state.verifyShotVersion}`)
+      : null,
     pasteProof:
       card.checkId === "claude"
         ? {
@@ -921,6 +929,8 @@ async function handleDone(
   const verifiedCheck = state.lastChecks.find(
     (check) => check.id === verifiedStep,
   );
+
+  state.verifyShotVersion += 1;
 
   if (AUTO_VERIFY_ACTIONS.has(action) && verifiedStep !== undefined) {
     // 程式那半的結論一律記下來。以前這裡是「有眼睛勾選框就整個不記」，於是那半
