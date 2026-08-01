@@ -33,8 +33,6 @@ import { materialsDir, verifyShotPath } from "../src/paths.js";
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
 const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
-// 路徑定在 paths.js：伺服器要把這張圖端到網頁上，兩邊各寫一份會走鐘。
-const MCP_SHOT = verifyShotPath();
 
 function emitJr(event) {
   console.log(`@@JR ${JSON.stringify(event)}`);
@@ -227,9 +225,13 @@ const CASES = {
         ? "請用 playwright skill 開啟 https://www.pinterest.com ，"
         : "請用 Playwright MCP 開啟 https://www.pinterest.com ，") +
       "等頁面圖片載入完成後（可以多等幾秒）" +
-      `把整頁截圖存成 ${MCP_SHOT}。` +
+      `把整頁截圖存成 ${verifyShotPath(agent)}。` +
       "只做這件事，不要問我問題，存好就結束。",
-    expect: () => ({ kind: "file", file: MCP_SHOT }),
+    expect: ({ agent }) => ({ kind: "file", file: verifyShotPath(agent) }),
+    // 15 分鐘，跟 demo 同一檔。實測 codex 那次跑了 4m29s、成功寫出檔案，卻被預設
+    // 的 4 分鐘判成失敗——第一次跑要下載瀏覽器，四分鐘完全不夠。判失敗的代價很高：
+    // 東西明明是好的，學生卻被推去查一個不存在的問題。
+    timeoutMs: 900_000,
     watchFor: "跳出一個瀏覽器視窗、自己連到 Pinterest，畫面長出一整片圖",
   },
   "skill-questions": {

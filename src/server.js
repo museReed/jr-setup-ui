@@ -14,7 +14,12 @@ import { isBenignExit } from "./installers.js";
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
-import { ensureWorkDir, moduleFile, verifyShotPath } from "./paths.js";
+import {
+  ensureWorkDir,
+  moduleFile,
+  VERIFY_SHOT_AGENTS,
+  verifyShotPath,
+} from "./paths.js";
 import {
   loadBehaviorVerifiedSteps,
   loadManualChecked,
@@ -510,10 +515,18 @@ export async function startServer({
     // 驗證留下的截圖。學生看得到那張圖，才知道「真的有一顆瀏覽器被開起來」不是
     // 一句空話——這一格的證據本來就是那個檔案，那就把它端出來。
     //
-    // 只發這一個固定路徑，不吃任何參數：接受檔名等於開一個讀任意檔案的洞。
+    // agent 只認白名單裡那兩個值，其餘一律 400：接受檔名或路徑片段等於開一個讀
+    // 任意檔案的洞。檔名由 verifyShotPath 組，外面傳不進任何字元。
     if (request.method === "GET" && url.pathname === "/verify-shot") {
+      const agent = url.searchParams.get("agent") ?? "claude";
+
+      if (!VERIFY_SHOT_AGENTS.includes(agent)) {
+        sendText(response, 400, "agent 不在允許的值裡");
+        return;
+      }
+
       try {
-        const png = await readFile(verifyShotPath());
+        const png = await readFile(verifyShotPath(agent));
         response.writeHead(200, {
           "Content-Type": "image/png",
           "Cache-Control": "no-store",

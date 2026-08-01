@@ -6,7 +6,7 @@ import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
   CONFIG_TOOL_CHOICES,
-  PLAYWRIGHT_CHECK_IDS,
+  PLAYWRIGHT_SHOT_AGENTS,
   flattenCheckCards,
   groupChecks,
   matchesFullscreenProof,
@@ -392,8 +392,10 @@ function renderWizard() {
     hints: CARD_HINTS[card.checkId] ?? null,
     // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
     // 新的那張，瀏覽器不會因為網址一樣就拿舊的。
-    verifyShot: PLAYWRIGHT_CHECK_IDS.has(card.checkId)
-      ? api.urlWithToken(`/verify-shot?v=${state.verifyShotVersion}`)
+    verifyShot: PLAYWRIGHT_SHOT_AGENTS[card.checkId]
+      ? api.urlWithToken(
+          `/verify-shot?agent=${PLAYWRIGHT_SHOT_AGENTS[card.checkId]}&v=${state.verifyShotVersion}`,
+        )
       : null,
     pasteProof:
       card.checkId === "claude"

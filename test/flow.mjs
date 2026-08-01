@@ -97,16 +97,15 @@ try {
   }
   ok("舊版腳本的中文輸出仍可切換動畫");
 
-  // 規則段結尾那道「關掉分頁、開新的」拿掉了（驗證自己會開新視窗），所以現在
-  // 只剩 demo 段前面還有人工關卡——skill 是 session 啟動時才掃目錄，這道不能省。
-  const gateId = "skills-new-terminal";
+  // 兩道「關掉分頁、開新的」都拿掉了：所有驗證都走 verify-in-terminal，它每次自己
+  // 開一個全新的終端視窗。段落現在只由「上一段做完了沒」決定，不再有人工關卡。
   assert.equal(sectionGateState("skills", new Set(), "claude").locked, false);
-  assert.equal(sectionGateState("demo", new Set(), "claude").locked, true);
+  assert.equal(sectionGateState("demo", new Set(), "claude").locked, false);
   assert.equal(
-    sectionGateState("demo", new Set([gateId]), "claude").locked,
-    false,
+    sectionGateState("demo", new Set(), "claude", { skills: false }).locked,
+    true,
   );
-  ok("人工關卡未勾時鎖住下一段，勾選後解鎖");
+  ok("段落只由上一段是否完成決定，沒有人工關卡");
 
   // 擋人的時候要指名是哪一張卡。只說「先把上一段做完」的話，學生站在那一段的最後
   // 一張、畫面顯示已完成，卻被告知這段沒做完——只能一張一張往回翻（VM 實測）。

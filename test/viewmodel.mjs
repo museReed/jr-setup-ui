@@ -522,11 +522,10 @@ try {
   // 規則段結尾原本有「關掉分頁、開新的」——拿掉了，規則段的驗證全部走
   // verify-in-terminal，它每次都自己開一個全新的終端視窗。
   assert.deepEqual(sectionManualItems("rules", 1, 2, "claude"), []);
-  assert.deepEqual(
-    sectionManualItems("skills", 1, 2, "claude,codex").map(({ id }) => id),
-    ["skills-new-terminal"],
-  );
-  ok("SECTION_GATES 只出現在段落最後一張，並依工具篩選");
+  // demo 段前面那道「再開一次新的分頁」也拿掉了：技能包與 demo 的驗證全部走
+  // verify-in-terminal，它每次都自己開一個全新的終端視窗，skill 一定載入過。
+  assert.deepEqual(sectionManualItems("skills", 1, 2, "claude,codex"), []);
+  ok("段落閘門已全數移除——驗證自己會開新的終端視窗");
 
   // codex 的信任提示原本是一格勾選框，拿掉了：同一張卡的 CARD_HINTS 已經把那兩題
   // 照原樣印出來（含要選哪一個），勾選框只是把同一件事再講一次，而且講得比較差

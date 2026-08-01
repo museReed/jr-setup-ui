@@ -28,13 +28,13 @@ export const SECTION_GATES = {
   // 已開啟」），wrapper 一定是載入過的。叫學生再手動開一次是多的一步，而且會讓人
   // 以為剛才那些驗證用的是舊分頁、結果不算數。
   skills: [],
-  demo: [
-    {
-      id: "skills-new-terminal",
-      title: "再開一次新的分頁",
-      detail: "skill 只在 session 啟動時掃目錄",
-    },
-  ],
+  // demo 段前面原本要學生「再開一次新的分頁」，理由是 skill 只在 session 啟動時掃
+  // 目錄。拿掉了，跟規則段那道同一個理由：技能包與 demo 的驗證全部走
+  // verify-in-terminal，它每次都自己開一個全新的終端視窗，skill 一定載入過。
+  //
+  // 留著反而有害：學生剛看完「新終端已開啟」的驗證，下一步又被叫去手動開分頁，
+  // 會以為剛才那些驗證用的是舊 session、結果不算數。
+  demo: [],
 };
 
 // 掛在「特定一張卡」上的人工關卡，跟段落閘門不同：段落閘門是走完一段才提醒，
@@ -77,11 +77,12 @@ export const FULLSCREEN_ITEMS = [
 //
 // 勾選框只寫「要接受信任提示」，但學生根本還沒看過那個畫面，不知道長什麼樣、有幾
 // 個選項、哪一個是對的。所以照原樣把它們印出來，學生對照著選就好。
-// 這兩列驗證完會留一張截圖，卡片要把它貼出來。
-export const PLAYWRIGHT_CHECK_IDS = new Set([
-  "ext-playwright-claude",
-  "ext-playwright-codex",
-]);
+// 這兩列驗證完會留一張截圖，卡片要把它貼出來。一個 agent 一個檔，兩張卡各看各的
+// ——共用一個檔的話先驗 claude 再驗 codex，claude 那張顯示的會是 codex 截的圖。
+export const PLAYWRIGHT_SHOT_AGENTS = {
+  "ext-playwright-claude": "claude",
+  "ext-playwright-codex": "codex",
+};
 
 export const CARD_HINTS = {
   "codex-namer": {
