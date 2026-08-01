@@ -14,6 +14,7 @@ import {
   describeStep,
   expandAllowRules,
   mergeAllowRules,
+  mergeCodexModes,
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   mergeOutputStyle,
@@ -93,7 +94,24 @@ async function copyStep(step) {
   // 已經有的東西不蓋掉——那是使用者自己寫的內容，蓋了救不回來。
   if (step.protectExisting === true && existsSync(step.target)) {
     console.log(`${step.target} 已經存在，沒有覆蓋。`);
-    console.log("這一列會顯示成「需要合併」，用旁邊的按鈕交給 AI 幫你併。");
+
+    // 但預設模式那兩個 key 還是要落地：交給 AI 合併的話結果不保證也不可重現，
+    // 而 Claude Code 那邊的 defaultMode 是程式直接寫進去的。只補這兩行，其餘一個
+    // 字都不動。
+    if (step.mergeModes === true) {
+      const current = await readFile(step.target, "utf8");
+      const { content, added } = mergeCodexModes(current);
+
+      if (added.length > 0) {
+        await backup(step.target);
+        await writeFile(step.target, content);
+        logProgress(`已補上預設模式：${added.join("、")}`);
+      } else {
+        logProgress("預設模式你已經設過了，沒有更動");
+      }
+    }
+
+    console.log("其餘內容會顯示成「需要合併」，用旁邊的按鈕交給 AI 幫你併。");
     return;
   }
 

@@ -23,13 +23,11 @@ export const SECTIONS = [
 ];
 
 export const SECTION_GATES = {
-  skills: [
-    {
-      id: "rules-new-terminal",
-      title: "關掉現在的終端分頁，開一個新的",
-      detail: "wrapper 寫在 shell profile，舊分頁不會載入",
-    },
-  ],
+  // 規則段結束時原本要學生「關掉終端分頁、開一個新的」。拿掉了：規則段的驗證全部
+  // 走 verify-in-terminal，它每次都自己開一個全新的終端視窗（畫面上就寫著「新終端
+  // 已開啟」），wrapper 一定是載入過的。叫學生再手動開一次是多的一步，而且會讓人
+  // 以為剛才那些驗證用的是舊分頁、結果不算數。
+  skills: [],
   demo: [
     {
       id: "skills-new-terminal",
@@ -93,14 +91,10 @@ export const CARD_GATES = {
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
   claude: FULLSCREEN_ITEMS,
-  "codex-namer": [
-    {
-      id: "codex-hook-trust",
-      title: "第一次跑 codex 要接受 hook 信任提示",
-      detail: "沒接受的話整組 hook 都不會跑，這一列與後面的 codex 驗證都會失敗",
-      codexOnly: true,
-    },
-  ],
+  // codex-namer 原本有一格「第一次跑 codex 要接受 hook 信任提示」。拿掉了：
+  // 同一張卡下面的 CARD_HINTS 已經把那兩題照原樣印出來（含要選哪一個），勾選框
+  // 只是把同一件事再講一次，而且講得比較差——它沒說畫面長什麼樣、也沒提第二題。
+  "codex-namer": [],
 };
 
 export const GUIDANCE = {

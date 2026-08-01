@@ -97,10 +97,13 @@ try {
   }
   ok("舊版腳本的中文輸出仍可切換動畫");
 
-  const gateId = "rules-new-terminal";
-  assert.equal(sectionGateState("skills", new Set(), "claude").locked, true);
+  // 規則段結尾那道「關掉分頁、開新的」拿掉了（驗證自己會開新視窗），所以現在
+  // 只剩 demo 段前面還有人工關卡——skill 是 session 啟動時才掃目錄，這道不能省。
+  const gateId = "skills-new-terminal";
+  assert.equal(sectionGateState("skills", new Set(), "claude").locked, false);
+  assert.equal(sectionGateState("demo", new Set(), "claude").locked, true);
   assert.equal(
-    sectionGateState("skills", new Set([gateId]), "claude").locked,
+    sectionGateState("demo", new Set([gateId]), "claude").locked,
     false,
   );
   ok("人工關卡未勾時鎖住下一段，勾選後解鎖");

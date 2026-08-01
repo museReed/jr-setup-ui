@@ -36,6 +36,7 @@ import {
   toolSelectionValue,
 } from "../public/viewmodel.js";
 import {
+  CARD_HINTS,
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
   configQuery,
@@ -517,35 +518,24 @@ try {
   ok("status 徽章五種狀態對到正確文字與 class");
 
   assert.deepEqual(sectionManualItems("rules", 0, 2, "claude"), []);
-  assert.deepEqual(
-    sectionManualItems("rules", 1, 2, "claude").map(({ id }) => id),
-    ["rules-new-terminal"],
-  );
+  // 規則段結尾原本有「關掉分頁、開新的」——拿掉了，規則段的驗證全部走
+  // verify-in-terminal，它每次都自己開一個全新的終端視窗。
+  assert.deepEqual(sectionManualItems("rules", 1, 2, "claude"), []);
   assert.deepEqual(
     sectionManualItems("skills", 1, 2, "claude,codex").map(({ id }) => id),
     ["skills-new-terminal"],
   );
   ok("SECTION_GATES 只出現在段落最後一張，並依工具篩選");
 
-  // codex 的信任提示要掛在真正需要它的那張卡上，不能等進 Demo 前才提醒——
-  // 整組 codex hook 的驗證在規則段就要用到它，提醒排在兩段之後等於必然失敗。
+  // codex 的信任提示原本是一格勾選框，拿掉了：同一張卡的 CARD_HINTS 已經把那兩題
+  // 照原樣印出來（含要選哪一個），勾選框只是把同一件事再講一次，而且講得比較差
+  // ——沒說畫面長什麼樣，也沒提第二題（sandbox 模式）。
   assert.deepEqual(
-    sectionManualItems("rules", 0, 5, "claude,codex", "codex-namer").map(
-      ({ id }) => id,
-    ),
-    ["codex-hook-trust"],
-  );
-  // 沒選 codex 的人不該看到它。
-  assert.deepEqual(
-    sectionManualItems("rules", 0, 5, "claude", "codex-namer"),
+    sectionManualItems("rules", 0, 5, "claude,codex", "codex-namer"),
     [],
   );
-  // 別張卡也不該冒出來。
-  assert.deepEqual(
-    sectionManualItems("rules", 0, 5, "claude,codex", "claude-md"),
-    [],
-  );
-  ok("codex 信任提示掛在 codex-namer 那張卡上，且只給有選 codex 的人");
+  assert.ok(CARD_HINTS["codex-namer"].lines.length >= 2);
+  ok("codex 的兩題改用 CARD_HINTS 照原樣印出來，不再多一格勾選框");
 
   assert.deepEqual(
     terminalOutcomeLines({

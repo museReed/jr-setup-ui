@@ -523,6 +523,8 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         source: `codex/${lang}/config.toml.example`,
         target: `${codexDir}/config.toml`,
         protectExisting: true,
+        // 檔案已存在時也要把預設模式那兩個 key 補進去，不交給 AI 合併。
+        mergeModes: true,
       };
 
     case "codex-agents":
@@ -717,6 +719,50 @@ export function hasAgentHookRegistrations(settings, registrations) {
 // 不用 bypassPermissions / dontAsk：那是連工作區外、網路操作都不問，放進學生的
 // 設定檔風險太大，也不是這門課要教的習慣。
 const CLAUDE_DEFAULT_MODE = "acceptEdits";
+
+// Codex 的預設模式：兩個 key 由程式保證寫入，不交給 AI 合併。
+//
+// config.toml 是 protectExisting 的——學生已經有檔案時「安裝」不覆蓋，只能按「用 AI
+// 合併」。那條路是叫一個 agent 讀檔改檔，結果不保證、也不可重現。Claude Code 那邊
+// 的 defaultMode 是程式直接寫進 settings.json，兩邊落地機率差太多。
+//
+// 只補這兩個 key，不碰其餘任何一行：學生原本的 personality、instructions、MCP
+// 區塊都原樣留著。已經有值就不動——他自己調過就是他的選擇。
+//
+// 不引 TOML parser：要做的判斷只有「最上層有沒有這個 key」。整個檔案 parse 出來
+// 再寫回去，反而會把學生的註解、排版、字串引號樣式全部重排一遍。
+const CODEX_MODES = {
+  sandbox_mode: '"workspace-write"',
+  approval_policy: '"on-request"',
+};
+
+export function mergeCodexModes(content) {
+  const lines = (content ?? "").split("\n");
+  // 第一個 [section] 之後的同名 key 屬於那個 section，不是最上層，不能算數。
+  const topLevelEnd = lines.findIndex((line) => /^\s*\[/.test(line));
+  const topLevel = topLevelEnd === -1 ? lines : lines.slice(0, topLevelEnd);
+  const added = [];
+
+  for (const key of Object.keys(CODEX_MODES)) {
+    const pattern = new RegExp(`^\\s*${key}\\s*=`);
+    if (topLevel.some((line) => pattern.test(line))) continue;
+    added.push(key);
+  }
+
+  if (added.length === 0) {
+    return { content: content ?? "", added };
+  }
+
+  const insertAt = topLevelEnd === -1 ? lines.length : topLevelEnd;
+  const before = lines.slice(0, insertAt).join("\n").replace(/\s*$/, "");
+  const after = lines.slice(insertAt).join("\n").replace(/^\s*/, "");
+  const block = added.map((key) => `${key} = ${CODEX_MODES[key]}`).join("\n");
+
+  return {
+    content: after === "" ? `${before}\n${block}\n` : `${before}\n${block}\n\n${after}`,
+    added,
+  };
+}
 
 export function mergeAllowRules(settings, { allowRules }) {
   const next = structuredClone(settings ?? {});
