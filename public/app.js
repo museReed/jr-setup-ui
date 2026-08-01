@@ -224,6 +224,18 @@ function renderWizard() {
     requestedIndex === undefined
       ? derivedIndex
       : Math.min(requestedIndex, cardSection.cards.length - 1);
+
+  // 一到這張卡就釘住，之後只有學生按「下一張」才會動。
+  //
+  // 原本每次 render 都重算 derivedIndex（＝第一張沒完成的卡），於是驗證一過，卡片
+  // 自己就跳走了——學生正在看終端印出來的「驗證成功」，眼角瞄到畫面換了一張，不
+  // 知道剛才那張到底過了沒，也來不及看那句話寫什麼（VM 實測）。
+  //
+  // 釘的是「進來時算出來的位置」而不是固定值：重新整理或換段落時仍然會落在第一張
+  // 沒做完的卡上，只是到了之後不再自己移動。
+  if (requestedIndex === undefined) {
+    state.viewingCardIndex[state.activeSectionId] = derivedIndex;
+  }
   const card = cardSection.cards[currentIndex];
   const manualItems = sectionManualItems(
     section.id,
