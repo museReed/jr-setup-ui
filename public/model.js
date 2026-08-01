@@ -356,6 +356,22 @@ function checkCard(sectionId, card, check) {
   };
 }
 
+// 有些卡片是後面所有卡的前提，必須排到最前面。
+//
+// 目前只有一張：終端機標題同步。它把 watcher 裝進 shell profile，之後每個新開的
+// 終端才會有人把名字放上分頁標題。命名 hook 那幾張要學生「看標題有沒有變」，
+// 沒先裝這個就永遠看不到——不是 hook 壞了，是根本沒人在聽（VM 實測：
+// PowerShell profile 檔案不存在，標題自然一直是預設值）。
+//
+// 舊版一頁攤開所有列，靠驗收文件提醒順序；改成強制線性流程之後，順序錯了就是
+// 把學生推進一個必然失敗的驗證。
+const SETUP_FIRST = ["tab-sync"];
+
+function setupOrder(card) {
+  const index = SETUP_FIRST.indexOf(card.checkId);
+  return index === -1 ? SETUP_FIRST.length : index;
+}
+
 export function flattenCheckCards(groupedSections, envChecks = []) {
   const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
   const mergedCheckIds = new Set(
@@ -405,10 +421,14 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
   ];
 
   for (const section of groupedSections) {
+    const cards = section.cards.flatMap((card) =>
+      card.checks.map((check) => checkCard(section.sectionId, card, check)),
+    );
+
     sections.push({
       sectionId: section.sectionId,
-      cards: section.cards.flatMap((card) =>
-        card.checks.map((check) => checkCard(section.sectionId, card, check)),
+      cards: cards.sort(
+        (left, right) => setupOrder(left) - setupOrder(right),
       ),
     });
   }

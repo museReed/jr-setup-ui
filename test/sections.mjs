@@ -101,6 +101,31 @@ try {
     ],
   );
 
+  // 終端機標題同步得排第一張：它把 watcher 裝進 shell profile，之後開的終端才有人
+  // 把名字放上分頁標題。命名 hook 那幾張要學生「看標題有沒有變」，沒先裝這個就永遠
+  // 看不到——VM 實測：PowerShell profile 檔案根本不存在，標題一直是預設值，學生被
+  // 推進一個必然失敗的驗證。
+  const rulesSequence = section(
+    flattenCheckCards(
+      groupChecks([
+        check("claude-md"),
+        check("claude-namer"),
+        check("codex-namer"),
+        check("tab-sync"),
+      ]),
+      [],
+    ),
+    "rules",
+  );
+  assert.equal(rulesSequence.cards[0].checkId, "tab-sync");
+  assert.deepEqual(
+    rulesSequence.cards.map(({ checkId }) => checkId),
+    ["tab-sync", "claude-md", "claude-namer", "codex-namer"],
+  );
+  console.log(
+    "ok - 終端機標題同步排在命名 hook 前面，後面那幾張要靠它才看得到標題變化",
+  );
+
   const claudeOnly = groupChecks([
     check("claude-md"),
     check("skill-claude-handoff"),
@@ -170,9 +195,10 @@ try {
       agent,
     })),
     [
+      // tab-sync 提到最前面：後面幾張的驗證要靠它裝的 watcher 才看得到標題變化。
+      { checkId: "tab-sync", agent: "shared" },
       { checkId: "claude-md", agent: "claude" },
       { checkId: "codex-config", agent: "codex" },
-      { checkId: "tab-sync", agent: "shared" },
       { checkId: "future-config-step", agent: "other" },
     ],
   );
