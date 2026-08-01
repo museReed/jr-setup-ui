@@ -5,6 +5,17 @@ import { moduleFile } from "./paths.js";
 
 // moduleFile 而不是 new URL(...).pathname：後者在 Windows 會多一條前導斜線，
 // 拿去當指令參數會變成 C:\C:\... 找不到檔案（見 paths.js 的說明）。
+// 登入指令預設會自己彈瀏覽器，學生就來不及用卡片上的授權按鈕。
+//
+// claude 與 gh 都認 BROWSER 環境變數（claude 的二進位檔裡是
+// `spawn(process.env.BROWSER, [url])`，gh 有正式文件），把它指到一個「存在、
+// 吃得下參數、什麼都不做」的指令就能擋掉自動開啟，網頁改由卡片上的按鈕開。
+//
+// Windows 沒有 true.exe，用 where.exe：拿網址當參數會找不到檔案、印一行訊息就
+// 結束，不開視窗也不會卡住。
+const NO_BROWSER = process.platform === "win32" ? "where" : "true";
+const NO_AUTO_BROWSER = { BROWSER: NO_BROWSER };
+
 const installConfigsScript = moduleFile(
   "../scripts/install-configs.mjs",
   import.meta.url,
@@ -280,6 +291,7 @@ Object.assign(actions, {
     cmd: "claude",
     args: ["auth", "login"],
     acceptsInput: true,
+    env: NO_AUTO_BROWSER,
     description: "登入 Claude Code。",
   },
   "login-codex": {
@@ -308,6 +320,9 @@ Object.assign(actions, {
       "--skip-ssh-key",
     ],
     acceptsInput: true,
+    // gh 的 GH_BROWSER 優先於 BROWSER（gh help environment 明寫），學生環境若已設
+    // GH_BROWSER，只覆寫 BROWSER 會被蓋過去，所以兩個都設。
+    env: { ...NO_AUTO_BROWSER, GH_BROWSER: NO_BROWSER },
     description: "登入 GitHub CLI。",
   },
 });

@@ -322,10 +322,12 @@ async function runAction(
     return;
   }
 
+  // action 可以自己覆寫幾個環境變數（目前只有登入用的 BROWSER，見 actions.js）。
+  const childEnv = { ...env, ...(action.env ?? {}) };
   const baseOptions = {
     shell: false,
     stdio: [action.acceptsInput ? "pipe" : "ignore", "pipe", "pipe"],
-    env,
+    env: childEnv,
   };
   const spawnOptions =
     action.kind === "agent"

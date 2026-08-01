@@ -594,16 +594,30 @@ try {
   ok("認得出裝置代碼，非字串輸入不會炸");
 
   const loginChecks = [{ id: "codex-auth" }];
-  assert.equal(
+  // 兩種登入長得不一樣：codex 走裝置碼（先給代碼），Claude 走純瀏覽器授權
+  // （不給代碼，但網頁授權完會給一串授權碼要貼回終端）。輸入格若綁在「有沒有
+  // 撈到代碼」上，Claude 那張卡就沒有地方貼，學生走到一半卡死（VM 實測）。
+  assert.deepEqual(
     loginCardModel({
-      checks: loginChecks,
-      hints: { url: "https://example.com", code: null },
+      checks: [{ id: "claude-auth" }],
+      hints: { url: "https://claude.ai/oauth", code: null },
       acceptsInput: true,
       runInProgress: true,
       runId: "run-1",
-    }).showInput,
-    false,
+    }),
+    {
+      action: "login-claude",
+      linkText: "開啟 Anthropic 授權頁",
+      authCheckId: "claude-auth",
+      url: "https://claude.ai/oauth",
+      code: null,
+      showLink: true,
+      showCode: false,
+      showInput: true,
+    },
   );
+  ok("沒有裝置代碼的登入（Claude）一樣要有貼回授權碼的輸入格");
+
   assert.deepEqual(
     loginCardModel({
       checks: loginChecks,
@@ -633,7 +647,7 @@ try {
     }).showInput,
     false,
   );
-  ok("登入卡撈到代碼且 action 接受輸入時才顯示複製區與輸入格");
+  ok("複製區只在撈到代碼時出現；輸入格看的是程序還活著且吃得下 stdin");
 
   assert.equal(isLoginAction("login-claude"), true);
   assert.equal(isLoginAction("install-claude"), false);

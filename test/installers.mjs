@@ -161,3 +161,21 @@ for (const [actionId, expected] of Object.entries(expectedLoginActions)) {
   assert.equal(actions[actionId].launchesWindow, undefined);
 }
 ok("三個登入 action 直接執行並接受 stdin");
+
+// claude 與 gh 會自己彈瀏覽器，學生就來不及用卡片上的授權按鈕。兩者都認 BROWSER，
+// 指到一個什麼都不做的指令即可擋掉。codex 走 --device-auth 本來就不會開。
+for (const actionId of ["login-claude", "login-gh"]) {
+  assert.equal(
+    typeof actions[actionId].env?.BROWSER,
+    "string",
+    `${actionId} 要覆寫 BROWSER 才不會自己開瀏覽器`,
+  );
+  assert.notEqual(actions[actionId].env.BROWSER, "");
+}
+assert.equal(actions["login-codex"].env, undefined);
+// gh 的 GH_BROWSER 優先於 BROWSER，只設 BROWSER 會被學生環境既有的 GH_BROWSER 蓋掉。
+assert.equal(
+  actions["login-gh"].env.GH_BROWSER,
+  actions["login-gh"].env.BROWSER,
+);
+ok("claude 與 gh 覆寫 BROWSER 擋掉自動開瀏覽器，codex 靠 --device-auth");

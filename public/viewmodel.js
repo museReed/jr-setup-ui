@@ -608,8 +608,15 @@ export function loginCardModel({
     code: hints.code,
     showLink: hints.url !== null,
     showCode,
-    showInput:
-      showCode && acceptsInput && runInProgress && runId !== null,
+    // 輸入格不能綁在「有沒有撈到代碼」上。
+    //
+    // 兩種登入長得不一樣：codex 走裝置碼（先給你一組代碼，貼到網頁），Claude 走
+    // 純瀏覽器授權（不給代碼，但網頁授權完會給你一串授權碼，要貼回終端）。
+    // 綁在 showCode 上的話，Claude 那張卡只有網址按鈕、沒有地方貼授權碼——
+    // 學生走到一半就卡死（VM 實測）。
+    //
+    // 正確的條件是「這個程序還活著而且吃得下 stdin」，那就是可以貼回的時機。
+    showInput: acceptsInput && runInProgress && runId !== null,
   };
 }
 
