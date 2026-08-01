@@ -264,7 +264,11 @@ function renderWizard() {
         card.kind === "env"
           ? check.status === "ok"
           : configRowModel(check, verified.has(check.id)).status === "ok" ||
-            state.behaviorVerifiedSteps.has(check.id),
+            // 「程式那半驗過了」只有在這一列現在還是好的時候才算數。少了後半句，
+            // 檔案後來變成「需要合併」或被改掉時，清單仍然照著上一輪的結論打勾——
+            // 學生看到 1/1 全綠卻沒有「下一張」，完全對不起來（VM 實測 codex-config）。
+            (state.behaviorVerifiedSteps.has(check.id) &&
+              check.status === "ok"),
       )
       .map((check) => check.id),
   );
