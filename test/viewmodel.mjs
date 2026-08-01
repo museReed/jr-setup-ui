@@ -563,6 +563,30 @@ try {
   );
   ok("程式驗過的勾，只在那一列現在還是好的時候才算數");
 
+  // 檔案已經是學生自己的版本時，安裝刻意不覆蓋，腳本什麼都沒做就 exit 0。
+  // 照著 exit code 印「安裝成功，已完成」是騙人的——列上還寫著「需要合併」。
+  const mergeOutcome = terminalOutcomeLines({
+    action: "install-config-step",
+    succeeded: true,
+    check: { label: "Codex config.toml", needsMerge: true },
+  });
+  assert.doesNotMatch(mergeOutcome[0].text, /安裝成功/);
+  assert.match(mergeOutcome[0].text, /沒有覆蓋/);
+  assert.match(mergeOutcome[0].text, /用 AI 合併/);
+  assert.match(mergeOutcome[0].text, /再 check 一次/);
+  // 設計系統只有 prompt / ok / err，用不存在的 class 只會靜靜地沒有樣式。
+  assert.match(mergeOutcome[0].className, /ds-term-line--(prompt|ok|err)$/);
+  ok("需要合併的列不印假的「安裝成功」，改成講下一步");
+
+  // 一般的列不受影響，仍然報安裝成功。
+  const normalOutcome = terminalOutcomeLines({
+    action: "install-config-step",
+    succeeded: true,
+    check: { label: "行為規則 CLAUDE.md" },
+  });
+  assert.match(normalOutcome[0].text, /安裝成功/);
+  ok("沒有需要合併的列照常報安裝成功");
+
   assert.deepEqual(
     terminalOutcomeLines({
       action: "install-config-step",

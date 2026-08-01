@@ -700,6 +700,23 @@ export function terminalOutcomeLines({
   if (succeeded) {
     const verification =
       action.startsWith("verify-") || action.startsWith("diagnose-");
+
+    // 檔案已經是學生自己的版本時，安裝刻意不覆蓋（覆蓋會弄丟他寫的東西），腳本
+    // 什麼都沒做就 exit 0。照著 exit code 印「安裝成功，已完成」是騙人的——列上
+    // 還寫著「需要合併」，兩句話互相矛盾，學生只能挑一句相信（VM 實測 codex-config）。
+    //
+    // 這是這個 repo 反覆踩的假綠燈：exit 0 只代表「沒有出錯」，不代表「做完了」。
+    if (!verification && check?.needsMerge === true) {
+      return [
+        {
+          // 設計系統只有 prompt / ok / err 三個修飾 class，沒有 warn——用不存在的
+          // class 不會報錯，只會靜靜地沒有樣式。這句不是錯誤，是「還要你做一件事」。
+          className: "ds-term-line ds-term-line--prompt",
+          text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按「再 check 一次」。`,
+        },
+      ];
+    }
+
     return [
       {
         className: "ds-term-line ds-term-line--ok",
