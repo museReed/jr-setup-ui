@@ -288,6 +288,21 @@ try {
   assert.equal(allow.addedRules, 1);
   ok("白名單只補沒有的，不動 deny 清單");
 
+  // 白名單只免掉「這條指令能不能跑」，改檔案在 default 模式下仍然每次都問——
+  // 課堂上學生大半的按鍵花在那裡。兩件事湊齊才是學生預期的「不會一直被打斷」。
+  assert.equal(allow.settings.permissions.defaultMode, "acceptEdits");
+  assert.equal(allow.modeAdded, true);
+  ok("裝白名單時一併把預設模式設成 acceptEdits");
+
+  // 學生自己調過就尊重他的選擇，重跑安裝不該把它蓋回去。
+  const kept = mergeAllowRules(
+    { permissions: { defaultMode: "plan" } },
+    { allowRules: ["Bash(ls)"] },
+  );
+  assert.equal(kept.settings.permissions.defaultMode, "plan");
+  assert.equal(kept.modeAdded, false);
+  ok("使用者自己設過的預設模式不會被覆蓋");
+
   // 驗證的關鍵：檔案複製成功但沒註冊進 settings.json，hook 一樣不會擋，
   // 而且不會有任何錯誤訊息——所以驗證必須看註冊，不能只看檔案在不在。
   assert.equal(findHookRegistration({}), null);

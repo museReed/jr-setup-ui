@@ -708,13 +708,29 @@ export function hasAgentHookRegistrations(settings, registrations) {
   );
 }
 
+// 白名單要真的省下按鍵，預設模式就得跟著換。
+//
+// 預設的 default 模式下，白名單只免掉「這條指令能不能跑」那一問，改檔案仍然每次都
+// 問——課堂上學生大半的按鍵是花在這裡。acceptEdits 讓工作區內的檔案修改直接套用，
+// 白名單管指令、模式管檔案，兩件事湊齊才是學生預期的「不會一直被打斷」。
+//
+// 不用 bypassPermissions / dontAsk：那是連工作區外、網路操作都不問，放進學生的
+// 設定檔風險太大，也不是這門課要教的習慣。
+const CLAUDE_DEFAULT_MODE = "acceptEdits";
+
 export function mergeAllowRules(settings, { allowRules }) {
   const next = structuredClone(settings ?? {});
   const permissions = next.permissions ?? {};
   const allow = [...(permissions.allow ?? [])];
   const added = allowRules.filter((rule) => !allow.includes(rule));
-  next.permissions = { ...permissions, allow: [...allow, ...added] };
-  return { settings: next, addedRules: added.length };
+  // 學生自己調過就尊重他的選擇，只在沒設過的時候補上預設。
+  const modeAdded = permissions.defaultMode === undefined;
+  next.permissions = {
+    ...permissions,
+    allow: [...allow, ...added],
+    defaultMode: permissions.defaultMode ?? CLAUDE_DEFAULT_MODE,
+  };
+  return { settings: next, addedRules: added.length, modeAdded };
 }
 
 // 驗證用：settings.json 裡到底有沒有那個 hook（只看檔案在不在不算數——

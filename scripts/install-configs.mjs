@@ -132,12 +132,19 @@ async function hookStep(step) {
 async function allowlistStep(step) {
   const allowlist = JSON.parse(await readFile(sourcePath(step), "utf8"));
   const rules = expandAllowRules(allowlist.permissions.allow, HOME);
-  const { settings, addedRules } = mergeAllowRules(
+  const { settings, addedRules, modeAdded } = mergeAllowRules(
     await readSettings(step.settingsTarget),
     { allowRules: rules },
   );
   await writeSettings(step.settingsTarget, settings);
   logProgress(`${step.label}：新增 ${addedRules} 條（共 ${rules.length} 條）`);
+
+  // 講出來：這一步除了白名單還動了預設模式，學生按下去該知道自己同意了什麼。
+  logProgress(
+    modeAdded
+      ? "預設模式設成 acceptEdits：工作區內改檔案不再逐次詢問"
+      : `預設模式維持你原本設定的 ${settings.permissions.defaultMode}`,
+  );
 }
 
 async function tabSyncStep(step) {

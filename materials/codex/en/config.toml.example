@@ -9,6 +9,17 @@
 # instructions: System prompt snippet injected every session
 #   This reminds Codex to follow AGENTS.md response rules.
 #   Without it, Codex may revert to default tone after a few turns.
+#
+# sandbox_mode / approval_policy: Codex's Auto mode, the counterpart to Claude
+# Code's acceptEdits. File edits inside the workspace apply without asking;
+# going outside it, touching the network, or anything risky still prompts.
+#   sandbox_mode    "workspace-write"    writable inside the workspace (use this)
+#                   "danger-full-access" the whole machine; do not use
+#   approval_policy "on-request"         asks only when needed (use this)
+#                   "never"              never asks, not even outside the
+#                                        workspace; do not use
 
 personality = "pragmatic"
 instructions = "Strictly follow the Output Style rules in AGENTS.md: conclusion first (bold), 3-5 bullets, comparisons in tables, no emoji/celebratory tone, medium length, plain language principle. Self-check before every response."
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
