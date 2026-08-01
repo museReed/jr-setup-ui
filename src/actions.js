@@ -280,7 +280,9 @@ Object.assign(actions, {
     buildPrompt: ({ step, lang }) =>
       [
         `我要把工作坊的設定合併進我已經有的檔案，語言版本是 ${lang}，這一步是 ${step}。`,
-        `新版內容在 ~/.jr-setup/configs/ 底下（claude-code/${lang}/ 與 codex/${lang}/）。`,
+        // 路徑錯了 agent 會自己去翻，翻得到就沒人發現——但每次合併都多燒一輪，
+        // 翻不到就只能瞎猜。實際落點是 app/materials/（實測回報）。
+        `新版內容在 ~/.jr-setup/app/materials/ 底下（claude-code/${lang}/ 與 codex/${lang}/）。`,
         "請先讀我現有的檔案和新版內容，備份現有檔案（加 .bak.時間戳），",
         "再把工作坊的規則合併進去——保留我原本的內容，不要整份覆蓋。",
         "改完告訴我你加了什麼、有沒有衝突。",

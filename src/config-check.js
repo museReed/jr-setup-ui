@@ -47,6 +47,44 @@ async function sameAsSource(materials, step) {
   return a === b;
 }
 
+// protectExisting 的列（CLAUDE.md、config.toml）不能用逐字相同當作「完成」。
+//
+// 那些檔案的正常狀態就是「工作坊的內容 + 學生自己的內容」——只要他有自己的
+// [projects]、自己的規則，逐字比對永遠不會相同。實測：學生按了「用 AI 合併」，
+// 工作坊那段確實整段併進去了，列上還是寫「需要合併」，再按幾次都一樣。那張卡
+// 因此永遠完成不了，整段跟著鎖死。
+//
+// 改成問「工作坊那段在不在」：範本裡每一行實質內容都要出現在目標檔案裡。學生
+// 自己加的東西不影響，因為只檢查有沒有，不檢查有沒有多。
+//
+// TOML 的 # 是註解，可以不算；Markdown 的 # 是標題，是實質內容，不能丟。
+async function containsSourceContent(materials, step) {
+  const source = path.join(materials, step.source);
+
+  if (!existsSync(source) || !existsSync(step.target)) {
+    return false;
+  }
+
+  const [sourceText, targetText] = await Promise.all([
+    readFile(source, "utf8"),
+    readFile(step.target, "utf8"),
+  ]);
+  const isToml = step.target.endsWith(".toml");
+  const required = sourceText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !(isToml && line.startsWith("#")));
+
+  if (required.length === 0) {
+    return false;
+  }
+
+  const targetLines = new Set(
+    targetText.split("\n").map((line) => line.trim()),
+  );
+  return required.every((line) => targetLines.has(line));
+}
+
 // 「檔案在」不等於「檔案是對的」。hook 與 watcher 的內容改過之後，已經裝過的人
 // 手上是舊版——嚮導若只看存在與否，會告訴他一切正常。這輪五個斷點的修正全都落在
 // 這些檔案裡，所以逐字比對是必要的。
@@ -74,7 +112,7 @@ async function staleTargets(materials, files) {
   return stale;
 }
 
-async function checkCopyStep(materials, step) {
+export async function checkCopyStep(materials, step) {
   if (!existsSync(step.target)) {
     return {
       id: step.id,
@@ -87,7 +125,17 @@ async function checkCopyStep(materials, step) {
   const matches = await sameAsSource(materials, step);
 
   // 已存在但內容不是我們發的：那是使用者自己寫的，蓋掉會弄丟，要合併。
+  // 但先問一句「工作坊那段是不是已經在裡面了」——併過的人不該被叫回去再併一次。
   if (step.protectExisting === true && !matches) {
+    if (await containsSourceContent(materials, step)) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "ok",
+        detail: "已併入工作坊設定，你自己的內容也還在",
+      };
+    }
+
     return {
       id: step.id,
       label: step.label,
