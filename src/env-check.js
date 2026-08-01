@@ -34,6 +34,7 @@ const CHECKS = [
   { id: "gh", label: "GitHub CLI" },
   { id: "gh-auth", label: "GitHub 登入狀態" },
   { id: "node", label: "Node.js" },
+  { id: "python", label: "Python 3" },
 ];
 
 if (process.platform === "win32") {
@@ -584,6 +585,10 @@ export async function runEnvCheck() {
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
+    // Windows 上一律問 python3，不問 python：裸的 python 會撞到 Windows Store 的
+    // 殼——它存在、跑得起來、還會跳出商店頁面要你安裝，exit code 卻不是 ENOENT，
+    // 檢查會誤判成「裝好了」（VM 實測）。python3 沒有那層殼。
+    const python = checkVersion("python", "Python 3", "python3", ["--version"]);
     const checksToRun = [
       claude,
       checkClaudeAuth(claude),
@@ -593,6 +598,7 @@ export async function runEnvCheck() {
       gh,
       checkGhAuth(gh),
       node,
+      python,
     ];
 
     if (process.platform === "win32") {

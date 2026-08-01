@@ -79,6 +79,9 @@ const expectedIds = [
   "gh",
   "gh-auth",
   "node",
+  // demo 那段的 self_play.py 要 python3。macOS 內建、Windows 沒有——實測 VM 上
+  // 只有 Windows Store 的殼，agent 只好當場把腳本改寫成 PowerShell。
+  "python",
 ];
 
 if (process.platform === "win32") {

@@ -406,6 +406,11 @@ const ENV_CARD_META = {
     logo: "logo-nodejs",
     description: "確認 Node.js 可用，課堂工具與專案才跑得起來。",
   },
+  python: {
+    agent: "shared",
+    logo: "logo-python",
+    description: "確認 Python 3 可用，最後那段 demo 的自走網頁要靠它產出。",
+  },
   homebrew: {
     agent: "shared",
     logo: "logo-homebrew",

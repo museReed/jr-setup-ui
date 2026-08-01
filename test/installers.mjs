@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { actions } from "../src/actions.js";
+import { actions, installerNames } from "../src/actions.js";
 import {
   INSTALLERS,
   installActionId,
@@ -110,12 +110,11 @@ for (const installersByPlatform of Object.values(INSTALLERS)) {
 }
 ok("所有安裝參數都不含危險字串");
 
-const installerNames = {
-  claude: "Claude Code",
-  codex: "Codex",
-  git: "Git",
-  gh: "GitHub CLI",
-};
+// 用 actions.js 那一份，不再自己抄一份。
+//
+// 這裡原本有一份重複的表，只有四個項目——於是 ghostty 與 windows-terminal 的按鈕
+// 一直是「安裝 undefined」，測試卻照樣綠：它拿自己那份缺漏的表去比對，兩邊一起錯
+// 就對得起來。加 python 時才被 actions.js 裡新加的守衛抓出來。
 
 for (const id of Object.keys(INSTALLERS)) {
   const installer = resolveInstaller(id, process.platform);

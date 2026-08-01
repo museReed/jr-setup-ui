@@ -131,12 +131,25 @@ export const actions = {
   },
 };
 
-const installerNames = {
+// 這張表漏一個 id，按鈕就會變成「安裝 undefined」——而且只有那一個項目缺的時候
+// 才看得到，測試不會紅（實測加 python 時就是這樣）。下面用 assert 擋住。
+export const installerNames = {
   claude: "Claude Code",
   codex: "Codex",
   git: "Git",
   gh: "GitHub CLI",
+  python: "Python 3",
+  // ghostty 一直沒寫在這裡，所以 macOS 上那顆按鈕從以前就是「安裝 undefined」。
+  // 加 python 時順手做的這道守衛把它抓出來了。
+  ghostty: "Ghostty 終端機",
+  "windows-terminal": "Windows Terminal",
 };
+
+for (const id of Object.keys(INSTALLERS)) {
+  if (installerNames[id] === undefined) {
+    throw new Error(`installerNames 少了 ${id}，按鈕會顯示成「安裝 undefined」`);
+  }
+}
 
 for (const id of Object.keys(INSTALLERS)) {
   const installer = resolveInstaller(id, process.platform);
