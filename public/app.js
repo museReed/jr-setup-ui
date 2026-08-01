@@ -79,6 +79,7 @@ const state = {
   loginWait: null,
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
+  behaviorVerifiedSteps: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
@@ -110,10 +111,23 @@ async function rememberVerifiedStep(step) {
   }
 }
 
+// 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
+// 「驗證成功」，不能等學生勾完眼睛才一起變。
+async function rememberBehaviorVerified(step) {
+  state.behaviorVerifiedSteps.add(step);
+
+  try {
+    await api.saveBehaviorVerified(step);
+  } catch (error) {
+    view.addLine(`無法保存驗證進度：${error.message}`, "failed");
+  }
+}
+
 async function loadVerifiedSteps() {
   try {
     const result = await api.fetchState();
     state.verifiedSteps = new Set(result.verified);
+    state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
 
     // 伺服器記著上次選的工具與語言，開頁時要套回來。
     if (result.selection?.tools?.length > 0) {
@@ -125,6 +139,7 @@ async function loadVerifiedSteps() {
     }
   } catch {
     state.verifiedSteps = new Set();
+    state.behaviorVerifiedSteps = new Set();
   }
 }
 
@@ -201,12 +216,17 @@ function renderWizard() {
   //
   // 改成用 configRowModel 的最終狀態判斷：它已經把「裝好了但還沒驗行為」算成
   // unverified，所以不會放過真的該驗的項目。
+  //
+  // 再加一條：程式那半驗過的列，第一格立刻打勾，不等整列變綠。有眼睛勾選框的列
+  // 本來就不會 status === "ok"（那要等學生勾），但清單第一格講的是「程式驗過了
+  // 嗎」——終端都印「驗證成功」了還空著，學生只會以為驗證沒生效（Reed 實測）。
   const verifiedCheckIds = new Set(
     cardChecks
       .filter((check) =>
         card.kind === "env"
           ? check.status === "ok"
-          : configRowModel(check, verified.has(check.id)).status === "ok",
+          : configRowModel(check, verified.has(check.id)).status === "ok" ||
+            state.behaviorVerifiedSteps.has(check.id),
       )
       .map((check) => check.id),
   );
@@ -828,12 +848,15 @@ async function handleDone(
     (check) => check.id === verifiedStep,
   );
 
-  if (
-    AUTO_VERIFY_ACTIONS.has(action) &&
-    verifiedStep !== undefined &&
-    verifiedCheck?.eyeCheck == null
-  ) {
-    await rememberVerifiedStep(verifiedStep);
+  if (AUTO_VERIFY_ACTIONS.has(action) && verifiedStep !== undefined) {
+    // 程式那半的結論一律記下來。以前這裡是「有眼睛勾選框就整個不記」，於是那半
+    // 的結果無處可存，清單第一格只好等學生勾眼睛時才順便變綠。
+    await rememberBehaviorVerified(verifiedStep);
+
+    if (verifiedCheck?.eyeCheck == null) {
+      await rememberVerifiedStep(verifiedStep);
+    }
+
     await checkConfigs();
     return;
   }

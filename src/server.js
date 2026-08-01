@@ -16,8 +16,10 @@ import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
 import { ensureWorkDir, moduleFile } from "./paths.js";
 import {
+  loadBehaviorVerifiedSteps,
   loadSelection,
   loadVerifiedSteps,
+  markBehaviorVerified,
   markStepVerified,
   saveSelection,
 } from "./progress-state.js";
@@ -507,6 +509,7 @@ export async function startServer({
       response.setHeader("Cache-Control", "no-store");
       sendJson(response, 200, {
         verified: await loadVerifiedSteps(),
+        behavior: await loadBehaviorVerifiedSteps(),
         selection: await loadSelection(),
       });
       return;
@@ -550,14 +553,25 @@ export async function startServer({
         return;
       }
 
+      // kind=behavior 記的是「程式那半驗過了」，不代表整列綠。有眼睛勾選框的列
+      // 會先送這一筆，等學生勾完才再送一筆預設的 verified。
+      const kind = payload.kind ?? "verified";
+
+      if (kind !== "verified" && kind !== "behavior") {
+        sendText(response, 400, "kind 只能是 verified 或 behavior");
+        return;
+      }
+
       try {
-        await markStepVerified(step);
+        await (kind === "behavior"
+          ? markBehaviorVerified(step)
+          : markStepVerified(step));
       } catch (error) {
         sendText(response, 400, error.message);
         return;
       }
 
-      sendJson(response, 200, { step, verified: true });
+      sendJson(response, 200, { step, kind, verified: true });
       return;
     }
 

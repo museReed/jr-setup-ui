@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  loadBehaviorVerifiedSteps,
   loadSelection,
   loadVerifiedSteps,
+  markBehaviorVerified,
   markStepVerified,
   saveSelection,
 } from "../src/progress-state.js";
@@ -57,6 +59,32 @@ try {
   assert.deepEqual(await loadVerifiedSteps(options), []);
   assert.deepEqual((await loadSelection(options)).tools, ["claude", "codex"]);
   ok("驗證因指紋失效時，工具選擇不會跟著被清掉");
+
+  // 有眼睛勾選框的列（tab-sync）：程式那半驗過了要記得住，但整列還不算綠。
+  // 這兩件事分兩本帳，否則程式的結論無處可存，只能等學生勾眼睛時才一起變。
+  await writeFile(target, "installed-v5\n");
+  await markBehaviorVerified("claude-md", options);
+  assert.deepEqual(await loadBehaviorVerifiedSteps(options), ["claude-md"]);
+  assert.deepEqual(await loadVerifiedSteps(options), []);
+  ok("程式驗證記進 behavior，不會讓整列被當成已驗證");
+
+  await markStepVerified("claude-md", options);
+  assert.deepEqual(await loadVerifiedSteps(options), ["claude-md"]);
+  assert.deepEqual(await loadBehaviorVerifiedSteps(options), ["claude-md"]);
+  ok("學生勾完眼睛後兩本帳都成立，互不覆蓋");
+
+  // behavior 也吃指紋：裝的檔案一改，先前程式驗過的結論同樣不算數。
+  await writeFile(target, "installed-v6\n");
+  assert.deepEqual(await loadBehaviorVerifiedSteps(options), []);
+  ok("target 內容改變後，程式驗證紀錄同樣自動失效");
+
+  // 舊版 state.json 沒有 behavior 這本帳，讀的時候不該整份炸掉。
+  await writeFile(
+    stateFile,
+    JSON.stringify({ version: 1, verified: {}, selection: null }),
+  );
+  assert.deepEqual(await loadBehaviorVerifiedSteps(options), []);
+  ok("舊版 state.json 少了 behavior 欄位仍讀得動");
 } finally {
   await rm(home, { recursive: true, force: true });
 }

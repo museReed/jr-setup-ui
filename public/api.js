@@ -59,6 +59,12 @@ export async function saveVerifiedStep(step) {
   return response.json();
 }
 
+// 程式那半驗過了。有眼睛勾選框的列也送這一筆——整列綠不綠是 saveVerifiedStep 的事。
+export async function saveBehaviorVerified(step) {
+  const response = await postJson("/state", { step, kind: "behavior" });
+  return response.json();
+}
+
 // 工具／語言的選擇也存伺服器：port 每次啟動都變，localStorage 綁 origin 存不住。
 export async function saveSelection(selection) {
   const response = await postJson("/state", { selection });

@@ -56,22 +56,41 @@ function installedTargets(step) {
   return [];
 }
 
+// 兩本帳，因為它們回答的是兩個不同的問題：
+//
+//   verified  這一列整個綠了嗎——有眼睛勾選框的列，要學生看完畫面說了算
+//   behavior  程式跑得出來的那半驗過了嗎——跟學生有沒有勾無關
+//
+// 原本只有一本，於是有眼睛的列連「程式驗過了」都無處可記，結果就被丟掉：終端印著
+// 「驗證成功」，清單第一格卻還是空的，非要學生勾完眼睛才一起變（Reed 實測）。
+//
+// 兩本都吃同一套指紋失效：裝的檔案一改，先前驗過的結論就不算數。
+const BUCKETS = ["verified", "behavior"];
+
 async function readStoredState(stateFile) {
+  const empty = () => ({ version: VERSION, verified: {}, behavior: {} });
+
   try {
     const state = JSON.parse(await readFile(stateFile, "utf8"));
 
-    if (
-      state?.version !== VERSION ||
-      state.verified === null ||
-      typeof state.verified !== "object" ||
-      Array.isArray(state.verified)
-    ) {
-      return { version: VERSION, verified: {} };
+    if (state?.version !== VERSION) {
+      return empty();
+    }
+
+    for (const bucket of BUCKETS) {
+      if (
+        state[bucket] === null ||
+        typeof state[bucket] !== "object" ||
+        Array.isArray(state[bucket])
+      ) {
+        // 只有壞掉的那本歸零，另一本沒理由陪葬。
+        state[bucket] = {};
+      }
     }
 
     return state;
   } catch {
-    return { version: VERSION, verified: {} };
+    return empty();
   }
 }
 
@@ -149,12 +168,12 @@ export async function fingerprintStep(
   return hash.digest("hex");
 }
 
-export async function loadVerifiedSteps(options = {}) {
+async function loadBucket(bucket, options) {
   const resolved = locations(options);
   const state = await readStoredState(resolved.stateFile);
   const verified = [];
 
-  for (const [stepId, record] of Object.entries(state.verified)) {
+  for (const [stepId, record] of Object.entries(state[bucket])) {
     if (
       record === null ||
       typeof record !== "object" ||
@@ -181,7 +200,7 @@ export async function loadVerifiedSteps(options = {}) {
   return verified;
 }
 
-export async function markStepVerified(stepId, options = {}) {
+async function markBucket(bucket, stepId, options) {
   const resolved = locations(options);
   const state = await readStoredState(resolved.stateFile);
   const fingerprint = await fingerprintStep(stepId, {
@@ -195,8 +214,25 @@ export async function markStepVerified(stepId, options = {}) {
   };
 
   state.version = VERSION;
-  state.verified[stepId] = record;
+  state[bucket][stepId] = record;
   await mkdir(path.dirname(resolved.stateFile), { recursive: true });
   await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
   return record;
+}
+
+export async function loadVerifiedSteps(options = {}) {
+  return loadBucket("verified", options);
+}
+
+export async function markStepVerified(stepId, options = {}) {
+  return markBucket("verified", stepId, options);
+}
+
+// 程式那半驗過了——有眼睛勾選框的列也記，整列綠不綠是另一本帳的事。
+export async function loadBehaviorVerifiedSteps(options = {}) {
+  return loadBucket("behavior", options);
+}
+
+export async function markBehaviorVerified(stepId, options = {}) {
+  return markBucket("behavior", stepId, options);
 }
