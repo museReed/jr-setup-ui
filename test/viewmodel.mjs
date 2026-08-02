@@ -9,6 +9,7 @@ import {
   appendTermLine,
   behaviorFallbackState,
   cardIsComplete,
+  completedCardIds,
   cardResultItems,
   cardResultText,
   cardStatusModel,
@@ -252,6 +253,40 @@ try {
     2,
   );
   ok("目前卡片會推導成第一張未完成卡，整段完成則停在最後一張");
+
+  // 「這張卡完成了嗎」全站只有一個答案。稽核（docs/audit-card-logic.md）找到進度條
+  // 另外收了三條路：setup 自己判、目前這張卡改看 nextUnlocked、其他卡看
+  // attempted && installed。後兩條讓圓點比徽章寬鬆——同一張卡「圓點亮了、徽章還是
+  // 待驗證」，而且第三條連驗證有沒有成功都不看。
+  //
+  // 這條測試把那三條路釘死：completedCardIds 的結果必須等於逐張 cardIsComplete。
+  const completed = completedCardIds(cards, new Set(), new Set());
+  assert.deepEqual(
+    [...completed],
+    cards
+      .filter((card) => cardIsComplete(card, new Set(), new Set()))
+      .map(({ checkId }) => checkId),
+  );
+  assert.deepEqual([...completed], ["one", "two"]);
+  ok("進度條的完成集合＝逐張 cardIsComplete，沒有別的路徑");
+
+  // 驗證失敗但「試過了」不算完成——那是「下一張」的條件，不是完成的條件。
+  const attemptedOnly = [
+    {
+      kind: "config",
+      checkId: "pending-one",
+      check: {
+        id: "pending-one",
+        label: "待驗證",
+        status: "ok",
+        detail: "已安裝",
+        verifyAction: "verify-behavior",
+        eyeCheck: null,
+      },
+    },
+  ];
+  assert.deepEqual([...completedCardIds(attemptedOnly, new Set(), new Set())], []);
+  ok("裝好但沒驗過的卡不算完成，就算學生已經按過驗證");
 
   const milestones = milestoneModels(
     cards,

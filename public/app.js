@@ -21,6 +21,7 @@ import {
   agentNameFor,
   behaviorFallbackState,
   cardIsComplete,
+  completedCardIds,
   cardResultItems,
   cardResultText,
   cardStatusModel,
@@ -319,20 +320,21 @@ function renderWizard() {
           verificationAttempted,
           manualItems: groups.manual,
         });
-  const completedCardIds = new Set(
-    cardSection.cards
-      .filter((candidate) => {
-        if (candidate.kind === "setup") return candidate.completed === true;
-        if (cardIsComplete(candidate, verified, state.manualCheckedIds)) return true;
-        if (candidate.checkId === card.checkId) return nextUnlocked;
-        return state.verificationAttempted.has(candidate.checkId) &&
-          state.installedSteps.has(candidate.checkId);
-      })
-      .map(({ checkId }) => checkId),
-  );
+  // 「這張卡完成了嗎」全站只有一個答案：cardIsComplete。
+  //
+  // 這裡原本另外收三條路：
+  //   1. setup 自己看 completed          —— cardIsComplete 裡面本來就有這條，重複
+  //   2. 目前這張卡改看 nextUnlocked      —— 「能往前」不等於「已完成」
+  //   3. 其他卡看 attempted && installed —— 驗證失敗也算 attempted
+  //
+  // 後兩條讓進度條比徽章寬鬆：同一張卡「圓點亮了、徽章還是待驗證」。第 3 條最寬——
+  // 它不看驗證有沒有成功、不看最新狀態、也不看人工項有沒有勾（稽核報告第 1~3 項）。
+  //
+  // 「能往前」這個概念仍然存在，但它只該決定「下一張」按鈕，不該決定「完成」。
+  // 那兩件事在這個嚮導裡刻意不同：驗證過不了的學生要能往前走，但那張卡不算做完。
   const milestones = milestoneModels(
     cardSection.cards,
-    completedCardIds,
+    completedCardIds(cardSection.cards, verified, state.manualCheckedIds),
     currentIndex,
   );
   let row =
@@ -504,11 +506,9 @@ function renderCheckingLoader() {
 function incompleteCards(cards, verified) {
   return cards
     .map((card, index) => ({ card, index }))
-    .filter(({ card }) =>
-      card.kind === "setup"
-        ? card.completed !== true
-        : !cardIsComplete(card, verified, state.manualCheckedIds),
-    )
+    // setup 不再另外判：cardIsComplete 裡面已經有 setup 那條，寫兩次只會有一天
+    // 只改到其中一邊。
+    .filter(({ card }) => !cardIsComplete(card, verified, state.manualCheckedIds))
     .map(({ card, index }) => ({ label: card.label, index }));
 }
 

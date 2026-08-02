@@ -501,6 +501,23 @@ export function cardIsComplete(
   );
 }
 
+// 一段裡「已完成」的卡有哪些。全站只有這一個答案，五個顯示位置（徽章、清單、
+// 里程碑、段落狀態、tab 解鎖）都從這裡或 cardIsComplete 出發。
+//
+// 抽成純函式是為了測得到。它原本內嵌在 renderWizard 裡，於是額外的完成路徑可以
+// 悄悄長出來而沒有任何測試會紅——稽核報告七項不一致裡有三項就是這樣來的。
+export function completedCardIds(
+  cards,
+  verifiedSteps = new Set(),
+  checkedManualIds = new Set(),
+) {
+  return new Set(
+    cards
+      .filter((card) => cardIsComplete(card, verifiedSteps, checkedManualIds))
+      .map(({ checkId }) => checkId),
+  );
+}
+
 export function currentCardIndex(
   cards,
   verifiedSteps = new Set(),
