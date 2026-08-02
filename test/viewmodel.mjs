@@ -138,12 +138,35 @@ try {
   assert.match(pending.detail, /尚未驗證/);
   // 不放「驗證」按鈕：安裝完會自動接驗證，那顆只會閃一下就消失，學生不知道驗了沒
   // （Reed 實測）。重驗一律走「再 check 一次」，而它一直都在。
+  //
+  // 這顆的字是「重裝」不是「安裝」：status 已經是 ok，東西早就在了。寫「安裝」會
+  // 讓學生以為還沒裝、按下去卻什麼都沒發生（VM 實測 Playwright MCP：卡片寫著「已
+  // 註冊 MCP server」，旁邊卻是一顆橘色的「安裝」）。
+  // 也不能直接灰掉——重跑安裝是驗證失敗時唯一的自救手段。
   assert.deepEqual(
     pending.buttons.map((button) => button.text),
-    ["安裝"],
+    ["重裝"],
   );
+  assert.equal(pending.buttons[0].disabled, undefined);
+  assert.equal(pending.buttons[0].secondary, true);
   assert.equal(pending.showRetest, true);
-  ok("結構齊全但沒驗過行為的列不給綠燈，且沒有會閃現的「驗證」按鈕");
+  ok("裝好但沒驗過的列給「重裝」：按得動，但不再假裝是主要動作");
+
+  // 還沒裝的列才是「安裝」，而且是主要動作。
+  const notInstalledYet = configRowModel({
+    id: "hook",
+    label: "Shell 不串接 hook",
+    status: "missing",
+    detail: "未安裝",
+    installAction: "install-config-step",
+    verifyAction: "verify-behavior",
+    eyeCheck: null,
+  });
+  assert.deepEqual(
+    notInstalledYet.buttons.map(({ text, secondary }) => ({ text, secondary })),
+    [{ text: "安裝", secondary: undefined }],
+  );
+  ok("還沒裝的列才給主要動作的「安裝」");
 
   // demo 那種 noInstall 的列從頭到尾沒有「安裝」這個概念。原本會補一顆按不動的
   // 佔位按鈕（為了讓每列的按鈕位置對齊），學生盯著它想「是不是要先按這個」。

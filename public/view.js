@@ -210,7 +210,11 @@ function renderMilestones(sectionId, milestones, onSelect) {
 function actionButton(spec, onActionClick) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `ds-btn ds-btn-sm ${spec.className ?? "ds-btn-primary"}`;
+  // secondary：按得動、但不是這張卡的主要動作（例如已經裝好時的「重裝」）。
+  // 兩顆都橘色的話，學生分不出哪一顆才是現在該按的。
+  button.className = `ds-btn ds-btn-sm ${
+    spec.className ?? (spec.secondary === true ? "ds-btn-ghost" : "ds-btn-primary")
+  }`;
   button.dataset[spec.dataName] = spec.action;
   button.dataset.step = spec.step ?? "";
   button.dataset.idleText = spec.text;

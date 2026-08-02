@@ -315,7 +315,15 @@ export function configRowModel(
     verificationDeferred = false,
   } = {},
 ) {
-  const installationDone = installed || verified;
+  // 「裝好了沒」的權威來源是伺服器剛跑完的檢查（status === "ok"），不是「這次
+  // 開著的網頁裡有沒有按過安裝」。
+  //
+  // 原本只看 installed（本次 session 的樂觀記憶）與 verified。於是一個早就裝好、
+  // 只差行為驗證的列——例如 Playwright MCP 顯示「已註冊 MCP server：playwright」
+  // ——按鈕仍然是橘色的「安裝」，看起來像「你還沒裝，按這裡」。學生按下去，指令
+  // 回「already exists」，什麼也沒發生（VM 實測）。
+  const alreadyInstalled = check.status === "ok";
+  const installationDone = installed || verified || alreadyInstalled;
   const pending =
     check.status === "ok" &&
     !verified &&
@@ -331,12 +339,23 @@ export function configRowModel(
     (pending && check.noInstall !== true ? "install-config-step" : null);
 
   if (installAction !== null && installAction !== undefined) {
+    // 三態，不是兩態：
+    //
+    //   還沒裝            「安裝」        主要動作，橘色
+    //   裝好了、還沒驗過   「重裝」        按得動但不是主角——重跑安裝是驗證失敗時
+    //                                     唯一的自救手段，不能拿掉
+    //   驗過了            「✅ 安裝」      灰掉，沒事可做
+    //
+    // 中間那態原本跟「還沒裝」長得一模一樣，於是學生對著一個已經裝好的東西按安裝。
+    // 直接把它灰掉也不行——那條自救路就沒了。所以換一個誠實的字：重裝。
+    const done = installationDone && !pending;
     buttons.push({
       action: installAction,
       dataName: "installAction",
-      text: installationDone ? "✅ 安裝" : "安裝",
+      text: done ? "✅ 安裝" : installationDone ? "重裝" : "安裝",
       step: check.id,
-      ...(installationDone ? { disabled: true, done: true } : {}),
+      ...(done ? { disabled: true, done: true } : {}),
+      ...(installationDone && !done ? { secondary: true } : {}),
     });
   } else if (check.noInstall !== true) {
     // 沒有安裝動作時補一顆停用的佔位，讓每一列的按鈕位置對齊。
