@@ -472,6 +472,11 @@ body {
   margin: 0;
 }
 
+/* 登入那一塊畫在清單裡「登入狀態」那一格底下，要跟項目對齊、不要貼著暗底的邊緣。 */
+.ds-checklist .login-hints {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .login-hints,
 #login-code-row {
   display: flex;

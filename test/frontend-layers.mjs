@@ -152,6 +152,16 @@ try {
   assert.match(cardStyles, /^\.checklist-step \{/m);
   ok("開視窗的按鈕掛在清單裡它負責的那一步旁邊");
 
+  // 登入那一塊也掛回它對應的那一格底下。原本畫在清單外面、按鈕列的下方，學生要
+  // 自己把「未登入」跟下面那顆授權按鈕連起來（VM 實測 Claude Code 那張）。
+  assert.match(
+    files.view,
+    /item\.id === `system-\$\{login\.authCheckId\}`/,
+  );
+  assert(files.view.includes("!loginInChecklist && model.login !== null"));
+  assert.match(cardStyles, /^\.ds-checklist \.login-hints \{/m);
+  ok("登入那一塊掛在「登入狀態」那一格底下");
+
   // 每張卡各有一份終端內容。共用一份的話，換一張卡就看到上一張的驗證訊息——
   // 那些話講的是別的東西，留著只會讓學生以為現在這張已經跑過了。
   for (const name of ["showTranscript", "pinTranscript", "unpinTranscript"]) {

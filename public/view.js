@@ -288,7 +288,12 @@ function pasteProofElement({ value, matched, onInput }) {
 function checklistElement(
   groups,
   onManualToggle,
-  { manualSteps = [], pasteProof = null, onOpen = () => {} } = {},
+  {
+    manualSteps = [],
+    pasteProof = null,
+    login = null,
+    onOpen = () => {},
+  } = {},
 ) {
   const items = [...groups.system, ...groups.manual];
   const checked = items.filter((item) => item.checked).length;
@@ -340,6 +345,12 @@ function checklistElement(
 
       label.append(input, checkMark(), text);
       checklist.append(label);
+
+      // 登入那一塊掛在「登入狀態」那一格底下。原本畫在清單外面、按鈕列的下方，
+      // 學生要自己把「未登入」跟下面那顆授權按鈕連起來（VM 實測）。
+      if (login !== null && item.id === `system-${login.authCheckId}`) {
+        checklist.append(loginControlsElement(login));
+      }
     }
   };
 
@@ -463,11 +474,23 @@ function renderCard(model) {
     body.className = "current-task-body";
     // 執行結果不另外開一塊——它掛在自查清單每一項底下（見 checklistGroups），
     // 同一個檢查的名稱與結果放在一起，讀的人不用自己配對。
+    // 登入那一塊畫在清單裡它對應的那一格底下（見 checklistElement）。清單沒出現時
+    // 才退回畫在外面——不然那張卡會完全沒有登入入口。
+    const loginInChecklist =
+      model.showChecklist === true && model.login !== null;
+
     if (model.showChecklist) {
       body.append(
         checklistElement(model.checklist, model.onManualToggle, {
           manualSteps: model.manualSteps ?? [],
           pasteProof: model.pasteProof ?? null,
+          login: loginInChecklist
+            ? {
+                ...model.login,
+                onCopyLoginCode: model.onCopyLoginCode,
+                onLoginInput: model.onLoginInput,
+              }
+            : null,
           onOpen: model.onOpenStep ?? (() => {}),
         }),
       );
@@ -533,7 +556,7 @@ function renderCard(model) {
       actions.append(retest);
     }
     body.append(actions);
-    if (model.login !== null) {
+    if (!loginInChecklist && model.login !== null) {
       body.append(
         loginControlsElement({
           ...model.login,
