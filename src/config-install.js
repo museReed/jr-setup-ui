@@ -11,17 +11,19 @@ export const TOOLS = ["claude", "codex"];
 // 核心三件套。一個 skill 一列：壞了看得出來是哪一支，重裝也只重裝那一支。
 export const SKILL_NAMES = ["auto-rename", "handoff", "structured-questions"];
 
+// 卡片標題講「學生會看到的事」，不講做法。原本是「Skill：自動命名（Claude）」——
+// 那是我們的分類方式，學生沒看過那個畫面之前，這個名字對他等於沒有意義。
 const SKILL_LABELS = {
-  "auto-rename": "自動命名",
-  handoff: "交接文件",
-  "structured-questions": "結構化提問",
+  "auto-rename": "想改名時叫它改",
+  handoff: "把進度交接給下一場",
+  "structured-questions": "讓它給你選項",
 };
 
 // 第三方 skill 走各自 GitHub 上定義的安裝法（npx skills / claude mcp），要網路與
 // Node——跟前面那些內建素材的離線安裝不同類，所以另開一種 kind，畫面上也標出來。
 const EXTERNAL_SKILL_STEPS = {
   "ext-frontend-design-claude": {
-    label: "第三方：frontend-design（Claude）",
+    label: "做出來的網頁有設計感（Claude）",
     agent: "claude",
     cmd: "npx",
     args: [
@@ -40,7 +42,7 @@ const EXTERNAL_SKILL_STEPS = {
     marker: ".claude/skills/frontend-design",
   },
   "ext-frontend-design-codex": {
-    label: "第三方：frontend-design（Codex）",
+    label: "做出來的網頁有設計感（Codex）",
     agent: "codex",
     cmd: "npx",
     args: [
@@ -58,7 +60,7 @@ const EXTERNAL_SKILL_STEPS = {
     marker: ".agents/skills/frontend-design",
   },
   "ext-skill-creator-claude": {
-    label: "第三方：skill-creator（Claude）",
+    label: "教它學會新技能（Claude）",
     agent: "claude",
     cmd: "npx",
     args: [
@@ -77,7 +79,7 @@ const EXTERNAL_SKILL_STEPS = {
     marker: ".claude/skills/skill-creator",
   },
   "ext-playwright-codex": {
-    label: "第三方：playwright（Codex）",
+    label: "讓它能開瀏覽器（Codex）",
     agent: "codex",
     cmd: "npx",
     args: [
@@ -105,7 +107,7 @@ const EXTERNAL_SKILL_STEPS = {
   // 要統一的話唯一已知可行的方向是「兩邊都用 MCP」（Codex 支援 MCP，config.toml
   // 的 [mcp_servers.*] 就是），不是「兩邊都用 skill」。目前決定維持現狀。
   "ext-playwright-claude": {
-    label: "第三方：Playwright MCP（Claude）",
+    label: "讓它能開瀏覽器（Claude）",
     agent: "claude",
     cmd: "claude",
     args: ["mcp", "add", "-s", "user", "playwright", "npx", "@playwright/mcp@latest"],
@@ -309,7 +311,7 @@ function hookCommand(target, platform, args = []) {
 // 分辨誰是誰——兩邊的檔名沒有交集，所以重裝其中一個不會掃掉另一個的註冊。
 const AGENT_HOOK_STEPS = {
   "claude-namer": {
-    label: "自動命名 hook",
+    label: "對話自己取名字",
     agent: "claude",
     bases: ["set-session-name", "session-auto-namer"],
     events: [
@@ -318,14 +320,14 @@ const AGENT_HOOK_STEPS = {
     ],
   },
   "claude-monitor": {
-    label: "Context 監控 hook",
+    label: "快記不住前面時提醒你",
     agent: "claude",
     bases: ["context-monitor"],
     events: [{ event: "PostToolUse", base: "context-monitor", args: [] }],
     supportFiles: ["skills/model-context-windows-cache.json"],
   },
   "codex-namer": {
-    label: "Codex 自動命名 hook",
+    label: "Codex 對話自己取名字",
     agent: "codex",
     bases: ["codex-session-namer"],
     events: [
@@ -338,7 +340,7 @@ const AGENT_HOOK_STEPS = {
     ],
   },
   "codex-monitor": {
-    label: "Codex Context 監控 hook",
+    label: "Codex 快記不住前面時提醒你",
     agent: "codex",
     bases: ["codex-context-monitor"],
     events: [{ event: "PostToolUse", base: "codex-context-monitor", args: [] }],
@@ -423,7 +425,8 @@ function skillStep(id, home) {
 
   return {
     id,
-    label: `Skill：${SKILL_LABELS[name]}（${agent === "claude" ? "Claude" : "Codex"}）`,
+    // 工具名留著：里程碑那條路上 Claude 與 Codex 各有一張同樣的卡，不標就分不出來。
+    label: `${SKILL_LABELS[name]}（${agent === "claude" ? "Claude" : "Codex"}）`,
     kind: "skill",
     agent,
     name,
@@ -482,7 +485,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "claude-md":
       return {
         id,
-        label: "行為規則 CLAUDE.md",
+        label: "它做事的規矩",
         kind: "copy",
         source: `claude-code/${lang}/CLAUDE.md`,
         target: `${claudeDir}/CLAUDE.md`,
@@ -493,7 +496,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "output-style":
       return {
         id,
-        label: "回覆格式 Output Style",
+        label: "回話短、結論先講",
         // 只複製檔案不會生效：真正的開關是 settings.json 的 outputStyle 欄位
         // （md 裡是叫使用者自己去 /config 選）。沒寫的話回覆格式完全不會變，
         // 而且沒有任何錯誤訊息——所以安裝時一起寫進去。
@@ -507,7 +510,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "hook":
       return {
         id,
-        label: "Shell 不串接 hook",
+        label: "一次只跑一個指令",
         kind: "hook",
         source: "claude-code/hooks/block-chained-bash.js",
         target: `${claudeDir}/hooks/block-chained-bash.js`,
@@ -517,7 +520,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "allowlist":
       return {
         id,
-        label: "常用指令白名單",
+        label: "常用指令不用每次問你",
         kind: "allowlist",
         source: "claude-code/starter-allowlist.json",
         settingsTarget: `${claudeDir}/settings.json`,
@@ -526,7 +529,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "codex-config":
       return {
         id,
-        label: "Codex config.toml",
+        label: "Codex 的規矩與回話風格",
         kind: "copy",
         source: `codex/${lang}/config.toml.example`,
         target: `${codexDir}/config.toml`,
@@ -538,7 +541,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "codex-agents":
       return {
         id,
-        label: "行為規則 AGENTS.md",
+        label: "Codex 做事的規矩",
         kind: "copy",
         source: `codex/${lang}/AGENTS.md`,
         target: `${codexDir}/AGENTS.md`,
@@ -555,7 +558,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
           : `${home}/.local/bin/${file}`;
       return {
         id,
-        label: "終端機標題同步",
+        label: "分頁自己報上名字",
         kind: "tab-sync",
         watcherSource: `skills/bin/${file}`,
         target,
@@ -579,7 +582,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       const agent = id === "demo-claude" ? "claude" : "codex";
       return {
         id,
-        label: `跑一條龍 demo（${agent === "claude" ? "Claude" : "Codex"}）`,
+        label: `把前面學的串起來跑一次（${agent === "claude" ? "Claude" : "Codex"}）`,
         kind: "demo",
         agent,
       };

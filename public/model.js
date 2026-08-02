@@ -394,81 +394,131 @@ export function groupChecks(checks) {
   });
 }
 
+// 環境這一段的標題大多是產品名（Claude Code、Git、Node.js）——那是學生本來就要
+// 認得、也查得到的東西，不算術語，所以留著。
+//
+// 例外是 PowerShell 那三張與終端機那張：「執行原則」「中文編碼」講的是設定項的名字，
+// 學生沒看過那個畫面之前不知道那是什麼，所以改成講他會遇到的狀況。
+//
+// 描述一律回答「做完你會多出什麼」，不寫「安裝 X，才能…」——那種句型只是把標題
+// 再講一次。
 const ENV_CARD_META = {
   claude: {
     agent: "claude",
     label: "Claude Code",
     logo: "logo-claude",
-    description: "安裝並登入 Claude Code，才能直接請它協助完成課堂任務。",
+    description: "課堂上大部分的事都會請它做，先讓它裝好、認得你這個帳號",
     checkIds: ["claude", "claude-auth"],
   },
   codex: {
     agent: "codex",
     label: "Codex CLI",
     logo: "logo-openai",
-    description: "安裝並登入 Codex CLI，讓它能在這台電腦上協助寫程式。",
+    description: "另一個會寫程式的助手，課堂上會拿它跟 Claude 對照著看",
     checkIds: ["codex", "codex-auth"],
   },
   git: {
     agent: "shared",
     logo: "logo-git",
-    description: "安裝 Git，才能保存每次修改並和 GitHub 同步。",
+    description: "每次改了什麼都留得下紀錄，改壞了也回得去",
   },
   gh: {
     agent: "shared",
     label: "GitHub CLI",
     logo: "logo-github",
-    description: "安裝並登入 GitHub CLI，才能從這裡管理遠端專案。",
+    description: "不用開網頁，在終端就能把東西推上 GitHub、開 PR",
     checkIds: ["gh", "gh-auth"],
   },
   node: {
     agent: "shared",
     logo: "logo-nodejs",
-    description: "確認 Node.js 可用，課堂工具與專案才跑得起來。",
+    description: "課堂上大半工具都靠它跑，沒有它後面幾張都動不了",
   },
   python: {
     agent: "shared",
     logo: "logo-python",
-    description: "確認 Python 3 可用，最後那段 demo 的自走網頁要靠它產出。",
+    description: "最後那個會自己長出來的網頁，靠它在背後跑",
   },
   homebrew: {
     agent: "shared",
     logo: "logo-homebrew",
-    description: "確認 Homebrew 可用，才能安裝課堂需要的 macOS 工具。",
+    description: "Mac 上要裝什麼工具，一行指令就裝得起來",
   },
   "execution-policy": {
     agent: "other",
+    label: "讓電腦願意跑課堂指令",
     logo: "logo-powershell",
-    description: "調整 PowerShell 權限，讓課堂安裝指令可以執行。",
+    description: "Windows 預設會擋下沒簽名的腳本，開這個之後安裝才跑得動",
   },
   "powershell-version": {
     agent: "other",
+    label: "終端機版本夠新",
     logo: "logo-powershell",
-    description: "確認 PowerShell 版本符合課堂工具的執行需求。",
+    description: "太舊的版本跑課堂指令會出現看不懂的錯誤",
   },
   "powershell-encoding": {
     agent: "other",
+    label: "中文不會變亂碼",
     logo: "logo-powershell",
-    description: "確認 PowerShell 使用正確編碼，避免中文輸出變成亂碼。",
+    description: "沒設好的話，終端印出來的中文會變成一堆問號",
   },
   "windows-terminal": {
     agent: "other",
+    label: "好用的終端機視窗",
     logo: "logo-terminal",
-    description: "安裝 Windows Terminal，讓課堂指令有一致的執行環境。",
+    description: "分頁、複製貼上都正常，後面每一步都在這裡面做",
   },
   ghostty: {
     agent: "other",
+    label: "好用的終端機視窗",
     logo: "logo-terminal",
-    description: "安裝 Ghostty，讓你有一個好用的終端機執行課堂指令。",
+    description: "分頁、複製貼上都正常，後面每一步都在這裡面做",
   },
   terminal: {
     agent: "other",
+    label: "好用的終端機視窗",
     logo: "logo-terminal",
-    description: "確認終端機可用，才能執行接下來的課堂指令。",
+    description: "後面每一步都在這個視窗裡做，先確認它是好的",
   },
 };
 
 const AGENT_ORDER = ["claude", "codex", "shared", "other"];
+
+// 卡片標題下的那一行：回答「做完之後我會多出什麼」。
+//
+// 原本十一張共用一句「設定 X，讓這項功能能在接下來的課程中正常使用」——那句話對
+// 每一張都成立，所以對每一張都等於沒說。學生要的是「做完會發生什麼事」。
+//
+// 寫法：講學生會看到的現象，不講實作（不出現 hook、settings.json 這些字，那些留在
+// 清單與終端訊息裡）。
+export const CARD_DESCRIPTIONS = {
+  "claude-md": "每次開新對話它都會先讀這份規矩，你不用每次重講一遍",
+  "output-style": "它會先給答案再解釋，比較用表格，不寫長篇大論",
+  hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
+  allowlist: "查檔案、看狀態這類安全的指令直接跑，不再一直跳確認",
+  "codex-config": "Codex 這邊也照同一套規矩回話",
+  "codex-agents": "同上，這一份是 Codex 會讀的規矩",
+  "tab-sync": "開十個終端視窗也認得出哪個在做什麼",
+  "claude-namer": "你講第一句話之後，分頁標題就變成這次在做的事",
+  "claude-monitor": "對話太長、它快忘記前面講過什麼時，會提早叫你收尾",
+  "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
+  "codex-monitor": "Codex 快忘記前面講過什麼時，也會提早叫你收尾",
+  "skill-claude-auto-rename": "上面那個是自動取名，這個是你不滿意時手動叫它重取",
+  "skill-codex-auto-rename": "上面那個是自動取名，這個是你不滿意時手動叫它重取",
+  "skill-claude-handoff": "快聊不下去時一句話產出交接文件，下次接得回來",
+  "skill-codex-handoff": "快聊不下去時一句話產出交接文件，下次接得回來",
+  "skill-claude-structured-questions":
+    "要你做決定時跳出選項讓你點，不用自己想怎麼回",
+  "skill-codex-structured-questions":
+    "要你做決定時跳出選項讓你點，不用自己想怎麼回",
+  "ext-frontend-design-claude": "產生的頁面不是預設樣板，會有配色與排版的品味",
+  "ext-frontend-design-codex": "產生的頁面不是預設樣板，會有配色與排版的品味",
+  "ext-skill-creator-claude": "把你反覆做的流程包成一個技能，以後一句話就能叫",
+  "ext-playwright-claude": "它可以自己開網頁、點按鈕、截圖回來給你看",
+  "ext-playwright-codex": "它可以自己開網頁、點按鈕、截圖回來給你看",
+  "demo-claude": "它問你要什麼配色、生成一個網頁，右邊即時長出來給你看",
+  "demo-codex": "它問你要什麼配色、生成一個網頁，右邊即時長出來給你看",
+};
 
 function checkCard(sectionId, card, check) {
   return {
@@ -479,6 +529,7 @@ function checkCard(sectionId, card, check) {
     logo: card.logo,
     detail:
       card.description ??
+      CARD_DESCRIPTIONS[check.id] ??
       `設定 ${check.label}，讓這項功能能在接下來的課程中正常使用。`,
     check,
     checks: [check],
@@ -543,7 +594,7 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
           agent: "shared",
           label: "選工具 + 選語言",
           logo: "logo-terminal",
-          detail: "先選這次要設定的工具與規則檔語言。",
+          detail: "先選這次要設定哪些工具、規矩要用哪個語言寫",
           check: null,
           checks: [],
           kind: "setup",
