@@ -75,7 +75,7 @@
               </div>
               <div class="config-toolbar-status">
                 <span id="config-summary">尚未檢查</span>
-                <button type="button" id="recheck-configs" class="ds-btn ds-btn-ghost ds-btn-sm">重新檢查</button>
+                <button type="button" id="recheck-configs" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>重新檢查</span></button>
               </div>
             </div>
 
@@ -83,7 +83,7 @@
             <div id="env-results" hidden></div>
             <div id="config-results" hidden></div>
             <p id="env-os" hidden>作業系統：檢查中…</p>
-            <button type="button" id="recheck-env" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>重新檢查</button>
+            <button type="button" id="recheck-env" class="ds-btn-fill is-sm" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>重新檢查</span></button>
             <p id="install-status" hidden></p>
             <p id="login-wait-status" hidden></p>
           </section>
@@ -94,7 +94,7 @@
               <span class="ds-term-dot" style="background: var(--amber-4)" aria-hidden="true"></span>
               <span class="ds-term-dot" style="background: var(--teal-4)" aria-hidden="true"></span>
               <span class="terminal-title">現在正在做什麼</span>
-              <button type="button" id="cancel" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>取消</button>
+              <button type="button" id="cancel" class="ds-btn-fill is-sm is-on-dark" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>取消</span></button>
             </div>
             <div id="terminal-lines" class="ds-term-body" role="log" aria-live="polite">
               <div class="ds-term-line ds-term-line--dim">選一張卡開始，這裡會用白話更新進度。</div>
@@ -125,8 +125,8 @@
       <section class="ds-modal-panel" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title">
         <h2 id="verify-modal-title">要開一個新終端跑驗證嗎？</h2>
         <div>
-          <button type="button" id="verify-modal-confirm" class="ds-btn ds-btn-primary">開終端驗證</button>
-          <button type="button" id="verify-modal-later" class="ds-btn ds-btn-ghost">稍後</button>
+          <button type="button" id="verify-modal-confirm" class="ds-btn-fill is-primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l2.5 2L7 14M12.5 15H17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>開終端驗證</span></button>
+          <button type="button" id="verify-modal-later" class="ds-btn-fill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>稍後</span></button>
         </div>
       </section>
     </div>

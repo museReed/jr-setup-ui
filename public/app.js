@@ -549,7 +549,7 @@ function renderWizard() {
     onCopyLoginCode: async (code, button) => {
       try {
         await navigator.clipboard.writeText(code);
-        button.textContent = "已複製";
+        view.setButtonLabel(button, "已複製");
       } catch (error) {
         view.addLine(`無法複製：${error.message}`, "failed");
       }

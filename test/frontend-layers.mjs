@@ -331,6 +331,7 @@ try {
   // 就整批印完（驗證一次會噴很多行）、系統設了減少動態就不演、翻回舊卡片的紀錄
   // 直接印（那是歷史，不是正在發生的事）。
   assert(files.view.includes("typeInto(line, spec.text)"));
+  assert.match(files.view, /TYPING_CHARS_PER_SECOND = 3/);
   assert.match(files.view, /if \(typingQueue\.length > 3\) \{\s*\n\s*flushTyping\(\);/);
   assert.match(
     files.view,
@@ -348,10 +349,37 @@ try {
   assert.match(cardStyles, /^\.card-hints-term \.ds-term-line \{/m);
   ok("卡片裡的提示區塊改用設計系統的靜態終端");
 
+  // 會按的按鈕一律用灌色按鈕（.ds-btn-fill），而且每顆前面都有一個 icon。設計系統
+  // 只給了品牌 logo，沒有通用的動作 icon，所以 icon 自己畫、集中在一張表裡。
+  assert(files.view.includes("function fillButton("));
+  assert(files.view.includes("const ICONS = {"));
+  assert(!files.view.includes("ds-btn ds-btn-primary ds-btn-sm"));
+  assert(!files.view.includes("ds-btn-secondary"));
+  for (const id of ["recheck-configs", "recheck-env", "cancel", "verify-modal-confirm"]) {
+    assert.match(
+      cardIndex,
+      new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),
+      `${id} 要是灌色按鈕而且帶 icon`,
+    );
+  }
+  // 翻頁那兩顆不換：它們有自己的位置與形狀，跟卡片裡的動作按鈕不是同一類。
+  assert.match(cardIndex, /id="wizard-next" class="wizard-nav/);
+  ok("會按的按鈕都是灌色按鈕，每顆前面都有 icon");
+
+  // 換字只換裡面那個 <span>。整顆 textContent 洗掉的話，前面那個 icon 會一起不見。
+  assert(files.view.includes("export function setButtonLabel"));
+  assert(!files.app.includes('button.textContent = "已複製"'));
+  ok("按鈕換字不會把 icon 洗掉");
+
   // 設計系統的 .ds-btn 沒有 disabled 樣式，置灰得靠本 repo 的 .is-done。
   // 契約檔禁止覆寫既有 ds-* selector，所以選擇器裡不能出現 .ds-btn。
+  //
+  // .ds-btn-fill 是另一個元件、另一個缺口：它同樣沒有 disabled 樣式，而它現在是
+  // 卡片上真正在按的那些按鈕（跑東西的時候整排會被鎖住）。沒有樣式的話，鎖住跟
+  // 沒鎖住長得一模一樣，學生會一直按。所以只放行這一個。
   assert.match(styles, /^\.is-done\s*\{[^}]*cursor: not-allowed;/m);
-  assert.doesNotMatch(styles, /\.ds-btn[\w-]*:disabled/);
+  assert.doesNotMatch(styles, /\.ds-btn(-primary|-ghost|-sm|-dark|-secondary)?:disabled/);
+  assert.match(styles, /^\.ds-btn-fill:disabled \{[^}]*cursor: not-allowed;/m);
   ok("已完成按鈕用本 repo 的 .is-done 置灰，沒覆寫設計系統 selector");
 
   // 收合是兩種狀態的切換，不做動畫。tab 只有 hover 換色會動——padding / max-height /

@@ -182,6 +182,45 @@ body {
 
 /* 翻頁按鈕釘在畫面兩側、垂直置中。放在卡片裡的話，每張卡高度不同，按鈕就會上下
    跳——學生每翻一張都要重新找它在哪。 */
+/* 灌色按鈕（.ds-btn-fill）在這個嚮導裡要多三件設計系統沒有的事。 */
+
+/* 一、卡片裡的按鈕是一列一列排的，設計系統的預設尺寸太大。 */
+.ds-btn-fill.is-sm {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.ds-btn-fill.is-sm > svg {
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+}
+
+/* 二、主要動作預先灌滿。這顆按鈕本身沒有主次之分（都是空心、滑上去才灌），但
+   「現在該按哪一顆」是這幾輪一直在修的事，不能為了統一風格把它丟掉。 */
+.ds-btn-fill.is-primary {
+  color: var(--color-bg);
+}
+
+.ds-btn-fill.is-primary::before {
+  box-shadow: inset 0 0 0 10em var(--fill-color);
+}
+
+.ds-btn-fill.is-primary:hover {
+  color: var(--color-bg);
+  filter: brightness(1.08);
+}
+
+/* 三、終端頂欄是暗底，橘色外框在那裡看不清楚。 */
+.ds-btn-fill.is-on-dark {
+  --fill-color: var(--term-ink-dim);
+  --fill-ink: var(--term-bg);
+}
+
+.ds-btn-fill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 翻頁按鈕自成一列，排在卡片下方：左邊那顆貼齊卡片左緣，右邊那顆貼齊終端右緣。
    只剩一顆時另一顆的位置不能跑掉，所以「下一張」永遠靠右（margin-left: auto）。 */
 .wizard-nav-row {
