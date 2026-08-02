@@ -548,7 +548,7 @@ function renderWizard() {
         `${checked ? "已勾選" : "取消勾選"}：${item?.text ?? id}`,
         checked ? "succeeded" : "",
       );
-      renderNavigation();
+      // renderWizard 自己會重算鎖狀態，不用在這裡先叫一次。
       renderWizard();
     },
     // 貼對了就自己打勾，貼錯或清空就取消——學生不用再多按一次勾選框。
@@ -563,7 +563,6 @@ function renderWizard() {
         view.addLine("貼上的代碼對上了，這一項算過。", "succeeded");
       }
 
-      renderNavigation();
       renderWizard();
     },
     onNext: () => {
@@ -588,6 +587,10 @@ function renderWizard() {
     },
   });
   renderControls();
+  // 分頁的鎖跟著一起更新。原本只有勾選、換工具、點分頁才會重算，於是「最後一張
+  // 卡驗過了」的當下沒有人去看鎖狀態——下一段其實已經開了，畫面上還鎖著，等學生
+  // 去點才發現。開鎖動畫也因此永遠錯過那一刻（VM 實測）。
+  renderNavigation();
 }
 
 function renderCheckingLoader() {

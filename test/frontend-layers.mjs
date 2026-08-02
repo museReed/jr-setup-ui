@@ -203,6 +203,15 @@ try {
   );
   ok("開鎖動畫只在真的解鎖那一刻放，且尊重減少動態設定");
 
+  // 鎖狀態要跟著每一次重畫一起算。原本只有勾選、換工具、點分頁才重算，於是最後
+  // 一張卡驗過的當下沒有人去看鎖——下一段其實開了，畫面還鎖著，開鎖動畫也就永遠
+  // 錯過那一刻（VM 實測）。
+  assert.match(
+    files.app,
+    /renderControls\(\);\s*\n(\s*\/\/[^\n]*\n)*\s*renderNavigation\(\);\s*\n\}/,
+  );
+  ok("每次重畫卡片都跟著重算分頁的鎖");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
