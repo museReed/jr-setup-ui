@@ -96,9 +96,11 @@ process.stdin.on("end", () => {
   });
   mkdirSync(path.dirname(tabStep.target), { recursive: true });
   writeFileSync(tabStep.target, "watcher");
+  // 標題是文案，會跟著改。這裡要驗的是「檢查結果對不對」，所以照 step 自己的
+  // label 比，不要把當下的字釘進測試。
   assert.deepEqual(await checkTabSync(tabStep, MATERIALS), {
     id: "tab-sync",
-    label: "終端機標題同步",
+    label: tabStep.label,
     status: "warn",
     detail: "檔案在，但 shell function 沒寫進去",
   });
@@ -185,7 +187,7 @@ process.stdin.on("end", () => {
   }
   assert.deepEqual(await checkAgentHooks(agentStep, MATERIALS), {
     id: "claude-namer",
-    label: "自動命名 hook",
+    label: agentStep.label,
     status: "warn",
     detail: "檔案在，但沒註冊——不會被觸發",
   });

@@ -75,7 +75,7 @@
               </div>
               <div class="config-toolbar-status">
                 <span id="config-summary">尚未檢查</span>
-                <button type="button" id="recheck-configs" class="ds-btn ds-btn-ghost ds-btn-sm">重新檢查</button>
+                <button type="button" id="recheck-configs" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>重新檢查</span></button>
               </div>
             </div>
 
@@ -83,7 +83,7 @@
             <div id="env-results" hidden></div>
             <div id="config-results" hidden></div>
             <p id="env-os" hidden>作業系統：檢查中…</p>
-            <button type="button" id="recheck-env" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>重新檢查</button>
+            <button type="button" id="recheck-env" class="ds-btn-fill is-sm" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>重新檢查</span></button>
             <p id="install-status" hidden></p>
             <p id="login-wait-status" hidden></p>
           </section>
@@ -94,7 +94,7 @@
               <span class="ds-term-dot" style="background: var(--amber-4)" aria-hidden="true"></span>
               <span class="ds-term-dot" style="background: var(--teal-4)" aria-hidden="true"></span>
               <span class="terminal-title">現在正在做什麼</span>
-              <button type="button" id="cancel" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>取消</button>
+              <button type="button" id="cancel" class="ds-btn-fill is-sm is-on-dark" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>取消</span></button>
             </div>
             <div id="terminal-lines" class="ds-term-body" role="log" aria-live="polite">
               <div class="ds-term-line ds-term-line--dim">選一張卡開始，這裡會用白話更新進度。</div>
@@ -109,13 +109,13 @@
         <!-- 翻頁按鈕排在卡片下方，左右各自貼齊卡片與終端的外緣。放在卡片裡的話，
              每張卡高度不同，按鈕就會上下跳，學生每翻一張都要重新找它在哪。 -->
         <div class="wizard-nav-row">
-          <button type="button" id="wizard-prev" class="wizard-nav wizard-nav--prev" hidden>
-            <span class="wizard-nav-arrow" aria-hidden="true">←</span>
+          <button type="button" id="wizard-prev" class="ds-btn-fill wizard-nav wizard-nav--prev" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="wizard-nav-label">上一張</span>
           </button>
-          <button type="button" id="wizard-next" class="wizard-nav wizard-nav--next" hidden>
+          <button type="button" id="wizard-next" class="ds-btn-fill is-primary wizard-nav wizard-nav--next" hidden>
             <span class="wizard-nav-label">下一張</span>
-            <span class="wizard-nav-arrow" aria-hidden="true">→</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
       </div>

@@ -152,6 +152,16 @@ try {
   assert.match(cardStyles, /^\.checklist-step \{/m);
   ok("開視窗的按鈕掛在清單裡它負責的那一步旁邊");
 
+  // 登入那一塊也掛回它對應的那一格底下。原本畫在清單外面、按鈕列的下方，學生要
+  // 自己把「未登入」跟下面那顆授權按鈕連起來（VM 實測 Claude Code 那張）。
+  assert.match(
+    files.view,
+    /item\.id === `system-\$\{login\.authCheckId\}`/,
+  );
+  assert(files.view.includes("!loginInChecklist && model.login !== null"));
+  assert.match(cardStyles, /^\.ds-checklist \.login-hints \{/m);
+  ok("登入那一塊掛在「登入狀態」那一格底下");
+
   // 每張卡各有一份終端內容。共用一份的話，換一張卡就看到上一張的驗證訊息——
   // 那些話講的是別的東西，留著只會讓學生以為現在這張已經跑過了。
   for (const name of ["showTranscript", "pinTranscript", "unpinTranscript"]) {
@@ -212,6 +222,17 @@ try {
   );
   ok("每次重畫卡片都跟著重算分頁的鎖");
 
+  // 合併的卡有兩份設定：裝完第一份要接著裝第二份，兩份都好了才輪到驗證。順序反了
+  // 的話，驗的是只裝了一半的狀態。
+  assert.match(
+    files.app,
+    /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n\s*if \(followUp === "auto"\)/,
+  );
+  // 安裝按鈕對著還沒好的那一份，驗證仍然掛在主 check 上。
+  assert(files.app.includes("runConfigCheckAction(rowCheck, action, button, extra)"));
+  assert.match(files.app, /configRowModel\(rowCheck,/);
+  ok("合併卡先把兩份都裝完才驗證，按鈕對著還沒好的那一份");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
@@ -234,19 +255,18 @@ try {
 
   // 小鴨抵達時自己跳出來的那張預覽三秒後自己收掉：它是報喜用的，不是要學生讀完
   // 的東西，留著會蓋住下一張卡的標題。滑鼠移上去就取消倒數——那代表學生在讀。
+  assert.match(files.view, /closePreviewAt = Date\.now\(\) \+ 3000/);
+  assert.match(files.view, /pin\(point, key\);\s*\n\s*autoUnpin\(point\);/);
+  assert(files.view.includes('preview.addEventListener("mouseenter", keepPreviewOpen)'));
+  // 記的是「收掉的時刻」而不是「還剩幾秒」：renderWizard 跑得很勤，每次重畫都會
+  // 清掉計時器再重新釘住——只記剩餘秒數的話那三秒永遠重新開始，預覽再也不會關
+  //（VM 實測：驗證中的卡片，預覽一直掛著）。
+  assert.match(files.view, /const left = closePreviewAt - Date\.now\(\)/);
   assert.match(
     files.view,
-    /autoUnpinTimer = window\.setTimeout\(\(\) => unpin\(point\), 3000\)/,
+    /pin\(point, nextKey\);\s*\n\s*scheduleUnpin\(point\);/,
   );
-  assert.match(
-    files.view,
-    /pin\(point, key\);\s*\n\s*autoUnpin\(point\);/,
-  );
-  assert.match(
-    files.view,
-    /"mouseenter",\s*\n\s*\(\) => window\.clearTimeout\(autoUnpinTimer\)/,
-  );
-  ok("抵達時跳出的預覽三秒後自己收掉，滑上去就不收");
+  ok("抵達時跳出的預覽三秒後自己收掉，重畫也不會把倒數洗掉");
 
   // 翻頁按鈕釘在畫面兩側，不在卡片裡：每張卡高度不同，放在卡片裡按鈕就會上下跳，
   // 學生每翻一張都要重新找它在哪。
@@ -299,10 +319,93 @@ try {
   assert.match(index, /class="ds-term-chrome"/);
   ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
 
+  // .ds-term--typing 這個 component 唯一看得出來的地方就是那顆閃爍游標。我們一直
+  // 掛著那個 class 卻從來沒把游標畫出來，右邊那個終端看起來像截圖不像活的視窗。
+  assert.match(index, /class="ds-term ds-term--typing/);
+  assert(files.view.includes('cursor.className = "ds-term-cursor"'));
+  // 掛著轉圈圈的那一行不放游標——兩個東西同時在動只是雜訊。
+  assert.match(files.view, /last\.querySelector\("\.ds-loader-orbs"\) !== null/);
+  ok("會動的終端補上 .ds-term-cursor，轉圈圈那一行讓位");
+
+  // 新的一行逐字打出來。三條規矩都是為了「動畫不能拖慢真的進度」：排隊超過三行
+  // 就整批印完（驗證一次會噴很多行）、系統設了減少動態就不演、翻回舊卡片的紀錄
+  // 直接印（那是歷史，不是正在發生的事）。
+  assert(files.view.includes("typeInto(line, spec.text)"));
+  assert.match(files.view, /TYPING_CHARS_PER_SECOND = 20/);
+  assert.match(files.view, /if \(typingQueue\.length > 3\) \{\s*\n\s*flushTyping\(\);/);
+  assert.match(
+    files.view,
+    /function typeInto\([^)]*\) \{\s*\n\s*if \(reducedMotion\.matches\)/,
+  );
+  assert.match(
+    files.view,
+    /function paintTranscript\([^)]*\) \{\s*\n(\s*\/\/[^\n]*\n)*\s*flushTyping\(\);/,
+  );
+  ok("終端逐字打字，但排太多、關動畫、翻舊紀錄時直接印完");
+
+  // 轉圈圈那幾行也要打字。字放在自己的 <span> 裡，轉圈圈掛在它旁邊——打字是直接寫
+  // textContent，寫在整行上的話每打一個字就把轉圈圈清掉一次。
+  assert.match(
+    files.view,
+    /const text = document\.createElement\("span"\);[\s\S]*?typeInto\(text, spec\.text\)/,
+  );
+  ok("正在跑的那幾行也逐字打，轉圈圈不會被洗掉");
+
+  // 這張卡還沒完成，「重跑驗證」就是現在該按的那顆。原本看那一列的狀態，於是驗證
+  // 失敗、正在跑、或狀態是別的值時按鈕就退回空心（VM 實測 tab-sync 那張）。
+  assert(files.app.includes("retestPrimary: card.kind !== \"env\" && !cardDone"));
+  ok("卡片沒完成時，重跑驗證一律是主要動作");
+
+  // 卡片裡「照原樣印給你對照」的那幾行也畫成終端，不再是一個裸的 <code>。
+  assert(files.view.includes('term.className = "ds-term card-hints-term"'));
+  assert(!files.view.includes("card-hints-block"));
+  assert.match(cardStyles, /^\.card-hints-term \.ds-term-line \{/m);
+  ok("卡片裡的提示區塊改用設計系統的靜態終端");
+
+  // 會按的按鈕一律用灌色按鈕（.ds-btn-fill），而且每顆前面都有一個 icon。設計系統
+  // 只給了品牌 logo，沒有通用的動作 icon，所以 icon 自己畫、集中在一張表裡。
+  assert(files.view.includes("function fillButton("));
+  assert(files.view.includes("const ICONS = {"));
+  assert(!files.view.includes("ds-btn ds-btn-primary ds-btn-sm"));
+  assert(!files.view.includes("ds-btn-secondary"));
+  // 彈窗那兩顆維持原本的實心／幽靈按鈕：它是一個「二選一」的問句，兩顆並排的
+  // 空心藥丸看起來像同一個選項的兩半（VM 實測）。
+  assert.match(cardIndex, /id="verify-modal-confirm" class="ds-btn ds-btn-primary"/);
+  assert.match(cardIndex, /id="verify-modal-later" class="ds-btn ds-btn-ghost"/);
+
+  for (const id of ["recheck-configs", "recheck-env", "cancel"]) {
+    assert.match(
+      cardIndex,
+      new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),
+      `${id} 要是灌色按鈕而且帶 icon`,
+    );
+  }
+  // 翻頁那兩顆也是灌色按鈕，長相交給 .ds-btn-fill，styles.css 只管它們站在哪。
+  assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill wizard-nav/);
+  assert.match(cardIndex, /id="wizard-next" class="ds-btn-fill is-primary wizard-nav/);
+  assert.doesNotMatch(cardStyles, /^\.wizard-nav \{/m);
+  ok("會按的按鈕都是灌色按鈕，每顆前面都有 icon");
+
+  // 灌滿之後字是白的。設計系統預設把字轉成深色，在橘色底上像沒對比的髒色；而且
+  // 實心的按鈕不需要再畫一圈同色外框，那只會在邊緣多一道深色（VM 實測）。
+  assert.match(cardStyles, /^\.ds-btn-fill \{\s*\n\s*--fill-ink: #fff;/m);
+  assert.match(cardStyles, /^\.ds-btn-fill\.is-primary \{[^}]*border-color: transparent;/m);
+  ok("灌滿之後字是白的，而且不留外框");
+
+  // 換字只換裡面那個 <span>。整顆 textContent 洗掉的話，前面那個 icon 會一起不見。
+  assert(files.view.includes("export function setButtonLabel"));
+  assert(!files.app.includes('button.textContent = "已複製"'));
+  ok("按鈕換字不會把 icon 洗掉");
+
   // 設計系統的 .ds-btn 沒有 disabled 樣式，置灰得靠本 repo 的 .is-done。
   // 契約檔禁止覆寫既有 ds-* selector，所以選擇器裡不能出現 .ds-btn。
+  //
+  // .ds-btn-fill 是另一個元件、另一個缺口：它同樣沒有 disabled 樣式，而它現在是
+  // 卡片上真正在按的那些按鈕（跑東西的時候整排會被鎖住）。沒有樣式的話，鎖住跟
+  // 沒鎖住長得一模一樣，學生會一直按。所以只放行這一個。
   assert.match(styles, /^\.is-done\s*\{[^}]*cursor: not-allowed;/m);
-  assert.doesNotMatch(styles, /\.ds-btn[\w-]*:disabled/);
+  assert.doesNotMatch(styles, /\.ds-btn(-primary|-ghost|-sm|-dark|-secondary)?:disabled/);
+  assert.match(styles, /^\.ds-btn-fill:disabled \{[^}]*cursor: not-allowed;/m);
   ok("已完成按鈕用本 repo 的 .is-done 置灰，沒覆寫設計系統 selector");
 
   // 收合是兩種狀態的切換，不做動畫。tab 只有 hover 換色會動——padding / max-height /

@@ -52,7 +52,17 @@ function runSetSessionName(syncFile) {
   const command = process.platform === "win32" ? "powershell.exe" : "bash";
   const args =
     process.platform === "win32"
-      ? ["-NoProfile", "-File", SET_NAME_PATH, VERIFY_NAME, String(process.pid)]
+      ? [
+          "-NoProfile",
+          // 自己寫出來的腳本不看機器的執行原則臉色：Windows 預設 Restricted 會直接
+          // 擋掉，而這裡只會拿到一個沒說原因的失敗。Bypass 只影響這一個行程。
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          SET_NAME_PATH,
+          VERIFY_NAME,
+          String(process.pid),
+        ]
       : [SET_NAME_PATH, VERIFY_NAME, String(process.pid)];
 
   return new Promise((resolve) => {

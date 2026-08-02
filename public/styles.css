@@ -182,6 +182,56 @@ body {
 
 /* 翻頁按鈕釘在畫面兩側、垂直置中。放在卡片裡的話，每張卡高度不同，按鈕就會上下
    跳——學生每翻一張都要重新找它在哪。 */
+/* 灌色按鈕（.ds-btn-fill）在這個嚮導裡要多幾件設計系統沒有的事。 */
+
+/* 零、灌滿之後字是白的。設計系統預設會把字轉成深色（--slide-bg-deep），在橘色底上
+   看起來像沒對比的髒色。 */
+.ds-btn-fill {
+  --fill-ink: #fff;
+}
+
+/* 一、卡片裡的按鈕是一列一列排的，設計系統的預設尺寸太大。 */
+.ds-btn-fill.is-sm {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.ds-btn-fill.is-sm > svg {
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+}
+
+/* 二、主要動作預先灌滿。這顆按鈕本身沒有主次之分（都是空心、滑上去才灌），但
+   「現在該按哪一顆」是這幾輪一直在修的事，不能為了統一風格把它丟掉。 */
+.ds-btn-fill.is-primary,
+.ds-btn-fill.is-primary:hover {
+  color: var(--fill-ink);
+}
+
+.ds-btn-fill.is-primary {
+  /* 已經是實心的，外框再畫一圈同色的線只會在邊緣多一道深色。 */
+  border-color: transparent;
+}
+
+.ds-btn-fill.is-primary::before {
+  box-shadow: inset 0 0 0 10em var(--fill-color);
+}
+
+.ds-btn-fill.is-primary:hover {
+  filter: brightness(1.08);
+}
+
+/* 三、終端頂欄是暗底，橘色外框在那裡看不清楚。 */
+.ds-btn-fill.is-on-dark {
+  --fill-color: var(--term-ink-dim);
+  --fill-ink: var(--term-bg);
+}
+
+.ds-btn-fill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 翻頁按鈕自成一列，排在卡片下方：左邊那顆貼齊卡片左緣，右邊那顆貼齊終端右緣。
    只剩一顆時另一顆的位置不能跑掉，所以「下一張」永遠靠右（margin-left: auto）。 */
 .wizard-nav-row {
@@ -190,45 +240,14 @@ body {
   margin-top: var(--space-5);
 }
 
-.wizard-nav {
-  /* 煙火是絕對定位的，要有這個才會掛在按鈕頭上而不是整頁的角落。 */
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--r-pill);
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-soft);
-  box-shadow: var(--shadow-sm);
-  color: var(--color-text);
-  font-family: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.wizard-nav:hover {
-  background: var(--color-bg-inset);
-}
-
+/* 翻頁這兩顆也是灌色按鈕，長相由 .ds-btn-fill 決定。這裡只管它們站在哪。
+   往前走是主要動作（is-primary，預先灌滿）；回頭看不是。 */
 .wizard-nav--prev {
   margin-right: auto;
 }
 
-/* 往前走是主要動作，橘色；回頭看不是。 */
 .wizard-nav--next {
   margin-left: auto;
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-  color: var(--color-bg);
-}
-
-.wizard-nav--next:hover {
-  background: var(--color-accent-hover);
 }
 
 /* 剛解鎖：晃一下 + 頭上一朵煙火（跟分頁解鎖用同一種慶祝）。 */
@@ -472,6 +491,11 @@ body {
   margin: 0;
 }
 
+/* 登入那一塊畫在清單裡「登入狀態」那一格底下，要跟項目對齊、不要貼著暗底的邊緣。 */
+.ds-checklist .login-hints {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .login-hints,
 #login-code-row {
   display: flex;
@@ -552,10 +576,15 @@ body {
   width: 100%;
 }
 
-/* 兩題照原樣印出來，換行要保留，寬度不夠時橫向捲而不是折行——折了就對不上畫面。 */
-.card-hints-block {
-  white-space: pre;
+/* 照原樣印出來的那幾行畫成設計系統的靜態終端，跟右邊那個會動的終端同一套視覺。
+   換行要保留，寬度不夠時橫向捲而不是折行——折了就對不上學生畫面上看到的樣子。 */
+/* 底色、內距、字色都由 .ds-term 自己決定，這裡只補「不要折行」。 */
+.card-hints-term .ds-term-body {
   overflow-x: auto;
+}
+
+.card-hints-term .ds-term-line {
+  white-space: pre;
 }
 
 .paste-proof-hint {

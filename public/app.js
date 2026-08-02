@@ -9,6 +9,7 @@ import {
   PLAYWRIGHT_SHOT_AGENTS,
   flattenCheckCards,
   groupChecks,
+  nextInstallStep,
   matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
@@ -20,6 +21,8 @@ import {
   LOADER_MODIFIERS,
   agentNameFor,
   behaviorFallbackState,
+  behaviorRuleLine,
+  behaviorTally,
   cardIsComplete,
   completedCardIds,
   cardResultItems,
@@ -417,11 +420,15 @@ function renderWizard() {
     completedIds,
     currentIndex,
   );
+  // 合併的卡有兩份設定。按鈕要對著「還沒好的那一份」——兩份都好了才回到主 check，
+  // 因為驗證掛在它身上。
+  const rowCheck =
+    cardChecks.find((candidate) => candidate.status !== "ok") ?? card.check;
   let row =
     card.kind === "env"
       ? envCardRowModel(card, state.installedSteps)
       : card.kind === "config"
-        ? configRowModel(card.check, verified.has(card.checkId), {
+        ? configRowModel(rowCheck, verified.has(card.checkId), {
             availableActions: state.availableActions,
             installed: state.installedSteps.has(card.checkId),
             verificationAttempted: state.verificationAttempted.has(
@@ -444,8 +451,9 @@ function renderWizard() {
     (state.currentEnvAction?.startsWith("install-")
       ? state.currentEnvAction.slice("install-".length)
       : null);
+  const cardDone = cardIsComplete(card, verified, state.manualCheckedIds);
   const status = cardStatusModel({
-    completed: cardIsComplete(card, verified, state.manualCheckedIds),
+    completed: cardDone,
     running:
       state.runInProgress &&
       (card.kind === "setup" ||
@@ -517,11 +525,15 @@ function renderWizard() {
     // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
     retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
-    retestPrimary: card.kind !== "env" && row?.status === "unverified",
+    // 這張卡還沒完成，「重跑驗證」就是現在該按的那顆——不繞過「待驗證」那個中間
+    // 狀態去判斷。原本看的是那一列的狀態，於是驗證失敗、正在跑、或列的狀態是別的
+    // 值時，按鈕就退回空心，學生看不出該按哪顆（VM 實測 tab-sync 那張）。
+    retestPrimary: card.kind !== "env" && !cardDone,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") run(action, undefined, button);
-      else runConfigCheckAction(card.check, action, button, extra);
+      // 安裝按鈕對著還沒好的那一份（rowCheck），驗證仍然掛在主 check 上。
+      else runConfigCheckAction(rowCheck, action, button, extra);
     },
     onRetest: () => {
       if (card.kind === "env") {
@@ -543,7 +555,7 @@ function renderWizard() {
     onCopyLoginCode: async (code, button) => {
       try {
         await navigator.clipboard.writeText(code);
-        button.textContent = "已複製";
+        view.setButtonLabel(button, "已複製");
       } catch (error) {
         view.addLine(`無法複製：${error.message}`, "failed");
       }
@@ -1135,6 +1147,19 @@ async function handleDone(
   );
   resetRun();
 
+  // 合併的卡有兩份設定。裝完第一份先接著裝第二份，兩份都好了才輪到驗證——不然驗的
+  // 是只裝了一半的狀態。
+  const sibling =
+    action === "install-config-step"
+      ? nextInstallStep(step, state.lastChecks)
+      : null;
+
+  if (sibling !== null) {
+    view.addLine(`接著裝同一張卡的另一份：${sibling.label}`, "agent-status");
+    runConfigCheckAction(sibling, "install-config-step");
+    return;
+  }
+
   if (followUp === "auto") {
     run(
       installedCheck.verifyAction,
@@ -1232,6 +1257,8 @@ async function run(action, promptText, button = null, options) {
       LOGIN_CHECK_IDS[action] ??
       (action.startsWith("install-") ? action.slice("install-".length) : null),
     rawOutput: [],
+    // 行為驗證逐條判定的結果，收齊了才數得出「五條中過幾條」。
+    rules: [],
     explanation: null,
   };
 
@@ -1320,6 +1347,20 @@ async function run(action, promptText, button = null, options) {
 
       if (nextModifier !== null) {
         renderRunLoader(nextModifier);
+      }
+
+      // 逐條判定的結果直接印在終端上：驗了哪幾條、哪幾條過。只留一句「驗證成功」
+      // 的話，學生不知道驗了什麼，也不知道是不是全過。
+      const ruleLine = behaviorRuleLine(jrEvent);
+
+      if (ruleLine !== null) {
+        runContext.rules.push(jrEvent);
+        view.addTerminalLines([ruleLine]);
+        return;
+      }
+
+      if (jrEvent.kind === "result" && runContext.rules.length > 0) {
+        view.addTerminalLines([behaviorTally(runContext.rules)]);
       }
     });
 

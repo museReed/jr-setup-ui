@@ -215,17 +215,21 @@ export const VERIFICATION = {
     terminal: { case: "naming", agent: "codex" },
     eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
   },
-  // codex-monitor 沒有行為驗證：hook 檔案與註冊對了就是對了。
+  // codex-monitor 的行為驗證加回來了（Reed 決定），跟 claude-monitor 對稱。
   //
-  // 它原本跑一次真的 codex（假裝 context 只有 5000，逼 hook 跳警告，再叫模型把原文
-  // 抄進檔案比對）。拿掉的理由是重疊：這一格唯一抓得到的失敗是「hook 註冊了但沒
-  // 真的跑」，而那個失敗 codex-namer 一定也會踩到——整組 hook 不跑的話（例如信任
-  // 提示沒接受），命名那格先失敗。同一個失敗模式驗兩次，慢一分多鐘、多燒一筆 API。
+  // 它曾經被拿掉，理由記在這裡免得又被同一條路說服：一是重疊——這一格唯一抓得到的
+  // 失敗是「hook 註冊了但沒真的跑」，而那個失敗 codex-namer 一定也會踩到；二是它兩
+  // 次 VM 實測都誤判。
   //
-  // 而且它自己很會誤判：兩次 VM 實測都是「hook 明明跳了卻判失敗」（一次是測試開關
-  // 的環境變數名字兩邊不一樣，一次是 codex 的句子裡根本沒有要比對的關鍵字）。
+  // 但那兩次誤判的原因後來都查出來也修好了：一次是測試開關的環境變數名字兩邊不一樣
+  //（CODEX_TEST_MAX_CONTEXT_WINDOW），一次是比對的關鍵字對不上 codex 測試模式下的
+  // 句子（改成比對 [context-monitor]）。兩者都由 test/verify-in-terminal.mjs 釘住。
   //
-  // 判準見上面那段：留哪一列不是看誰重要，是看誰會靜默失效。
+  // 代價仍在：多跑一分多鐘、多一筆 API。換到的是「兩邊卡片一致」——學生不會看到
+  // Claude 那張要驗、Codex 這張不用，然後懷疑是不是壞了（Reed 實測就是這樣問的）。
+  //
+  // 如果它又開始誤判，先查上面那兩個對不上，不要直接再拿掉一次。
+  "codex-monitor": { terminal: { case: "context", agent: "codex" } },
   //
   // 沒有 behavior 也沒有 terminal 的列不寫進這張表（白名單也是），結構對了就直接
   // 綠燈——留一個空物件會讓它仍被當成「要按 verify-in-terminal」，參數卻是空的。

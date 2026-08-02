@@ -26,6 +26,22 @@ assert(
 );
 console.log("ok - 終端啟動腳本用陣列傳參數，不靠引號");
 
+// 我們自己寫出來的臨時腳本，不該看機器的執行原則臉色。
+//
+// Windows 預設是 Restricted：新開的視窗一跑就紅字「running scripts is disabled」，
+// 而嚮導這邊看到的 exit code 還是 0——因為 cmd start 一開完就回來了（VM 實測，學生
+// 按「開啟 Claude Code」直接撞到）。Restricted 連 profile 都不載入，wrapper 就住在
+// 裡面，所以標題同步那一格等於根本沒在驗。
+//
+// Bypass 只影響那一個行程，不動機器設定。機器本身的執行原則另有一張卡在管。
+for (const spawnSite of [
+  /"powershell\.exe",\s*\n\s*"-NoExit",[\s\S]*?"-ExecutionPolicy",\s*\n\s*"Bypass",/,
+  /Start-Process powershell\.exe -ArgumentList @\('-NoProfile','-ExecutionPolicy','Bypass','-File'/,
+]) {
+  assert.match(source, spawnSite);
+}
+console.log("ok - 自己 spawn 的 PowerShell 腳本一律帶 Bypass，不依賴機器設定");
+
 // 兩支監控腳本的測試開關名字不一樣，設錯的話門檻沒降下來，hook 永遠不會出聲。
 assert(
   source.includes("CODEX_TEST_MAX_CONTEXT_WINDOW"),
@@ -86,6 +102,19 @@ for (const [step, spec] of Object.entries(VERIFICATION)) {
   );
 }
 console.log("ok - 每一列的終端驗證情境，腳本與白名單兩邊都認得");
+
+// 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
+// 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
+//（Reed 實測就是這樣問的）。當初誤判的兩個原因（測試開關名字、比對關鍵字）都由上面
+// 那兩條測試釘住了，所以加回來。
+for (const step of ["claude-monitor", "codex-monitor"]) {
+  assert.deepEqual(
+    VERIFICATION[step]?.terminal,
+    { case: "context", agent: step.startsWith("claude") ? "claude" : "codex" },
+    `${step} 少了行為驗證——兩邊的記憶體提醒要對稱`,
+  );
+}
+console.log("ok - Claude 與 Codex 的記憶體提醒都要真的跑一次");
 
 // handoff 那格靠「必讀檔案」判定：那四個字是 SKILL.md 規定的章節名，模型沒讀到
 // skill 不會自己想到。SKILL.md 改了章節名而這裡沒跟著改，判定就永遠不會中。
