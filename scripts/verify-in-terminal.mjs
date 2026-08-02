@@ -28,7 +28,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { materialsDir } from "../src/paths.js";
+import { materialsDir, verifyShotPath } from "../src/paths.js";
 
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
@@ -71,6 +71,28 @@ const CASES = {
     prompt: () => "",
     expect: () => null,
     watchFor: "分頁標題變成「🔍 標題同步測試」，五秒後自己還原",
+  },
+  // 這兩格不驗任何東西，只負責「幫學生把終端開起來」。
+  //
+  // 全螢幕那個方框是 Claude Code 自己的一次性推銷，程式沒有辦法代按——但至少可以
+  // 不要叫學生自己去找終端、自己打 claude。expect 是 null：副產物在嚮導那邊，學生
+  // 圈選代碼貼回輸入框才算數。
+  "fullscreen-open": {
+    label: "全螢幕模式",
+    env: () => ({}),
+    prompt: () => "",
+    expect: () => null,
+    watchFor: "跳出「Try the new fullscreen renderer?」，按 1. Yes, try it",
+  },
+  // 這一句要跟嚮導卡片上顯示的那句一字不差，否則印出來的東西對不上學生要貼回去的
+  // 欄位。兩邊的字串由 test/fullscreen-proof.mjs 比對，改一邊會紅。
+  "fullscreen-proof": {
+    label: "全螢幕模式",
+    env: () => ({}),
+    prompt: () =>
+      "請原樣印出這一行，不要加任何說明：fullscreen-copy-ok-7f3a91",
+    expect: () => null,
+    watchFor: "印出代碼那一行，用滑鼠圈選它，再貼回嚮導的欄位",
   },
   chained: {
     label: "Shell 不串接",
@@ -161,7 +183,10 @@ const CASES = {
   demo: {
     label: "一條龍 demo",
     env: () => ({}),
-    timeoutMs: 900_000,
+    // 30 分鐘。實測 15 分鐘不夠：這一格是整條 demo——問四題、生一份完整網頁、再產
+    // 出自走版，中間還夾著學生自己回答問題的時間。逾時判失敗的代價很高：東西可能
+    // 只差最後一步就好了，學生卻看到紅字。
+    timeoutMs: 1_800_000,
     needsAnswer: true,
     // ⚠️ 第 3 步的路徑在 prompt 裡寫的是上游 repo 的位置（installer/demo/），學生
     //    機器上沒有那個 repo——不覆蓋掉的話每個人都會卡在那裡先 find 一輪（VM 實測，
@@ -174,8 +199,12 @@ const CASES = {
         (agent === "codex" ? "$structured-questions " : "") +
         `請讀 ${path.join(demoDir, `demo-prompt-${agent}.md`)}，照裡面的步驟執行這條一條龍 demo。` +
         "第 3 步不要用 prompt 裡寫的那支腳本（那是另一個 repo 的路徑，這台機器上沒有），" +
-        `改用這支自走版：python3 ${path.join(demoDir, "live-preview-self", "self_play.py")} ~/demo-page.html，` +
+        // Windows 上叫 python3 會撞到 Store 的殼（python.org 的安裝檔不產生
+        // python3.exe），要用 py -3 那個啟動器。
+        `改用這支自走版：${process.platform === "win32" ? "py -3" : "python3"} ${path.join(demoDir, "live-preview-self", "self_play.py")} ~/demo-page.html，` +
         "它只用標準函式庫、不需要安裝任何東西，跑完把產出的檔案用瀏覽器打開就會自己演。" +
+        "第 1、2 步不要開瀏覽器、也不要用 Playwright 預覽或截圖——只有第 3 步最後" +
+        "那次才開，那一次是要給人看的。" +
         "先執行第 1 步。"
       );
     },
@@ -185,6 +214,32 @@ const CASES = {
     }),
     watchFor:
       "跳出選項讓你選（網頁類型 / 主色調 / 風格 / 字體），回答完會生成網頁，最後逐字打 code 現場長出來",
+  },
+  // Playwright MCP 這格的證據力比其他格都高：要求存一張截圖。
+  //
+  // 頁面標題那種東西模型自己就答得出來（"Google" 誰不知道），寫進檔案只證明它會
+  // 打字。截圖檔不一樣——那個檔案要存在，就得真的有一顆瀏覽器被開起來、真的導到
+  // 那個網址、真的截了圖。MCP 沒接上就生不出來。
+  "mcp-playwright": {
+    label: "第三方：Playwright",
+    env: () => ({}),
+    // 兩邊的機制不一樣：Claude 走 MCP server，Codex 走 openai/skills 的 playwright
+    // skill。講錯名字模型會去找一個不存在的東西，然後回報「找不到」。
+    // 網址挑 Pinterest：截出來是一整片圖牆，學生一眼就知道「這台機器真的去抓了
+    // 網頁回來」。Google 首頁截出來只有一個搜尋框，跟一張空白圖分不出差別。
+    prompt: ({ agent }) =>
+      (agent === "codex"
+        ? "請用 playwright skill 開啟 https://www.pinterest.com ，"
+        : "請用 Playwright MCP 開啟 https://www.pinterest.com ，") +
+      "等頁面圖片載入完成後（可以多等幾秒）" +
+      `把整頁截圖存成 ${verifyShotPath(agent)}。` +
+      "只做這件事，不要問我問題，存好就結束。",
+    expect: ({ agent }) => ({ kind: "file", file: verifyShotPath(agent) }),
+    // 15 分鐘，跟 demo 同一檔。實測 codex 那次跑了 4m29s、成功寫出檔案，卻被預設
+    // 的 4 分鐘判成失敗——第一次跑要下載瀏覽器，四分鐘完全不夠。判失敗的代價很高：
+    // 東西明明是好的，學生卻被推去查一個不存在的問題。
+    timeoutMs: 900_000,
+    watchFor: "跳出一個瀏覽器視窗、自己連到 Pinterest，畫面長出一整片圖",
   },
   "skill-questions": {
     label: "Skill：結構化提問",

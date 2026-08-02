@@ -1,6 +1,11 @@
 你是我的 Codex workshop 助教。請完成下面這條「一條龍 demo」，證明剛裝的 skill 真的能用。
 全程用繁體中文、技術名詞保留英文。遇到任何多選項決策，一律用 `$structured-questions`，不要自己替我決定。
 
+⚠️ **第 1、2 步全程不要打開瀏覽器**，也不要用 Playwright 預覽、截圖或驗證你生成的網頁。
+整條 demo 只有第 3 步最後那次才開瀏覽器——那一次是要給我看「左邊逐字打 code、右邊即時
+長出網頁」。中途每開一次都是多花好幾分鐘，而且會把那個真正要看的畫面淹掉。
+要確認 HTML 對不對，用讀檔案的方式看，不要用瀏覽器。
+
 ## 步驟
 
 1. **問配色** — 用 `$structured-questions` 問我這個示範網頁想要的：
@@ -19,7 +24,8 @@
    ```bash
    python3 <嚮導路徑>/materials/skills/demo/live-preview-self/self_play.py ~/demo-page.html
    ```
-   - 這支只用 Python 標準函式庫，不需要安裝任何東西（`python3` 叫不動時改用 `py` 或 `python`）
+   - 這支只用 Python 標準函式庫，不需要安裝任何東西
+   - **Windows 上用 `py -3`**：那裡沒有 `python3.exe`，那個名字會撞到 Windows Store 的殼——它跑得起來、跳出商店頁面，然後失敗
    - 找不到路徑就先定位：`find ~ -name self_play.py -path '*live-preview-self*' 2>/dev/null`
    - 跑完把它印出來的那份 `*-self-play.html` 用瀏覽器打開，就會開始演（右上角有「重播」）
    - 想調速度：`CSS_SECONDS=15 BODY_SECONDS=70 python3 .../self_play.py ~/demo-page.html`

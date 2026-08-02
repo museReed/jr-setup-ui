@@ -4,7 +4,12 @@ import * as api from "./api.js";
 import * as view from "./view.js";
 import {
   CONFIG_LANGUAGES,
+  CARD_HINTS,
   CONFIG_TOOL_CHOICES,
+  PLAYWRIGHT_SHOT_AGENTS,
+  flattenCheckCards,
+  groupChecks,
+  matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
 } from "./model.js";
@@ -15,19 +20,52 @@ import {
   LOADER_MODIFIERS,
   agentNameFor,
   behaviorFallbackState,
+  cardIsComplete,
+  cardResultItems,
+  cardResultText,
+  cardStatusModel,
+  checklistGroups,
+  configRowModel,
   configSummary,
+  currentCardIndex,
   envButtonState,
+  envCardRowModel,
   extractLoginHints,
   guidanceModel,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
   loaderModifier,
+  loginCardModel,
   loginWaitStep,
   rowRunOptions,
   runControlsState,
   runOutcome,
+  sectionManualItems,
+  sectionStatus,
+  systemRowChecked,
+  milestoneModels,
+  nextCardUnlocked,
+  terminalOutcomeLines,
+  toggleToolSelection,
+  toolSelectionValue,
 } from "./viewmodel.js";
+
+// 工具與語言的選擇存在伺服器的 state.json，不是 localStorage。
+//
+// localStorage 綁在 origin 上，而這個伺服器每次啟動都換 port——重開一次 origin 就
+// 變了，存的東西等於不見。學生勾了 Codex、重開嚮導就默默退回只有 Claude，卡片少
+// 一半也沒有任何提示（實測踩到）。
+async function saveSelection() {
+  try {
+    await api.saveSelection({
+      tools: state.selectedTools,
+      lang: state.selectedLanguage,
+    });
+  } catch {
+    // 存不進去就算了，這一輪還是照常運作。
+  }
+}
 
 const state = {
   runInProgress: false,
@@ -45,11 +83,29 @@ const state = {
   loginWait: null,
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
-  verificationPrompts: new Set(),
+  behaviorVerifiedSteps: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
   availableActions: new Set(["diagnose-naming-block"]),
+  envChecks: [],
+  activeSectionId: "env",
+  viewingCardIndex: {},
+  setupCompleted: false,
+  installedSteps: new Set(),
+  verificationAttempted: new Set(),
+  failedVerificationSteps: new Set(),
+  failedSteps: new Set(),
+  resultTexts: new Map(),
+  deferredVerificationSteps: new Set(),
+  manualCheckedIds: new Set(),
+  pasteProofValue: "",
+  // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
+  verifyShotVersion: 0,
+  selectedTools: ["claude"],
+  selectedLanguage: "zh-TW",
+  pendingModalCheck: null,
+  loginHints: { url: null, code: null },
 };
 
 async function rememberVerifiedStep(step) {
@@ -62,13 +118,369 @@ async function rememberVerifiedStep(step) {
   }
 }
 
+// 人工勾選也存伺服器。以前只存在瀏覽器記憶體，重整一次全部退回未勾——「全螢幕
+// 模式」那張卡整張都是人工項目，重整就等於整張重做。
+function setManualChecked(id, checked) {
+  if (checked) {
+    state.manualCheckedIds.add(id);
+    state.completedGateIds.add(id);
+  } else {
+    state.manualCheckedIds.delete(id);
+    state.completedGateIds.delete(id);
+  }
+
+  api
+    .saveManualChecked([...state.manualCheckedIds])
+    .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
+}
+
+// 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
+// 「驗證成功」，不能等學生勾完眼睛才一起變。
+async function rememberBehaviorVerified(step) {
+  state.behaviorVerifiedSteps.add(step);
+
+  try {
+    await api.saveBehaviorVerified(step);
+  } catch (error) {
+    view.addLine(`無法保存驗證進度：${error.message}`, "failed");
+  }
+}
+
 async function loadVerifiedSteps() {
   try {
     const result = await api.fetchState();
     state.verifiedSteps = new Set(result.verified);
+    state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
+    state.manualCheckedIds = new Set(result.manual ?? []);
+
+    for (const id of state.manualCheckedIds) {
+      state.completedGateIds.add(id);
+    }
+
+    // 伺服器記著上次選的工具與語言，開頁時要套回來。
+    if (result.selection?.tools?.length > 0) {
+      state.selectedTools = result.selection.tools;
+    }
+
+    if (CONFIG_LANGUAGES.includes(result.selection?.lang)) {
+      state.selectedLanguage = result.selection.lang;
+    }
   } catch {
     state.verifiedSteps = new Set();
+    state.behaviorVerifiedSteps = new Set();
+    state.manualCheckedIds = new Set();
   }
+}
+
+function effectiveVerifiedSteps() {
+  const verified = new Set(state.verifiedSteps);
+
+  for (const id of state.manualCheckedIds) {
+    if (id.startsWith("eye-")) {
+      verified.add(id.slice("eye-".length));
+    }
+  }
+
+  return verified;
+}
+
+function allCardSections() {
+  return flattenCheckCards(groupChecks(state.lastChecks), state.envChecks).map(
+    (section) => ({
+      ...section,
+      cards: section.cards.map((card) =>
+        card.kind === "setup"
+          ? { ...card, completed: state.setupCompleted }
+          : card,
+      ),
+    }),
+  );
+}
+
+function runConfigCheckAction(check, action, button, extra) {
+  run(
+    action,
+    undefined,
+    button,
+    rowRunOptions({
+      step: check.id,
+      lang: state.selectedLanguage,
+      tools: toolSelectionValue(state.selectedTools),
+      extra,
+    }),
+  );
+}
+
+function renderWizard() {
+  const section = SECTIONS.find(({ id }) => id === state.activeSectionId);
+  const cardSection = allCardSections().find(
+    ({ sectionId }) => sectionId === state.activeSectionId,
+  );
+
+  if (section === undefined || cardSection === undefined || cardSection.cards.length === 0) {
+    return;
+  }
+
+  const verified = effectiveVerifiedSteps();
+  const derivedIndex = currentCardIndex(cardSection.cards, verified, state.manualCheckedIds);
+  const requestedIndex = state.viewingCardIndex[state.activeSectionId];
+  const currentIndex =
+    requestedIndex === undefined
+      ? derivedIndex
+      : Math.min(requestedIndex, cardSection.cards.length - 1);
+
+  // 一到這張卡就釘住，之後只有學生按「下一張」才會動。
+  //
+  // 原本每次 render 都重算 derivedIndex（＝第一張沒完成的卡），於是驗證一過，卡片
+  // 自己就跳走了——學生正在看終端印出來的「驗證成功」，眼角瞄到畫面換了一張，不
+  // 知道剛才那張到底過了沒，也來不及看那句話寫什麼（VM 實測）。
+  //
+  // 釘的是「進來時算出來的位置」而不是固定值：重新整理或換段落時仍然會落在第一張
+  // 沒做完的卡上，只是到了之後不再自己移動。
+  if (requestedIndex === undefined) {
+    state.viewingCardIndex[state.activeSectionId] = derivedIndex;
+  }
+  const card = cardSection.cards[currentIndex];
+  const manualItems = sectionManualItems(
+    section.id,
+    currentIndex,
+    cardSection.cards.length,
+    toolSelectionValue(state.selectedTools),
+    card.checkId,
+  );
+  const cardChecks = card.checks ?? (card.check == null ? [] : [card.check]);
+  // 清單的勾要跟卡片右上角的狀態徽章講同一件事。
+  //
+  // 原本 config 卡只看 verified.has()，於是「不需要行為驗證」的項目（裝好就算數，
+  // 沒有 verifyAction 也沒有 eyeCheck）永遠不會被勾——畫面變成徽章寫「已完成」、
+  // 清單卻是 0/1（VM 實測 CLAUDE.md 那張）。
+  //
+  // 改成用 configRowModel 的最終狀態判斷：它已經把「裝好了但還沒驗行為」算成
+  // unverified，所以不會放過真的該驗的項目。
+  //
+  // 再加一條：程式那半驗過的列，第一格立刻打勾，不等整列變綠。有眼睛勾選框的列
+  // 本來就不會 status === "ok"（那要等學生勾），但清單第一格講的是「程式驗過了
+  // 嗎」——終端都印「驗證成功」了還空著，學生只會以為驗證沒生效（Reed 實測）。
+  const verifiedCheckIds = new Set(
+    cardChecks
+      .filter((check) =>
+        card.kind === "env"
+          ? check.status === "ok"
+          : systemRowChecked(check, {
+              rowVerified: verified.has(check.id),
+              behaviorVerified: state.behaviorVerifiedSteps.has(check.id),
+            }),
+      )
+      .map((check) => check.id),
+  );
+  const groups = checklistGroups({
+    checks: cardChecks,
+    verifiedCheckIds,
+    verificationAttempted: state.verificationAttempted.has(card.checkId),
+    verificationFailed: state.failedVerificationSteps.has(card.checkId),
+    manualItems,
+    checkedManualIds: state.manualCheckedIds,
+    resultTexts: state.resultTexts,
+  });
+  const installChecks = cardChecks.filter(
+    (check) => !check.id.endsWith("-auth"),
+  );
+  // installedSteps 只是「這一輪按過安裝」的樂觀記憶，不能凌駕伺服器回來的權威狀態。
+  //
+  // 原本 installedSteps.has() 擺在最前面當 OR，於是只要按過一次安裝，按鈕就永久
+  // 置灰——即使安裝其實失敗、伺服器回的還是 missing。學生看到一顆灰掉的「✅ 安裝」
+  // 和一個裝不起來的項目，連重試的機會都沒有（VM 實測：gh 的 status 是 missing，
+  // 按鈕卻是灰的）。這是這個 repo 踩過很多次的假綠燈。
+  //
+  // 規則改成：權威狀態說 ok 才算裝好；樂觀記憶只在權威狀態還沒否定它時有效。
+  const installed =
+    card.kind === "setup" ||
+    installChecks.every(
+      (check) =>
+        check.status === "ok" ||
+        (card.kind === "config" && check.noInstall === true) ||
+        (state.installedSteps.has(check.id) && check.status !== "missing"),
+    );
+  const verificationRequired =
+    card.check?.verifyAction != null || card.check?.eyeCheck != null;
+  const verificationAttempted =
+    !verificationRequired ||
+    verified.has(card.checkId) ||
+    state.verificationAttempted.has(card.checkId);
+  const nextUnlocked =
+    card.kind === "setup"
+      ? true
+      : card.kind === "env"
+        ? cardIsComplete(card, verified, state.manualCheckedIds) &&
+          groups.manual.every((item) => item.checked)
+        : nextCardUnlocked({
+          installed,
+          verificationRequired,
+          verificationAttempted,
+          manualItems: groups.manual,
+        });
+  const completedCardIds = new Set(
+    cardSection.cards
+      .filter((candidate) => {
+        if (candidate.kind === "setup") return candidate.completed === true;
+        if (cardIsComplete(candidate, verified, state.manualCheckedIds)) return true;
+        if (candidate.checkId === card.checkId) return nextUnlocked;
+        return state.verificationAttempted.has(candidate.checkId) &&
+          state.installedSteps.has(candidate.checkId);
+      })
+      .map(({ checkId }) => checkId),
+  );
+  const milestones = milestoneModels(
+    cardSection.cards,
+    completedCardIds,
+    currentIndex,
+  );
+  let row =
+    card.kind === "env"
+      ? envCardRowModel(card, state.installedSteps)
+      : card.kind === "config"
+        ? configRowModel(card.check, verified.has(card.checkId), {
+            availableActions: state.availableActions,
+            installed: state.installedSteps.has(card.checkId),
+            verificationAttempted: state.verificationAttempted.has(
+              card.checkId,
+            ),
+            verificationFailed: state.failedVerificationSteps.has(card.checkId),
+            verificationDeferred: state.deferredVerificationSteps.has(card.checkId),
+          })
+        : null;
+  if (row !== null) {
+    row = {
+      ...row,
+      detail: cardResultText(card, state.resultTexts),
+      results: cardResultItems(card, state.resultTexts),
+    };
+  }
+  const activeCheckId =
+    state.activeRunStep ??
+    LOGIN_CHECK_IDS[state.currentEnvAction] ??
+    (state.currentEnvAction?.startsWith("install-")
+      ? state.currentEnvAction.slice("install-".length)
+      : null);
+  const status = cardStatusModel({
+    completed: cardIsComplete(card, verified, state.manualCheckedIds),
+    running:
+      state.runInProgress &&
+      (card.kind === "setup" ||
+        cardChecks.some((check) => check.id === activeCheckId)),
+    failed: cardChecks.some(
+      (check) =>
+        state.failedSteps.has(check.id) ||
+        state.failedVerificationSteps.has(check.id),
+    ),
+    installed,
+  });
+  const login = loginCardModel({
+    checks: cardChecks,
+    hints: state.loginHints,
+    acceptsInput: state.acceptsInput,
+    runInProgress: state.runInProgress,
+    runId: state.runId,
+  });
+  const cardModel = {
+    card,
+    row,
+    status,
+    login,
+    checklist: groups,
+    showChecklist: card.kind !== "setup",
+    hints: CARD_HINTS[card.checkId] ?? null,
+    // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
+    // 新的那張，瀏覽器不會因為網址一樣就拿舊的。
+    verifyShot: PLAYWRIGHT_SHOT_AGENTS[card.checkId]
+      ? api.urlWithToken(
+          `/verify-shot?agent=${PLAYWRIGHT_SHOT_AGENTS[card.checkId]}&v=${state.verifyShotVersion}`,
+        )
+      : null,
+    pasteProof:
+      card.checkId === "claude"
+        ? {
+            value: state.pasteProofValue,
+            matched: matchesFullscreenProof(state.pasteProofValue),
+            onInput: (value) => cardModel.onPasteProofInput(value),
+            onOpen: (testCase) =>
+              run("verify-in-terminal", undefined, undefined, {
+                case: testCase,
+                agent: "claude",
+              }),
+          }
+        : null,
+    showRetest: card.kind === "env" || row?.showRetest === true,
+    showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
+    nextUnlocked,
+    onActionClick: (action, button, step, extra) => {
+      if (card.kind === "env") run(action, undefined, button);
+      else runConfigCheckAction(card.check, action, button, extra);
+    },
+    onRetest: () => {
+      if (card.kind === "env") {
+        checkEnvironment();
+        return;
+      }
+      runConfigCheckAction(
+        card.check,
+        card.check.verifyAction,
+        null,
+        card.check.verifyOptions,
+      );
+    },
+    onCopyLoginCode: async (code, button) => {
+      try {
+        await navigator.clipboard.writeText(code);
+        button.textContent = "已複製";
+      } catch (error) {
+        view.addLine(`無法複製：${error.message}`, "failed");
+      }
+    },
+    onLoginInput: async (text, input) => {
+      if (state.runId === null || !state.acceptsInput) return;
+      try {
+        await api.sendInput(state.runId, text);
+        view.addLine(`> ${text}`, "agent-status");
+        input.value = "";
+      } catch (error) {
+        view.addLine(`無法送出：${error.message}`, "failed");
+      }
+    },
+    onManualToggle: (id, checked) => {
+      setManualChecked(id, checked);
+      renderNavigation();
+      renderWizard();
+    },
+    // 貼對了就自己打勾，貼錯或清空就取消——學生不用再多按一次勾選框。
+    onPasteProofInput: (value) => {
+      state.pasteProofValue = value;
+      setManualChecked("fullscreen-copy", matchesFullscreenProof(value));
+      renderNavigation();
+      renderWizard();
+    },
+    onNext: () => {
+      if (card.kind === "setup") state.setupCompleted = true;
+      state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
+      renderWizard();
+    },
+  };
+  view.renderWizard({
+    section,
+    sectionStatus: sectionStatus(
+      cardSection.cards,
+      completedCardIds,
+      currentIndex,
+    ),
+    milestones,
+    cardModel,
+    onMilestoneSelect: (index) => {
+      if (!milestones[index].unlocked) return;
+      state.viewingCardIndex[state.activeSectionId] = index;
+      renderWizard();
+    },
+  });
+  renderControls();
 }
 
 function renderCheckingLoader() {
@@ -87,12 +499,60 @@ function renderCheckingLoader() {
   }
 }
 
+// 這一段裡還沒完成的卡，帶著名稱與第幾張——擋人的時候要指名，不能只說「這段沒
+// 做完」（學生站在最後一張、畫面顯示已完成，那句話等於叫他自己一張張往回翻）。
+function incompleteCards(cards, verified) {
+  return cards
+    .map((card, index) => ({ card, index }))
+    .filter(({ card }) =>
+      card.kind === "setup"
+        ? card.completed !== true
+        : !cardIsComplete(card, verified, state.manualCheckedIds),
+    )
+    .map(({ card, index }) => ({ label: card.label, index }));
+}
+
+// 每一段是不是真的做完了——不是問學生，是看每張卡的實際狀態。
+// 資料還沒回來時回 undefined，讓閘門知道「還不確定」而不是「沒做完」，
+// 免得載入中把人鎖在外面。
+function sectionCompletion() {
+  const verified = effectiveVerifiedSteps();
+  const sections = allCardSections();
+
+  return Object.fromEntries(
+    SECTIONS.map((section) => {
+      const found = sections.find((s) => s.sectionId === section.id);
+
+      if (found === undefined || found.cards.length === 0) {
+        return [section.id, undefined];
+      }
+
+      return [section.id, incompleteCards(found.cards, verified).length === 0];
+    }),
+  );
+}
+
 function renderNavigation() {
-  const tools = view.elements.configTools.value;
+  const tools = toolSelectionValue(state.selectedTools);
+  const done = sectionCompletion();
+  const verified = effectiveVerifiedSteps();
+  const sections = allCardSections();
+  const blockers = Object.fromEntries(
+    sections.map(({ sectionId, cards }) => [
+      sectionId,
+      incompleteCards(cards, verified),
+    ]),
+  );
   const lockStates = Object.fromEntries(
     SECTIONS.map((section) => [
       section.id,
-      sectionGateState(section.id, state.completedGateIds, tools),
+      sectionGateState(
+        section.id,
+        state.completedGateIds,
+        tools,
+        done,
+        blockers,
+      ),
     ]),
   );
   view.renderSectionLocks(lockStates);
@@ -120,6 +580,7 @@ function renderEnvActionButtons() {
       envButtonState({
         action,
         idleText: button.dataset.idleText,
+        permanentlyDisabled: button.dataset.permanentlyDisabled === "true",
         runInProgress: state.runInProgress,
         currentEnvAction: state.currentEnvAction,
         waitingAction: state.loginWait?.action ?? null,
@@ -130,6 +591,7 @@ function renderEnvActionButtons() {
 
 function setRunning(running) {
   state.runInProgress = running;
+  renderWizard();
   renderControls();
   renderEnvActionButtons();
 }
@@ -141,6 +603,7 @@ function resetRun({ keepLoader = false } = {}) {
   state.activeRunButton = null;
   state.activeRunStep = null;
   state.currentEnvAction = null;
+  state.loginHints = { url: null, code: null };
   view.clearLoginHints();
 
   if (!keepLoader) {
@@ -208,7 +671,9 @@ async function checkEnvironment(showLoading = true) {
 
   try {
     const { os, checks } = await api.fetchEnv();
-    view.renderEnv(os, checks, (action, button) => run(action, undefined, button));
+    state.envChecks = checks;
+    view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
+    renderWizard();
     renderEnvActionButtons();
 
     if (state.loginWait !== null) {
@@ -226,6 +691,7 @@ async function checkEnvironment(showLoading = true) {
 
     return checks;
   } catch (error) {
+    state.envChecks = [];
     view.renderEnvFailure(error.message);
     return null;
   } finally {
@@ -245,8 +711,8 @@ async function checkConfigs() {
   renderControls();
   view.renderConfigLoading();
   renderCheckingLoader();
-  const tools = view.elements.configTools.value;
-  const lang = view.elements.configLang.value;
+  const tools = toolSelectionValue(state.selectedTools);
+  const lang = state.selectedLanguage;
 
   try {
     const result = await api.fetchConfigs({ tools, lang });
@@ -255,48 +721,7 @@ async function checkConfigs() {
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
     ]);
-    view.renderConfigs(
-      result.checks,
-      (action, button, step, extra) =>
-        run(
-          action,
-          undefined,
-          button,
-          rowRunOptions({ step, lang: result.lang, tools, extra }),
-        ),
-      {
-        verifiedSteps: state.verifiedSteps,
-        verificationPrompts: state.verificationPrompts,
-        onEyeToggle: async (step, checked) => {
-          if (checked) {
-            await rememberVerifiedStep(step);
-          } else {
-            state.verifiedSteps.delete(step);
-          }
-
-          checkConfigs();
-        },
-        onVerifyNow: (check) => {
-          state.verificationPrompts.delete(check.id);
-          run(
-            check.verifyAction,
-            undefined,
-            null,
-            rowRunOptions({
-              step: check.id,
-              lang: result.lang,
-              tools,
-              extra: check.verifyOptions,
-            }),
-          );
-        },
-        onVerifyLater: (step) => {
-          state.verificationPrompts.delete(step);
-          checkConfigs();
-        },
-        availableActions: state.availableActions,
-      },
-    );
+    renderWizard();
     view.renderConfigSummary(
       configSummary(result.checks, state.verifiedSteps),
     );
@@ -365,7 +790,12 @@ async function handleDone(
   runContext,
 ) {
   const outcome = runOutcome(result);
-  view.addLine(outcome.summary, outcome.className);
+  view.addRawLine(outcome.summary);
+  const step = options?.step ?? runContext.step;
+  const check =
+    state.lastChecks.find((candidate) => candidate.id === step) ??
+    state.envChecks.find((candidate) => candidate.id === step) ??
+    null;
 
   if (state.activeEnvButton !== null) {
     const message = installStatusMessage(action, result);
@@ -384,6 +814,27 @@ async function handleDone(
       failed: true,
       availableActions: state.availableActions,
     });
+    const verification =
+      action.startsWith("verify-") || AUTO_VERIFY_ACTIONS.has(action);
+
+    if (verification && step !== null && step !== undefined) {
+      state.verificationAttempted.add(step);
+      state.failedVerificationSteps.add(step);
+      state.deferredVerificationSteps.delete(step);
+    }
+    if (step !== null && step !== undefined) {
+      state.failedSteps.add(step);
+      const reason = runContext.rawOutput.findLast((line) => line.trim() !== "");
+      state.resultTexts.set(
+        step,
+        `${check?.label ?? "這個項目"}：${reason ?? outcome.summary}`,
+      );
+    }
+
+    view.addTerminalLines(
+      terminalOutcomeLines({ action, succeeded: false, check, guidance }),
+    );
+    view.shakeTerminal();
 
     if (guidance !== null || result.explanationPending === true) {
       view.renderFailureGuidance({
@@ -401,8 +852,8 @@ async function handleDone(
             nextButton,
             rowRunOptions({
               step,
-              lang: view.elements.configLang.value,
-              tools: view.elements.configTools.value,
+              lang: state.selectedLanguage,
+              tools: toolSelectionValue(state.selectedTools),
             }),
           ),
       });
@@ -413,6 +864,7 @@ async function handleDone(
       true,
     );
     resetRun({ keepLoader: true });
+    renderWizard();
     return;
   }
 
@@ -425,6 +877,28 @@ async function handleDone(
     result,
     check: installedCheck,
   });
+  if (
+    step !== null &&
+    step !== undefined &&
+    (action.startsWith("install-") || action === "merge-config-step")
+  ) {
+    state.installedSteps.add(step);
+  }
+  if (step !== null && step !== undefined) {
+    state.failedSteps.delete(step);
+    state.resultTexts.delete(step);
+  }
+  if (
+    verifiedStep !== undefined &&
+    (action.startsWith("verify-") || AUTO_VERIFY_ACTIONS.has(action))
+  ) {
+    state.verificationAttempted.add(verifiedStep);
+    state.failedVerificationSteps.delete(verifiedStep);
+    state.deferredVerificationSteps.delete(verifiedStep);
+  }
+  view.addTerminalLines(
+    terminalOutcomeLines({ action, succeeded: true, check }),
+  );
   resetRun();
 
   if (followUp === "auto") {
@@ -443,8 +917,9 @@ async function handleDone(
   }
 
   if (followUp === "prompt") {
-    state.verificationPrompts.add(installedCheck.id);
-    checkConfigs();
+    state.pendingModalCheck = installedCheck;
+    view.showVerifyModal();
+    renderWizard();
     return;
   }
 
@@ -457,18 +932,23 @@ async function handleDone(
     (check) => check.id === verifiedStep,
   );
 
-  if (
-    AUTO_VERIFY_ACTIONS.has(action) &&
-    verifiedStep !== undefined &&
-    verifiedCheck?.eyeCheck == null
-  ) {
-    await rememberVerifiedStep(verifiedStep);
-    checkConfigs();
+  state.verifyShotVersion += 1;
+
+  if (AUTO_VERIFY_ACTIONS.has(action) && verifiedStep !== undefined) {
+    // 程式那半的結論一律記下來。以前這裡是「有眼睛勾選框就整個不記」，於是那半
+    // 的結果無處可存，清單第一格只好等學生勾眼睛時才順便變綠。
+    await rememberBehaviorVerified(verifiedStep);
+
+    if (verifiedCheck?.eyeCheck == null) {
+      await rememberVerifiedStep(verifiedStep);
+    }
+
+    await checkConfigs();
     return;
   }
 
   if (configAction) {
-    checkConfigs();
+    await checkConfigs();
     return;
   }
 
@@ -487,7 +967,7 @@ async function handleDone(
     view.showInstallStatus(message);
   }
 
-  checkEnvironment();
+  await checkEnvironment();
 }
 
 async function run(action, promptText, button = null, options) {
@@ -509,13 +989,14 @@ async function run(action, promptText, button = null, options) {
     button,
     step:
       options?.step ??
+      LOGIN_CHECK_IDS[action] ??
       (action.startsWith("install-") ? action.slice("install-".length) : null),
     rawOutput: [],
     explanation: null,
   };
 
   if (action !== "install-config-step" && state.activeRunStep !== null) {
-    state.verificationPrompts.delete(state.activeRunStep);
+    state.deferredVerificationSteps.delete(state.activeRunStep);
   }
 
   if (envButton !== null) {
@@ -567,10 +1048,25 @@ async function run(action, promptText, button = null, options) {
       }
 
       if (isLoginAction(action)) {
-        view.showLoginHints(extractLoginHints(line.text));
+        const hints = extractLoginHints(line.text);
+        state.loginHints = {
+          url: hints.url ?? state.loginHints.url,
+          code: hints.code ?? state.loginHints.code,
+        };
+        view.showLoginHints(
+          loginCardModel({
+            checks: state.envChecks.filter(
+              (check) => check.id === LOGIN_CHECK_IDS[action],
+            ),
+            hints: state.loginHints,
+            acceptsInput: state.acceptsInput,
+            runInProgress: state.runInProgress,
+            runId: state.runId,
+          }),
+        );
       }
 
-      view.addLine(line.text, line.stream === "stderr" ? "stderr" : "");
+      view.addRawLine(line.text);
     });
 
     events.addEventListener("agent", (event) => {
@@ -631,8 +1127,8 @@ async function run(action, promptText, button = null, options) {
             nextButton,
             rowRunOptions({
               step,
-              lang: view.elements.configLang.value,
-              tools: view.elements.configTools.value,
+              lang: state.selectedLanguage,
+              tools: toolSelectionValue(state.selectedTools),
             }),
           ),
       });
@@ -666,11 +1162,31 @@ async function run(action, promptText, button = null, options) {
 
       if (!done) {
         view.addLine("串流連線中斷", "failed");
+        if (runContext.step !== null && runContext.step !== undefined) {
+          const failedCheck = [...state.lastChecks, ...state.envChecks].find(
+            (candidate) => candidate.id === runContext.step,
+          );
+          state.failedSteps.add(runContext.step);
+          state.resultTexts.set(
+            runContext.step,
+            `${failedCheck?.label ?? "這個項目"}：串流連線中斷`,
+          );
+        }
         resetRun();
       }
     };
   } catch (error) {
     view.addLine(`無法執行：${error.message}`, "failed");
+    if (runContext.step !== null && runContext.step !== undefined) {
+      const failedCheck = [...state.lastChecks, ...state.envChecks].find(
+        (candidate) => candidate.id === runContext.step,
+      );
+      state.failedSteps.add(runContext.step);
+      state.resultTexts.set(
+        runContext.step,
+        `${failedCheck?.label ?? "這個項目"}：無法執行，${error.message}`,
+      );
+    }
     const guidance = guidanceModel({
       step: options?.step,
       status: "missing",
@@ -690,8 +1206,8 @@ async function run(action, promptText, button = null, options) {
             nextButton,
             rowRunOptions({
               step,
-              lang: view.elements.configLang.value,
-              tools: view.elements.configTools.value,
+              lang: state.selectedLanguage,
+              tools: toolSelectionValue(state.selectedTools),
             }),
           ),
       });
@@ -728,15 +1244,6 @@ view.elements.cancel.addEventListener("click", async () => {
   }
 });
 
-view.elements.copyLoginCode.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(view.elements.loginCode.textContent);
-    view.elements.copyLoginCode.textContent = "已複製";
-  } catch (error) {
-    view.addLine(`無法複製：${error.message}`, "failed");
-  }
-});
-
 view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(
@@ -748,34 +1255,24 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
   }
 });
 
-view.elements.runInput.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  if (state.runId === null || !state.acceptsInput) {
-    return;
-  }
-
-  const text = view.elements.runInputText.value;
-
-  try {
-    await api.sendInput(state.runId, text);
-    view.addLine(`> ${text}`, "agent-status");
-    view.elements.runInputText.value = "";
-  } catch (error) {
-    view.addLine(`無法送出：${error.message}`, "failed");
-  }
-});
-
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
-view.elements.configTools.addEventListener("change", () => {
-  state.verificationPrompts.clear();
+view.onToolSelect((tool) => {
+  state.selectedTools = toggleToolSelection(state.selectedTools, tool);
+  saveSelection();
+  view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  state.viewingCardIndex = {};
   renderNavigation();
   view.hideSectionLockMessage();
   checkConfigs();
 });
-view.elements.configLang.addEventListener("change", checkConfigs);
+view.onLanguageSelect((language) => {
+  state.selectedLanguage = language;
+  saveSelection();
+  view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  checkConfigs();
+});
 view.onSectionSelect((sectionId) => {
   const gate = renderNavigation()[sectionId];
 
@@ -785,22 +1282,35 @@ view.onSectionSelect((sectionId) => {
   }
 
   view.hideSectionLockMessage();
-  view.showSection(sectionId);
+  state.activeSectionId = sectionId;
+  renderWizard();
 });
-view.onGateToggle((gateId, checked) => {
-  if (checked) {
-    state.completedGateIds.add(gateId);
-  } else {
-    state.completedGateIds.delete(gateId);
-  }
-
-  renderNavigation();
-  view.hideSectionLockMessage();
-});
+view.onVerifyModal(
+  () => {
+    const check = state.pendingModalCheck;
+    state.pendingModalCheck = null;
+    view.hideVerifyModal();
+    if (check !== null) {
+      runConfigCheckAction(check, check.verifyAction, null, check.verifyOptions);
+    }
+  },
+  () => {
+    const check = state.pendingModalCheck;
+    state.pendingModalCheck = null;
+    view.hideVerifyModal();
+    if (check !== null) {
+      state.deferredVerificationSteps.add(check.id);
+      renderWizard();
+    }
+  },
+);
 renderNavigation();
 
 async function initialize() {
   await loadVerifiedSteps();
+  // 選擇是 loadVerifiedSteps 從伺服器帶回來的，所以 chips 要在它之後才套。
+  // 擺在前面的話畫面永遠停在預設值，卡片卻照著存下來的選擇跑，兩邊對不上。
+  view.setConfigSelection(state.selectedTools, state.selectedLanguage);
   checkEnvironment();
   checkConfigs();
 }

@@ -5,6 +5,17 @@ import { moduleFile } from "./paths.js";
 
 // moduleFile 而不是 new URL(...).pathname：後者在 Windows 會多一條前導斜線，
 // 拿去當指令參數會變成 C:\C:\... 找不到檔案（見 paths.js 的說明）。
+// 登入指令預設會自己彈瀏覽器，學生就來不及用卡片上的授權按鈕。
+//
+// claude 與 gh 都認 BROWSER 環境變數（claude 的二進位檔裡是
+// `spawn(process.env.BROWSER, [url])`，gh 有正式文件），把它指到一個「存在、
+// 吃得下參數、什麼都不做」的指令就能擋掉自動開啟，網頁改由卡片上的按鈕開。
+//
+// Windows 沒有 true.exe，用 where.exe：拿網址當參數會找不到檔案、印一行訊息就
+// 結束，不開視窗也不會卡住。
+const NO_BROWSER = process.platform === "win32" ? "where" : "true";
+const NO_AUTO_BROWSER = { BROWSER: NO_BROWSER };
+
 const installConfigsScript = moduleFile(
   "../scripts/install-configs.mjs",
   import.meta.url,
@@ -120,12 +131,25 @@ export const actions = {
   },
 };
 
-const installerNames = {
+// 這張表漏一個 id，按鈕就會變成「安裝 undefined」——而且只有那一個項目缺的時候
+// 才看得到，測試不會紅（實測加 python 時就是這樣）。下面用 assert 擋住。
+export const installerNames = {
   claude: "Claude Code",
   codex: "Codex",
   git: "Git",
   gh: "GitHub CLI",
+  python: "Python 3",
+  // ghostty 一直沒寫在這裡，所以 macOS 上那顆按鈕從以前就是「安裝 undefined」。
+  // 加 python 時順手做的這道守衛把它抓出來了。
+  ghostty: "Ghostty 終端機",
+  "windows-terminal": "Windows Terminal",
 };
+
+for (const id of Object.keys(INSTALLERS)) {
+  if (installerNames[id] === undefined) {
+    throw new Error(`installerNames 少了 ${id}，按鈕會顯示成「安裝 undefined」`);
+  }
+}
 
 for (const id of Object.keys(INSTALLERS)) {
   const installer = resolveInstaller(id, process.platform);
@@ -239,6 +263,9 @@ Object.assign(actions, {
         "skill-handoff",
         "skill-questions",
         "demo",
+        "fullscreen-open",
+        "fullscreen-proof",
+        "mcp-playwright",
       ],
       agent: ["claude", "codex"],
     },
@@ -267,7 +294,9 @@ Object.assign(actions, {
     buildPrompt: ({ step, lang }) =>
       [
         `我要把工作坊的設定合併進我已經有的檔案，語言版本是 ${lang}，這一步是 ${step}。`,
-        `新版內容在 ~/.jr-setup/configs/ 底下（claude-code/${lang}/ 與 codex/${lang}/）。`,
+        // 路徑錯了 agent 會自己去翻，翻得到就沒人發現——但每次合併都多燒一輪，
+        // 翻不到就只能瞎猜。實際落點是 app/materials/（實測回報）。
+        `新版內容在 ~/.jr-setup/app/materials/ 底下（claude-code/${lang}/ 與 codex/${lang}/）。`,
         "請先讀我現有的檔案和新版內容，備份現有檔案（加 .bak.時間戳），",
         "再把工作坊的規則合併進去——保留我原本的內容，不要整份覆蓋。",
         "改完告訴我你加了什麼、有沒有衝突。",
@@ -280,12 +309,25 @@ Object.assign(actions, {
     cmd: "claude",
     args: ["auth", "login"],
     acceptsInput: true,
+    env: NO_AUTO_BROWSER,
     description: "登入 Claude Code。",
   },
   "login-codex": {
     kind: "fixed",
     label: "登入 Codex",
     cmd: "codex",
+    // ⚠️ 不要再加 --device-auth。
+    //
+    // 它確實會印出網址與一次性代碼、也不自己開瀏覽器，但那個模式需要**每個帳號**
+    // 先去 ChatGPT Security Settings 打開「device code authorization」，沒開的人
+    // 走到授權頁只會看到一段紅字要他去改設定（VM 實測）。對課堂學生是死路。
+    //
+    // 也沒辦法像 claude / gh 那樣用 BROWSER 擋掉自動開啟：codex 用 Rust 的
+    // webbrowser crate，macOS 直接叫 Safari/Chrome、Windows 走 ShellExecute，
+    // 二進位檔裡根本沒有 BROWSER 這個字串。
+    //
+    // 所以 codex 就是會自己開瀏覽器。卡片那邊不放「開啟授權頁」主按鈕假裝是使用者
+    // 控制的，改成說明 + 備援連結（見 viewmodel 的 LOGIN_CARD_SERVICES）。
     args: ["login"],
     acceptsInput: true,
     description: "登入 Codex。",
@@ -305,6 +347,9 @@ Object.assign(actions, {
       "--skip-ssh-key",
     ],
     acceptsInput: true,
+    // gh 的 GH_BROWSER 優先於 BROWSER（gh help environment 明寫），學生環境若已設
+    // GH_BROWSER，只覆寫 BROWSER 會被蓋過去，所以兩個都設。
+    env: { ...NO_AUTO_BROWSER, GH_BROWSER: NO_BROWSER },
     description: "登入 GitHub CLI。",
   },
 });

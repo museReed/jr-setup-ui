@@ -96,6 +96,14 @@ const EXTERNAL_SKILL_STEPS = {
   },
   // Claude 這邊的 Playwright 不是 skill 而是 MCP server，落點在 ~/.claude.json，
   // 所以驗證方式跟上面四列不同（見 config-check.js 的 checkExternalSkill）。
+  //
+  // 為什麼兩邊機制不一樣，查過了：anthropics/skills 底下十七支 skill 裡沒有
+  // playwright。最接近的是 webapp-testing，但它走 Python 的 playwright.sync_api、
+  // 預設 headless，是拿來測本機網頁應用的——課堂要的是「學生看得到瀏覽器自己動」，
+  // 而且它會多拉一條 Python 依賴，等於在安裝流程裡再開一個會壞的地方。
+  //
+  // 要統一的話唯一已知可行的方向是「兩邊都用 MCP」（Codex 支援 MCP，config.toml
+  // 的 [mcp_servers.*] 就是），不是「兩邊都用 skill」。目前決定維持現狀。
   "ext-playwright-claude": {
     label: "第三方：Playwright MCP（Claude）",
     agent: "claude",
@@ -523,6 +531,8 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         source: `codex/${lang}/config.toml.example`,
         target: `${codexDir}/config.toml`,
         protectExisting: true,
+        // 檔案已存在時也要把預設模式那兩個 key 補進去，不交給 AI 合併。
+        mergeModes: true,
       };
 
     case "codex-agents":
@@ -532,6 +542,9 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         kind: "copy",
         source: `codex/${lang}/AGENTS.md`,
         target: `${codexDir}/AGENTS.md`,
+        // 跟 CLAUDE.md 同一個理由：學生會在自己的規則檔裡加東西，安裝直接覆蓋
+        // 就弄丟了。原本只留一個 .bak，但學生不會知道要去翻備份。
+        protectExisting: true,
       };
 
     case "tab-sync": {
@@ -708,13 +721,73 @@ export function hasAgentHookRegistrations(settings, registrations) {
   );
 }
 
+// 白名單要真的省下按鍵，預設模式就得跟著換。
+//
+// 預設的 default 模式下，白名單只免掉「這條指令能不能跑」那一問，改檔案仍然每次都
+// 問——課堂上學生大半的按鍵是花在這裡。acceptEdits 讓工作區內的檔案修改直接套用，
+// 白名單管指令、模式管檔案，兩件事湊齊才是學生預期的「不會一直被打斷」。
+//
+// 不用 bypassPermissions / dontAsk：那是連工作區外、網路操作都不問，放進學生的
+// 設定檔風險太大，也不是這門課要教的習慣。
+const CLAUDE_DEFAULT_MODE = "acceptEdits";
+
+// Codex 的預設模式：兩個 key 由程式保證寫入，不交給 AI 合併。
+//
+// config.toml 是 protectExisting 的——學生已經有檔案時「安裝」不覆蓋，只能按「用 AI
+// 合併」。那條路是叫一個 agent 讀檔改檔，結果不保證、也不可重現。Claude Code 那邊
+// 的 defaultMode 是程式直接寫進 settings.json，兩邊落地機率差太多。
+//
+// 只補這兩個 key，不碰其餘任何一行：學生原本的 personality、instructions、MCP
+// 區塊都原樣留著。已經有值就不動——他自己調過就是他的選擇。
+//
+// 不引 TOML parser：要做的判斷只有「最上層有沒有這個 key」。整個檔案 parse 出來
+// 再寫回去，反而會把學生的註解、排版、字串引號樣式全部重排一遍。
+const CODEX_MODES = {
+  sandbox_mode: '"workspace-write"',
+  approval_policy: '"on-request"',
+};
+
+export function mergeCodexModes(content) {
+  const lines = (content ?? "").split("\n");
+  // 第一個 [section] 之後的同名 key 屬於那個 section，不是最上層，不能算數。
+  const topLevelEnd = lines.findIndex((line) => /^\s*\[/.test(line));
+  const topLevel = topLevelEnd === -1 ? lines : lines.slice(0, topLevelEnd);
+  const added = [];
+
+  for (const key of Object.keys(CODEX_MODES)) {
+    const pattern = new RegExp(`^\\s*${key}\\s*=`);
+    if (topLevel.some((line) => pattern.test(line))) continue;
+    added.push(key);
+  }
+
+  if (added.length === 0) {
+    return { content: content ?? "", added };
+  }
+
+  const insertAt = topLevelEnd === -1 ? lines.length : topLevelEnd;
+  const before = lines.slice(0, insertAt).join("\n").replace(/\s*$/, "");
+  const after = lines.slice(insertAt).join("\n").replace(/^\s*/, "");
+  const block = added.map((key) => `${key} = ${CODEX_MODES[key]}`).join("\n");
+
+  return {
+    content: after === "" ? `${before}\n${block}\n` : `${before}\n${block}\n\n${after}`,
+    added,
+  };
+}
+
 export function mergeAllowRules(settings, { allowRules }) {
   const next = structuredClone(settings ?? {});
   const permissions = next.permissions ?? {};
   const allow = [...(permissions.allow ?? [])];
   const added = allowRules.filter((rule) => !allow.includes(rule));
-  next.permissions = { ...permissions, allow: [...allow, ...added] };
-  return { settings: next, addedRules: added.length };
+  // 學生自己調過就尊重他的選擇，只在沒設過的時候補上預設。
+  const modeAdded = permissions.defaultMode === undefined;
+  next.permissions = {
+    ...permissions,
+    allow: [...allow, ...added],
+    defaultMode: permissions.defaultMode ?? CLAUDE_DEFAULT_MODE,
+  };
+  return { settings: next, addedRules: added.length, modeAdded };
 }
 
 // 驗證用：settings.json 裡到底有沒有那個 hook（只看檔案在不在不算數——

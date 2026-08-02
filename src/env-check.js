@@ -34,6 +34,7 @@ const CHECKS = [
   { id: "gh", label: "GitHub CLI" },
   { id: "gh-auth", label: "GitHub 登入狀態" },
   { id: "node", label: "Node.js" },
+  { id: "python", label: "Python 3" },
 ];
 
 if (process.platform === "win32") {
@@ -263,9 +264,17 @@ function withActions(check) {
     "gh-auth": check.status === "warn" ? "login-gh" : null,
   };
   const fixAction = fixActions[check.id] ?? null;
+  // installAction 在項目裝好之後也會變 null（installer 只在 missing 時才解析），
+  // 所以前端光看它分不出「已經裝好」與「這根本不是可以安裝的東西」。
+  // execution-policy 這種設定類項目沒有 installer，卡片上不該出現安裝按鈕——
+  // 硬塞一顆永遠置灰的「安裝」只會讓學生問「安裝什麼？」（Reed 實測提問）。
+  const hasInstaller =
+    check.installable !== false &&
+    resolveInstaller(check.id, process.platform) !== null;
 
   return {
     ...check,
+    hasInstaller,
     installAction: installer === null ? null : installActionId(check.id),
     fixAction:
       fixAction !== null && Object.hasOwn(actions, fixAction)
@@ -453,6 +462,40 @@ async function checkVersion(id, label, cmd, args) {
   }
 }
 
+// Python 在 Windows 上叫什麼，取決於誰裝的：
+//
+//   py -3        python.org 的安裝檔（winget 裝的就是它）附的啟動器，最可靠
+//   python       同一個安裝檔會產生，但 PATH 上可能先撞到 Store 的殼
+//   python3      **Windows 上根本不會有** ——那是 Unix 的慣例。python.org 的安裝檔
+//                不產生 python3.exe，所以那個名字永遠指向 Store 的殼
+//
+// Store 的殼很難纏：它存在、跑得起來、跳出商店頁面，exit code 非零但也不是 ENOENT
+// ——所以 checkVersion 會判成「檢查失敗」而不是「未安裝」。實測就是這樣：winget 明明
+// 印了 Successfully installed、exit code 0，卡片還是紅的。
+//
+// 依序試，第一個 exit 0 的算數。macOS / Linux 只有 python3 一個候選。
+async function checkPython() {
+  const candidates =
+    process.platform === "win32"
+      ? [
+          ["py", ["-3", "--version"]],
+          ["python", ["--version"]],
+        ]
+      : [["python3", ["--version"]]];
+
+  let last = null;
+
+  for (const [cmd, args] of candidates) {
+    last = await checkVersion("python", "Python 3", cmd, args);
+
+    if (last.status === "ok") {
+      return last;
+    }
+  }
+
+  return last;
+}
+
 async function checkClaudeAuth(installed) {
   const id = "claude-auth";
   const label = "Claude Code 登入狀態";
@@ -576,6 +619,7 @@ export async function runEnvCheck() {
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
+    const python = checkPython();
     const checksToRun = [
       claude,
       checkClaudeAuth(claude),
@@ -585,6 +629,7 @@ export async function runEnvCheck() {
       gh,
       checkGhAuth(gh),
       node,
+      python,
     ];
 
     if (process.platform === "win32") {

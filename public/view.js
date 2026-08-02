@@ -1,15 +1,10 @@
-// View：只負責把 ViewModel 算好的東西畫到畫面上，不做任何判斷。
-import { groupChecks } from "./model.js";
-import {
-  LOADER_MODIFIERS,
-  configRowModel,
-  envLogoFor,
-  envRowModel,
-  progressSummary,
-} from "./viewmodel.js";
+// View：只把 app 傳進來的畫面模型畫成 DOM，不做流程判斷或資料請求。
+import { LOADER_MODIFIERS, appendTermLine } from "./viewmodel.js";
 
 const elements = {
   output: document.querySelector("#output"),
+  terminal: document.querySelector("#terminal"),
+  terminalLines: document.querySelector("#terminal-lines"),
   actionButtons: [...document.querySelectorAll("[data-action]")],
   prompt: document.querySelector("#prompt"),
   allowWrite: document.querySelector("#allow-write"),
@@ -19,83 +14,499 @@ const elements = {
   recheckEnv: document.querySelector("#recheck-env"),
   installStatus: document.querySelector("#install-status"),
   loginWaitStatus: document.querySelector("#login-wait-status"),
-  loginHints: document.querySelector("#login-hints"),
-  loginUrl: document.querySelector("#login-url"),
-  loginCodeRow: document.querySelector("#login-code-row"),
-  loginCode: document.querySelector("#login-code"),
-  copyLoginCode: document.querySelector("#copy-login-code"),
-  runInput: document.querySelector("#run-input"),
-  runInputText: document.querySelector("#run-input-text"),
   configTools: document.querySelector("#config-tools"),
   configLang: document.querySelector("#config-lang"),
+  configChoicePanel: document.querySelector("#config-choice-panel"),
   recheckConfigs: document.querySelector("#recheck-configs"),
   configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
-  configToolbar: document.querySelector("#config-toolbar"),
   sectionNav: document.querySelector("#section-nav"),
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
-  sectionPanels: [...document.querySelectorAll("[data-section-panel]")],
-  sectionCards: {
-    rules: document.querySelector("#rules-cards"),
-    skills: document.querySelector("#skills-cards"),
-    demo: document.querySelector("#demo-cards"),
-  },
-  progressBar: document.querySelector("#progress-bar"),
-  progressFill: document.querySelector("#progress-fill"),
-  progressDuck: document.querySelector("#progress-duck"),
-  progressSummary: document.querySelector("#progress-summary"),
-  progressLoader: document.querySelector("#progress-loader"),
-  completionMessage: document.querySelector("#completion-message"),
-  rowLoaderPool: document.querySelector("#row-loader-pool"),
+  sectionPanel: document.querySelector("[data-section-panel]"),
+  sectionStatus: document.querySelector("#section-status"),
+  currentCard: document.querySelector("#current-card"),
+  milestoneBar: document.querySelector("#milestone-bar"),
+  milestoneFill: document.querySelector("#milestone-fill"),
+  milestoneDuck: document.querySelector("#milestone-duck"),
   sectionLockMessage: document.querySelector("#section-lock-message"),
-  gateInputs: [...document.querySelectorAll("[data-gate-id]")],
-  codexGate: document.querySelector("[data-codex-gate]"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
   copyBehaviorQuestion: document.querySelector("#copy-behavior-question"),
+  rowLoaderPool: document.querySelector("#row-loader-pool"),
+  verifyModal: document.querySelector("#verify-modal"),
+  verifyModalConfirm: document.querySelector("#verify-modal-confirm"),
+  verifyModalLater: document.querySelector("#verify-modal-later"),
 };
 
 export { elements };
 
-let activeText = null;
-let latestEnvChecks = null;
-let latestConfigChecks = null;
-let latestVerifiedSteps = new Set();
-let completionShown = false;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let renderedStation = null;
+let pinnedStation = null;
+let milestoneBusy = false;
+let stationTimer = null;
+let arrivalTimer = null;
+let fireworkTimer = null;
+
+function createLogo(logo) {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("class", "ds-toollogo-mark");
+  icon.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#${logo}`);
+  icon.append(use);
+  return icon;
+}
+
+function checkMark() {
+  const box = document.createElement("span");
+  box.className = "ds-check-box";
+  box.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M5 12.5 10 17l9-10");
+  svg.append(path);
+  box.append(svg);
+  return box;
+}
+
+function unpinAll() {
+  for (const point of elements.milestoneBar.querySelectorAll(
+    ".ds-milestone",
+  )) {
+    point.querySelector(".ds-milestone-card").classList.remove("is-pinned");
+    point.setAttribute("aria-hidden", "true");
+  }
+}
+
+function pin(point, key) {
+  point.querySelector(".ds-milestone-card").classList.add("is-pinned");
+  point.removeAttribute("aria-hidden");
+  pinnedStation = key;
+  milestoneBusy = false;
+}
+
+function finishArrival(point, station, key) {
+  const firework = document.createElement("span");
+  firework.className = "ds-firework";
+  firework.style.setProperty("--firework-at", `${station.percent}%`);
+  firework.setAttribute("aria-hidden", "true");
+  for (let ray = 0; ray < 10; ray += 1) {
+    const particle = document.createElement("i");
+    particle.style.setProperty("--ray", `${ray * 36}deg`);
+    firework.append(particle);
+  }
+  elements.milestoneBar.append(firework);
+  fireworkTimer = window.setTimeout(() => {
+    firework.remove();
+    pin(point, key);
+  }, 800);
+}
+
+function moveDuck(sectionId, station) {
+  const nextKey = `${sectionId}:${station.index}`;
+  const previousIndex = renderedStation?.sectionId === sectionId
+    ? renderedStation.index
+    : station.index;
+  const moving = renderedStation !== null && nextKey !== renderedStation.key;
+  renderedStation = { key: nextKey, sectionId, index: station.index };
+  window.clearTimeout(stationTimer);
+  window.clearTimeout(arrivalTimer);
+  window.clearTimeout(fireworkTimer);
+  elements.milestoneBar.querySelector(".ds-firework")?.remove();
+  elements.milestoneDuck.classList.toggle("left", station.index < previousIndex);
+  elements.milestoneDuck.style.left = `${station.percent}%`;
+  elements.milestoneFill.style.width = `${station.percent}%`;
+  elements.milestoneFill.setAttribute("aria-valuenow", String(station.percent));
+
+  const point = elements.milestoneBar.querySelector(
+    `[data-card-index="${station.index}"]`,
+  );
+
+  if (!moving) {
+    elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    if (pinnedStation === nextKey) pin(point, nextKey);
+    return;
+  }
+
+  unpinAll();
+  milestoneBusy = true;
+  if (reducedMotion.matches) {
+    elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    pin(point, nextKey);
+    return;
+  }
+
+  elements.milestoneDuck.classList.add("is-running");
+  stationTimer = window.setTimeout(() => {
+    elements.milestoneDuck.classList.remove("is-running");
+    elements.milestoneDuck.classList.add("is-arriving");
+    arrivalTimer = window.setTimeout(() => {
+      elements.milestoneDuck.classList.remove("is-arriving");
+      finishArrival(point, station, nextKey);
+    }, 420);
+  }, 1000);
+}
+
+function renderMilestones(sectionId, milestones, onSelect) {
+  const points = milestones.map((station) => {
+    const point = document.createElement("span");
+    point.className = "ds-milestone wizard-milestone";
+    point.style.setProperty("--at", `${station.percent}%`);
+    point.dataset.value = String(station.percent);
+    point.dataset.cardIndex = String(station.index);
+    point.classList.toggle("is-reached", station.reached);
+    point.classList.toggle("is-locked", !station.unlocked);
+    point.setAttribute("aria-hidden", "true");
+
+    point.classList.add(station.edgeClass);
+
+    const preview = document.createElement("span");
+    preview.className = "ds-milestone-card";
+    const close = document.createElement("button");
+    close.className = "ds-milestone-card-close";
+    close.type = "button";
+    close.setAttribute("aria-label", "關閉");
+    close.textContent = "×";
+    const name = document.createElement("strong");
+    name.className = "ds-milestone-card-name";
+    name.textContent = station.label;
+    const value = document.createElement("span");
+    value.className = "ds-milestone-card-value";
+    value.textContent = `第 ${station.index + 1} / ${milestones.length} 張`;
+    const description = document.createElement("span");
+    description.className = "ds-milestone-card-desc";
+    description.textContent = station.detail;
+    preview.append(close, name, value, description);
+    point.append(preview);
+    point.addEventListener("mouseenter", () => point.classList.add("is-active"));
+    point.addEventListener("mouseleave", () => point.classList.remove("is-active"));
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      preview.classList.remove("is-pinned");
+      point.setAttribute("aria-hidden", "true");
+      pinnedStation = null;
+    });
+    point.addEventListener("click", () => {
+      if (!milestoneBusy && station.unlocked) onSelect(station.index);
+    });
+    return point;
+  });
+  for (const point of elements.milestoneBar.querySelectorAll(
+    ".wizard-milestone",
+  )) {
+    point.remove();
+  }
+  elements.milestoneDuck.before(...points);
+
+  const current = milestones.find((station) => station.current);
+  if (current !== undefined) {
+    moveDuck(sectionId, current);
+  }
+}
+
+function actionButton(spec, onActionClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `ds-btn ds-btn-sm ${spec.className ?? "ds-btn-primary"}`;
+  button.dataset[spec.dataName] = spec.action;
+  button.dataset.step = spec.step ?? "";
+  button.dataset.idleText = spec.text;
+  button.dataset.permanentlyDisabled = String(spec.disabled === true);
+  button.textContent = spec.text;
+  button.disabled = spec.disabled === true;
+  button.classList.toggle("is-done", spec.done === true);
+  button.addEventListener("click", () =>
+    onActionClick(spec.action, button, spec.step, spec.options),
+  );
+  return button;
+}
+
+// 貼上證明用的欄位。貼對了那一格自己打勾——這是整份嚮導唯一「學生交得出副產物」
+// 的人工項目，其餘的人眼判定只能靠自己說了算。
+// 不顯示那句要貼進終端的話：按鈕已經會把它送進去了，印出來只是多一份要學生自己
+// 一字不差複製的東西——而那正是按鈕要取代的手動步驟。字串本身仍然由
+// test/fullscreen-proof.mjs 釘住，確保按鈕送的跟要比對的一致。
+function pasteProofElement({ value, matched, onInput, onOpen }) {
+  const wrap = document.createElement("div");
+  wrap.className = "paste-proof";
+
+  // 兩顆都只是「幫學生把終端開起來」——方框沒辦法代按，但至少不用叫學生自己去找
+  // 終端、自己打 claude。第一顆開空的讓方框跳出來，第二顆連那句話一起送進去。
+  const openRow = document.createElement("div");
+  openRow.className = "paste-proof-actions";
+  for (const [testCase, label] of [
+    ["fullscreen-open", "開啟 Claude Code（讓方框跳出來）"],
+    ["fullscreen-proof", "開啟並自動送出這句話"],
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ds-btn ds-btn-secondary ds-btn-sm";
+    button.textContent = label;
+    button.addEventListener("click", () => onOpen(testCase));
+    openRow.append(button);
+  }
+
+  const field = document.createElement("input");
+  field.type = "text";
+  field.className = "ds-input paste-proof-input";
+  field.placeholder = "把圈選到的那一行貼在這裡";
+  field.value = value;
+  field.addEventListener("input", (event) => onInput(event.target.value));
+
+  const status = document.createElement("span");
+  status.className = matched
+    ? "paste-proof-status is-matched"
+    : "paste-proof-status";
+  status.textContent = matched
+    ? "對上了，這一項算過。"
+    : value.trim() === ""
+      ? ""
+      : "跟代碼對不起來，再圈選一次整行試試。";
+
+  wrap.append(openRow, field, status);
+  return wrap;
+}
+
+function checklistElement(groups, onManualToggle) {
+  const items = [...groups.system, ...groups.manual];
+  const checked = items.filter((item) => item.checked).length;
+  const checklist = document.createElement("section");
+  checklist.className = "ds-checklist ds-checklist--glitch";
+  checklist.classList.toggle(
+    "is-complete",
+    items.length > 0 && checked === items.length,
+  );
+  // 不放標題列與分組標題——兩組靠顏色分（青=系統驗的、橘=你自己勾的），
+  // 標題只是把同一件事再講一次，還把卡片撐高。只留右上角的計數。
+  const head = document.createElement("header");
+  head.className = "ds-checklist-head";
+  const count = document.createElement("span");
+  count.className = "ds-checklist-count";
+  count.textContent = `${checked} / ${items.length}`;
+  head.append(count);
+  checklist.append(head);
+
+  for (const group of [groups.system, groups.manual]) {
+    for (const item of group) {
+      const label = document.createElement("label");
+      label.className = "ds-check";
+      label.classList.add(item.automatic ? "is-system" : "is-manual");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = item.checked;
+      input.disabled = item.disabled;
+      input.dataset.checklistId = item.id;
+      const text = document.createElement("span");
+      text.className = "ds-check-text";
+      const visible = document.createElement("span");
+      visible.className = "ds-check-label";
+      visible.setAttribute("data-text", item.text);
+      visible.textContent = item.text;
+      text.append(visible);
+
+      if (item.failedReason || item.detail) {
+        const small = document.createElement("small");
+        small.textContent = item.failedReason || item.detail;
+        text.append(small);
+      }
+
+      if (!item.automatic) {
+        input.addEventListener("change", () =>
+          onManualToggle(item.id, input.checked),
+        );
+      }
+
+      label.append(input, checkMark(), text);
+      checklist.append(label);
+    }
+  }
+
+  return checklist;
+}
+
+function loginControlsElement(model) {
+  const hints = document.createElement("div");
+  hints.id = "login-hints";
+  hints.className = "login-hints";
+  hints.hidden = !model.showLink && !model.showCode;
+  const link = document.createElement("a");
+  link.id = "login-url";
+  // 會自己開瀏覽器的服務（codex），連結只是備援，不該長得像主要入口。
+  link.className = model.autoOpens
+    ? "ds-btn ds-btn-ghost ds-btn-sm"
+    : "ds-btn ds-btn-primary";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = model.linkText;
+  link.hidden = !model.showLink;
+  if (model.url !== null) link.href = model.url;
+  const codeRow = document.createElement("div");
+  codeRow.id = "login-code-row";
+  codeRow.hidden = !model.showCode;
+  const code = document.createElement("code");
+  code.id = "login-code";
+  code.textContent = model.code ?? "";
+  const copy = document.createElement("button");
+  copy.id = "copy-login-code";
+  copy.type = "button";
+  copy.className = "ds-btn ds-btn-ghost ds-btn-sm";
+  copy.textContent = "複製";
+  copy.addEventListener("click", () =>
+    model.onCopyLoginCode(code.textContent, copy),
+  );
+  codeRow.append(code, copy);
+  const form = document.createElement("form");
+  form.id = "run-input";
+  form.hidden = !model.showInput;
+  const input = document.createElement("input");
+  input.id = "run-input-text";
+  input.type = "text";
+  input.maxLength = 500;
+  input.autocomplete = "off";
+  input.placeholder = "把授權代碼貼在這裡，再按送出";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "ds-btn ds-btn-primary ds-btn-sm";
+  submit.textContent = "送出";
+  form.append(input, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    model.onLoginInput(input.value, input);
+  });
+  hints.append(link, codeRow, form);
+  return hints;
+}
+
+function renderCard(model) {
+  elements.configChoicePanel.hidden = model.card.kind !== "setup";
+  const article = document.createElement("article");
+  article.className = `ds-card current-task-card current-task-card--${model.card.agent}`;
+  const header = document.createElement("header");
+  header.className = "config-card-header";
+  header.append(createLogo(model.card.logo));
+  const copy = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = model.card.label;
+  const detail = document.createElement("span");
+  detail.textContent = model.card.detail;
+  copy.append(title, detail);
+  const pill = document.createElement("span");
+  pill.className = model.status.className;
+  pill.textContent = model.status.text;
+  pill.dataset.cardStatus = model.status.status;
+  header.append(copy, pill);
+  article.append(header);
+
+  if (model.card.kind === "setup") {
+    const body = document.createElement("div");
+    body.className = "current-task-body";
+    body.append(elements.configChoicePanel);
+    article.append(body);
+  } else {
+    const body = document.createElement("div");
+    body.className = "current-task-body";
+    // 執行結果不另外開一塊——它掛在自查清單每一項底下（見 checklistGroups），
+    // 同一個檢查的名稱與結果放在一起，讀的人不用自己配對。
+    if (model.showChecklist) {
+      body.append(checklistElement(model.checklist, model.onManualToggle));
+    }
+    // 驗證留下的截圖直接貼在卡片上。這一格的證據就是那個檔案，看得到那片圖牆，
+    // 「真的有一顆瀏覽器被開起來」才不只是一句話。
+    if (model.verifyShot !== null && model.verifyShot !== undefined) {
+      const figure = document.createElement("figure");
+      figure.className = "verify-shot";
+      const image = document.createElement("img");
+      image.src = model.verifyShot;
+      image.alt = "Playwright 驗證時抓到的網頁截圖";
+      image.loading = "lazy";
+      // 檔案不在（還沒驗過、或被刪了）就整塊收掉，不要留一個破圖示。
+      image.addEventListener("error", () => figure.remove());
+      const caption = document.createElement("figcaption");
+      caption.textContent = "這張圖是剛才那顆瀏覽器截的";
+      figure.append(image, caption);
+      body.append(figure);
+    }
+    if (model.hints !== null && model.hints !== undefined) {
+      const hints = document.createElement("div");
+      hints.className = "card-hints";
+      const title = document.createElement("p");
+      title.className = "paste-proof-hint";
+      title.textContent = model.hints.title;
+      const block = document.createElement("code");
+      block.className = "paste-proof-command card-hints-block";
+      block.textContent = model.hints.lines.join("\n");
+      hints.append(title, block);
+      body.append(hints);
+    }
+    if (model.pasteProof !== null && model.pasteProof !== undefined) {
+      body.append(pasteProofElement(model.pasteProof));
+    }
+    const actions = document.createElement("div");
+    actions.className = "env-actions";
+    // 純人工的卡（全螢幕模式）沒有 row：沒有安裝也沒有驗證，自然沒有按鈕。
+    // 這裡少一個 ?. 會讓整個 render 中止，畫面停在上一張、「下一張」按了沒反應——
+    // 而且錯誤只留在 console，學生只看到按鈕壞掉（VM 實測）。
+    for (const spec of model.row?.buttons ?? []) {
+      actions.append(actionButton(spec, model.onActionClick));
+    }
+    if (model.showRetest) {
+      const retest = document.createElement("button");
+      retest.type = "button";
+      retest.className = "ds-btn ds-btn-ghost ds-btn-sm";
+      retest.textContent = "再 check 一次";
+      retest.addEventListener("click", model.onRetest);
+      actions.append(retest);
+    }
+    body.append(actions);
+    if (model.login !== null) {
+      body.append(
+        loginControlsElement({
+          ...model.login,
+          onCopyLoginCode: model.onCopyLoginCode,
+          onLoginInput: model.onLoginInput,
+        }),
+      );
+    }
+    article.append(body);
+  }
+
+  if (model.showNext) {
+    const footer = document.createElement("footer");
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "ds-btn ds-btn-primary";
+    next.textContent = "下一張";
+    next.disabled = !model.nextUnlocked;
+    next.addEventListener("click", model.onNext);
+    footer.append(next);
+    article.append(footer);
+  }
+  elements.currentCard.replaceChildren(article);
+  elements.currentCard.setAttribute("aria-busy", "false");
+}
+
+export function renderWizard(model) {
+  elements.sectionStatus.textContent = model.sectionStatus;
+  showSection(model.section.id);
+  renderMilestones(model.section.id, model.milestones, model.onMilestoneSelect);
+  renderCard(model.cardModel);
+}
 
 export function showSection(sectionId) {
   for (const button of elements.sectionButtons) {
     const current = button.dataset.sectionTarget === sectionId;
     button.classList.toggle("current", current);
-
-    if (current) {
-      button.setAttribute("aria-current", "step");
-    } else {
-      button.removeAttribute("aria-current");
-    }
+    if (current) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
   }
-
-  for (const panel of elements.sectionPanels) {
-    panel.hidden = panel.dataset.sectionPanel !== sectionId;
-  }
-
-  elements.configToolbar.hidden = sectionId === "env";
 }
 
 export function onSectionSelect(handler) {
   for (const button of elements.sectionButtons) {
-    button.addEventListener("click", () =>
-      handler(button.dataset.sectionTarget),
-    );
-  }
-}
-
-export function onGateToggle(handler) {
-  for (const input of elements.gateInputs) {
-    input.addEventListener("change", () =>
-      handler(input.dataset.gateId, input.checked),
-    );
+    button.addEventListener("click", () => handler(button.dataset.sectionTarget));
   }
 }
 
@@ -103,12 +514,8 @@ export function renderSectionLocks(lockStates) {
   for (const button of elements.sectionButtons) {
     const locked = lockStates[button.dataset.sectionTarget]?.locked === true;
     button.classList.toggle("is-locked", locked);
-
-    if (locked) {
-      button.setAttribute("aria-disabled", "true");
-    } else {
-      button.removeAttribute("aria-disabled");
-    }
+    if (locked) button.setAttribute("aria-disabled", "true");
+    else button.removeAttribute("aria-disabled");
   }
 }
 
@@ -121,8 +528,69 @@ export function hideSectionLockMessage() {
   elements.sectionLockMessage.hidden = true;
 }
 
-export function renderGateVisibility(codexSelected) {
-  elements.codexGate.hidden = !codexSelected;
+export function renderGateVisibility() {}
+export function onGateToggle() {}
+
+export function renderConfigChoices(toolChoices, languages) {
+  const toolButtons = toolChoices
+    .filter((choice) => !choice.value.includes(","))
+    .map((choice) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ds-pill";
+      button.dataset.tool = choice.value;
+      button.textContent = `#${choice.label}`;
+      button.setAttribute("aria-pressed", "false");
+      return button;
+    });
+  const languageButtons = languages.map((language) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ds-pill";
+    button.dataset.lang = language;
+    button.textContent = `#${language}`;
+    button.setAttribute("aria-pressed", "false");
+    return button;
+  });
+  elements.configTools.replaceChildren(...toolButtons);
+  elements.configLang.replaceChildren(...languageButtons);
+  setConfigSelection(["claude"], "zh-TW");
+}
+
+export function setConfigSelection(tools, lang) {
+  elements.configTools.dataset.value = tools.join(",");
+  elements.configLang.dataset.value = lang;
+  for (const button of elements.configTools.querySelectorAll("[data-tool]")) {
+    const selected = tools.includes(button.dataset.tool);
+    button.classList.toggle("ds-pill-accent", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  for (const button of elements.configLang.querySelectorAll("[data-lang]")) {
+    const selected = button.dataset.lang === lang;
+    button.classList.toggle("ds-pill-accent", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+}
+
+export function configValues() {
+  return {
+    tools: elements.configTools.dataset.value,
+    lang: elements.configLang.dataset.value,
+  };
+}
+
+export function onToolSelect(handler) {
+  elements.configTools.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-tool]");
+    if (button !== null) handler(button.dataset.tool);
+  });
+}
+
+export function onLanguageSelect(handler) {
+  elements.configLang.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-lang]");
+    if (button !== null) handler(button.dataset.lang);
+  });
 }
 
 function appendDots(parent, count) {
@@ -134,706 +602,152 @@ function appendDots(parent, count) {
   }
 }
 
-function createLoader(modifier, small) {
+function createLoader(modifier) {
   const loader = document.createElement("span");
-  loader.className = `ds-loader-orbs ${modifier}${
-    small ? " ds-loader-orbs--sm" : ""
-  }`;
+  loader.className = `ds-loader-orbs ds-loader-orbs--sm ds-loader-orbs--on-dark ${modifier}`;
   loader.setAttribute("role", "status");
-
   if (modifier === LOADER_MODIFIERS.working) {
-    const definitions = small
-      ? [
-          ["-22deg", "2.7s"],
-          ["48deg", "2.2s"],
-        ]
-      : [
-          ["-24deg", "3.4s"],
-          ["32deg", "2.7s"],
-          ["78deg", "4.1s"],
-        ];
-
-    for (const [tilt, duration] of definitions) {
+    for (const [tilt, duration] of [["-22deg", "2.7s"], ["48deg", "2.2s"]]) {
       const orbit = document.createElement("span");
       orbit.className = "ds-loader-orbs__orbit";
       orbit.style.setProperty("--tilt", tilt);
       orbit.style.setProperty("--orbit-duration", duration);
-      orbit.setAttribute("aria-hidden", "true");
       appendDots(orbit, 6);
       loader.append(orbit);
     }
   } else if (modifier === LOADER_MODIFIERS.searching) {
-    const counts = small ? [2, 4, 2] : [4, 8, 4];
-
-    counts.forEach((count, row) => {
+    [2, 4, 2].forEach((count, row) => {
       const latitude = document.createElement("span");
       latitude.className = "ds-loader-orbs__latitude";
       latitude.style.setProperty("--row", row);
       latitude.style.setProperty("--mid", (count - 1) / 2);
-      latitude.style.setProperty("--step", small ? "4.5px" : "7.5px");
-      latitude.style.setProperty(
-        "--delay-step",
-        `${(-1.6 / count).toFixed(3)}s`,
-      );
-      latitude.setAttribute("aria-hidden", "true");
+      latitude.style.setProperty("--step", "4.5px");
+      latitude.style.setProperty("--delay-step", `${(-1.6 / count).toFixed(3)}s`);
       appendDots(latitude, count);
       loader.append(latitude);
     });
   } else if (modifier === LOADER_MODIFIERS.listening) {
-    const radii = small ? [3, 7] : [8, 16, 25];
-
-    radii.forEach((radius, ringIndex) => {
+    [3, 7].forEach((radius, ringIndex) => {
       const ring = document.createElement("span");
       ring.className = "ds-loader-orbs__ring";
       ring.style.setProperty("--ring", ringIndex);
       ring.style.setProperty("--ring-radius", `${radius}px`);
-      ring.setAttribute("aria-hidden", "true");
       appendDots(ring, 6);
       loader.append(ring);
     });
   }
-
   return loader;
 }
 
 const loaderLabels = {
-  [LOADER_MODIFIERS.working]: "安裝中",
-  [LOADER_MODIFIERS.searching]: "檢查中",
-  [LOADER_MODIFIERS.listening]: "等待終端結果",
-  [LOADER_MODIFIERS.solving]: "判定中",
-  [LOADER_MODIFIERS.composing]: "回答問題中",
-  [LOADER_MODIFIERS.shaping]: "產出網頁中",
+  [LOADER_MODIFIERS.working]: "正在安裝，完成後會自動更新。",
+  [LOADER_MODIFIERS.searching]: "正在檢查目前狀態。",
+  [LOADER_MODIFIERS.listening]: "新終端已開啟，正在等驗證結果。",
+  [LOADER_MODIFIERS.solving]: "正在判定結果。",
+  [LOADER_MODIFIERS.composing]: "正在檢查回覆格式。",
+  [LOADER_MODIFIERS.shaping]: "正在產出示範畫面。",
 };
-const topLoaders = new Map();
-const rowLoaders = new Map();
-
+const loaders = new Map();
 for (const modifier of Object.keys(loaderLabels)) {
-  const topLoader = createLoader(modifier, false);
-  const rowLoader = createLoader(modifier, true);
-  topLoader.hidden = true;
-  rowLoader.hidden = true;
-  elements.progressLoader.append(topLoader);
-  elements.rowLoaderPool.append(rowLoader);
-  topLoaders.set(modifier, topLoader);
-  rowLoaders.set(modifier, rowLoader);
-}
-
-function resetLoader(loader) {
-  loader.classList.remove(LOADER_MODIFIERS.paused, "is-paused");
+  const loader = createLoader(modifier);
   loader.hidden = true;
+  elements.rowLoaderPool.append(loader);
+  loaders.set(modifier, loader);
+}
+let terminalLineModels = [...elements.terminalLines.children].map((line) => ({
+  className: line.className,
+  text: line.textContent,
+}));
+
+function acceptsTerminalLine(spec) {
+  const next = appendTermLine(terminalLineModels, spec);
+
+  if (next === terminalLineModels) {
+    return false;
+  }
+
+  terminalLineModels = next;
+  return true;
 }
 
 export function hideLoaders() {
-  for (const loader of topLoaders.values()) {
-    resetLoader(loader);
-  }
-
-  for (const loader of rowLoaders.values()) {
-    resetLoader(loader);
+  for (const loader of loaders.values()) {
+    loader.hidden = true;
+    loader.classList.remove("is-paused");
     elements.rowLoaderPool.append(loader);
   }
-
-  elements.progressLoader.classList.remove("is-paused");
 }
 
-export function renderLoaders({
-  modifier,
-  button = null,
-  step = null,
-  paused = false,
-  topOnly = false,
-}) {
+export function renderLoaders({ modifier, paused = false }) {
+  const loader = loaders.get(modifier);
+  if (loader === undefined) return;
+  const spec = {
+    className: "ds-term-line ds-term-line--dim terminal-loader-line",
+    text: paused ? "處理已停止。" : loaderLabels[modifier],
+  };
+  if (!acceptsTerminalLine(spec)) return;
   hideLoaders();
-  const topLoader = topLoaders.get(modifier);
-
-  if (topLoader === undefined) {
-    return;
-  }
-
-  topLoader.setAttribute(
-    "aria-label",
-    paused ? "處理已停止" : loaderLabels[modifier],
-  );
-  topLoader.hidden = false;
-
-  if (paused) {
-    topLoader.classList.add(LOADER_MODIFIERS.paused, "is-paused");
-    elements.progressLoader.classList.add("is-paused");
-  }
-
-  if (topOnly) {
-    return;
-  }
-
-  const row =
-    button?.closest(".env-row") ??
-    [...elements.configResults.querySelectorAll("[data-config-step]")].find(
-      (candidate) => candidate.dataset.configStep === step,
-    );
-  const slot = row?.querySelector(".row-loader-slot");
-
-  if (slot === null || slot === undefined) {
-    return;
-  }
-
-  const rowLoader = rowLoaders.get(modifier);
-  rowLoader.setAttribute(
-    "aria-label",
-    paused ? "處理已停止" : loaderLabels[modifier],
-  );
-
-  if (paused) {
-    rowLoader.classList.add(LOADER_MODIFIERS.paused, "is-paused");
-  }
-
-  slot.append(rowLoader);
-  rowLoader.hidden = false;
-}
-
-function createLogo(logo) {
-  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  icon.setAttribute("class", "ds-toollogo-mark");
-  icon.setAttribute("aria-hidden", "true");
-  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  use.setAttribute("href", `#${logo}`);
-  icon.append(use);
-  return icon;
-}
-
-function updateProgress() {
-  const summary = progressSummary(
-    latestEnvChecks,
-    latestConfigChecks,
-    latestVerifiedSteps,
-  );
-  elements.progressBar.classList.toggle(
-    "ds-pbar--indeterminate",
-    summary.loading,
-  );
-
-  if (summary.loading) {
-    elements.progressSummary.textContent = "正在計算…";
-    elements.progressFill.style.width = "";
-    elements.progressDuck.style.left = "0%";
-    elements.completionMessage.hidden = true;
-    return;
-  }
-
-  elements.progressSummary.textContent = `${summary.done} / ${summary.total} 項就緒`;
-  elements.progressFill.style.width = `${summary.percent}%`;
-  elements.progressDuck.style.left = `${summary.percent}%`;
-  const complete = summary.total > 0 && summary.done === summary.total;
-  elements.completionMessage.hidden = !complete;
-
-  if (complete && !completionShown) {
-    completionShown = true;
-    const firework = document.createElement("span");
-    firework.className = "ds-firework";
-    firework.style.setProperty("--firework-at", "100%");
-    firework.setAttribute("aria-hidden", "true");
-
-    for (let ray = 0; ray < 10; ray += 1) {
-      const particle = document.createElement("i");
-      particle.style.setProperty("--ray", `${ray * 36}deg`);
-      firework.append(particle);
-    }
-
-    elements.progressBar.append(firework);
-    window.setTimeout(() => firework.remove(), 800);
-  }
-}
-
-function createSkeleton() {
-  const card = document.createElement("div");
-  card.className = "ds-card config-skeleton";
-  const skeleton = document.createElement("div");
-  skeleton.className = "ds-skeleton";
-  skeleton.setAttribute("aria-hidden", "true");
-
-  for (const className of [
-    "ds-skeleton-line ds-skeleton-line--title",
-    "ds-skeleton-line",
-    "ds-skeleton-line ds-skeleton-line--short",
-  ]) {
-    const line = document.createElement("div");
-    line.className = className;
-    skeleton.append(line);
-  }
-
-  card.append(skeleton);
-  return card;
-}
-
-export function addLine(text, className = "") {
   const line = document.createElement("div");
-  line.textContent = text;
-  line.className = className;
-  elements.output.append(line);
-  elements.output.scrollTop = elements.output.scrollHeight;
-}
-
-// 代理的文字是一段一段串流進來的，要接在同一個區塊裡而不是每段一行。
-export function addAgentEvent(agentEvent, agentName) {
-  if (agentEvent.kind === "text") {
-    if (activeText === null) {
-      activeText = document.createElement("div");
-      activeText.className = "agent-text";
-      activeText.textContent = `${agentName} 回覆：`;
-      elements.output.append(activeText);
-    }
-
-    activeText.append(document.createTextNode(agentEvent.text));
-    elements.output.scrollTop = elements.output.scrollHeight;
-    return;
-  }
-
-  activeText = null;
-  addLine(agentEvent.text, `agent-${agentEvent.kind}`);
+  line.className = spec.className;
+  line.textContent = spec.text;
+  loader.hidden = false;
+  loader.classList.toggle("is-paused", paused);
+  line.append(loader);
+  elements.terminalLines.append(line);
 }
 
 export function clearOutput() {
-  elements.output.replaceChildren();
-  activeText = null;
+  elements.output.textContent = "";
+  elements.terminalLines.replaceChildren();
+  terminalLineModels = [];
 }
 
-export function renderEnvLoading() {
-  latestEnvChecks = null;
-  const skeleton = document.createElement("div");
-  skeleton.className = "ds-skeleton";
-  skeleton.setAttribute("aria-hidden", "true");
+export function addRawLine(text) {
+  elements.output.textContent += `${text}\n`;
+}
 
-  for (const className of [
-    "ds-skeleton-line ds-skeleton-line--title",
-    "ds-skeleton-line",
-    "ds-skeleton-line ds-skeleton-line--short",
-    "ds-skeleton-line",
-  ]) {
+export function addLine(text, className = "") {
+  const spec = {
+    className: `ds-term-line ${
+      ["failed", "stderr", "agent-error"].includes(className)
+        ? "ds-term-line--err"
+        : className === "succeeded"
+          ? "ds-term-line--ok"
+          : "ds-term-line--dim"
+    }`,
+    text,
+  };
+  if (!acceptsTerminalLine(spec)) return;
+  const line = document.createElement("div");
+  line.className = spec.className;
+  line.textContent = spec.text;
+  elements.terminalLines.append(line);
+}
+
+export function addTerminalLines(lines) {
+  for (const spec of lines) {
+    if (!acceptsTerminalLine(spec)) continue;
     const line = document.createElement("div");
-    line.className = className;
-    skeleton.append(line);
+    line.className = spec.className;
+    line.textContent = spec.text;
+    elements.terminalLines.append(line);
   }
-
-  elements.envResults.replaceChildren(skeleton);
-  updateProgress();
 }
 
-export function renderEnvBusy(busy) {
-  elements.envResults.setAttribute("aria-busy", busy ? "true" : "false");
+export function addAgentEvent(agentEvent, agentName) {
+  addRawLine(`${agentName}${agentName ? "：" : ""}${agentEvent.text}`);
 }
 
-export function renderEnvFailure(message) {
-  latestEnvChecks = [];
-  elements.envOs.textContent = "作業系統：無法取得";
-  const paragraph = document.createElement("p");
-  paragraph.className = "env-message failed";
-  paragraph.textContent = `環境檢查失敗：${message}`;
-  elements.envResults.replaceChildren(paragraph);
-  updateProgress();
+export function shakeTerminal() {
+  if (reducedMotion.matches) return;
+  elements.terminal.classList.remove("term-shake");
+  requestAnimationFrame(() => elements.terminal.classList.add("term-shake"));
+  window.setTimeout(() => elements.terminal.classList.remove("term-shake"), 400);
 }
 
-export function renderEnv(os, checks, onActionClick) {
-  latestEnvChecks = checks;
-  elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
-  const rows = checks.map((check) => {
-    const model = envRowModel(check);
-    const row = document.createElement("div");
-    row.className = "env-row";
-    row.dataset.status = model.status;
-    row.dataset.envStep = check.id;
-    const loaderSlot = document.createElement("span");
-    loaderSlot.className = "row-loader-slot";
-
-    const icon = document.createElement("span");
-    icon.className = "env-icon";
-    icon.textContent = model.symbol;
-    icon.setAttribute("aria-label", model.ariaLabel);
-
-    const logoName = envLogoFor(check.id);
-
-    if (logoName !== null) {
-      row.append(createLogo(logoName));
-    } else {
-      const spacer = document.createElement("span");
-      spacer.className = "env-logo-spacer";
-      spacer.setAttribute("aria-hidden", "true");
-      row.append(spacer);
-    }
-
-    const label = document.createElement("strong");
-    label.textContent = model.label;
-
-    const detail = document.createElement("span");
-    detail.className = "env-detail";
-    detail.textContent = model.detail;
-
-    row.prepend(loaderSlot, icon);
-    row.append(label, detail);
-
-    const actions = document.createElement("div");
-    actions.className = "env-actions";
-
-    for (const button of model.buttons) {
-      const element = document.createElement("button");
-      element.type = "button";
-      element.className = "env-action";
-      element.dataset[button.dataName] = button.action;
-      element.dataset.idleText = button.text;
-      element.textContent = button.text;
-      element.addEventListener("click", () =>
-        onActionClick(button.action, element),
-      );
-      actions.append(element);
-    }
-
-    row.append(actions);
-    return row;
-  });
-  elements.envResults.replaceChildren(...rows);
-  updateProgress();
-}
-
-export function renderConfigChoices(toolChoices, languages) {
-  const toolOptions = toolChoices.map((choice) => {
-    const option = document.createElement("option");
-    option.value = choice.value;
-    option.textContent = choice.label;
-    return option;
-  });
-  const languageOptions = languages.map((language) => {
-    const option = document.createElement("option");
-    option.value = language;
-    option.textContent = language;
-    return option;
-  });
-  elements.configTools.replaceChildren(...toolOptions);
-  elements.configLang.replaceChildren(...languageOptions);
-}
-
-function createGuidance(
-  guidance,
-  { explanation = null, rawOutput = "", translating = false } = {},
-  onActionClick = () => {},
-) {
-  const container = document.createElement("section");
-  container.className = "failure-guidance";
-
-  if (guidance !== null) {
-    const transform = document.createElement("div");
-    transform.className = "ds-transform";
-    const before = document.createElement("div");
-    before.className = "ds-transform-side ds-transform-side--before";
-    const beforeTitle = document.createElement("strong");
-    beforeTitle.textContent = "你現在看到的";
-    const beforeText = document.createElement("span");
-    beforeText.textContent = guidance.symptom;
-    before.append(beforeTitle, beforeText);
-    const arrow = document.createElement("div");
-    arrow.className = "ds-transform-arrow";
-    arrow.textContent = "→";
-    arrow.setAttribute("aria-hidden", "true");
-    const after = document.createElement("div");
-    after.className = "ds-transform-side ds-transform-side--after";
-    const afterTitle = document.createElement("strong");
-    afterTitle.textContent = "修好之後";
-    const afterText = document.createElement("span");
-    afterText.textContent = guidance.expected;
-    after.append(afterTitle, afterText);
-    transform.append(before, arrow, after);
-    container.append(transform);
-
-    const checklist = document.createElement("div");
-    checklist.className = "guidance-checks";
-
-    for (const check of guidance.checks) {
-      const label = document.createElement("label");
-      label.className = "ds-check";
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.setAttribute("aria-label", check);
-      const box = document.createElement("span");
-      box.className = "ds-check-box";
-      const text = document.createElement("span");
-      text.className = "ds-check-text";
-      text.textContent = check;
-      label.append(input, box, text);
-      checklist.append(label);
-    }
-
-    container.append(checklist);
-
-    if (guidance.diagnoseButton !== null) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "env-action guidance-diagnose";
-      button.dataset.diagnoseAction = guidance.diagnoseButton.action;
-      button.dataset.step = guidance.diagnoseButton.step;
-      button.textContent = guidance.diagnoseButton.text;
-      button.addEventListener("click", () =>
-        onActionClick(
-          guidance.diagnoseButton.action,
-          button,
-          guidance.diagnoseButton.step,
-        ),
-      );
-      container.append(button);
-    }
-  }
-
-  if (translating || explanation !== null) {
-    const callout = document.createElement("aside");
-    callout.className = "ds-callout failure-explanation";
-    const title = document.createElement("strong");
-    title.textContent = translating ? "正在翻譯第三方輸出" : "這段輸出在說";
-    const text = document.createElement("span");
-    text.textContent =
-      translating && explanation === null
-        ? "正在請你的 Claude 整理成一句話…"
-        : explanation;
-    callout.append(title, text);
-    container.append(callout);
-  }
-
-  if (rawOutput.length > 0) {
-    const terminal = document.createElement("details");
-    terminal.className = "ds-term guidance-terminal";
-    const summary = document.createElement("summary");
-    summary.textContent = "查看第三方原始輸出";
-    const body = document.createElement("pre");
-    body.className = "ds-term-body";
-    body.textContent = rawOutput;
-    terminal.append(summary, body);
-    container.append(terminal);
-  }
-
-  return container;
-}
-
-function createConfigRow(
-  check,
-  model,
-  onActionClick,
-  onEyeToggle,
-  showVerifyPrompt,
-  onVerifyNow,
-  onVerifyLater,
-) {
-  const row = document.createElement("div");
-  row.className = "env-row";
-  row.dataset.status = model.status;
-  row.dataset.configStep = check.id;
-  const loaderSlot = document.createElement("span");
-  loaderSlot.className = "row-loader-slot";
-
-  const icon = document.createElement("span");
-  icon.className = "env-icon";
-  icon.textContent = model.symbol;
-  icon.setAttribute("aria-label", model.ariaLabel);
-
-  const label = document.createElement("strong");
-  label.textContent = model.label;
-
-  const detail = document.createElement("span");
-  detail.className = "env-detail";
-  detail.textContent = model.detail;
-
-  row.append(loaderSlot, icon, label, detail);
-
-  const actions = document.createElement("div");
-  actions.className = "env-actions";
-
-  for (const button of model.buttons) {
-    const element = document.createElement("button");
-    element.type = "button";
-    element.className = "env-action";
-    element.dataset[button.dataName] = button.action;
-    element.dataset.step = button.step;
-    element.textContent = button.text;
-    element.addEventListener("click", () =>
-      onActionClick(button.action, element, button.step, button.options),
-    );
-    actions.append(element);
-  }
-
-  row.append(actions);
-
-  // 程式驗不到的那一格，明講要回終端看什麼，看完自己勾。
-  if (model.eyeCheck !== null) {
-    const eye = document.createElement("label");
-    eye.className = "env-eye-check";
-
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.dataset.eyeStep = check.id;
-    box.addEventListener("change", () => onEyeToggle(check.id, box.checked));
-
-    const text = document.createElement("span");
-    text.textContent = `我看到了：${model.eyeCheck}`;
-
-    eye.append(box, text);
-    row.append(eye);
-  }
-
-  if (showVerifyPrompt) {
-    const prompt = document.createElement("div");
-    prompt.className = "verify-follow-up";
-    const text = document.createElement("span");
-    text.textContent = "要現在開終端驗證嗎？";
-    const now = document.createElement("button");
-    now.type = "button";
-    now.dataset.verifyNow = check.id;
-    now.textContent = "現在驗";
-    now.addEventListener("click", () => onVerifyNow(check));
-    const later = document.createElement("button");
-    later.type = "button";
-    later.dataset.verifyLater = check.id;
-    later.textContent = "稍後";
-    later.addEventListener("click", () => onVerifyLater(check.id));
-    prompt.append(text, now, later);
-    row.append(prompt);
-  }
-
-  if (model.guidance !== null) {
-    row.append(createGuidance(model.guidance, {}, onActionClick));
-  }
-
-  return row;
-}
-
-function createConfigCard(
-  card,
-  onActionClick,
-  verifiedSteps,
-  onEyeToggle,
-  verificationPrompts,
-  availableActions,
-  onVerifyNow,
-  onVerifyLater,
-) {
-  const models = card.checks.map((check) =>
-    configRowModel(check, verifiedSteps.has(check.id), {
-      availableActions,
-    }),
-  );
-  const done = models.filter((model) => model.status === "ok").length;
-  const article = document.createElement("article");
-  article.className = `ds-card-tilt config-card config-card--${card.agent}`;
-
-  const face = document.createElement("div");
-  face.className = "ds-card-tilt__face config-card-face";
-  const header = document.createElement("header");
-  header.className = "config-card-header";
-  header.append(createLogo(card.logo));
-
-  const title = document.createElement("h3");
-  title.textContent = card.label;
-  const count = document.createElement("span");
-  count.textContent = `${card.checks.length} 項 / 已完成 ${done}`;
-  const copy = document.createElement("div");
-  copy.append(title, count);
-  header.append(copy);
-
-  const rows = card.checks.map((check, index) =>
-    createConfigRow(
-      check,
-      models[index],
-      onActionClick,
-      onEyeToggle,
-      verificationPrompts.has(check.id),
-      onVerifyNow,
-      onVerifyLater,
-    ),
-  );
-  const body = document.createElement("div");
-  body.className = "config-card-rows";
-  body.append(...rows);
-  face.append(header, body);
-  article.append(face);
-  return article;
-}
-
-export function renderConfigs(
-  checks,
-  onActionClick,
-  {
-    verifiedSteps = new Set(),
-    verificationPrompts = new Set(),
-    onEyeToggle = () => {},
-    onVerifyNow = () => {},
-    onVerifyLater = () => {},
-    availableActions = null,
-  } = {},
-) {
-  latestConfigChecks = checks;
-  latestVerifiedSteps = verifiedSteps;
-
-  for (const section of groupChecks(checks)) {
-    const cards = section.cards.map((card) =>
-      createConfigCard(
-        card,
-        onActionClick,
-        verifiedSteps,
-        onEyeToggle,
-        verificationPrompts,
-        availableActions,
-        onVerifyNow,
-        onVerifyLater,
-      ),
-    );
-    const container = elements.sectionCards[section.sectionId];
-
-    if (cards.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "empty-section ds-card";
-      empty.textContent = "這個工具組合沒有此章節項目。";
-      container.replaceChildren(empty);
-    } else {
-      container.replaceChildren(...cards);
-    }
-  }
-
-  elements.configResults.setAttribute("aria-busy", "false");
-  updateProgress();
-}
-
-export function renderFailureGuidance({
-  button = null,
-  step = null,
-  guidance = null,
-  explanation = null,
-  rawOutput = "",
-  translating = false,
-  onActionClick = () => {},
-}) {
-  const row =
-    button?.closest(".env-row") ??
-    [
-      ...document.querySelectorAll("[data-config-step], [data-env-step]"),
-    ].find(
-      (candidate) =>
-        candidate.dataset.configStep === step ||
-        candidate.dataset.envStep === step,
-    );
-
-  if (row === null || row === undefined) {
-    return;
-  }
-
-  row.dataset.status = "missing";
-  const icon = row.querySelector(".env-icon");
-
-  if (icon !== null) {
-    icon.textContent = "✗";
-    icon.setAttribute("aria-label", "執行失敗");
-  }
-
-  row.querySelector(".failure-guidance")?.remove();
-  row.append(
-    createGuidance(
-      guidance,
-      { explanation, rawOutput, translating },
-      onActionClick,
-    ),
-  );
+export function renderFailureGuidance({ guidance, explanation = null }) {
+  if (guidance === null && explanation === null) return;
+  if (explanation !== null) addLine(`白話說明：${explanation}`, "agent-status");
 }
 
 export function renderConfigSummary(summary) {
@@ -841,64 +755,36 @@ export function renderConfigSummary(summary) {
 }
 
 export function renderConfigLoading() {
-  latestConfigChecks = null;
-  elements.configResults.setAttribute("aria-busy", "true");
-
-  for (const container of Object.values(elements.sectionCards)) {
-    container.replaceChildren(createSkeleton());
-  }
-
-  updateProgress();
+  elements.currentCard.setAttribute("aria-busy", "true");
 }
 
 export function renderConfigFailure(message) {
-  latestConfigChecks = [];
-  elements.configResults.setAttribute("aria-busy", "false");
+  addLine(`規則檔檢查失敗：${message}`, "failed");
+}
 
-  for (const container of Object.values(elements.sectionCards)) {
-    const paragraph = document.createElement("p");
-    paragraph.className = "env-message failed ds-card";
-    paragraph.textContent = `規則檔檢查失敗：${message}`;
-    container.replaceChildren(paragraph);
-  }
+export function renderEnvLoading() {
+  elements.currentCard.setAttribute("aria-busy", "true");
+}
 
-  updateProgress();
+export function renderEnvBusy(busy) {
+  elements.currentCard.setAttribute("aria-busy", busy ? "true" : "false");
+}
+
+export function renderEnvFailure(message) {
+  addLine(`環境檢查失敗：${message}`, "failed");
 }
 
 export function renderBehaviorFallback(state) {
-  elements.behaviorQuestion.textContent = "";
-  elements.behaviorChecklist.replaceChildren();
-  elements.copyBehaviorQuestion.textContent = "複製";
-
-  if (!state.visible) {
-    elements.behaviorFallback.hidden = true;
-    return;
-  }
-
-  const items = state.checklist.map((text) => {
-    const item = document.createElement("li");
-    item.textContent = text;
-    return item;
-  });
-  elements.behaviorQuestion.textContent = state.question;
-  elements.behaviorChecklist.replaceChildren(...items);
-  elements.behaviorFallback.hidden = false;
+  if (!state.visible) return;
+  addLine("自動驗證沒有通過，可以照卡片上的自查項目確認。", "failed");
 }
 
 export function configActionButtons() {
-  return [
-    ...elements.configResults.querySelectorAll(
-      "[data-install-action], [data-merge-action], [data-verify-action], [data-diagnose-action], [data-verify-now], [data-verify-later]",
-    ),
-  ];
+  return [...elements.currentCard.querySelectorAll("[data-install-action], [data-merge-action], [data-verify-action], [data-diagnose-action]")];
 }
 
 export function envActionButtons() {
-  return [
-    ...elements.envResults.querySelectorAll(
-      "[data-install-action], [data-fix-action]",
-    ),
-  ];
+  return [...elements.currentCard.querySelectorAll("[data-install-action], [data-fix-action]")];
 }
 
 export function renderEnvButton(button, state) {
@@ -907,82 +793,104 @@ export function renderEnvButton(button, state) {
 }
 
 export function renderRunControls(state) {
-  for (const button of elements.actionButtons) {
-    button.disabled = state.actionButtonsDisabled;
-  }
-
+  for (const button of elements.actionButtons) button.disabled = state.actionButtonsDisabled;
   elements.prompt.disabled = state.promptDisabled;
   elements.allowWrite.disabled = state.allowWriteDisabled;
   elements.recheckEnv.disabled = state.recheckDisabled;
-  elements.configTools.disabled = state.configControlsDisabled;
-  elements.configLang.disabled = state.configControlsDisabled;
   elements.recheckConfigs.disabled = state.configControlsDisabled;
-
+  for (const button of elements.configTools.querySelectorAll("button")) button.disabled = state.configControlsDisabled;
+  for (const button of elements.configLang.querySelectorAll("button")) button.disabled = state.configControlsDisabled;
   for (const button of configActionButtons()) {
-    button.disabled = state.configControlsDisabled;
+    button.disabled =
+      state.configControlsDisabled ||
+      button.classList.contains("is-done") ||
+      button.dataset.permanentlyDisabled === "true";
   }
-
   elements.cancel.hidden = state.cancelHidden;
   elements.cancel.disabled = state.cancelDisabled;
-  elements.runInput.hidden = state.inputHidden;
+  const runInput = elements.currentCard.querySelector("#run-input");
+  if (runInput !== null && state.inputHidden) runInput.hidden = true;
 }
 
 export function showInstallStatus(message) {
-  elements.installStatus.textContent = message.text;
-  elements.installStatus.classList.toggle("failed", message.failed);
-  elements.installStatus.hidden = false;
+  addLine(message.text, message.failed ? "failed" : "succeeded");
 }
 
-export function hideInstallStatus() {
-  elements.installStatus.hidden = true;
-}
+export function hideInstallStatus() {}
 
 export function showLoginWaiting(onStop) {
-  const message = document.createTextNode(
-    "正在確認登入狀態，完成後這裡會自動更新。",
-  );
-  const stopButton = document.createElement("button");
-  stopButton.type = "button";
-  stopButton.textContent = "停止等待";
-  stopButton.addEventListener("click", onStop);
-  elements.loginWaitStatus.replaceChildren(message, stopButton);
-  elements.loginWaitStatus.classList.remove("failed");
-  elements.loginWaitStatus.hidden = false;
+  const line = document.createElement("div");
+  line.className = "ds-term-line ds-term-line--dim";
+  line.textContent = "正在確認登入狀態，完成後這裡會自動更新。";
+  const stop = document.createElement("button");
+  stop.type = "button";
+  stop.className = "ds-btn ds-btn-ghost ds-btn-sm";
+  stop.textContent = "停止等待";
+  stop.addEventListener("click", onStop);
+  line.append(stop);
+  elements.terminalLines.append(line);
 }
 
 export function finishLoginWaiting(text, failed) {
-  elements.loginWaitStatus.textContent = text;
-  elements.loginWaitStatus.classList.toggle("failed", failed);
-  elements.loginWaitStatus.hidden = false;
+  addLine(text, failed ? "failed" : "succeeded");
 }
 
-export function hideLoginWaiting() {
-  elements.loginWaitStatus.hidden = true;
-  elements.loginWaitStatus.replaceChildren();
-}
+export function hideLoginWaiting() {}
 
-export function showLoginHints(hints) {
-  if (hints.url !== null) {
-    elements.loginUrl.href = hints.url;
-    elements.loginUrl.textContent = hints.url;
-    elements.loginUrl.hidden = false;
+export function showLoginHints(model) {
+  if (model === null) return;
+  const hints = elements.currentCard.querySelector("#login-hints");
+  const link = elements.currentCard.querySelector("#login-url");
+  const codeRow = elements.currentCard.querySelector("#login-code-row");
+  const code = elements.currentCard.querySelector("#login-code");
+  const runInput = elements.currentCard.querySelector("#run-input");
+  if (hints === null) return;
+  if (model.url !== null) {
+    link.href = model.url;
+    link.textContent = model.linkText;
+    link.hidden = false;
   }
-
-  if (hints.code !== null) {
-    elements.loginCode.textContent = hints.code;
-    elements.loginCodeRow.hidden = false;
+  if (model.code !== null) {
+    code.textContent = model.code;
+    codeRow.hidden = false;
   }
-
-  elements.loginHints.hidden =
-    elements.loginUrl.hidden && elements.loginCodeRow.hidden;
+  runInput.hidden = !model.showInput;
+  hints.hidden = link.hidden && codeRow.hidden;
 }
 
 export function clearLoginHints() {
-  elements.loginUrl.hidden = true;
-  elements.loginUrl.removeAttribute("href");
-  elements.loginUrl.textContent = "";
-  elements.loginCodeRow.hidden = true;
-  elements.loginCode.textContent = "";
-  elements.copyLoginCode.textContent = "複製";
-  elements.loginHints.hidden = true;
+  const hints = elements.currentCard.querySelector("#login-hints");
+  if (hints === null) return;
+  const link = hints.querySelector("#login-url");
+  const codeRow = hints.querySelector("#login-code-row");
+  const code = hints.querySelector("#login-code");
+  const copy = hints.querySelector("#copy-login-code");
+  const runInput = hints.querySelector("#run-input");
+  link.hidden = true;
+  link.removeAttribute("href");
+  codeRow.hidden = true;
+  code.textContent = "";
+  copy.textContent = "複製";
+  runInput.hidden = true;
+  hints.hidden = true;
+}
+
+export function showVerifyModal() {
+  elements.verifyModal.hidden = false;
+  requestAnimationFrame(() => elements.verifyModal.classList.add("open"));
+}
+
+export function hideVerifyModal() {
+  elements.verifyModal.classList.remove("open");
+  window.setTimeout(() => {
+    elements.verifyModal.hidden = true;
+  }, 200);
+}
+
+export function onVerifyModal(confirm, later) {
+  elements.verifyModalConfirm.addEventListener("click", confirm);
+  elements.verifyModalLater.addEventListener("click", later);
+  elements.verifyModal.addEventListener("click", (event) => {
+    if (event.target === elements.verifyModal) later();
+  });
 }

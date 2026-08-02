@@ -23,26 +23,85 @@ export const SECTIONS = [
 ];
 
 export const SECTION_GATES = {
-  skills: [
-    {
-      id: "rules-new-terminal",
-      title: "關掉現在的終端分頁，開一個新的",
-      detail: "wrapper 寫在 shell profile，舊分頁不會載入",
-    },
-  ],
-  demo: [
-    {
-      id: "skills-new-terminal",
-      title: "再開一次新的分頁",
-      detail: "skill 只在 session 啟動時掃目錄",
-    },
-    {
-      id: "codex-hook-trust",
-      title: "第一次跑 codex 要接受 hook 信任提示",
-      detail: "沒接受的話整組 hook 不會跑",
-      codexOnly: true,
-    },
-  ],
+  // 規則段結束時原本要學生「關掉終端分頁、開一個新的」。拿掉了：規則段的驗證全部
+  // 走 verify-in-terminal，它每次都自己開一個全新的終端視窗（畫面上就寫著「新終端
+  // 已開啟」），wrapper 一定是載入過的。叫學生再手動開一次是多的一步，而且會讓人
+  // 以為剛才那些驗證用的是舊分頁、結果不算數。
+  skills: [],
+  // demo 段前面原本要學生「再開一次新的分頁」，理由是 skill 只在 session 啟動時掃
+  // 目錄。拿掉了，跟規則段那道同一個理由：技能包與 demo 的驗證全部走
+  // verify-in-terminal，它每次都自己開一個全新的終端視窗，skill 一定載入過。
+  //
+  // 留著反而有害：學生剛看完「新終端已開啟」的驗證，下一步又被叫去手動開分頁，
+  // 會以為剛才那些驗證用的是舊 session、結果不算數。
+  demo: [],
+};
+
+// 掛在「特定一張卡」上的人工關卡，跟段落閘門不同：段落閘門是走完一段才提醒，
+// 這裡是在真正需要它的那張卡上就提醒。
+//
+// codex 的信任提示原本掛在「進 Demo 之前」，但整組 codex hook 的驗證在規則段就要
+// 用到它——沒接受的話規則段的 codex hook 一定驗不過，而提醒卻排在兩段之後。
+// 學生被推進一個必然失敗的驗證，跟終端機標題同步排太後面是同一種錯位（VM 實測）。
+// 學生要圈選、貼回來的那串代碼。固定字串就夠——這一格要抓的是「auto-copy 沒生效」，
+// 不是防作弊；硬打字打得出來也代表他看到了那一行。
+export const FULLSCREEN_PROOF = "fullscreen-copy-ok-7f3a91";
+
+export const FULLSCREEN_PROMPT = `請原樣印出這一行，不要加任何說明：${FULLSCREEN_PROOF}`;
+
+// 貼回來的東西前後常常黏到空白或換行（圈選很難剛好停在字尾），比對前先清乾淨。
+export function matchesFullscreenProof(pasted) {
+  return typeof pasted === "string" && pasted.trim() === FULLSCREEN_PROOF;
+}
+
+export const FULLSCREEN_ITEMS = [
+  {
+    id: "fullscreen-yes",
+    title: "跳出方框時按 1. Yes, try it",
+    detail: "畫面會整個重畫一次，方框消失",
+  },
+  {
+    id: "fullscreen-mouse",
+    title: "打一句話，用滑鼠點那句話中間",
+    detail: "游標會跳到你點的位置，不用按左右鍵移過去",
+  },
+  {
+    id: "fullscreen-copy",
+    title: "圈選代碼那一行，貼進下面的欄位",
+    detail: "放開滑鼠就複製好了，不要按 Ctrl+C——在這個模式下它是中斷執行",
+  },
+];
+
+// 第一次跑 codex 會連續跳兩個問句，兩個都選錯就整組 hook 不跑、後面 codex 那幾格
+// 全部失敗——而失敗訊息只會說「驗證沒過」，不會說「你剛才那兩個選項選錯了」。
+//
+// 勾選框只寫「要接受信任提示」，但學生根本還沒看過那個畫面，不知道長什麼樣、有幾
+// 個選項、哪一個是對的。所以照原樣把它們印出來，學生對照著選就好。
+// 這兩列驗證完會留一張截圖，卡片要把它貼出來。一個 agent 一個檔，兩張卡各看各的
+// ——共用一個檔的話先驗 claude 再驗 codex，claude 那張顯示的會是 codex 截的圖。
+export const PLAYWRIGHT_SHOT_AGENTS = {
+  "ext-playwright-claude": "claude",
+  "ext-playwright-codex": "codex",
+};
+
+export const CARD_HINTS = {
+  "codex-namer": {
+    title: "第一次跑 codex 會問這兩題，照這樣選：",
+    lines: [
+      "Allow this hook to run? → Yes（不接受的話整組 hook 都不會跑）",
+      "Select sandbox mode?   → default（課堂用預設就好）",
+    ],
+  },
+};
+
+export const CARD_GATES = {
+  // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
+  // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
+  claude: FULLSCREEN_ITEMS,
+  // codex-namer 原本有一格「第一次跑 codex 要接受 hook 信任提示」。拿掉了：
+  // 同一張卡下面的 CARD_HINTS 已經把那兩題照原樣印出來（含要選哪一個），勾選框
+  // 只是把同一件事再講一次，而且講得比較差——它沒說畫面長什麼樣、也沒提第二題。
+  "codex-namer": [],
 };
 
 export const GUIDANCE = {
@@ -132,10 +191,21 @@ export const GUIDANCE = {
   },
 };
 
+// 解鎖一段要看兩件事：人工關卡勾了沒，以及**前一段是不是真的全部完成**。
+//
+// 先前只看勾選框，於是學生勾一勾就能跳段：
+//   - 規則段從一開始就開著（它沒有任何 gate），CLI 都還沒裝就能去裝規則檔
+//   - 技能包那段只要勾「我開了新分頁」就放行，但 auto-rename 那支 skill 呼叫的是
+//     規則段裝的命名 hook，規則沒裝好裝了也叫不動（驗收文件早就寫了這條）
+//
+// 勾選框是「學生自己宣告做了什麼」，擋不住「前面根本沒做完」。所以再加一道用實際
+// 狀態判斷的閘門。
 export function sectionGateState(
   sectionId,
   completedGateIds = new Set(),
   tools = "claude",
+  sectionDone = {},
+  sectionBlockers = {},
 ) {
   const codexSelected = tools.split(",").includes("codex");
   const required = (SECTION_GATES[sectionId] ?? []).filter(
@@ -143,13 +213,48 @@ export function sectionGateState(
   );
   const missing = required.filter((gate) => !completedGateIds.has(gate.id));
 
+  const index = SECTIONS.findIndex((section) => section.id === sectionId);
+  const previous = SECTIONS[index - 1];
+  // undefined 代表「還不知道」（資料還沒回來），那就不要擋——寧可放行也不要在
+  // 載入中把人鎖在外面。
+  const previousPending =
+    previous !== undefined && sectionDone[previous.id] === false
+      ? previous
+      : null;
+
+  // 「先把上一段做完」對學生沒有用——他人在那一段的最後一張，畫面顯示已完成，被
+  // 告知這段沒做完卻無從下手，只能一張一張往回翻（VM 實測）。
+  //
+  // 會走到這裡通常是因為「下一張」放行了沒完成的卡：那顆按鈕只要求驗證「試過」，
+  // 不要求通過（刻意的，否則過不了的驗證會把人卡死）。放行就放行，但擋人的時候
+  // 得說清楚是哪一張。
+  //
+  // 只點名前兩張，後面用「等 N 張」帶過——列滿七張只會變成另一種看不懂。
+  const blocked = previousPending === null
+    ? []
+    : (sectionBlockers[previousPending.id] ?? []);
+  const named = blocked
+    .slice(0, 2)
+    .map(({ label, index }) => `「${label}」（第 ${index + 1} 張）`)
+    .join("、");
+  const rest = blocked.length > 2 ? `等 ${blocked.length} 張` : "";
+
+  const reasons = [
+    ...(previousPending === null
+      ? []
+      : [
+          named === ""
+            ? `先把「${previousPending.title}」做完`
+            : `先回去做完${named}${rest}`,
+        ]),
+    ...missing.map((gate) => `完成「${gate.title}」`),
+  ];
+
   return {
-    locked: missing.length > 0,
+    locked: reasons.length > 0,
     missing,
-    reason:
-      missing.length === 0
-        ? ""
-        : `先完成「${missing.map((gate) => gate.title).join("」和「")}」。`,
+    previousPending,
+    reason: reasons.length === 0 ? "" : `${reasons.join("，再")}。`,
   };
 }
 
@@ -267,6 +372,181 @@ export function groupChecks(checks) {
 
     return { sectionId, cards };
   });
+}
+
+const ENV_CARD_META = {
+  claude: {
+    agent: "claude",
+    label: "Claude Code",
+    logo: "logo-claude",
+    description: "安裝並登入 Claude Code，才能直接請它協助完成課堂任務。",
+    checkIds: ["claude", "claude-auth"],
+  },
+  codex: {
+    agent: "codex",
+    label: "Codex CLI",
+    logo: "logo-openai",
+    description: "安裝並登入 Codex CLI，讓它能在這台電腦上協助寫程式。",
+    checkIds: ["codex", "codex-auth"],
+  },
+  git: {
+    agent: "shared",
+    logo: "logo-git",
+    description: "安裝 Git，才能保存每次修改並和 GitHub 同步。",
+  },
+  gh: {
+    agent: "shared",
+    label: "GitHub CLI",
+    logo: "logo-github",
+    description: "安裝並登入 GitHub CLI，才能從這裡管理遠端專案。",
+    checkIds: ["gh", "gh-auth"],
+  },
+  node: {
+    agent: "shared",
+    logo: "logo-nodejs",
+    description: "確認 Node.js 可用，課堂工具與專案才跑得起來。",
+  },
+  python: {
+    agent: "shared",
+    logo: "logo-python",
+    description: "確認 Python 3 可用，最後那段 demo 的自走網頁要靠它產出。",
+  },
+  homebrew: {
+    agent: "shared",
+    logo: "logo-homebrew",
+    description: "確認 Homebrew 可用，才能安裝課堂需要的 macOS 工具。",
+  },
+  "execution-policy": {
+    agent: "other",
+    logo: "logo-powershell",
+    description: "調整 PowerShell 權限，讓課堂安裝指令可以執行。",
+  },
+  "powershell-version": {
+    agent: "other",
+    logo: "logo-powershell",
+    description: "確認 PowerShell 版本符合課堂工具的執行需求。",
+  },
+  "powershell-encoding": {
+    agent: "other",
+    logo: "logo-powershell",
+    description: "確認 PowerShell 使用正確編碼，避免中文輸出變成亂碼。",
+  },
+  "windows-terminal": {
+    agent: "other",
+    logo: "logo-terminal",
+    description: "安裝 Windows Terminal，讓課堂指令有一致的執行環境。",
+  },
+  ghostty: {
+    agent: "other",
+    logo: "logo-terminal",
+    description: "安裝 Ghostty，讓你有一個好用的終端機執行課堂指令。",
+  },
+  terminal: {
+    agent: "other",
+    logo: "logo-terminal",
+    description: "確認終端機可用，才能執行接下來的課堂指令。",
+  },
+};
+
+const AGENT_ORDER = ["claude", "codex", "shared", "other"];
+
+function checkCard(sectionId, card, check) {
+  return {
+    sectionId,
+    checkId: check.id,
+    agent: card.agent,
+    label: check.label,
+    logo: card.logo,
+    detail:
+      card.description ??
+      `設定 ${check.label}，讓這項功能能在接下來的課程中正常使用。`,
+    check,
+    checks: [check],
+    kind: sectionId === "env" ? "env" : "config",
+  };
+}
+
+// 有些卡片是後面所有卡的前提，必須排到最前面。
+//
+// 目前只有一張：終端機標題同步。它把 watcher 裝進 shell profile，之後每個新開的
+// 終端才會有人把名字放上分頁標題。命名 hook 那幾張要學生「看標題有沒有變」，
+// 沒先裝這個就永遠看不到——不是 hook 壞了，是根本沒人在聽（VM 實測：
+// PowerShell profile 檔案不存在，標題自然一直是預設值）。
+//
+// 舊版一頁攤開所有列，靠驗收文件提醒順序；改成強制線性流程之後，順序錯了就是
+// 把學生推進一個必然失敗的驗證。
+const SETUP_FIRST = ["tab-sync"];
+
+function setupOrder(card) {
+  const index = SETUP_FIRST.indexOf(card.checkId);
+  return index === -1 ? SETUP_FIRST.length : index;
+}
+
+export function flattenCheckCards(groupedSections, envChecks = []) {
+  const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
+  const mergedCheckIds = new Set(
+    Object.values(ENV_CARD_META).flatMap(({ checkIds = [] }) =>
+      checkIds.slice(1),
+    ),
+  );
+  const envCards = envChecks
+    .filter((check) => !mergedCheckIds.has(check.id))
+    .map((check) => {
+      const meta = ENV_CARD_META[check.id] ?? {
+        agent: "other",
+        logo: "logo-terminal",
+        description: `準備 ${check.label}，讓後面的課堂步驟可以正常進行。`,
+      };
+      const checks = (meta.checkIds ?? [check.id])
+        .map((id) => envChecksById.get(id))
+        .filter((candidate) => candidate !== undefined);
+      return {
+        ...checkCard("env", meta, checks[0]),
+        label: meta.label ?? checks[0].label,
+        checks,
+        // 掛了人工項目的環境卡（Claude Code 的全螢幕選擇），裝好＋登入了還不算完，
+        // 那三項也要勾完——不然那個 modal 會留到規則段的行為驗證中途才彈出來。
+        manualIds: (CARD_GATES[check.id] ?? []).map((gate) => gate.id),
+      };
+    })
+    .sort(
+      (left, right) =>
+        AGENT_ORDER.indexOf(left.agent) - AGENT_ORDER.indexOf(right.agent),
+    );
+  const sections = [
+    {
+      sectionId: "env",
+      cards: [
+        {
+          sectionId: "env",
+          checkId: "env-config",
+          agent: "shared",
+          label: "選工具 + 選語言",
+          logo: "logo-terminal",
+          detail: "先選這次要設定的工具與規則檔語言。",
+          check: null,
+          checks: [],
+          kind: "setup",
+        },
+        ...envCards,
+      ],
+    },
+  ];
+
+  for (const section of groupedSections) {
+    const cards = section.cards.flatMap((card) =>
+      card.checks.map((check) => checkCard(section.sectionId, card, check)),
+    );
+
+    sections.push({
+      sectionId: section.sectionId,
+      cards: cards.sort(
+        (left, right) => setupOrder(left) - setupOrder(right),
+      ),
+    });
+  }
+
+  return sections;
 }
 
 export function configQuery({ tools, lang }) {

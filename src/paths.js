@@ -3,6 +3,24 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Playwright 驗證存的那張截圖。這裡與 verify-in-terminal.mjs 各有一份路徑會走鐘，
+// 所以定在這支共用檔裡，兩邊都從這裡拿。
+//
+// 一個 agent 一個檔名：兩邊共用同一個檔的話，先驗 claude 再驗 codex，claude 那張
+// 卡上顯示的會是 codex 截的圖——兩張卡看起來都通過，其實只驗了一次。而且判定用的
+// 是「檔案有沒有比開始時間新」，共用一個檔會讓第二次驗證直接撿到第一次的結果。
+export const VERIFY_SHOT_AGENTS = ["claude", "codex"];
+
+export function verifyShotPath(agent = "claude") {
+  const safe = VERIFY_SHOT_AGENTS.includes(agent) ? agent : "claude";
+  return resolve(
+    homedir(),
+    ".jr-setup",
+    "verify",
+    `mcp-playwright-${safe}.png`,
+  );
+}
+
 export function ensureWorkDir() {
   const workDir = resolve(homedir(), ".jr-setup", "workdir");
   mkdirSync(workDir, { recursive: true });

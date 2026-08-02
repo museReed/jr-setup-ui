@@ -94,6 +94,59 @@ try {
   }
   assert(server.includes('"/app.js"'));
   ok("每一層的檔案都在 server 的靜態白名單裡");
+
+  assert(!files.view.includes('classList.toggle("is-active", station.current)'));
+  assert(files.view.includes('addEventListener("mouseenter"'));
+  assert(files.view.includes('addEventListener("mouseleave"'));
+  ok("里程碑預覽只在 hover 時切換 is-active");
+
+  const index = readFileSync(
+    new URL("../public/index.html", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    index,
+    /id="config-choice-panel" class="config-choice-panel"/,
+  );
+  assert(files.view.includes("body.append(elements.configChoicePanel)"));
+  ok("設定 chips 與下一張按鈕共用同一張 ds-card");
+
+  const styles = read("styles.css");
+  assert.match(
+    styles,
+    /\.terminal-column \.terminal-title\s*\{[^}]*color: var\(--term-ink-dim\);/,
+  );
+  ok("終端標題使用設計系統的暗底次要文字色");
+
+  // .ds-term-bar / .ds-term-title 在設計系統裡不存在，用了就是沒樣式的裸 div，
+  // 標題會貼在圓角外被切掉。終端的頂欄只能用 .ds-term-chrome。
+  assert(!index.includes("ds-term-bar"));
+  assert(!index.includes("ds-term-title"));
+  assert.match(index, /class="ds-term-chrome"/);
+  ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
+
+  // 設計系統的 .ds-btn 沒有 disabled 樣式，置灰得靠本 repo 的 .is-done。
+  // 契約檔禁止覆寫既有 ds-* selector，所以選擇器裡不能出現 .ds-btn。
+  assert.match(styles, /^\.is-done\s*\{[^}]*cursor: not-allowed;/m);
+  assert.doesNotMatch(styles, /\.ds-btn[\w-]*:disabled/);
+  ok("已完成按鈕用本 repo 的 .is-done 置灰，沒覆寫設計系統 selector");
+
+  // 收合是兩種狀態的切換，不做動畫。tab 只有 hover 換色會動——padding / max-height /
+  // box-shadow 一旦加了過渡，看起來就像跟著捲動距離漸變。
+  const tabRule = styles.match(/^\.section-tab \{[^}]*\}/m)?.[0] ?? "";
+  assert.match(tabRule, /transition:\s*\n?\s*color[^;]*;/);
+  assert.doesNotMatch(tabRule, /transition:[^;]*padding/);
+  assert.doesNotMatch(
+    styles.match(/^\.section-tabs \{[^}]*\}/m)?.[0] ?? "",
+    /transition:/,
+  );
+  ok("tab 收合不做動畫，只有 hover 換色有過渡");
+
+  // 段落導覽是上方 tab，不是側欄；整頁大標已移除。
+  assert(!index.includes("wizard-header"));
+  assert(!index.includes("wizard-sidebar"));
+  assert.match(index, /<nav id="section-nav" class="section-tabs"/);
+  ok("段落導覽改成上方 tab，整頁大標已移除");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

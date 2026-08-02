@@ -14,8 +14,22 @@ import { isBenignExit } from "./installers.js";
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
-import { ensureWorkDir, moduleFile } from "./paths.js";
-import { loadVerifiedSteps, markStepVerified } from "./progress-state.js";
+import {
+  ensureWorkDir,
+  moduleFile,
+  VERIFY_SHOT_AGENTS,
+  verifyShotPath,
+} from "./paths.js";
+import {
+  loadBehaviorVerifiedSteps,
+  loadManualChecked,
+  loadSelection,
+  loadVerifiedSteps,
+  markBehaviorVerified,
+  markStepVerified,
+  saveManualChecked,
+  saveSelection,
+} from "./progress-state.js";
 import { resolveLaunch } from "./spawn-command.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
@@ -322,10 +336,12 @@ async function runAction(
     return;
   }
 
+  // action 可以自己覆寫幾個環境變數（目前只有登入用的 BROWSER，見 actions.js）。
+  const childEnv = { ...env, ...(action.env ?? {}) };
   const baseOptions = {
     shell: false,
     stdio: [action.acceptsInput ? "pipe" : "ignore", "pipe", "pipe"],
-    env,
+    env: childEnv,
   };
   const spawnOptions =
     action.kind === "agent"
@@ -496,9 +512,40 @@ export async function startServer({
       return;
     }
 
+    // 驗證留下的截圖。學生看得到那張圖，才知道「真的有一顆瀏覽器被開起來」不是
+    // 一句空話——這一格的證據本來就是那個檔案，那就把它端出來。
+    //
+    // agent 只認白名單裡那兩個值，其餘一律 400：接受檔名或路徑片段等於開一個讀
+    // 任意檔案的洞。檔名由 verifyShotPath 組，外面傳不進任何字元。
+    if (request.method === "GET" && url.pathname === "/verify-shot") {
+      const agent = url.searchParams.get("agent") ?? "claude";
+
+      if (!VERIFY_SHOT_AGENTS.includes(agent)) {
+        sendText(response, 400, "agent 不在允許的值裡");
+        return;
+      }
+
+      try {
+        const png = await readFile(verifyShotPath(agent));
+        response.writeHead(200, {
+          "Content-Type": "image/png",
+          "Cache-Control": "no-store",
+        });
+        response.end(png);
+      } catch {
+        sendText(response, 404, "還沒有截圖");
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/state") {
       response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, { verified: await loadVerifiedSteps() });
+      sendJson(response, 200, {
+        verified: await loadVerifiedSteps(),
+        behavior: await loadBehaviorVerifiedSteps(),
+        manual: await loadManualChecked(),
+        selection: await loadSelection(),
+      });
       return;
     }
 
@@ -512,22 +559,68 @@ export async function startServer({
         return;
       }
 
-      const step =
-        body !== null && typeof body === "object" ? body.step : undefined;
+      const payload = body !== null && typeof body === "object" ? body : {};
+
+      // 工具／語言的選擇也走這支，存在 state.json 才撐得過重開伺服器（port 會變，
+      // localStorage 綁 origin 等於存不住）。
+      if (payload.selection !== undefined) {
+        const { tools, lang } = payload.selection ?? {};
+        const validTools =
+          Array.isArray(tools) &&
+          tools.length > 0 &&
+          tools.every((tool) => tool === "claude" || tool === "codex");
+
+        if (!validTools || typeof lang !== "string") {
+          sendText(response, 400, "selection 需要 tools 陣列與 lang 字串");
+          return;
+        }
+
+        await saveSelection({ tools, lang });
+        sendJson(response, 200, { ok: true });
+        return;
+      }
+
+      // 整份覆蓋：取消勾選也要存得回去。
+      if (payload.manual !== undefined) {
+        if (
+          !Array.isArray(payload.manual) ||
+          payload.manual.some((id) => typeof id !== "string")
+        ) {
+          sendText(response, 400, "manual 需要字串陣列");
+          return;
+        }
+
+        await saveManualChecked(payload.manual);
+        sendJson(response, 200, { ok: true });
+        return;
+      }
+
+      const step = payload.step;
 
       if (typeof step !== "string") {
         sendText(response, 400, "step 必須是字串");
         return;
       }
 
+      // kind=behavior 記的是「程式那半驗過了」，不代表整列綠。有眼睛勾選框的列
+      // 會先送這一筆，等學生勾完才再送一筆預設的 verified。
+      const kind = payload.kind ?? "verified";
+
+      if (kind !== "verified" && kind !== "behavior") {
+        sendText(response, 400, "kind 只能是 verified 或 behavior");
+        return;
+      }
+
       try {
-        await markStepVerified(step);
+        await (kind === "behavior"
+          ? markBehaviorVerified(step)
+          : markStepVerified(step));
       } catch (error) {
         sendText(response, 400, error.message);
         return;
       }
 
-      sendJson(response, 200, { step, verified: true });
+      sendJson(response, 200, { step, kind, verified: true });
       return;
     }
 

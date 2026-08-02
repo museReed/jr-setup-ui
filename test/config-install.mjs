@@ -8,6 +8,7 @@ import {
   hasAgentHookRegistrations,
   hookFileName,
   mergeAllowRules,
+  mergeCodexModes,
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
@@ -95,7 +96,9 @@ try {
     "claude-code/en/output-styles/concise-structured.md",
   );
   assert.equal(describeStep("codex-config", AT).protectExisting, true);
-  assert.equal(describeStep("codex-agents", AT).protectExisting, undefined);
+  // 三個規則檔都是學生會往裡面加東西的：安裝直接覆蓋就弄丟了，只留一個 .bak，
+  // 而學生不會知道要去翻備份。
+  assert.equal(describeStep("codex-agents", AT).protectExisting, true);
   ok("每步知道自己的來源與目標，會蓋掉使用者內容的步驟有標記");
 
   const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
@@ -287,6 +290,53 @@ try {
   assert.deepEqual(allow.settings.permissions.deny, ["Bash(rm)"]);
   assert.equal(allow.addedRules, 1);
   ok("白名單只補沒有的，不動 deny 清單");
+
+  // 白名單只免掉「這條指令能不能跑」，改檔案在 default 模式下仍然每次都問——
+  // 課堂上學生大半的按鍵花在那裡。兩件事湊齊才是學生預期的「不會一直被打斷」。
+  assert.equal(allow.settings.permissions.defaultMode, "acceptEdits");
+  assert.equal(allow.modeAdded, true);
+  ok("裝白名單時一併把預設模式設成 acceptEdits");
+
+  // 學生自己調過就尊重他的選擇，重跑安裝不該把它蓋回去。
+  const kept = mergeAllowRules(
+    { permissions: { defaultMode: "plan" } },
+    { allowRules: ["Bash(ls)"] },
+  );
+  assert.equal(kept.settings.permissions.defaultMode, "plan");
+  assert.equal(kept.modeAdded, false);
+  ok("使用者自己設過的預設模式不會被覆蓋");
+
+  // Codex 的 config.toml 是 protectExisting，學生已經有檔案時「安裝」不覆蓋——
+  // 但預設模式那兩個 key 不能交給 AI 合併（結果不保證也不可重現），要程式補上。
+  const codexFresh = mergeCodexModes("");
+  assert.deepEqual(codexFresh.added, ["sandbox_mode", "approval_policy"]);
+  assert.match(codexFresh.content, /sandbox_mode = "workspace-write"/);
+  assert.match(codexFresh.content, /approval_policy = "on-request"/);
+  ok("空的 config.toml 會補上兩個預設模式 key");
+
+  // 只補這兩行，其餘一個字都不動——學生原本的設定與註解要原樣留著。
+  const existing = '# 我自己的設定\npersonality = "friendly"\n\n[mcp_servers.foo]\ncommand = "x"\n';
+  const merged = mergeCodexModes(existing);
+  assert.match(merged.content, /# 我自己的設定/);
+  assert.match(merged.content, /personality = "friendly"/);
+  assert.match(merged.content, /\[mcp_servers\.foo\]/);
+  // 新的 key 必須插在第一個 [section] 之前，否則它會變成那個 section 底下的設定。
+  assert.ok(
+    merged.content.indexOf("sandbox_mode") <
+      merged.content.indexOf("[mcp_servers.foo]"),
+  );
+  ok("既有內容原樣保留，新 key 插在第一個 [section] 之前");
+
+  // 已經設過就不動，重跑安裝不該把學生調過的值蓋回去。
+  const kept2 = mergeCodexModes('sandbox_mode = "read-only"\n');
+  assert.deepEqual(kept2.added, ["approval_policy"]);
+  assert.match(kept2.content, /sandbox_mode = "read-only"/);
+  ok("學生自己設過的 sandbox_mode 不會被覆蓋");
+
+  // section 底下的同名 key 不算最上層——那是別的設定，不能拿來當「已經設過」。
+  const nested = mergeCodexModes('[profiles.foo]\nsandbox_mode = "read-only"\n');
+  assert.deepEqual(nested.added, ["sandbox_mode", "approval_policy"]);
+  ok("section 底下的同名 key 不會被誤認為最上層已設定");
 
   // 驗證的關鍵：檔案複製成功但沒註冊進 settings.json，hook 一樣不會擋，
   // 而且不會有任何錯誤訊息——所以驗證必須看註冊，不能只看檔案在不在。

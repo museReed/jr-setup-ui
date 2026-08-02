@@ -23,6 +23,35 @@ export const INSTALLERS = {
       args: ["install", "-g", "@openai/codex"],
     },
   },
+  // Demo 那段的 self_play.py 要 python3。macOS 內建、Windows 沒有——實測 VM 上
+  // 只有 Windows Store 的殼（打 python 會跳商店，py 也不存在），agent 只好當場把
+  // 那支腳本改寫成 PowerShell。它做得到，但那是一次沒必要的即興演出：多花時間、
+  // 結果不可重現，而 demo 的判定看的是產出檔案有沒有出現。
+  //
+  // 版本寫死 3.13：winget 的 Python 套件 ID 帶主次版號（Python.Python.3.13），
+  // 沒有「最新」這個 ID。開課前手動更新這一行就好，跟 setup.sh 的 NODE_VERSION
+  // 同一個做法。
+  python: {
+    win32: {
+      cmd: "winget",
+      args: [
+        "install",
+        "--id",
+        "Python.Python.3.13",
+        "-e",
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+      ],
+    },
+    // macOS 內建 python3，只有在真的缺了才會跑到這裡。
+    darwin: {
+      cmd: "brew",
+      args: ["install", "python"],
+    },
+  },
   git: {
     win32: {
       cmd: "winget",

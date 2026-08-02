@@ -47,6 +47,44 @@ async function sameAsSource(materials, step) {
   return a === b;
 }
 
+// protectExisting 的列（CLAUDE.md、config.toml）不能用逐字相同當作「完成」。
+//
+// 那些檔案的正常狀態就是「工作坊的內容 + 學生自己的內容」——只要他有自己的
+// [projects]、自己的規則，逐字比對永遠不會相同。實測：學生按了「用 AI 合併」，
+// 工作坊那段確實整段併進去了，列上還是寫「需要合併」，再按幾次都一樣。那張卡
+// 因此永遠完成不了，整段跟著鎖死。
+//
+// 改成問「工作坊那段在不在」：範本裡每一行實質內容都要出現在目標檔案裡。學生
+// 自己加的東西不影響，因為只檢查有沒有，不檢查有沒有多。
+//
+// TOML 的 # 是註解，可以不算；Markdown 的 # 是標題，是實質內容，不能丟。
+async function containsSourceContent(materials, step) {
+  const source = path.join(materials, step.source);
+
+  if (!existsSync(source) || !existsSync(step.target)) {
+    return false;
+  }
+
+  const [sourceText, targetText] = await Promise.all([
+    readFile(source, "utf8"),
+    readFile(step.target, "utf8"),
+  ]);
+  const isToml = step.target.endsWith(".toml");
+  const required = sourceText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !(isToml && line.startsWith("#")));
+
+  if (required.length === 0) {
+    return false;
+  }
+
+  const targetLines = new Set(
+    targetText.split("\n").map((line) => line.trim()),
+  );
+  return required.every((line) => targetLines.has(line));
+}
+
 // 「檔案在」不等於「檔案是對的」。hook 與 watcher 的內容改過之後，已經裝過的人
 // 手上是舊版——嚮導若只看存在與否，會告訴他一切正常。這輪五個斷點的修正全都落在
 // 這些檔案裡，所以逐字比對是必要的。
@@ -74,7 +112,7 @@ async function staleTargets(materials, files) {
   return stale;
 }
 
-async function checkCopyStep(materials, step) {
+export async function checkCopyStep(materials, step) {
   if (!existsSync(step.target)) {
     return {
       id: step.id,
@@ -87,7 +125,17 @@ async function checkCopyStep(materials, step) {
   const matches = await sameAsSource(materials, step);
 
   // 已存在但內容不是我們發的：那是使用者自己寫的，蓋掉會弄丟，要合併。
+  // 但先問一句「工作坊那段是不是已經在裡面了」——併過的人不該被叫回去再併一次。
   if (step.protectExisting === true && !matches) {
+    if (await containsSourceContent(materials, step)) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "ok",
+        detail: "已併入工作坊設定，你自己的內容也還在",
+      };
+    }
+
     return {
       id: step.id,
       label: step.label,
@@ -137,22 +185,56 @@ export const VERIFICATION = {
   "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
+  // 第三方 skill 一律只認落點在不在（那是別人的東西，我們不比對內容），唯獨 MCP
+  // 這一格例外：它的落點只是 settings.json 裡多一行設定，那一行寫對了、npx 卻拉不
+  // 到套件、瀏覽器沒裝起來，畫面上一樣是綠的。而學生要到 demo 段才會發現它是死的。
+  //
+  // 截圖檔是這整份嚮導證據力最高的副產物：那個檔案要存在，就得真的有一顆瀏覽器被
+  // 開起來、真的導到那個網址、真的截了圖。模型編不出一個 PNG。
+  "ext-playwright-claude": {
+    terminal: { case: "mcp-playwright", agent: "claude" },
+  },
+  "ext-playwright-codex": {
+    terminal: { case: "mcp-playwright", agent: "codex" },
+  },
   // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
   "tab-sync": {
     terminal: { case: "title", agent: "claude" },
     eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
   },
-  "claude-namer": { terminal: { case: "naming", agent: "claude" } },
+  // 程式驗得到的是「名字有沒有被產生」（hook 會寫檔），不是「標題有沒有變」。
+  // 這兩件事會分岔——VM 實測：名字寫出來了，但 watcher 沒掛上，標題一直是預設值。
+  // 卡片對學生的承諾是「你的分頁會自動命名」，所以標題那一半要有人看。
+  // 驗收文件的「眼睛的」那節本來就要求看這個，是嚮導漏了問。
+  "claude-namer": {
+    terminal: { case: "naming", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+  },
   "claude-monitor": { terminal: { case: "context", agent: "claude" } },
   "codex-namer": {
     terminal: { case: "naming", agent: "codex" },
     eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
   },
-  "codex-monitor": { terminal: { case: "context", agent: "codex" } },
+  // codex-monitor 沒有行為驗證：hook 檔案與註冊對了就是對了。
+  //
+  // 它原本跑一次真的 codex（假裝 context 只有 5000，逼 hook 跳警告，再叫模型把原文
+  // 抄進檔案比對）。拿掉的理由是重疊：這一格唯一抓得到的失敗是「hook 註冊了但沒
+  // 真的跑」，而那個失敗 codex-namer 一定也會踩到——整組 hook 不跑的話（例如信任
+  // 提示沒接受），命名那格先失敗。同一個失敗模式驗兩次，慢一分多鐘、多燒一筆 API。
+  //
+  // 而且它自己很會誤判：兩次 VM 實測都是「hook 明明跳了卻判失敗」（一次是測試開關
+  // 的環境變數名字兩邊不一樣，一次是 codex 的句子裡根本沒有要比對的關鍵字）。
+  //
+  // 判準見上面那段：留哪一列不是看誰重要，是看誰會靜默失效。
+  //
+  // 沒有 behavior 也沒有 terminal 的列不寫進這張表（白名單也是），結構對了就直接
+  // 綠燈——留一個空物件會讓它仍被當成「要按 verify-in-terminal」，參數卻是空的。
   // skill 的行為驗證跟 hook 同一個判準：要嘛留下只有 skill 跑過才會有的副產物，
   // 要嘛就老實承認驗不到、交給學生看。
+  // 同上：這支 skill 的成果就是「標題變了」，程式只驗得到名字有沒有落地。
   "skill-claude-auto-rename": {
     terminal: { case: "skill-rename", agent: "claude" },
+    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
   },
   "skill-codex-auto-rename": {
     terminal: { case: "skill-rename", agent: "codex" },

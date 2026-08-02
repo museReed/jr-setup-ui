@@ -17,375 +17,115 @@
           document.body.prepend(holder.firstElementChild);
         });
     </script>
-    <header class="wizard-header">
-      <p class="wizard-eyebrow">AI Agent Setup</p>
-      <h1>把工作環境準備好，然後跑一次</h1>
-      <p>照章節完成環境、規則與技能設定；原本的安裝與驗證流程都保留。</p>
-    </header>
     <main class="wizard-layout">
-      <aside class="wizard-sidebar" aria-label="設定章節">
-        <p class="sidebar-label">設定進度</p>
-        <nav id="section-nav">
-          <button
-            type="button"
-            class="ds-side-item current"
-            data-section-target="env"
-            aria-controls="section-env"
-            aria-current="step"
-          >
-            <span>讓 AI 能跑起來</span>
-            <small>環境與登入</small>
-          </button>
-          <button
-            type="button"
-            class="ds-side-item"
-            data-section-target="rules"
-            aria-controls="section-rules"
-          >
-            <span>讓它照你的規矩回話</span>
-            <small>規則檔與 hooks</small>
-          </button>
-          <button
-            type="button"
-            class="ds-side-item"
-            data-section-target="skills"
-            aria-controls="section-skills"
-          >
-            <span>給它技能包</span>
-            <small>Skills</small>
-          </button>
-          <button
-            type="button"
-            class="ds-side-item"
-            data-section-target="demo"
-            aria-controls="section-demo"
-          >
-            <span>跑一次給你看</span>
-            <small>Demo</small>
-          </button>
-        </nav>
-        <p id="section-lock-message" class="section-lock-message" hidden></p>
-      </aside>
+      <!-- tab 與進度條包在同一個 sticky 容器裡。分開各自 sticky 的話，兩者之間
+           會露出一條縫，底下捲動的卡片內容會從縫裡透出來。 -->
+      <div class="sticky-top-stack">
+      <nav id="section-nav" class="section-tabs" aria-label="設定章節">
+        <button type="button" class="section-tab current" data-section-target="env" aria-current="step">
+          <span>讓 AI 能跑起來</span>
+        </button>
+        <button type="button" class="section-tab" data-section-target="rules">
+          <span>讓它照你的規矩回話</span>
+        </button>
+        <button type="button" class="section-tab" data-section-target="skills">
+          <span>給它技能包</span>
+        </button>
+        <button type="button" class="section-tab" data-section-target="demo">
+          <span>跑一次給你看</span>
+        </button>
+      </nav>
+      <p id="section-lock-message" class="section-lock-message" hidden></p>
 
-      <div class="wizard-workspace">
-        <section class="ds-card progress-card" aria-label="總設定進度">
-          <div class="progress-copy">
-            <div class="progress-title">
-              <strong>總進度</strong>
-              <span id="completion-message" class="completion-message" hidden>
-                設定完成，可以開始用了
-              </span>
-            </div>
-            <span id="progress-summary" aria-live="polite">正在計算…</span>
-          </div>
-          <div id="progress-loader" class="progress-loader"></div>
-          <div class="ds-pbar ds-pbar--indeterminate" id="progress-bar">
-            <div class="ds-pbar-fill" id="progress-fill"></div>
-            <div class="ds-duck walk" id="progress-duck">
+      <div class="milestone-wrap">
+        <small id="section-status" aria-live="polite">正在檢查目前進度…</small>
+        <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
+          <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          <div id="milestone-duck" class="ds-duck walk" style="left: 0%">
+            <div class="ds-duck-hop">
               <svg viewBox="0 0 40 40" aria-hidden="true">
                 <g class="ds-legs">
-                  <line
-                    class="ds-leg"
-                    x1="11"
-                    y1="26"
-                    x2="11"
-                    y2="34"
-                    stroke="var(--color-accent-hover)"
-                    stroke-width="2.4"
-                    stroke-linecap="round"
-                  />
-                  <line
-                    class="ds-leg2"
-                    x1="17"
-                    y1="26"
-                    x2="17"
-                    y2="34"
-                    stroke="var(--color-accent-hover)"
-                    stroke-width="2.4"
-                    stroke-linecap="round"
-                  />
+                  <line class="ds-leg" x1="11" y1="26" x2="11" y2="34" stroke="var(--color-accent-hover)" stroke-width="2.4" stroke-linecap="round" />
+                  <line class="ds-leg2" x1="17" y1="26" x2="17" y2="34" stroke="var(--color-accent-hover)" stroke-width="2.4" stroke-linecap="round" />
                 </g>
                 <g class="ds-bodyg">
-                  <ellipse
-                    cx="16"
-                    cy="20"
-                    rx="12"
-                    ry="9"
-                    fill="var(--duck-body)"
-                  />
-                  <circle
-                    cx="25"
-                    cy="12"
-                    r="7"
-                    fill="var(--duck-body)"
-                  />
-                  <path
-                    d="M31 11 l7 2 -7 3 z"
-                    fill="var(--color-accent)"
-                  />
-                  <circle
-                    cx="26"
-                    cy="11"
-                    r="1.5"
-                    fill="var(--color-text-strong)"
-                  />
+                  <ellipse cx="16" cy="20" rx="12" ry="9" fill="var(--duck-body)" />
+                  <circle cx="25" cy="12" r="7" fill="var(--duck-body)" />
+                  <path d="M31 11 l7 2 -7 3 z" fill="var(--color-accent)" />
+                  <circle cx="26" cy="11" r="1.5" fill="var(--color-text-strong)" />
                 </g>
               </svg>
             </div>
           </div>
-        </section>
+        </div>
+      </div>
+      </div>
 
-        <section
-          id="config-toolbar"
-          class="ds-card config-toolbar"
-          aria-label="規則檔檢查選項"
-          hidden
-        >
-          <div class="config-selects">
-            <label>
-              工具
-              <select id="config-tools"></select>
-            </label>
-            <label>
-              語言
-              <select id="config-lang"></select>
-            </label>
-          </div>
-          <div class="config-toolbar-status">
-            <span id="config-summary">尚未檢查</span>
-            <button type="button" id="recheck-configs">重新檢查</button>
-          </div>
-        </section>
-
-        <section
-          id="section-env"
-          class="wizard-section"
-          data-section-panel="env"
-          aria-labelledby="env-title"
-        >
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">環境與登入</p>
-              <h2 id="env-title">讓 AI 能跑起來</h2>
-              <p id="env-os">作業系統：檢查中…</p>
-            </div>
-            <button type="button" id="recheck-env">重新檢查</button>
-          </div>
-          <p id="install-status" class="install-status" hidden>
-            安裝完成，狀態已更新。
-          </p>
-          <p id="login-wait-status" class="install-status" hidden></p>
-          <div
-            id="env-results"
-            class="ds-card env-results"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <div class="ds-skeleton" aria-hidden="true">
-              <div class="ds-skeleton-line ds-skeleton-line--title"></div>
-              <div class="ds-skeleton-line"></div>
-              <div class="ds-skeleton-line ds-skeleton-line--short"></div>
-              <div class="ds-skeleton-line"></div>
-            </div>
-          </div>
-        </section>
-
-        <div id="config-results" aria-live="polite" aria-busy="true">
-          <section
-            id="section-rules"
-            class="wizard-section"
-            data-section-panel="rules"
-            aria-labelledby="rules-title"
-            hidden
-          >
-            <div class="section-heading">
+      <div class="wizard-workspace">
+        <div class="task-terminal-layout">
+          <section class="task-column" data-section-panel aria-label="目前設定卡片">
+            <div id="config-choice-panel" class="config-choice-panel" hidden>
               <div>
-                <p class="section-kicker">規則檔與 hooks</p>
-                <h2 id="rules-title">讓它照你的規矩回話</h2>
+                <strong>要設定哪些工具？</strong>
+                <div id="config-tools" aria-label="選擇工具"></div>
+              </div>
+              <div>
+                <strong>規則檔用哪個語言？</strong>
+                <div id="config-lang" aria-label="選擇語言"></div>
+              </div>
+              <div class="config-toolbar-status">
+                <span id="config-summary">尚未檢查</span>
+                <button type="button" id="recheck-configs" class="ds-btn ds-btn-ghost ds-btn-sm">重新檢查</button>
               </div>
             </div>
-            <div id="rules-cards" class="agent-cards">
-              <div class="ds-card config-skeleton">
-                <div class="ds-skeleton" aria-hidden="true">
-                  <div class="ds-skeleton-line ds-skeleton-line--title"></div>
-                  <div class="ds-skeleton-line"></div>
-                  <div class="ds-skeleton-line ds-skeleton-line--short"></div>
-                </div>
-              </div>
-            </div>
-            <aside class="ds-callout gate-callout" aria-label="前往 Skills 前">
-              <strong>進入下一段前</strong>
-              <label class="ds-check">
-                <input type="checkbox" data-gate-id="rules-new-terminal" />
-                <span class="ds-check-box" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M5 12.5 10 17l9-10" />
-                  </svg>
-                </span>
-                <span class="ds-check-text">
-                  關掉現在的終端分頁，開一個新的
-                  <small>wrapper 寫在 shell profile，舊分頁不會載入</small>
-                </span>
-              </label>
-            </aside>
+
+            <div id="current-card" aria-live="polite" aria-busy="true"></div>
+            <div id="env-results" hidden></div>
+            <div id="config-results" hidden></div>
+            <p id="env-os" hidden>作業系統：檢查中…</p>
+            <button type="button" id="recheck-env" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>重新檢查</button>
+            <p id="install-status" hidden></p>
+            <p id="login-wait-status" hidden></p>
           </section>
 
-          <section
-            id="section-skills"
-            class="wizard-section"
-            data-section-panel="skills"
-            aria-labelledby="skills-title"
-            hidden
-          >
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">Skills</p>
-                <h2 id="skills-title">給它技能包</h2>
-              </div>
+          <section id="terminal" class="ds-term ds-term--typing terminal-column" aria-label="執行狀態">
+            <div class="ds-term-chrome">
+              <span class="ds-term-dot" style="background: var(--red-4)" aria-hidden="true"></span>
+              <span class="ds-term-dot" style="background: var(--amber-4)" aria-hidden="true"></span>
+              <span class="ds-term-dot" style="background: var(--teal-4)" aria-hidden="true"></span>
+              <span class="terminal-title">現在正在做什麼</span>
+              <button type="button" id="cancel" class="ds-btn ds-btn-ghost ds-btn-sm" hidden>取消</button>
             </div>
-            <div id="skills-cards" class="agent-cards">
-              <div class="ds-card config-skeleton">
-                <div class="ds-skeleton" aria-hidden="true">
-                  <div class="ds-skeleton-line ds-skeleton-line--title"></div>
-                  <div class="ds-skeleton-line"></div>
-                  <div class="ds-skeleton-line ds-skeleton-line--short"></div>
-                </div>
-              </div>
+            <div id="terminal-lines" class="ds-term-body" role="log" aria-live="polite">
+              <div class="ds-term-line ds-term-line--dim">選一張卡開始，這裡會用白話更新進度。</div>
             </div>
-            <aside class="ds-callout gate-callout" aria-label="前往 Demo 前">
-              <strong>進入下一段前</strong>
-              <label class="ds-check">
-                <input type="checkbox" data-gate-id="skills-new-terminal" />
-                <span class="ds-check-box" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M5 12.5 10 17l9-10" />
-                  </svg>
-                </span>
-                <span class="ds-check-text">
-                  再開一次新的分頁
-                  <small>skill 只在 session 啟動時掃目錄</small>
-                </span>
-              </label>
-              <label class="ds-check" data-codex-gate>
-                <input type="checkbox" data-gate-id="codex-hook-trust" />
-                <span class="ds-check-box" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M5 12.5 10 17l9-10" />
-                  </svg>
-                </span>
-                <span class="ds-check-text">
-                  第一次跑 codex 要接受 hook 信任提示
-                  <small>沒接受的話整組 hook 不會跑</small>
-                </span>
-              </label>
-            </aside>
-          </section>
-
-          <section
-            id="section-demo"
-            class="wizard-section"
-            data-section-panel="demo"
-            aria-labelledby="demo-title"
-            hidden
-          >
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">Demo</p>
-                <h2 id="demo-title">跑一次給你看</h2>
-              </div>
-            </div>
-            <div id="demo-cards" class="agent-cards">
-              <div class="ds-card config-skeleton">
-                <div class="ds-skeleton" aria-hidden="true">
-                  <div class="ds-skeleton-line ds-skeleton-line--title"></div>
-                  <div class="ds-skeleton-line"></div>
-                  <div class="ds-skeleton-line ds-skeleton-line--short"></div>
-                </div>
-              </div>
-            </div>
-            <div class="ds-card playground">
-              <h3>固定步驟</h3>
-              <div class="actions">
-                <button type="button" data-action="hello">顯示問候</button>
-                <button type="button" data-action="slow-count">慢速計數</button>
-                <button type="button" data-action="fail-demo">失敗示範</button>
-                <button type="button" data-action="claude-hello">
-                  Claude 問候
-                </button>
-                <button type="button" data-action="codex-hello">
-                  Codex 問候
-                </button>
-              </div>
-              <h3>自由輸入</h3>
-              <textarea
-                id="prompt"
-                maxlength="4000"
-                placeholder="輸入要交給代理執行的內容"
-              ></textarea>
-              <div class="write-toggle">
-                <label>
-                  <input type="checkbox" id="allow-write" />
-                  允許寫檔（預設關閉）
-                </label>
-                <small>關閉時只能讀取與查詢，不能建立或修改檔案。</small>
-              </div>
-              <div class="actions">
-                <button type="button" data-action="claude-free">
-                  送給 Claude
-                </button>
-                <button type="button" data-action="codex-free">
-                  送給 Codex
-                </button>
-              </div>
-            </div>
+            <details id="raw-output-details">
+              <summary>看原始輸出</summary>
+              <pre id="output"></pre>
+            </details>
           </section>
         </div>
-
-        <div
-          id="behavior-fallback"
-          class="login-hints behavior-fallback"
-          hidden
-        >
-          <p>自動驗證沒過時，可以自己試一次。</p>
-          <div class="login-code-row behavior-question-row">
-            <code id="behavior-question"></code>
-            <button type="button" id="copy-behavior-question">複製</button>
-          </div>
-          <ul id="behavior-checklist"></ul>
-        </div>
-
-        <section class="run-console" aria-label="執行輸出">
-          <div class="run-controls">
-            <button type="button" id="cancel" hidden>取消</button>
-          </div>
-          <div id="login-hints" class="login-hints" hidden>
-            <a
-              id="login-url"
-              target="_blank"
-              rel="noopener noreferrer"
-              hidden
-            ></a>
-            <div id="login-code-row" class="login-code-row" hidden>
-              <span id="login-code"></span>
-              <button type="button" id="copy-login-code">複製</button>
-            </div>
-          </div>
-          <div id="output" role="log" aria-live="polite"></div>
-          <form id="run-input" class="run-input" hidden>
-            <input
-              id="run-input-text"
-              type="text"
-              maxlength="500"
-              autocomplete="off"
-              placeholder="把授權代碼貼在這裡，再按送出"
-              aria-label="送給執行中指令的文字"
-            />
-            <button type="submit">送出</button>
-          </form>
-        </section>
       </div>
     </main>
+
+    <div id="verify-modal" class="ds-modal-overlay" hidden>
+      <section class="ds-modal-panel" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title">
+        <h2 id="verify-modal-title">要開一個新終端跑驗證嗎？</h2>
+        <div>
+          <button type="button" id="verify-modal-confirm" class="ds-btn ds-btn-primary">開終端驗證</button>
+          <button type="button" id="verify-modal-later" class="ds-btn ds-btn-ghost">稍後</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="behavior-fallback" hidden>
+      <code id="behavior-question"></code>
+      <button type="button" id="copy-behavior-question">複製</button>
+      <ul id="behavior-checklist"></ul>
+    </div>
     <div id="row-loader-pool" hidden></div>
+    <textarea id="prompt" hidden></textarea>
+    <input type="checkbox" id="allow-write" hidden />
     <script src="/vendor/loader-orbs.js"></script>
     <script type="module" src="/app.js"></script>
   </body>

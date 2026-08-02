@@ -4,6 +4,11 @@ import { configQuery } from "./model.js";
 
 const token = new URLSearchParams(window.location.search).get("t") ?? "";
 
+// <img src> 由瀏覽器自己發請求，沒辦法走 fetch 那條路加 header——網址得自己帶 token。
+export function urlWithToken(path) {
+  return withToken(path);
+}
+
 function withToken(path) {
   return `${path}${path.includes("?") ? "&" : "?"}t=${encodeURIComponent(token)}`;
 }
@@ -56,6 +61,24 @@ export async function fetchState() {
 
 export async function saveVerifiedStep(step) {
   const response = await postJson("/state", { step });
+  return response.json();
+}
+
+// 人工勾選整份覆蓋：取消勾選也要存得回去，逐筆新增做不到。
+export async function saveManualChecked(ids) {
+  const response = await postJson("/state", { manual: ids });
+  return response.json();
+}
+
+// 程式那半驗過了。有眼睛勾選框的列也送這一筆——整列綠不綠是 saveVerifiedStep 的事。
+export async function saveBehaviorVerified(step) {
+  const response = await postJson("/state", { step, kind: "behavior" });
+  return response.json();
+}
+
+// 工具／語言的選擇也存伺服器：port 每次啟動都變，localStorage 綁 origin 存不住。
+export async function saveSelection(selection) {
+  const response = await postJson("/state", { selection });
   return response.json();
 }
 

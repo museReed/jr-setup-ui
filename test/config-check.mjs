@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
   checkAgentHooks,
+  checkCopyStep,
   checkTabSync,
   probeHook,
   resolveBash,
@@ -104,6 +111,64 @@ process.stdin.on("end", () => {
   assert.equal(staleWatcher.status, "warn");
   assert.match(staleWatcher.detail, /舊版/);
   ok("watcher 是舊版時不給綠燈——只看檔案在不在會漏掉");
+
+  // protectExisting 的列不能用逐字相同當作完成：那些檔案的正常狀態就是「工作坊的
+  // 內容 + 學生自己的內容」。實測踩到——學生按了「用 AI 合併」，工作坊那段確實整段
+  // 併進去了，列上還是寫「需要合併」，再按幾次都一樣，那張卡永遠完成不了。
+  const codexStep = describeStep("codex-config", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  const template = readFileSync(
+    path.join(MATERIALS, codexStep.source),
+    "utf8",
+  );
+  mkdirSync(path.dirname(codexStep.target), { recursive: true });
+
+  writeFileSync(codexStep.target, 'personality = "friendly"\n');
+  const needsMerge = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(needsMerge.status, "warn");
+  assert.equal(needsMerge.needsMerge, true);
+  ok("只有自己的內容、沒有工作坊那段時要求合併");
+
+  // 併過之後：工作坊那段整段在，後面接著學生自己的 section。
+  writeFileSync(
+    codexStep.target,
+    `${template}\n[projects."C:/x"]\ntrust_level = "trusted"\n\n[windows]\nsandbox = "elevated"\n`,
+  );
+  const mergedRow = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(mergedRow.status, "ok");
+  assert.equal(mergedRow.needsMerge, undefined);
+  assert.match(mergedRow.detail, /你自己的內容也還在/);
+  ok("併過工作坊設定、又有自己的區塊時算完成，不再要求重複合併");
+
+  // 少了其中一行就不算——併一半跟沒併一樣會壞。
+  writeFileSync(
+    codexStep.target,
+    template.replace(/^approval_policy.*$/m, ""),
+  );
+  assert.equal((await checkCopyStep(MATERIALS, codexStep)).status, "warn");
+  ok("工作坊那段少一行就不算併好");
+
+  // Markdown 的 # 是標題不是註解，不能跟 TOML 一樣丟掉——丟了的話學生把整份章節
+  // 標題砍光也會被判成併好。AGENTS.md 也是 protectExisting（學生會往裡面加規則）。
+  const agentsStep = describeStep("codex-agents", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "linux",
+  });
+  const agentsTpl = readFileSync(path.join(MATERIALS, agentsStep.source), "utf8");
+  mkdirSync(path.dirname(agentsStep.target), { recursive: true });
+  writeFileSync(agentsStep.target, `${agentsTpl}\n## 我自己的規則\n- 一律用繁體\n`);
+  assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "ok");
+
+  const firstHeading = agentsTpl
+    .split("\n")
+    .find((line) => line.trim().startsWith("#"));
+  writeFileSync(agentsStep.target, agentsTpl.replace(firstHeading, ""));
+  assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "warn");
+  ok("AGENTS.md 也受保護，且 Markdown 標題算實質內容");
 
   installFrom(tabStep.watcherSource, tabStep.target);
   assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");

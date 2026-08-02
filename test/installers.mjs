@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { actions } from "../src/actions.js";
+import { actions, installerNames } from "../src/actions.js";
 import {
   INSTALLERS,
   installActionId,
@@ -110,12 +110,11 @@ for (const installersByPlatform of Object.values(INSTALLERS)) {
 }
 ok("所有安裝參數都不含危險字串");
 
-const installerNames = {
-  claude: "Claude Code",
-  codex: "Codex",
-  git: "Git",
-  gh: "GitHub CLI",
-};
+// 用 actions.js 那一份，不再自己抄一份。
+//
+// 這裡原本有一份重複的表，只有四個項目——於是 ghostty 與 windows-terminal 的按鈕
+// 一直是「安裝 undefined」，測試卻照樣綠：它拿自己那份缺漏的表去比對，兩邊一起錯
+// 就對得起來。加 python 時才被 actions.js 裡新加的守衛抓出來。
 
 for (const id of Object.keys(INSTALLERS)) {
   const installer = resolveInstaller(id, process.platform);
@@ -135,6 +134,8 @@ ok("目前平台只有受支援的安裝器會進入 fixed action 白名單");
 
 const expectedLoginActions = {
   "login-claude": { cmd: "claude", args: ["auth", "login"] },
+  // ⚠️ 不要加 --device-auth：那個模式需要每個帳號先去 ChatGPT Security Settings
+  // 打開裝置碼授權，沒開的人在授權頁只會看到紅字要他改設定（VM 實測），對學生是死路。
   "login-codex": { cmd: "codex", args: ["login"] },
   "login-gh": {
     cmd: "gh",
@@ -159,3 +160,21 @@ for (const [actionId, expected] of Object.entries(expectedLoginActions)) {
   assert.equal(actions[actionId].launchesWindow, undefined);
 }
 ok("三個登入 action 直接執行並接受 stdin");
+
+// claude 與 gh 會自己彈瀏覽器，學生就來不及用卡片上的授權按鈕。兩者都認 BROWSER，
+// 指到一個什麼都不做的指令即可擋掉。codex 走 --device-auth 本來就不會開。
+for (const actionId of ["login-claude", "login-gh"]) {
+  assert.equal(
+    typeof actions[actionId].env?.BROWSER,
+    "string",
+    `${actionId} 要覆寫 BROWSER 才不會自己開瀏覽器`,
+  );
+  assert.notEqual(actions[actionId].env.BROWSER, "");
+}
+assert.equal(actions["login-codex"].env, undefined);
+// gh 的 GH_BROWSER 優先於 BROWSER，只設 BROWSER 會被學生環境既有的 GH_BROWSER 蓋掉。
+assert.equal(
+  actions["login-gh"].env.GH_BROWSER,
+  actions["login-gh"].env.BROWSER,
+);
+ok("claude 與 gh 覆寫 BROWSER 擋掉自動開瀏覽器，codex 靠 --device-auth");

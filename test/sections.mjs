@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 
-import { SECTIONS, groupChecks } from "../public/model.js";
-import { envLogoFor, progressSummary } from "../public/viewmodel.js";
+import {
+  FULLSCREEN_PROMPT,
+  FULLSCREEN_PROOF,
+  SECTIONS,
+  flattenCheckCards,
+  groupChecks,
+  matchesFullscreenProof,
+} from "../public/model.js";
+import {
+  cardIsComplete,
+  envLogoFor,
+  progressSummary,
+} from "../public/viewmodel.js";
 
 function check(id) {
   return { id, label: id, status: "ok", detail: "已安裝" };
@@ -15,6 +26,47 @@ try {
   assert.deepEqual(
     SECTIONS.map(({ id }) => id),
     ["env", "rules", "skills", "demo"],
+  );
+
+  const mergedEnv = section(
+    flattenCheckCards(groupChecks([]), [
+      check("claude"),
+      { ...check("claude-auth"), label: "Claude Code 登入狀態" },
+    ]),
+    "env",
+  );
+  const claudeCard = mergedEnv.cards.find(({ checkId }) => checkId === "claude");
+  assert.equal(
+    mergedEnv.cards.filter(({ checkId }) =>
+      ["claude", "claude-auth"].includes(checkId),
+    ).length,
+    1,
+  );
+  assert.deepEqual(
+    claudeCard.checks.map(({ id }) => id),
+    ["claude", "claude-auth"],
+  );
+
+  const envSequence = section(
+    flattenCheckCards(
+      groupChecks([]),
+      [
+        "claude",
+        "claude-auth",
+        "codex",
+        "codex-auth",
+        "git",
+        "gh",
+        "gh-auth",
+        "node",
+        "ghostty",
+      ].map(check),
+    ),
+    "env",
+  );
+  assert.deepEqual(
+    envSequence.cards.map(({ checkId }) => checkId),
+    ["env-config", "claude", "codex", "git", "gh", "node", "ghostty"],
   );
 
   const rules = section(
@@ -54,6 +106,31 @@ try {
         checks: ["tab-sync"],
       },
     ],
+  );
+
+  // 終端機標題同步得排第一張：它把 watcher 裝進 shell profile，之後開的終端才有人
+  // 把名字放上分頁標題。命名 hook 那幾張要學生「看標題有沒有變」，沒先裝這個就永遠
+  // 看不到——VM 實測：PowerShell profile 檔案根本不存在，標題一直是預設值，學生被
+  // 推進一個必然失敗的驗證。
+  const rulesSequence = section(
+    flattenCheckCards(
+      groupChecks([
+        check("claude-md"),
+        check("claude-namer"),
+        check("codex-namer"),
+        check("tab-sync"),
+      ]),
+      [],
+    ),
+    "rules",
+  );
+  assert.equal(rulesSequence.cards[0].checkId, "tab-sync");
+  assert.deepEqual(
+    rulesSequence.cards.map(({ checkId }) => checkId),
+    ["tab-sync", "claude-md", "claude-namer", "codex-namer"],
+  );
+  console.log(
+    "ok - 終端機標題同步排在命名 hook 前面，後面那幾張要靠它才看得到標題變化",
   );
 
   const claudeOnly = groupChecks([
@@ -105,7 +182,78 @@ try {
   assert.equal(envLogoFor("execution-policy"), "logo-powershell");
   assert.equal(envLogoFor("unknown"), null);
 
-  console.log("ok - sections 分組、進度、logo 與未知 step fallback");
+  const flattened = flattenCheckCards(
+    groupChecks([
+      check("tab-sync"),
+      check("codex-config"),
+      check("claude-md"),
+      check("future-config-step"),
+    ]),
+    [check("node"), check("codex"), check("claude")],
+  );
+  assert.equal(section(flattened, "env").cards.length, 4);
+  assert.deepEqual(
+    section(flattened, "env").cards.map(({ checkId }) => checkId),
+    ["env-config", "claude", "codex", "node"],
+  );
+  assert.deepEqual(
+    section(flattened, "rules").cards.map(({ checkId, agent }) => ({
+      checkId,
+      agent,
+    })),
+    [
+      // tab-sync 提到最前面：後面幾張的驗證要靠它裝的 watcher 才看得到標題變化。
+      { checkId: "tab-sync", agent: "shared" },
+      { checkId: "claude-md", agent: "claude" },
+      { checkId: "codex-config", agent: "codex" },
+      { checkId: "future-config-step", agent: "other" },
+    ],
+  );
+
+  console.log("ok - sections 分組、單卡順序、進度、logo 與未知 step fallback");
+
+  // 全螢幕的三項掛在 Claude Code 那張卡上：裝好、登入了都還不算完，那三項也要
+  // 勾完——不然那個 modal 會留到規則段的行為驗證中途才彈出來吃掉腳本送的句子。
+  const claudeManualCard = section(flattened, "env").cards.find(
+    ({ checkId }) => checkId === "claude",
+  );
+  assert.deepEqual(claudeManualCard.manualIds, [
+    "fullscreen-yes",
+    "fullscreen-mouse",
+    "fullscreen-copy",
+  ]);
+  assert.equal(cardIsComplete(claudeManualCard, new Set(), new Set()), false);
+  assert.equal(
+    cardIsComplete(
+      claudeManualCard,
+      new Set(),
+      new Set(["fullscreen-yes", "fullscreen-mouse"]),
+    ),
+    false,
+  );
+  assert.equal(
+    cardIsComplete(claudeManualCard, new Set(), new Set(claudeManualCard.manualIds)),
+    true,
+  );
+  // 其他環境卡沒掛人工項目，維持「裝好就算完」。
+  const nodeCard = section(flattened, "env").cards.find(
+    ({ checkId }) => checkId === "node",
+  );
+  assert.deepEqual(nodeCard.manualIds, []);
+  assert.equal(cardIsComplete(nodeCard, new Set(), new Set()), true);
+  console.log("ok - Claude Code 卡要連全螢幕三項一起勾完才算完成");
+
+  // 貼回來的代碼前後常黏到空白或換行——圈選很難剛好停在字尾。
+  assert.equal(matchesFullscreenProof(FULLSCREEN_PROOF), true);
+  assert.equal(matchesFullscreenProof(`  ${FULLSCREEN_PROOF}\n`), true);
+  assert.equal(matchesFullscreenProof(`${FULLSCREEN_PROOF} 這一行`), false);
+  assert.equal(matchesFullscreenProof(""), false);
+  assert.equal(matchesFullscreenProof(undefined), false);
+  console.log("ok - 貼上的代碼去掉前後空白後才比對，多貼到別的字不算過");
+
+  // 那一句要學生原樣貼進終端的話裡，一定要含代碼本身，否則印出來的東西對不上。
+  assert.ok(FULLSCREEN_PROMPT.includes(FULLSCREEN_PROOF));
+  console.log("ok - 給學生貼的那句話含有要比對的代碼");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

@@ -14,11 +14,13 @@ import {
   describeStep,
   expandAllowRules,
   mergeAllowRules,
+  mergeCodexModes,
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   mergeOutputStyle,
   upsertBlock,
 } from "../src/config-install.js";
+import { checkExternalSkill } from "../src/config-check.js";
 import { materialsDir } from "../src/paths.js";
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
@@ -93,7 +95,24 @@ async function copyStep(step) {
   // 已經有的東西不蓋掉——那是使用者自己寫的內容，蓋了救不回來。
   if (step.protectExisting === true && existsSync(step.target)) {
     console.log(`${step.target} 已經存在，沒有覆蓋。`);
-    console.log("這一列會顯示成「需要合併」，用旁邊的按鈕交給 AI 幫你併。");
+
+    // 但預設模式那兩個 key 還是要落地：交給 AI 合併的話結果不保證也不可重現，
+    // 而 Claude Code 那邊的 defaultMode 是程式直接寫進去的。只補這兩行，其餘一個
+    // 字都不動。
+    if (step.mergeModes === true) {
+      const current = await readFile(step.target, "utf8");
+      const { content, added } = mergeCodexModes(current);
+
+      if (added.length > 0) {
+        await backup(step.target);
+        await writeFile(step.target, content);
+        logProgress(`已補上預設模式：${added.join("、")}`);
+      } else {
+        logProgress("預設模式你已經設過了，沒有更動");
+      }
+    }
+
+    console.log("其餘內容會顯示成「需要合併」，用旁邊的按鈕交給 AI 幫你併。");
     return;
   }
 
@@ -132,12 +151,19 @@ async function hookStep(step) {
 async function allowlistStep(step) {
   const allowlist = JSON.parse(await readFile(sourcePath(step), "utf8"));
   const rules = expandAllowRules(allowlist.permissions.allow, HOME);
-  const { settings, addedRules } = mergeAllowRules(
+  const { settings, addedRules, modeAdded } = mergeAllowRules(
     await readSettings(step.settingsTarget),
     { allowRules: rules },
   );
   await writeSettings(step.settingsTarget, settings);
   logProgress(`${step.label}：新增 ${addedRules} 條（共 ${rules.length} 條）`);
+
+  // 講出來：這一步除了白名單還動了預設模式，學生按下去該知道自己同意了什麼。
+  logProgress(
+    modeAdded
+      ? "預設模式設成 acceptEdits：工作區內改檔案不再逐次詢問"
+      : `預設模式維持你原本設定的 ${settings.permissions.defaultMode}`,
+  );
 }
 
 async function tabSyncStep(step) {
@@ -250,9 +276,25 @@ async function externalSkillStep(step) {
         ),
       ),
     );
-    child.once("close", (exitCode) => {
+    child.once("close", async (exitCode) => {
       if (exitCode === 0) {
         logProgress(`${step.label} 安裝完成`);
+        resolve();
+        return;
+      }
+
+      // exit code 不是權威狀態，落點才是。
+      //
+      // `claude mcp add` 對「已經註冊過」回 exit 1（訊息是 MCP server playwright
+      // already exists in user config）。照著 exit code 判就會變成：東西明明裝好
+      // 了，卡片卻是紅的「安裝失敗，多半是網路問題」——猜錯原因，還把學生推去查
+      // 網路（VM 實測）。重按一次也永遠是同一個結果。
+      //
+      // 所以先去問 checkExternalSkill：它在就是在，指令回什麼都不重要。
+      const actual = await checkExternalSkill(step);
+
+      if (actual.status === "ok") {
+        logProgress(`${step.label} 本來就裝好了（${actual.detail}）`);
         resolve();
         return;
       }

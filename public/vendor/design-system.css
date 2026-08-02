@@ -412,71 +412,196 @@
 .ds-btn-fill:hover::before{box-shadow:inset 0 0 0 10em var(--fill-color)}
 /* End hover fill button */
 
+/* Expanding icon button */
+.ds-btn-expand{
+  /* 幾何與動作 1:1 移植自參考來源，刻意不套 --space-* / --r-*。 */
+  --expand-size:50px;--expand-width:140px;--expand-duration:.3s;--expand-radius:50px;
+  --expand-icon-size:12px;--expand-icon-open-size:50px;--expand-icon-shift:60%;
+  --expand-label-top:-20px;--expand-label-shift:30px;--expand-bg:var(--color-accent);
+  position:relative;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;
+  inline-size:var(--expand-size);block-size:var(--expand-size);padding:0;border:0;border-radius:50%;
+  background:var(--color-text-strong);color:var(--neutral-1);font-family:var(--font-sans);
+  transition-property:inline-size,border-radius,background-color,color;transition-duration:var(--expand-duration)}
+.ds-btn-expand--install{--expand-bg:var(--color-accent)}
+.ds-btn-expand--check{--expand-bg:var(--color-success)}
+.ds-btn-expand>svg{display:block;inline-size:var(--expand-icon-size);block-size:var(--expand-icon-size);flex:0 0 auto;
+  fill:currentColor;transition-property:inline-size,block-size,transform;transition-duration:var(--expand-duration)}
+.ds-btn-expand__label{position:absolute;top:var(--expand-label-top);inset-inline:0;display:block;color:inherit;
+  font-size:var(--fs-sm);font-weight:600;line-height:var(--lh-normal);white-space:nowrap;opacity:0;pointer-events:none;
+  transform:translateY(0);transition-property:opacity,transform;transition-duration:var(--expand-duration)}
+.ds-btn-expand:hover,.ds-btn-expand:focus-visible{inline-size:var(--expand-width);border-radius:var(--expand-radius);
+  background:var(--expand-bg);color:var(--slide-bg-deep)}
+.ds-btn-expand:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.ds-btn-expand:hover>svg,.ds-btn-expand:focus-visible>svg{inline-size:var(--expand-icon-open-size);
+  block-size:var(--expand-icon-open-size);transform:translateY(var(--expand-icon-shift))}
+.ds-btn-expand:hover .ds-btn-expand__label,.ds-btn-expand:focus-visible .ds-btn-expand__label{
+  opacity:1;transform:translateY(var(--expand-label-shift))}
+/* End expanding icon button */
+
 /* Hover fill brand variant */
 .ds-btn-fill--brand{min-inline-size:calc(var(--space-8) + var(--space-5))}
 /* End hover fill brand variant */
 
 /* 3D tilt card */
-.ds-card-tilt{inline-size:calc(var(--space-8) * 5);block-size:calc(var(--space-8) * 5 + var(--space-5));perspective:1000px;
+.ds-card-tilt{
+  /* 幾何 1:1 移植自 Uiverse by Smit-Prajapati，刻意不套 --space-* / --r-*，套近似值會失真。 */
+  --tilt-width:290px;--tilt-height:300px;--tilt-perspective:1000px;--tilt-face-radius:50px;
+  --tilt-glass-inset:8px;--tilt-glass-radius:55px;--tilt-glass-corner:100%;--tilt-glass-border:1px;
+  --tilt-glass-depth:25px;--tilt-circle-radius:50%;--tilt-ring-blur:5px;
+  --tilt-body-top:100px;--tilt-body-right:60px;--tilt-body-left:30px;--tilt-layer-depth:26px;
+  --tilt-title-size:20px;--tilt-text-size:15px;--tilt-text-gap:20px;
+  --tilt-foot-y:20px;--tilt-foot-padding-y:10px;--tilt-foot-padding-x:12px;
+  --tilt-more-width:40%;--tilt-more-size:12px;--tilt-more-hover-depth:10px;
+  --tilt-arrow-stroke:3px;--tilt-arrow-height:15px;
+  --tilt-social-size:30px;--tilt-social-padding:5px;--tilt-social-gap:10px;--tilt-social-icon-size:15px;
+  --tilt-ring-1-size:170px;--tilt-ring-2-size:140px;--tilt-ring-3-size:110px;
+  --tilt-ring-4-size:80px;--tilt-ring-5-size:50px;
+  --tilt-ring-1-offset:8px;--tilt-ring-2-offset:10px;--tilt-ring-3-offset:17px;
+  --tilt-ring-4-offset:23px;--tilt-ring-5-offset:30px;--tilt-ring-icon-size:20px;
+  --tilt-ring-1-depth:20px;--tilt-ring-2-depth:40px;--tilt-ring-3-depth:60px;
+  --tilt-ring-4-depth:80px;--tilt-ring-5-depth:100px;
+  --tilt-ring-2-hover-depth:60px;--tilt-ring-3-hover-depth:80px;
+  --tilt-ring-4-hover-depth:100px;--tilt-ring-5-hover-depth:120px;
+  --tilt-social-hover-depth:50px;--tilt-hover-angle:30deg;
+  inline-size:var(--tilt-width);block-size:var(--tilt-height);perspective:var(--tilt-perspective);
   --tilt-cast:color-mix(in srgb,var(--slide-bg-deep) 26%,transparent);
   --tilt-cast-strong:color-mix(in srgb,var(--slide-bg-deep) 22%,transparent)}
-.ds-card-tilt__face{position:relative;inline-size:100%;block-size:100%;border-radius:var(--r-xl);
-  background:linear-gradient(135deg,var(--orange-3),var(--orange-5));box-shadow:var(--shadow-md);
+.ds-card-tilt__face{position:relative;inline-size:100%;block-size:100%;border-radius:var(--tilt-face-radius);
+  background:linear-gradient(135deg,var(--orange-2),var(--orange-4));box-shadow:0 var(--space-1) 14px var(--tilt-cast);
   transform-style:preserve-3d;transition:transform .5s ease-in-out,box-shadow .5s ease-in-out}
-.ds-card-tilt:hover .ds-card-tilt__face{transform:rotate3d(1,1,0,30deg);box-shadow:var(--shadow-lg)}
-.ds-card-tilt__glass{position:absolute;inset:var(--space-2);border-left:1px solid var(--neutral-1);
-  border-bottom:1px solid var(--neutral-1);border-radius:var(--r-xl);border-top-right-radius:var(--r-pill);
-  background:linear-gradient(0deg,color-mix(in srgb,var(--neutral-1) 54%,transparent),color-mix(in srgb,var(--neutral-1) 82%,transparent));
-  transform:translate3d(0,0,25px);transform-style:preserve-3d}
+.ds-card-tilt:hover .ds-card-tilt__face{transform:rotate3d(1,1,0,var(--tilt-hover-angle));box-shadow:0 18px 40px var(--tilt-cast-strong)}
+.ds-card-tilt__glass{position:absolute;inset:var(--tilt-glass-inset);
+  border-left:var(--tilt-glass-border) solid var(--neutral-1);
+  border-bottom:var(--tilt-glass-border) solid var(--neutral-1);border-radius:var(--tilt-glass-radius);
+  border-top-right-radius:var(--tilt-glass-corner);
+  background:linear-gradient(0deg,color-mix(in srgb,var(--neutral-1) 34.9%,transparent),color-mix(in srgb,var(--neutral-1) 81.5%,transparent));
+  transform:translate3d(0,0,var(--tilt-glass-depth));transform-style:preserve-3d}
 .ds-card-tilt__rings{position:absolute;inset:0;transform-style:preserve-3d;pointer-events:none}
-.ds-card-tilt__ring{position:absolute;display:grid;place-items:center;aspect-ratio:1;border-radius:var(--r-pill);
-  background:color-mix(in srgb,var(--neutral-1) 28%,transparent);box-shadow:var(--shadow-sm);
-  backdrop-filter:blur(var(--space-1));transition:transform .5s ease-in-out}
+.ds-card-tilt__ring{position:absolute;display:grid;place-items:center;aspect-ratio:1;border-radius:var(--tilt-circle-radius);
+  background:color-mix(in srgb,var(--orange-1) 20%,transparent);box-shadow:0 1px 2px var(--tilt-cast);
+  backdrop-filter:blur(var(--tilt-ring-blur));transition:transform .5s ease-in-out}
 /* 五層不是同心，是刻意往右上角遞進——這是原作的設計語言：
    越小的圓越貼角落，右側環擠成一束、左側留出大弧。
    原作 圓心距角 93→80→72→63→55（直徑 170/140/110/80/50，等距 30）。
-   這裡直徑等距減 --space-6（192→160→128→96→64），
-   偏移取單一 token 讓圓心距角落在 104→92→80→72→64，維持同樣的單調收斂。
    ⛔ 別再「修正」成同心——同心會把這個層次感抹平。 */
-.ds-card-tilt__ring--1{top:var(--space-2);right:var(--space-2);inline-size:calc(var(--space-8) * 3);transform:translate3d(0,0,20px);transition-delay:0s}
-.ds-card-tilt__ring--2{top:var(--space-3);right:var(--space-3);inline-size:calc(var(--space-8) * 2 + var(--space-6));transform:translate3d(0,0,40px);transition-delay:.4s}
-.ds-card-tilt__ring--3{top:var(--space-4);right:var(--space-4);inline-size:calc(var(--space-8) * 2);transform:translate3d(0,0,60px);transition-delay:.8s}
-.ds-card-tilt__ring--4{top:var(--space-5);right:var(--space-5);inline-size:calc(var(--space-8) + var(--space-6));transform:translate3d(0,0,80px);transition-delay:1.2s}
-.ds-card-tilt__ring--5{top:var(--space-6);right:var(--space-6);inline-size:var(--space-8);transform:translate3d(0,0,100px);transition-delay:1.6s}
-.ds-card-tilt__ring--5 svg{inline-size:var(--space-6);block-size:var(--space-6);color:var(--color-text-strong);fill:currentColor}
-.ds-card-tilt:hover .ds-card-tilt__ring--1{transform:translate3d(0,0,40px)}
-.ds-card-tilt:hover .ds-card-tilt__ring--2{transform:translate3d(0,0,60px)}
-.ds-card-tilt:hover .ds-card-tilt__ring--3{transform:translate3d(0,0,80px)}
-.ds-card-tilt:hover .ds-card-tilt__ring--4{transform:translate3d(0,0,100px)}
-.ds-card-tilt:hover .ds-card-tilt__ring--5{transform:translate3d(0,0,120px)}
-.ds-card-tilt__body{position:relative;padding:calc(var(--space-8) * 3 + var(--space-1)) var(--space-7) 0 var(--space-5);
-  color:var(--color-text-strong);transform:translate3d(0,0,26px)}
-.ds-card-tilt__title{display:block;font-family:var(--font-sans);font-size:var(--fs-xl);font-weight:800;line-height:var(--lh-snug);color:var(--color-text-strong)}
-.ds-card-tilt__text{display:block;margin-top:var(--space-3);font-family:var(--font-sans);font-size:var(--fs-sm);line-height:var(--lh-relaxed);color:var(--color-text-strong)}
-.ds-card-tilt__foot{position:absolute;right:var(--space-5);bottom:var(--space-4);left:var(--space-5);display:flex;
-  align-items:center;justify-content:space-between;transform:translate3d(0,0,26px);transform-style:preserve-3d}
-.ds-card-tilt__socials{display:flex;gap:var(--space-2);transform-style:preserve-3d}
-.ds-card-tilt__social{display:grid;place-items:center;inline-size:var(--space-6);block-size:var(--space-6);
-  padding:var(--space-2);border:0;border-radius:var(--r-pill);background:var(--neutral-1);color:var(--color-text-strong);
+.ds-card-tilt__ring--1{top:var(--tilt-ring-1-offset);right:var(--tilt-ring-1-offset);inline-size:var(--tilt-ring-1-size);transform:translate3d(0,0,var(--tilt-ring-1-depth));transition-delay:0s}
+.ds-card-tilt__ring--2{top:var(--tilt-ring-2-offset);right:var(--tilt-ring-2-offset);inline-size:var(--tilt-ring-2-size);transform:translate3d(0,0,var(--tilt-ring-2-depth));transition-delay:.4s}
+.ds-card-tilt__ring--3{top:var(--tilt-ring-3-offset);right:var(--tilt-ring-3-offset);inline-size:var(--tilt-ring-3-size);transform:translate3d(0,0,var(--tilt-ring-3-depth));transition-delay:.8s}
+.ds-card-tilt__ring--4{top:var(--tilt-ring-4-offset);right:var(--tilt-ring-4-offset);inline-size:var(--tilt-ring-4-size);transform:translate3d(0,0,var(--tilt-ring-4-depth));transition-delay:1.2s}
+.ds-card-tilt__ring--5{top:var(--tilt-ring-5-offset);right:var(--tilt-ring-5-offset);inline-size:var(--tilt-ring-5-size);transform:translate3d(0,0,var(--tilt-ring-5-depth));transition-delay:1.6s}
+.ds-card-tilt__ring--5 svg{inline-size:var(--tilt-ring-icon-size);block-size:var(--tilt-ring-icon-size);color:var(--neutral-1);fill:currentColor}
+.ds-card-tilt:hover .ds-card-tilt__ring--2{transform:translate3d(0,0,var(--tilt-ring-2-hover-depth))}
+.ds-card-tilt:hover .ds-card-tilt__ring--3{transform:translate3d(0,0,var(--tilt-ring-3-hover-depth))}
+.ds-card-tilt:hover .ds-card-tilt__ring--4{transform:translate3d(0,0,var(--tilt-ring-4-hover-depth))}
+.ds-card-tilt:hover .ds-card-tilt__ring--5{transform:translate3d(0,0,var(--tilt-ring-5-hover-depth))}
+.ds-card-tilt__body{position:relative;padding:var(--tilt-body-top) var(--tilt-body-right) 0 var(--tilt-body-left);
+  color:var(--orange-6);transform:translate3d(0,0,var(--tilt-layer-depth))}
+.ds-card-tilt__title{display:block;font-family:var(--font-sans);font-size:var(--tilt-title-size);font-weight:800;line-height:var(--lh-snug);color:var(--orange-6)}
+.ds-card-tilt__text{display:block;margin-top:var(--tilt-text-gap);font-family:var(--font-sans);font-size:var(--tilt-text-size);line-height:var(--lh-relaxed);color:color-mix(in srgb,var(--orange-6) 76%,transparent)}
+.ds-card-tilt__foot{position:absolute;right:var(--tilt-foot-y);bottom:var(--tilt-foot-y);left:var(--tilt-foot-y);display:flex;
+  align-items:center;justify-content:space-between;padding:var(--tilt-foot-padding-y) var(--tilt-foot-padding-x);
+  transform:translate3d(0,0,var(--tilt-layer-depth));transform-style:preserve-3d}
+.ds-card-tilt__socials{display:flex;gap:var(--tilt-social-gap);transform-style:preserve-3d}
+.ds-card-tilt__social{display:grid;place-items:center;inline-size:var(--tilt-social-size);aspect-ratio:1;
+  padding:var(--tilt-social-padding);border:0;border-radius:var(--tilt-circle-radius);background:var(--neutral-1);color:var(--orange-6);
   box-shadow:0 var(--space-1) var(--space-1) calc(0px - var(--space-1)) var(--tilt-cast);
-  cursor:pointer;transition:transform .2s ease-in-out,box-shadow .2s ease-in-out,background .2s ease-in-out}
+  cursor:pointer;transition:transform .2s ease-in-out,box-shadow .2s ease-in-out,background .2s ease-in-out,color .2s ease-in-out}
 .ds-card-tilt__social:nth-child(1){transition-delay:.4s}
 .ds-card-tilt__social:nth-child(2){transition-delay:.6s}
 .ds-card-tilt__social:nth-child(3){transition-delay:.8s}
-.ds-card-tilt__social svg{display:block;inline-size:var(--space-4);block-size:var(--space-4);fill:currentColor}
+.ds-card-tilt__social svg{display:block;inline-size:var(--tilt-social-icon-size);block-size:var(--tilt-social-icon-size);fill:currentColor}
 /* 傾斜時社群鈕浮到卡面前方 50px，需要偏移夠大、濃度夠高的投影才撐得起高度感。
    系統的 --shadow-* 是給淺底卡片用的（8~12% 中性色），壓在橘色卡面上等於看不見，
    所以這裡用 --tilt-cast（由 --slide-bg-deep 調出的暖深色）自組一組投影。 */
-.ds-card-tilt:hover .ds-card-tilt__social{transform:translate3d(0,0,50px);
+.ds-card-tilt:hover .ds-card-tilt__social{transform:translate3d(0,0,var(--tilt-social-hover-depth));
   box-shadow:calc(0px - var(--space-1)) var(--space-5) var(--space-3) 0 var(--tilt-cast-strong)}
-.ds-card-tilt__social:hover{background:var(--color-accent-bg)}
-.ds-card-tilt__more{display:inline-flex;align-items:center;gap:var(--space-1);padding:var(--space-2);border:0;
-  border-radius:var(--r-sm);background:transparent;color:var(--color-text-strong);font-family:var(--font-sans);
-  font-size:var(--fs-xs);font-weight:700;cursor:pointer;transition:transform .2s ease-in-out,background .2s ease-in-out}
-.ds-card-tilt__more:hover{background:color-mix(in srgb,var(--neutral-1) 48%,transparent);transform:translate3d(0,0,10px)}
+.ds-card-tilt__social:hover{background:var(--slide-bg-deep);color:var(--neutral-1)}
+.ds-card-tilt__social:active{background:var(--amber-3);color:var(--slide-bg-deep)}
+.ds-card-tilt__more{display:inline-flex;align-items:center;justify-content:flex-end;gap:var(--space-1);
+  inline-size:var(--tilt-more-width);padding:0;border:0;background:transparent;color:var(--orange-5);
+  font-family:var(--font-sans);font-size:var(--tilt-more-size);font-weight:700;cursor:pointer;
+  transition:transform .2s ease-in-out}
+.ds-card-tilt__more svg{block-size:var(--tilt-arrow-height);max-block-size:var(--tilt-arrow-height);
+  fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:var(--tilt-arrow-stroke)}
+.ds-card-tilt__more:hover{transform:translate3d(0,0,var(--tilt-more-hover-depth))}
 .ds-card-tilt__social:focus,.ds-card-tilt__social:focus-visible,
 .ds-card-tilt__more:focus,.ds-card-tilt__more:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 /* End 3D tilt card */
+
+/* Folder stack */
+@property --folder-enter-y{
+  syntax:"<length>";
+  inherits:false;
+  initial-value:0px;
+}
+.ds-folder{
+  /* 幾何 1:1 移植自 Uiverse by byllzz，刻意不套 --space-* / --r-*，套近似值會失真。 */
+  --folder-width:280px;--folder-height:230px;--folder-body-height:230px;
+  --folder-body-radius:0 22px 60px 60px;--folder-file-width:260px;--folder-file-height:140px;
+  --folder-file-left:10px;--folder-file-radius:16px;--folder-file-padding:18px;
+  --folder-pocket-height:160px;--folder-perspective:1000px;--folder-tilt:30deg;
+  position:relative;inline-size:var(--folder-width);block-size:var(--folder-height);
+  font-family:var(--font-sans);transition:transform .4s ease}
+/* 整個資料夾在 hover 時抬起 5px——與扇出同時發生，缺這一下扇出會像卡片自己在飄。 */
+.ds-folder:hover{transform:translateY(-5px)}
+.ds-folder__back{position:absolute;inset:auto 0 0;block-size:var(--folder-body-height);
+  z-index:1;border-top:2px solid color-mix(in srgb,var(--orange-2) 34%,transparent);
+  border-radius:var(--folder-body-radius);background:var(--slide-bg-deep);
+  box-shadow:0 18px 40px color-mix(in srgb,var(--slide-bg-deep) 18%,transparent)}
+/* 頁籤屬於「後片」，必須排在所有卡片之下（卡片 10/20/30）——
+   放在卡片之上的話，扇出時頁籤會橫切過卡片，看起來像貼錯圖層。 */
+.ds-folder__tab{position:absolute;top:-36px;left:0;z-index:5;display:flex;align-items:flex-start;
+  inline-size:40%;block-size:36px;padding:8px 14px;background:var(--slide-bg-deep);color:var(--orange-2);
+  clip-path:polygon(0 0,76% 0,100% 100%,0 100%);font-size:var(--fs-sm);font-weight:700;line-height:var(--lh-snug)}
+.ds-folder__file{
+  --fan-y:0px;--fan-rot:0deg;--fan-scale:1;--tilt:0deg;--folder-enter-y:0px;
+  position:absolute;left:var(--folder-file-left);display:flex;flex-direction:column;align-items:stretch;
+  inline-size:var(--folder-file-width);block-size:var(--folder-file-height);
+  padding:var(--folder-file-padding);border:0;border-radius:var(--folder-file-radius);
+  color:var(--neutral-1);font:inherit;text-align:left;cursor:pointer;
+  transform:translateY(calc(var(--fan-y) + var(--folder-enter-y))) rotate(var(--fan-rot)) scale(var(--fan-scale))
+    perspective(var(--folder-perspective)) rotate3d(1,1,0,var(--tilt));
+  transform-origin:center;transition:transform .6s cubic-bezier(.34,1.56,.64,1);
+  animation:slideIntoPocket .8s both}
+.ds-folder__file:nth-of-type(1){bottom:90px;z-index:10;background:var(--orange-4);animation-delay:.1s}
+.ds-folder__file:nth-of-type(2){bottom:65px;z-index:20;background:var(--teal-4);animation-delay:.2s}
+.ds-folder__file:nth-of-type(3){bottom:40px;z-index:30;background:var(--neutral-1);color:var(--orange-6);animation-delay:.3s}
+.ds-folder:hover .ds-folder__file:nth-of-type(1){--fan-y:-75px;--fan-rot:-3deg}
+.ds-folder:hover .ds-folder__file:nth-of-type(2){--fan-y:-45px;--fan-rot:2deg}
+.ds-folder:hover .ds-folder__file:nth-of-type(3){--fan-y:-10px}
+.ds-folder:hover .ds-folder__file:nth-of-type(1):hover{--fan-y:-60px}
+.ds-folder:hover .ds-folder__file:nth-of-type(2):hover{--fan-y:-70px}
+.ds-folder:hover .ds-folder__file:nth-of-type(3):hover{--fan-y:-60px}
+.ds-folder__file:hover{--fan-rot:0deg;--fan-scale:1.05;z-index:100;transition-delay:0s}
+.ds-folder__file.is-tilted{--tilt:var(--folder-tilt)}
+.ds-folder__file:focus-visible{outline:3px solid var(--color-success);outline-offset:3px}
+.ds-folder__file-head{display:flex;align-items:center;gap:var(--space-2);min-block-size:24px;overflow:hidden}
+.ds-folder__file-type{flex:0 0 auto;padding:3px 8px;border:1px solid currentColor;border-radius:var(--r-pill);
+  font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:700;line-height:var(--lh-snug)}
+.ds-folder__file-name{display:block;min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:var(--fs-base);font-weight:700;line-height:var(--lh-snug)}
+.ds-folder__file-meta{position:relative;display:block;margin-top:auto;min-block-size:var(--fs-sm);
+  font-family:var(--font-mono);font-size:var(--fs-sm);line-height:1}
+.ds-folder__file-meta-masked,.ds-folder__file-meta-full{position:absolute;inset:0;transition:opacity .2s ease,visibility .2s ease}
+.ds-folder__file-meta-masked{letter-spacing:2px}
+.ds-folder__file-meta-full{opacity:0;visibility:hidden}
+.ds-folder__file:hover .ds-folder__file-meta-masked{opacity:0;visibility:hidden}
+.ds-folder__file:hover .ds-folder__file-meta-full{opacity:1;visibility:visible}
+.ds-folder__pocket{position:absolute;inset:auto 0 0;z-index:40;block-size:var(--folder-pocket-height);
+  color:var(--orange-2);pointer-events:none}
+.ds-folder__pocket-shape{position:absolute;inset:0;display:block;inline-size:100%;block-size:100%}
+.ds-folder__pocket-fill{fill:var(--slide-bg-deep)}
+.ds-folder__pocket-stitch{fill:none;stroke:color-mix(in srgb,var(--orange-2) 58%,transparent);
+  stroke-width:2;stroke-dasharray:6 4}
+.ds-folder__summary{position:absolute;top:58px;right:24px;left:24px;display:flex;align-items:center;
+  justify-content:center;color:var(--orange-2)}
+.ds-folder__summary-text{display:block;min-inline-size:150px;min-block-size:var(--fs-sm);
+  font-family:var(--font-mono);font-size:var(--fs-sm);font-weight:700;line-height:1;text-align:center;white-space:nowrap}
+@keyframes slideIntoPocket{
+  from{--folder-enter-y:-100px;opacity:0}
+  to{--folder-enter-y:0px;opacity:1}
+}
+/* End folder stack */
 
 /* 改造對比 · 箭頭推進變體 */
 .ds-transform--play .ds-transform-side{opacity:0;transform:translateY(10px);transition:opacity .4s ease,transform .4s ease}
@@ -540,12 +665,16 @@
   .ds-btn-reveal__icons svg{transition-delay:0s}
   .ds-btn-fill::before{transition:none}
   .ds-btn-fill--brand::before{transition:none}
+  .ds-btn-expand,.ds-btn-expand>svg,.ds-btn-expand__label{transition:none}
   .ds-card-tilt__face,.ds-card-tilt:hover .ds-card-tilt__face,
   .ds-card-tilt__glass,.ds-card-tilt__body,.ds-card-tilt__foot,
   .ds-card-tilt__ring,.ds-card-tilt:hover .ds-card-tilt__ring,
   .ds-card-tilt__social,.ds-card-tilt:hover .ds-card-tilt__social,
   .ds-card-tilt__more:hover{transform:none}
   .ds-card-tilt__ring,.ds-card-tilt__social{transition-delay:0s}
+  .ds-folder{transition:none}
+  .ds-folder__file{transition:none;animation:none}
+  .ds-folder__file-meta-masked,.ds-folder__file-meta-full{transition:none}
   .ds-pbar--milestones .ds-pbar-fill,.ds-pbar--milestones .ds-duck{transition:none}
   .ds-pbar--milestones .ds-duck-hop{animation:none}
   .ds-milestone-card,.ds-milestone.is-active .ds-milestone-card,.ds-milestone-card.is-pinned{transform:translate(0,-50%)}
