@@ -553,6 +553,22 @@ function setupOrder(card) {
   return index === -1 ? SETUP_FIRST.length : index;
 }
 
+// 環境這一段也有一張「後面全靠它」的卡：Windows 的執行原則。
+//
+// 它原本被歸在 other，照 agent 排序落到整段最後面。但學生在第一張（Claude Code）
+// 就會按「開啟 Claude Code」，那顆會開一個新視窗跑我們寫出來的 .ps1——執行原則還是
+// Restricted 的話，新視窗直接紅字「running scripts is disabled」，而嚮導這邊看到的
+// exit code 還是 0（VM 實測）。
+//
+// 我們自己 spawn 的腳本已經改成帶 Bypass，不再依賴這張卡；但學生自己在終端跑
+// claude 時仍然要靠它，所以順序也要對：擋路的先修。
+const ENV_FIRST = ["execution-policy"];
+
+function envOrder(card) {
+  const index = ENV_FIRST.indexOf(card.checkId);
+  return index === -1 ? ENV_FIRST.length : index;
+}
+
 export function flattenCheckCards(groupedSections, envChecks = []) {
   const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
   const mergedCheckIds = new Set(
@@ -582,6 +598,7 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
     })
     .sort(
       (left, right) =>
+        envOrder(left) - envOrder(right) ||
         AGENT_ORDER.indexOf(left.agent) - AGENT_ORDER.indexOf(right.agent),
     );
   const sections = [

@@ -26,6 +26,22 @@ assert(
 );
 console.log("ok - 終端啟動腳本用陣列傳參數，不靠引號");
 
+// 我們自己寫出來的臨時腳本，不該看機器的執行原則臉色。
+//
+// Windows 預設是 Restricted：新開的視窗一跑就紅字「running scripts is disabled」，
+// 而嚮導這邊看到的 exit code 還是 0——因為 cmd start 一開完就回來了（VM 實測，學生
+// 按「開啟 Claude Code」直接撞到）。Restricted 連 profile 都不載入，wrapper 就住在
+// 裡面，所以標題同步那一格等於根本沒在驗。
+//
+// Bypass 只影響那一個行程，不動機器設定。機器本身的執行原則另有一張卡在管。
+for (const spawnSite of [
+  /"powershell\.exe",\s*\n\s*"-NoExit",[\s\S]*?"-ExecutionPolicy",\s*\n\s*"Bypass",/,
+  /Start-Process powershell\.exe -ArgumentList @\('-NoProfile','-ExecutionPolicy','Bypass','-File'/,
+]) {
+  assert.match(source, spawnSite);
+}
+console.log("ok - 自己 spawn 的 PowerShell 腳本一律帶 Bypass，不依賴機器設定");
+
 // 兩支監控腳本的測試開關名字不一樣，設錯的話門檻沒降下來，hook 永遠不會出聲。
 assert(
   source.includes("CODEX_TEST_MAX_CONTEXT_WINDOW"),

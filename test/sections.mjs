@@ -262,6 +262,20 @@ try {
   }
   ok("環境卡的描述講的也是做完會多出什麼");
 
+  // 執行原則要排在環境段最前面。它原本歸在 other、照 agent 排序落到最後，於是學生
+  // 在第一張卡就按「開啟 Claude Code」，新視窗直接紅字「running scripts is disabled」
+  //（VM 實測）。我們自己 spawn 的腳本已經帶 Bypass 不靠它，但學生自己跑 claude 要靠。
+  const windowsEnv = flattenCheckCards(groupChecks([]), [
+    check("claude"),
+    check("node"),
+    check("execution-policy"),
+  ]);
+  assert.deepEqual(
+    section(windowsEnv, "env").cards.map(({ checkId }) => checkId),
+    ["env-config", "execution-policy", "claude", "node"],
+  );
+  ok("執行原則排在環境段最前面，擋路的先修");
+
   // 全螢幕的三項掛在 Claude Code 那張卡上：裝好、登入了都還不算完，那三項也要
   // 勾完——不然那個 modal 會留到規則段的行為驗證中途才彈出來吃掉腳本送的句子。
   const claudeManualCard = section(flattened, "env").cards.find(

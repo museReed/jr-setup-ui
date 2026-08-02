@@ -307,7 +307,7 @@ function titleScript() {
       "$watcher = Join-Path $HOME '.jr-setup\\bin\\ai-tab-sync.ps1'",
       "$sync = Join-Path $env:TEMP \"jr-title-$PID.txt\"",
       `Set-Content -Path $sync -Value '${name}' -Encoding UTF8`,
-      "$w = Start-Process powershell.exe -ArgumentList @('-NoProfile','-File',$watcher,$sync,\"$PID\") -NoNewWindow -PassThru",
+      "$w = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$watcher,$sync,\"$PID\") -NoNewWindow -PassThru",
       "Start-Sleep -Seconds 5",
       "if ($w) { Stop-Process -Id $w.Id -Force -ErrorAction SilentlyContinue }",
       "Remove-Item $sync -Force -ErrorAction SilentlyContinue",
@@ -363,6 +363,14 @@ function openTerminal(launcher) {
         "wt.exe",
         "powershell.exe",
         "-NoExit",
+        // 我們自己寫出來的臨時腳本，不該看機器的執行原則臉色。Windows 預設是
+        // Restricted，新開的視窗會直接紅字「running scripts is disabled」，而嚮導這
+        // 邊看到的 exit code 還是 0——因為 cmd start 一開完就回來了（VM 實測）。
+        //
+        // Bypass 只影響這一個行程，不動機器設定。順帶把 profile 也救回來：Restricted
+        // 連 profile 都不載入，wrapper 就住在裡面，不載入等於整個標題同步沒在驗。
+        "-ExecutionPolicy",
+        "Bypass",
         "-File",
         launcher,
       ],

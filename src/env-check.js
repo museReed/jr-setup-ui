@@ -399,6 +399,10 @@ async function checkPowerShellEncoding() {
     await writeFile(sourcePath, encodingProbeSource(expected, outputPath), "utf8");
     const result = await runProbe("powershell.exe", [
       "-NoProfile",
+      // 這支探針是我們自己寫進暫存檔的。不帶 Bypass 的話，執行原則還是 Restricted
+      // 的機器會直接被擋，而這一格只會顯示「無法確認」——學生完全不知道為什麼。
+      "-ExecutionPolicy",
+      "Bypass",
       "-File",
       sourcePath,
     ]);
