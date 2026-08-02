@@ -55,6 +55,10 @@ const ASSETS = [
   ["/viewmodel.js", "text/javascript; charset=utf-8"],
   ["/model.js", "text/javascript; charset=utf-8"],
   ["/api.js", "text/javascript; charset=utf-8"],
+  ["/tour.js", "text/javascript; charset=utf-8"],
+  ["/tour-model.js", "text/javascript; charset=utf-8"],
+  ["/vendor/driver.mjs", "text/javascript; charset=utf-8"],
+  ["/vendor/driver.css", "text/css; charset=utf-8"],
 ];
 
 async function loadAssets() {

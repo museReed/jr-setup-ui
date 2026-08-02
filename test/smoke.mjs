@@ -265,6 +265,12 @@ try {
     ["/view.js", /^text\/javascript/],
     ["/viewmodel.js", /^text\/javascript/],
     ["/api.js", /^text\/javascript/],
+    // 導覽自己的兩支，加上 vendor 的 driver。少送任何一支，app.js 的 import
+    // 會整串失敗——不是導覽不見，是整頁都不動了。
+    ["/tour.js", /^text\/javascript/],
+    ["/tour-model.js", /^text\/javascript/],
+    ["/vendor/driver.mjs", /^text\/javascript/],
+    ["/vendor/driver.css", /^text\/css/],
   ]) {
     const assetResponse = await fetch(`${baseUrl}${pathname}`);
     assert.equal(assetResponse.status, 200, pathname);

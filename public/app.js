@@ -2,6 +2,7 @@
 // 這裡只做接線與狀態保管，判斷邏輯在 viewmodel.js、畫面操作在 view.js。
 import * as api from "./api.js";
 import * as view from "./view.js";
+import { initTour, onCardRendered, replayTour } from "./tour.js";
 import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
@@ -623,6 +624,12 @@ function renderWizard() {
   // 去點才發現。開鎖動畫也因此永遠錯過那一刻（VM 實測）。
   const lockStates = renderNavigation();
   renderWizardNav({ cardSection, currentIndex, nextUnlocked, lockStates, onNext: cardModel.onNext });
+  // 導覽排在最後：翻頁按鈕這時候才決定要不要露臉，太早問會指到一顆還 hidden 的
+  // 按鈕，泡泡就貼到畫面左上角去了。
+  onCardRendered({
+    cardId: card.checkId,
+    runInProgress: state.runInProgress,
+  });
 }
 
 // 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
@@ -1537,6 +1544,8 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
   }
 });
 
+initTour();
+view.elements.replayTour.addEventListener("click", () => replayTour());
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);

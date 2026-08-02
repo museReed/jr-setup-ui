@@ -424,6 +424,62 @@ try {
   assert(!index.includes("wizard-sidebar"));
   assert.match(index, /<nav id="section-nav" class="section-tabs"/);
   ok("段落導覽改成上方 tab，整頁大標已移除");
+
+  // ── 導覽（driver.js）─────────────────────────────────────────────
+  //
+  // driver 只負責畫高亮泡泡。卡片順序、解鎖、完成判定仍然由 model / viewmodel 決定，
+  // 所以 tour 這一層不准反過來去碰它們，也不准自己打 API。
+  const tourModel = read("tour-model.js");
+  const tour = read("tour.js");
+
+  assert.deepEqual(importsOf(tourModel), []);
+  for (const forbidden of ["document.", "window.", "querySelector", "fetch("]) {
+    assert(
+      !tourModel.includes(forbidden),
+      `tour-model 不可以出現 ${forbidden}——那是 tour.js 的事`,
+    );
+  }
+  ok("tour-model 是純函式：只決定要不要講、講什麼");
+
+  assert(!importsOf(tour).includes("api"), "tour 不可以直接打 API");
+  assert(!importsOf(tour).includes("viewmodel"), "tour 不可以依賴 viewmodel");
+  assert(!tour.includes("fetch("), "tour 不可以直接 fetch");
+  ok("tour 只畫泡泡，不打 API、不碰 viewmodel");
+
+  // driver.js 跟設計系統一樣走 vendor：學生的 VM 常常連不到外網，指向 CDN 的話
+  // 導覽會靜靜地不出現，而且沒有人會知道為什麼。
+  assert.match(index, /<link rel="stylesheet" href="\/vendor\/driver\.css" \/>/);
+  assert.match(tour, /from "\/vendor\/driver\.mjs"/);
+  assert(!index.includes("cdn.jsdelivr"));
+  assert(!index.includes("unpkg.com"));
+  ok("driver.js 走 vendor，不從 CDN 抓");
+
+  // 頁面同一時間只有一張卡在 DOM 裡（renderCard 每次都重畫一張 article），所以
+  // 導覽指得到「現在這張卡」的唯一辦法就是每次把身分寫回元素上。
+  assert(files.view.includes("article.dataset.cardId = model.card.checkId"));
+  ok("卡片身分寫在 data-card-id 上，導覽才指得到現在這張");
+
+  // 版面導覽指的必須是 index.html 裡寫死的骨架。指到卡片內部生出來的元素，
+  // 學生翻到下一張時泡泡就會貼到畫面左上角。
+  for (const selector of ["#section-nav", "#milestone-bar", "#current-card", "#terminal", "#wizard-nav-row"]) {
+    assert(
+      index.includes(`id="${selector.slice(1)}"`),
+      `版面導覽指的 ${selector} 必須是 index.html 的骨架`,
+    );
+  }
+  ok("版面導覽只指不會被重畫的骨架");
+
+  // 跑到一半跳提示會蓋住終端正在印的字。
+  assert(tourModel.includes("if (runInProgress === true || tourRunning === true) return null;"));
+  ok("執行中不跳導覽提示");
+
+  // 重看導覽那顆也照灌色按鈕的規矩來。
+  assert.match(
+    index,
+    /id="replay-tour" class="ds-btn-fill[^"]*"[^>]*>\s*<svg/,
+    "replay-tour 要是灌色按鈕而且帶 icon",
+  );
+  ok("重看導覽是灌色按鈕，前面帶 icon");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

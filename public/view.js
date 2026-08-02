@@ -24,6 +24,7 @@ const elements = {
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
   sectionPanel: document.querySelector("[data-section-panel]"),
   sectionStatus: document.querySelector("#section-status"),
+  replayTour: document.querySelector("#replay-tour"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
   milestoneFill: document.querySelector("#milestone-fill"),
@@ -586,6 +587,9 @@ function renderCard(model) {
   elements.configChoicePanel.hidden = model.card.kind !== "setup";
   const article = document.createElement("article");
   article.className = `ds-card current-task-card current-task-card--${model.card.agent}`;
+  // 導覽要指得到「現在這張卡」。卡片每次都是重畫一張新的 article，所以身分要寫在
+  // 元素上，tour.js 才有東西可以 querySelector。
+  article.dataset.cardId = model.card.checkId ?? "";
   const header = document.createElement("header");
   header.className = "config-card-header";
   header.append(createLogo(model.card.logo));

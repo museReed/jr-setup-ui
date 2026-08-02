@@ -237,6 +237,9 @@ body {
 .wizard-nav-row {
   display: flex;
   justify-content: space-between;
+  /* 兩顆都還沒露臉時也要佔住高度：一來按鈕出現時版面不會往上跳，二來導覽指得到
+     這一列（指一顆 hidden 的按鈕，泡泡會貼到畫面左上角）。 */
+  min-height: 44px;
   margin-top: var(--space-5);
 }
 
@@ -274,10 +277,97 @@ body {
 
 #section-status {
   display: block;
-  margin: 0 0 var(--space-3);
+  margin: 0;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+}
+
+/* 進度文字與「這頁怎麼用」排同一行：導覽按鈕靠右，跟進度條的右緣對齊。 */
+.milestone-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* driver.js 的泡泡預設是白底藍鈕，跟這頁的暗色卡片不同世界。長相全部拉回
+   設計系統的變數，只留它的定位與遮罩邏輯。 */
+.driver-popover.jr-tour {
+  max-width: 320px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+.driver-popover.jr-tour .driver-popover-title {
+  color: var(--color-text-strong);
+  font-size: var(--fs-md);
+}
+
+.driver-popover.jr-tour .driver-popover-description {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+
+.driver-popover.jr-tour .driver-popover-progress-text {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.driver-popover.jr-tour .driver-popover-navigation-btns button {
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--r-sm);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  text-shadow: none;
+}
+
+.driver-popover.jr-tour .driver-popover-navigation-btns button:hover {
+  background: var(--color-accent-hover);
+}
+
+/* 「上一個」不是主要動作。兩顆同樣灌滿的話，第一步就有兩顆一樣搶眼的按鈕，
+   而其中一顆還是停用的。 */
+/* 選擇器要跟上面那條一樣長：只寫 .driver-popover-prev-btn 的話少一個 type
+   selector，權重輸給灌滿那條，兩顆還是一樣橘。 */
+.driver-popover.jr-tour .driver-popover-navigation-btns button.driver-popover-prev-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.driver-popover.jr-tour .driver-popover-navigation-btns button.driver-popover-prev-btn:hover {
+  background: var(--color-accent-bg);
+  color: var(--color-text-strong);
+}
+
+.driver-popover.jr-tour .driver-popover-btn-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-top {
+  border-top-color: var(--color-bg-elevated);
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-bottom {
+  border-bottom-color: var(--color-bg-elevated);
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-left {
+  border-left-color: var(--color-bg-elevated);
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-right {
+  border-right-color: var(--color-bg-elevated);
 }
 
 /* 上緣的留白就是小鴨站的地方——貼齊 tab 下緣，小鴨剛好在 tab 底下不被切到。 */
