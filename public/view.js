@@ -557,13 +557,86 @@ export function onSectionSelect(handler) {
   }
 }
 
+// 鎖頭畫在標題前面。原本鎖住的分頁只是淡一點——淡的東西看起來像「還沒載入」或
+// 「壞掉」，不像「做完前面才會開」。鎖頭一眼就說得清楚。
+function lockIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "section-tab-lock");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  // 鎖環另外一個群組：開鎖時只有它會動。
+  const shackle = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  shackle.setAttribute("class", "section-tab-shackle");
+  shackle.setAttribute("d", "M8 10V7a4 4 0 0 1 8 0v3");
+  shackle.setAttribute("fill", "none");
+  shackle.setAttribute("stroke", "currentColor");
+  shackle.setAttribute("stroke-width", "2");
+  shackle.setAttribute("stroke-linecap", "round");
+  const body = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  body.setAttribute("x", "5");
+  body.setAttribute("y", "10");
+  body.setAttribute("width", "14");
+  body.setAttribute("height", "10");
+  body.setAttribute("rx", "2");
+  body.setAttribute("fill", "currentColor");
+  svg.append(shackle, body);
+  return svg;
+}
+
+function fireworkAt(percent) {
+  const firework = document.createElement("span");
+  firework.className = "ds-firework";
+  firework.style.setProperty("--firework-at", `${percent}%`);
+  firework.setAttribute("aria-hidden", "true");
+  for (let ray = 0; ray < 10; ray += 1) {
+    const particle = document.createElement("i");
+    particle.style.setProperty("--ray", `${ray * 36}deg`);
+    firework.append(particle);
+  }
+  return firework;
+}
+
+// 上一次每個分頁鎖著沒有。動畫只在「原本鎖著、現在開了」那一刻放——每次重畫都放
+// 的話，光是勾一個項目就會炸一次煙火。
+let renderedLocks = null;
+
+function playUnlock(button) {
+  if (reducedMotion.matches) return;
+  button.classList.remove("is-unlocking");
+  // 讀一次 offsetWidth 逼瀏覽器結算，不然連續兩次解鎖的第二次不會重播動畫。
+  void button.offsetWidth;
+  button.classList.add("is-unlocking");
+  const firework = fireworkAt(50);
+  button.append(firework);
+  window.setTimeout(() => {
+    button.classList.remove("is-unlocking");
+    firework.remove();
+  }, 900);
+}
+
 export function renderSectionLocks(lockStates) {
+  const next = {};
+
   for (const button of elements.sectionButtons) {
-    const locked = lockStates[button.dataset.sectionTarget]?.locked === true;
+    const id = button.dataset.sectionTarget;
+    const locked = lockStates[id]?.locked === true;
+    next[id] = locked;
+
+    if (button.querySelector(".section-tab-lock") === null) {
+      button.prepend(lockIcon());
+    }
+
+    // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
+    if (renderedLocks !== null && renderedLocks[id] === true && !locked) {
+      playUnlock(button);
+    }
+
     button.classList.toggle("is-locked", locked);
     if (locked) button.setAttribute("aria-disabled", "true");
     else button.removeAttribute("aria-disabled");
   }
+
+  renderedLocks = next;
 }
 
 export function showSectionLockMessage(message) {

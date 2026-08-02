@@ -183,6 +183,26 @@ try {
   assert(files.app.includes("view.addRawLine("));
   ok("環境重掃畫完才關掉退勾狀態，原始輸出也留得下結果");
 
+  // 鎖住的分頁原本只是淡一點——淡的東西看起來像「還沒載入」或「壞掉」，不像
+  // 「做完前面才會開」。鎖頭一眼就說得清楚。
+  assert(files.view.includes("section-tab-lock"));
+  assert.match(cardStyles, /^\.section-tab\.is-locked \.section-tab-lock,$/m);
+  ok("鎖住的分頁在標題前面畫一個鎖頭");
+
+  // 開鎖動畫只在「原本鎖著、現在開了」那一刻放。每次重畫都放的話，光是勾一個
+  // 項目就會炸一次煙火；第一次畫也不放，一開頁就慶祝學生不知道在慶祝什麼。
+  assert(files.view.includes("renderedLocks !== null"));
+  assert.match(files.view, /renderedLocks\[id\] === true && !locked/);
+  assert(files.view.includes("if (reducedMotion.matches) return;"));
+  assert.match(cardStyles, /@keyframes tab-unlock-shackle/);
+  assert.match(cardStyles, /@keyframes tab-unlock-shake/);
+  // 慶祝用的動畫要尊重系統設定：關掉不影響理解。
+  assert.match(
+    cardStyles,
+    /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.section-tab\.is-unlocking/,
+  );
+  ok("開鎖動畫只在真的解鎖那一刻放，且尊重減少動態設定");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

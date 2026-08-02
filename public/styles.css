@@ -48,6 +48,11 @@ body {
 /* 只有一列標題、沒有副標，所以也沒有收合這回事——高度自始至終固定。 */
 .section-tab {
   flex: 0 0 auto;
+  /* 鎖頭在標題前面，煙火掛在自己身上——兩者都要這個定位脈絡。 */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border: 0;
   border-bottom: 3px solid transparent;
@@ -79,6 +84,81 @@ body {
 .section-tab.is-locked {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+/* 鎖頭只在鎖著時佔位置。開鎖動畫期間要留著——那半秒正是它在演的東西。 */
+.section-tab-lock {
+  display: none;
+  width: 0.9em;
+  height: 0.9em;
+  flex: 0 0 auto;
+}
+
+.section-tab.is-locked .section-tab-lock,
+.section-tab.is-unlocking .section-tab-lock {
+  display: block;
+}
+
+/* 開鎖：鎖環先彈起來轉開，鎖身跟著淡掉，整個分頁晃一下。
+   煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。 */
+.section-tab.is-unlocking {
+  animation: tab-unlock-shake 0.5s ease;
+}
+
+.section-tab.is-unlocking .section-tab-lock {
+  animation: tab-unlock-fade 0.9s ease forwards;
+}
+
+.section-tab.is-unlocking .section-tab-shackle {
+  transform-origin: 16px 10px;
+  animation: tab-unlock-shackle 0.45s ease forwards;
+}
+
+@keyframes tab-unlock-shackle {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  45% {
+    transform: translateY(-2px) rotate(0deg);
+  }
+  100% {
+    transform: translateY(-2px) rotate(38deg);
+  }
+}
+
+@keyframes tab-unlock-fade {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes tab-unlock-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  45% {
+    transform: translateX(3px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+}
+
+/* 會動的東西一律尊重系統設定。這一段的動畫是慶祝，不是資訊——關掉不影響理解。 */
+@media (prefers-reduced-motion: reduce) {
+  .section-tab.is-unlocking,
+  .section-tab.is-unlocking .section-tab-lock,
+  .section-tab.is-unlocking .section-tab-shackle {
+    animation: none;
+  }
 }
 
 .section-lock-message {
