@@ -208,7 +208,7 @@ try {
   // 錯過那一刻（VM 實測）。
   assert.match(
     files.app,
-    /renderControls\(\);\s*\n(\s*\/\/[^\n]*\n)*\s*renderNavigation\(\);\s*\n\}/,
+    /renderControls\(\);\s*\n(\s*\/\/[^\n]*\n)*\s*const lockStates = renderNavigation\(\);/,
   );
   ok("每次重畫卡片都跟著重算分頁的鎖");
 
@@ -247,6 +247,32 @@ try {
     /"mouseenter",\s*\n\s*\(\) => window\.clearTimeout\(autoUnpinTimer\)/,
   );
   ok("抵達時跳出的預覽三秒後自己收掉，滑上去就不收");
+
+  // 翻頁按鈕釘在畫面兩側，不在卡片裡：每張卡高度不同，放在卡片裡按鈕就會上下跳，
+  // 學生每翻一張都要重新找它在哪。
+  const cardIndex = readFileSync(
+    new URL("../public/index.html", import.meta.url),
+    "utf8",
+  );
+  assert(cardIndex.includes('id="wizard-prev"'));
+  assert(cardIndex.includes('id="wizard-next"'));
+  assert(!files.view.includes('next.textContent = "下一張"'));
+  // 貼齊工作區的左右邊界＝卡片的最外緣。釘在視窗邊緣的話，螢幕一寬就離內容很遠。
+  assert.match(cardStyles, /^\.wizard-nav \{[^}]*position: absolute;/m);
+  assert.match(cardStyles, /^\.wizard-workspace \{[^}]*position: relative;/m);
+  assert.match(cardStyles, /^\.wizard-nav--prev \{\s*left: 0;/m);
+  assert.match(cardStyles, /^\.wizard-nav--next \{\s*right: 0;/m);
+  ok("翻頁按鈕貼齊卡片的最外緣，不隨卡片高度上下跳");
+
+  // 只有「往前」那顆值得慶祝——回頭的那顆出現不是成就，只是「你可以往回看」。
+  assert.match(files.view, /key === "next" && !reducedMotion\.matches/);
+  assert(files.view.includes("shownNav[key]"));
+  ok("下一張剛出現時晃一下加煙火，上一張不慶祝");
+
+  // 走到一段的最後一張，「下一張」換成「下一段：⋯」，點下去落在新那段的第一張。
+  assert(files.app.includes("下一段："));
+  assert.match(files.app, /goToSection\(nextSection\.id, "first"\)/);
+  ok("一段做完時翻頁按鈕帶去下一段的第一張");
 
   const index = readFileSync(
     new URL("../public/index.html", import.meta.url),

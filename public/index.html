@@ -62,6 +62,15 @@
       </div>
 
       <div class="wizard-workspace">
+        <!-- 翻頁按鈕釘在畫面兩側，不在卡片裡：位置固定，學生不用每張卡重新找它在哪。 -->
+        <button type="button" id="wizard-prev" class="wizard-nav wizard-nav--prev" hidden>
+          <span class="wizard-nav-arrow" aria-hidden="true">←</span>
+          <span class="wizard-nav-label">上一張</span>
+        </button>
+        <button type="button" id="wizard-next" class="wizard-nav wizard-nav--next" hidden>
+          <span class="wizard-nav-label">下一張</span>
+          <span class="wizard-nav-arrow" aria-hidden="true">→</span>
+        </button>
         <div class="task-terminal-layout">
           <section class="task-column" data-section-panel aria-label="目前設定卡片">
             <div id="config-choice-panel" class="config-choice-panel" hidden>

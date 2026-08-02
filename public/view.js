@@ -29,6 +29,8 @@ const elements = {
   milestoneFill: document.querySelector("#milestone-fill"),
   milestoneDuck: document.querySelector("#milestone-duck"),
   sectionLockMessage: document.querySelector("#section-lock-message"),
+  wizardPrev: document.querySelector("#wizard-prev"),
+  wizardNext: document.querySelector("#wizard-next"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
@@ -543,19 +545,45 @@ function renderCard(model) {
     article.append(body);
   }
 
-  if (model.showNext) {
-    const footer = document.createElement("footer");
-    const next = document.createElement("button");
-    next.type = "button";
-    next.className = "ds-btn ds-btn-primary";
-    next.textContent = "下一張";
-    next.disabled = !model.nextUnlocked;
-    next.addEventListener("click", model.onNext);
-    footer.append(next);
-    article.append(footer);
-  }
+  // 翻頁按鈕不在卡片裡：它釘在畫面兩側，位置固定（見 renderWizardNav）。
   elements.currentCard.replaceChildren(article);
   elements.currentCard.setAttribute("aria-busy", "false");
+}
+
+// 上一次兩顆翻頁按鈕露臉了沒。慶祝只在「原本沒有、現在出現」那一刻放——每次重畫
+// 都放的話，勾一個項目就會炸一次煙火。
+const shownNav = { prev: false, next: false };
+
+function renderNavButton(button, spec, key) {
+  const show = spec.show === true;
+
+  if (show) {
+    button.querySelector(".wizard-nav-label").textContent = spec.label;
+    button.onclick = spec.onClick;
+  }
+
+  button.hidden = !show;
+
+  // 解鎖那一刻晃一下、炸一朵煙火，跟分頁解鎖同一種慶祝。回頭的那顆不用——它出現
+  // 不是成就，只是「你可以往回看」。
+  if (show && !shownNav[key] && key === "next" && !reducedMotion.matches) {
+    button.classList.remove("is-unlocking");
+    void button.offsetWidth;
+    button.classList.add("is-unlocking");
+    const firework = fireworkAt(50);
+    button.append(firework);
+    window.setTimeout(() => {
+      button.classList.remove("is-unlocking");
+      firework.remove();
+    }, 900);
+  }
+
+  shownNav[key] = show;
+}
+
+export function renderWizardNav({ prev, next }) {
+  renderNavButton(elements.wizardPrev, prev, "prev");
+  renderNavButton(elements.wizardNext, next, "next");
 }
 
 export function renderWizard(model) {

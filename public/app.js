@@ -518,7 +518,6 @@ function renderWizard() {
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
     retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
     retestPrimary: card.kind !== "env" && row?.status === "unverified",
-    showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") run(action, undefined, button);
@@ -610,7 +609,72 @@ function renderWizard() {
   // 分頁的鎖跟著一起更新。原本只有勾選、換工具、點分頁才會重算，於是「最後一張
   // 卡驗過了」的當下沒有人去看鎖狀態——下一段其實已經開了，畫面上還鎖著，等學生
   // 去點才發現。開鎖動畫也因此永遠錯過那一刻（VM 實測）。
-  renderNavigation();
+  const lockStates = renderNavigation();
+  renderWizardNav({ cardSection, currentIndex, nextUnlocked, lockStates, onNext: cardModel.onNext });
+}
+
+// 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
+//
+// 走到一段的最後一張時，「下一張」換成「下一段：⋯」——那一段做完了，下一步是換段，
+// 不是回頭去點上面的分頁。點下去落在新那段的第一張。
+function renderWizardNav({
+  cardSection,
+  currentIndex,
+  nextUnlocked,
+  lockStates,
+  onNext,
+}) {
+  const cards = cardSection.cards;
+  const sectionIndex = SECTIONS.findIndex(
+    (section) => section.id === state.activeSectionId,
+  );
+  const previousSection = SECTIONS[sectionIndex - 1];
+  const nextSection = SECTIONS[sectionIndex + 1];
+  const atLast = currentIndex >= cards.length - 1;
+  const nextSectionOpen =
+    nextSection !== undefined && lockStates[nextSection.id]?.locked !== true;
+
+  view.renderWizardNav({
+    prev: {
+      show: currentIndex > 0 || previousSection !== undefined,
+      label: currentIndex > 0 ? "上一張" : `上一段：${previousSection?.title ?? ""}`,
+      onClick: () => {
+        if (currentIndex > 0) {
+          state.viewingCardIndex[state.activeSectionId] = currentIndex - 1;
+          renderWizard();
+          return;
+        }
+
+        goToSection(previousSection.id, "last");
+      },
+    },
+    next: atLast
+      ? {
+          show: nextSectionOpen,
+          label: `下一段：${nextSection?.title ?? ""}`,
+          onClick: () => goToSection(nextSection.id, "first"),
+        }
+      : { show: nextUnlocked, label: "下一張", onClick: onNext },
+  });
+}
+
+function goToSection(sectionId, landing) {
+  state.activeSectionId = sectionId;
+  view.hideSectionLockMessage();
+
+  if (landing === "first") {
+    state.viewingCardIndex[sectionId] = 0;
+  } else {
+    const found = allCardSections().find(
+      (section) => section.sectionId === sectionId,
+    );
+    state.viewingCardIndex[sectionId] = Math.max(
+      (found?.cards.length ?? 1) - 1,
+      0,
+    );
+  }
+
+  renderWizard();
 }
 
 function renderCheckingLoader() {

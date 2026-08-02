@@ -173,11 +173,85 @@ body {
   min-width: 0;
 }
 
+/* 翻頁按鈕貼著這一塊的左右邊界，所以定位脈絡在這裡。 */
+.wizard-workspace {
+  position: relative;
+}
+
 .task-terminal-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
+}
+
+/* 翻頁按鈕釘在畫面兩側、垂直置中。放在卡片裡的話，每張卡高度不同，按鈕就會上下
+   跳——學生每翻一張都要重新找它在哪。 */
+/* 貼齊工作區的左右邊界——也就是卡片的最外緣。釘在視窗邊緣的話，螢幕一寬按鈕就
+   離內容很遠，看起來跟卡片沒有關係。 */
+.wizard-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-pill);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-soft);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.wizard-nav:hover {
+  background: var(--color-bg-inset);
+}
+
+.wizard-nav--prev {
+  left: 0;
+}
+
+/* 往前走是主要動作，橘色；回頭看不是。 */
+.wizard-nav--next {
+  right: 0;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+.wizard-nav--next:hover {
+  background: var(--color-accent-hover);
+}
+
+/* 剛解鎖：晃一下 + 頭上一朵煙火（跟分頁解鎖用同一種慶祝）。 */
+.wizard-nav.is-unlocking {
+  animation: tab-unlock-shake 0.5s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wizard-nav.is-unlocking {
+    animation: none;
+  }
+}
+
+/* 窄螢幕留字會擠到卡片，只留箭頭。 */
+@media (max-width: 1200px) {
+  .wizard-nav-label {
+    display: none;
+  }
+
+  .wizard-nav {
+    padding: var(--space-3);
+  }
 }
 
 #section-status {
