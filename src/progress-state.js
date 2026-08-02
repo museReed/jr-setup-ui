@@ -242,6 +242,31 @@ async function markBucket(bucket, stepId, options) {
   return record;
 }
 
+// 重驗之前要先把上一輪的結論忘掉。只清記憶體不夠：驗證失敗時那一格會留在畫面上
+// 沒勾，但重新整理之後上一輪的勾又回來了——畫面說沒過、清單說過了。
+async function clearBucket(bucket, stepId, options) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  if (state[bucket][stepId] === undefined) {
+    return false;
+  }
+
+  delete state[bucket][stepId];
+  state.version = VERSION;
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return true;
+}
+
+export async function clearStepVerified(stepId, options = {}) {
+  return clearBucket("verified", stepId, options);
+}
+
+export async function clearBehaviorVerified(stepId, options = {}) {
+  return clearBucket("behavior", stepId, options);
+}
+
 export async function loadVerifiedSteps(options = {}) {
   return loadBucket("verified", options);
 }

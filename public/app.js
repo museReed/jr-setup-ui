@@ -144,6 +144,32 @@ function setManualChecked(id, checked) {
     .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
 }
 
+// 重跑之前先把上一輪的結論忘掉：清單先退回未勾，再照這一次的結果打勾。
+//
+// 不清的話畫面會停在上一輪的答案上——重驗跑到一半，清單還是全綠；驗證失敗了，
+// 那個勾也還在。學生按下重驗就是在說「上次那個結論我不算數了」。
+//
+// 眼睛那格一起清：重驗會開一個新的視窗，上次看到的是上一個視窗的事。
+function forgetVerification(stepId, manualIds = []) {
+  state.verifiedSteps.delete(stepId);
+  state.behaviorVerifiedSteps.delete(stepId);
+  state.failedVerificationSteps.delete(stepId);
+  state.verificationAttempted.delete(stepId);
+  state.deferredVerificationSteps.delete(stepId);
+
+  for (const id of [`eye-${stepId}`, ...manualIds]) {
+    state.manualCheckedIds.delete(id);
+    state.completedGateIds.delete(id);
+  }
+
+  api
+    .saveManualChecked([...state.manualCheckedIds])
+    .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
+  api
+    .forgetVerification(stepId)
+    .catch((error) => view.addLine(`無法清除舊的驗證結果：${error.message}`, "failed"));
+}
+
 // 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
 // 「驗證成功」，不能等學生勾完眼睛才一起變。
 async function rememberBehaviorVerified(step) {
@@ -283,7 +309,9 @@ function renderWizard() {
     cardChecks
       .filter((check) =>
         card.kind === "env"
-          ? check.status === "ok"
+          ? // 學生按下重掃的那段時間先退回未勾——結果還沒回來，畫面不該還掛著
+            // 上一次的答案。掃完（通常一秒內）會照新結果重新打勾。
+            check.status === "ok" && !state.manualRecheck
           : systemRowChecked(check, {
               // 這裡刻意用沒有加眼睛別名的 state.verifiedSteps。
               //
@@ -423,11 +451,29 @@ function renderWizard() {
     checklist: groups,
     // 人工項目照步驟分組，每一步配一顆把視窗開起來的按鈕。
     manualSteps: manualStepGroups(groups.manual),
-    onOpenStep: (action) =>
+    // 開一個新視窗＝那一步從頭做一次，所以那一步的勾先退掉。學生按第一步的按鈕，
+    // 講的是「我要再做一次這兩件事」，不是「我做完了」。
+    onOpenStep: (action) => {
+      const step = manualStepGroups(groups.manual).find(
+        (entry) => entry.action === action,
+      );
+      const ids = (step?.items ?? []).map((item) => item.id);
+
+      if (ids.length > 0) {
+        forgetVerification(card.checkId, ids);
+
+        if (ids.includes("fullscreen-copy")) {
+          state.pasteProofValue = "";
+        }
+
+        view.addLine(`先清掉這一步的勾，重新做一次：${step.title}`, "agent-status");
+      }
+
       run("verify-in-terminal", undefined, undefined, {
         case: action,
         agent: "claude",
-      }),
+      });
+    },
     showChecklist: card.kind !== "setup",
     hints: CARD_HINTS[card.checkId] ?? null,
     // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
@@ -461,6 +507,11 @@ function renderWizard() {
         checkEnvironment(true, { manual: true });
         return;
       }
+
+      // 先退回未勾，再照這一次的結果打勾。
+      forgetVerification(card.check.id);
+      view.addLine("先清掉上一輪的結果，重新驗證。", "agent-status");
+      renderWizard();
       runConfigCheckAction(
         card.check,
         card.check.verifyAction,
@@ -719,6 +770,12 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
 
   state.manualRecheck = manual;
   state.envCheckInProgress = true;
+
+  // 先畫一次，讓清單當場退回未勾——不畫的話學生只會在結果回來時看到「沒有變化」。
+  if (manual) {
+    renderWizard();
+  }
+
   view.elements.recheckEnv.disabled = true;
   view.renderEnvBusy(true);
   renderCheckingLoader();

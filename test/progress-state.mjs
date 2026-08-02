@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  clearBehaviorVerified,
+  clearStepVerified,
   loadBehaviorVerifiedSteps,
   loadManualChecked,
   loadSelection,
@@ -104,6 +106,30 @@ try {
   assert.deepEqual(await loadVerifiedSteps(options), []);
   assert.deepEqual(await loadManualChecked(options), ["fullscreen-yes"]);
   ok("驗證因指紋失效時，人工勾選不會跟著被清掉");
+
+  // 重驗之前要能把上一輪的結論忘掉，而且要忘在檔案裡。只清瀏覽器記憶體的話，
+  // 驗證失敗時畫面說沒過、重新整理之後上一輪的勾又回來了。
+  await writeFile(target, "installed-v8\n");
+  await markStepVerified("claude-md", options);
+  await markBehaviorVerified("claude-md", options);
+  assert.deepEqual(await loadVerifiedSteps(options), ["claude-md"]);
+
+  assert.equal(await clearStepVerified("claude-md", options), true);
+  assert.deepEqual(await loadVerifiedSteps(options), []);
+  // 兩本帳分開清：清整列不該把程式那半的結論一起帶走。
+  assert.deepEqual(await loadBehaviorVerifiedSteps(options), ["claude-md"]);
+
+  assert.equal(await clearBehaviorVerified("claude-md", options), true);
+  assert.deepEqual(await loadBehaviorVerifiedSteps(options), []);
+  ok("重驗之前清得掉上一輪的結論，兩本帳各清各的");
+
+  // 本來就沒記過的步驟：回 false，不要寫一次檔案也不要炸。
+  assert.equal(await clearStepVerified("never-verified", options), false);
+  ok("清一個沒記過的步驟不會出事");
+
+  // 人工勾選不受影響——那是「學生說他看到了」，跟程式的結論是兩回事。
+  assert.deepEqual(await loadManualChecked(options), ["fullscreen-yes"]);
+  ok("清驗證結論時，人工勾選留著");
 } finally {
   await rm(home, { recursive: true, force: true });
 }

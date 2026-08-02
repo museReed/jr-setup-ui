@@ -21,6 +21,8 @@ import {
   verifyShotPath,
 } from "./paths.js";
 import {
+  clearBehaviorVerified,
+  clearStepVerified,
   loadBehaviorVerifiedSteps,
   loadManualChecked,
   loadSelection,
@@ -611,16 +613,26 @@ export async function startServer({
         return;
       }
 
+      // clear=true 是重驗之前的「先忘掉上一輪」。只清瀏覽器記憶體不夠：驗證失敗
+      // 時那一格會留在畫面上沒勾，重新整理之後上一輪的勾又回來了。
+      const clear = payload.clear === true;
+
       try {
-        await (kind === "behavior"
-          ? markBehaviorVerified(step)
-          : markStepVerified(step));
+        if (clear) {
+          await (kind === "behavior"
+            ? clearBehaviorVerified(step)
+            : clearStepVerified(step));
+        } else {
+          await (kind === "behavior"
+            ? markBehaviorVerified(step)
+            : markStepVerified(step));
+        }
       } catch (error) {
         sendText(response, 400, error.message);
         return;
       }
 
-      sendJson(response, 200, { step, kind, verified: true });
+      sendJson(response, 200, { step, kind, verified: !clear });
       return;
     }
 

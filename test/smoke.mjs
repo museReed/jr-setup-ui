@@ -186,6 +186,38 @@ try {
   assert.equal(invalidConfigsResponse.status, 400);
   ok("GET /configs 拒絕不合法的 lang");
 
+  // 重驗之前的「先忘掉上一輪」。走的是同一個 /state，多帶一個 clear。
+  const stateUrl = `${baseUrl}/state?t=${encodeURIComponent(token)}`;
+  const post = (body) =>
+    fetch(stateUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  // 這支測試跑的是真的伺服器，寫的是真的 state.json——所以用一個永遠不會存在的
+  // step id，只驗路由與回應，別動到跑這支測試的人自己的進度。刪除本身由
+  // test/progress-state.mjs 在暫存目錄裡驗。
+  const probe = "smoke-clear-probe";
+  const cleared = await post({ step: probe, clear: true });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(await cleared.json(), {
+    step: probe,
+    kind: "verified",
+    verified: false,
+  });
+  const clearedBehavior = await post({
+    step: probe,
+    kind: "behavior",
+    clear: true,
+  });
+  assert.equal(clearedBehavior.status, 200);
+  assert.equal((await clearedBehavior.json()).verified, false);
+  ok("POST /state 的 clear 走得通，回報 verified: false");
+
+  const badKind = await post({ step: probe, kind: "nope", clear: true });
+  assert.equal(badKind.status, 400);
+  ok("POST /state 的 clear 仍然只認 verified 與 behavior");
+
   const pageResponse = await fetch(
     `${baseUrl}/?t=${encodeURIComponent(token)}`,
   );

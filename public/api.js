@@ -76,6 +76,15 @@ export async function saveBehaviorVerified(step) {
   return response.json();
 }
 
+// 重驗之前先把上一輪的結論忘掉，兩本帳都要清。只清瀏覽器記憶體的話，驗證失敗
+// 時畫面說沒過、重新整理之後上一輪的勾又回來了。
+export async function forgetVerification(step) {
+  await Promise.all([
+    postJson("/state", { step, clear: true }),
+    postJson("/state", { step, kind: "behavior", clear: true }),
+  ]);
+}
+
 // 工具／語言的選擇也存伺服器：port 每次啟動都變，localStorage 綁 origin 存不住。
 export async function saveSelection(selection) {
   const response = await postJson("/state", { selection });
