@@ -679,9 +679,17 @@ export function systemRowChecked(check, { rowVerified, behaviorVerified }) {
 // 「結構都對了，但還沒實際跑跑看」——這句只在該跑而還沒跑的時候補。
 const PENDING_RUN_HINT = "還沒實際跑跑看——按「重跑驗證」";
 
+// 驗過之後那一步的檔案被動過。不作廢那個勾，只提醒——改的可能是學生自己那半
+// （合併過的 CLAUDE.md），程式看不出來會不會影響，決定權給他。
+const CHANGED_HINT = "這個檔案在你驗證之後被改過，要不要再驗一次？";
+
+function appendHint(detail, hint) {
+  if (hint === null) return detail;
+  return detail === "" ? hint : `${detail}，${hint}`;
+}
+
 function appendPendingRunHint(detail, pending) {
-  if (!pending) return detail;
-  return detail === "" ? PENDING_RUN_HINT : `${detail}，${PENDING_RUN_HINT}`;
+  return appendHint(detail, pending ? PENDING_RUN_HINT : null);
 }
 
 export function checklistGroups({
@@ -694,6 +702,7 @@ export function checklistGroups({
   manualItems = [],
   checkedManualIds = new Set(),
   resultTexts = new Map(),
+  changedCheckIds = new Set(),
 }) {
   const system = [];
   // 前綴只在同一張清單裡兩種項目並存時才加。整張都是程式檢查的卡（環境那幾張）
@@ -716,9 +725,17 @@ export function checklistGroups({
       //
       // 還沒驗過就補一句說明那個空格在等什麼。少了它，畫面是「檔案與註冊都已生效」
       // 配一個空格，看起來像壞掉。
-      detail: appendPendingRunHint(
-        resultTexts.get(candidate.id) ?? candidate.detail ?? "",
-        !checked && candidate.status === "ok" && candidate.verifyAction != null,
+      //
+      // 已經驗過、但那一步的檔案之後被動過：勾留著，補一句提醒就好。改的可能是
+      // 學生自己那半（合併過的 CLAUDE.md），程式看不出來會不會影響驗過的行為。
+      detail: appendHint(
+        appendPendingRunHint(
+          resultTexts.get(candidate.id) ?? candidate.detail ?? "",
+          !checked &&
+            candidate.status === "ok" &&
+            candidate.verifyAction != null,
+        ),
+        checked && changedCheckIds.has(candidate.id) ? CHANGED_HINT : null,
       ),
       checked,
       automatic: true,

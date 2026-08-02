@@ -753,6 +753,31 @@ try {
   assert.doesNotMatch(ranAlready.system[0].detail, /還沒實際跑跑看/);
   ok("還沒跑過驗證的那一格會說自己在等什麼");
 
+  // 驗過之後檔案被動過：勾留著，補一句提醒。改的可能是學生自己那半（合併過的
+  // CLAUDE.md，工作坊那段還在所以檢查照樣說 ok），程式看不出來會不會影響驗過的
+  // 行為——這種情況值得提醒，不值得直接作廢。
+  const changed = checklistGroups({
+    checks: [{ id: "claude-md", label: "CLAUDE.md", status: "ok", detail: "已安裝" }],
+    verifiedCheckIds: new Set(["claude-md"]),
+    changedCheckIds: new Set(["claude-md"]),
+  });
+  assert.equal(changed.system[0].checked, true);
+  assert.match(changed.system[0].detail, /在你驗證之後被改過/);
+  // 沒被動過就不要多那句話。
+  const untouched = checklistGroups({
+    checks: [{ id: "claude-md", label: "CLAUDE.md", status: "ok", detail: "已安裝" }],
+    verifiedCheckIds: new Set(["claude-md"]),
+  });
+  assert.doesNotMatch(untouched.system[0].detail, /被改過/);
+  // 還沒驗過的那一格不講這句：它要的是「按重跑驗證」，不是「要不要再驗一次」。
+  const notVerified = checklistGroups({
+    checks: [{ id: "claude-md", label: "CLAUDE.md", status: "ok", detail: "已安裝" }],
+    verifiedCheckIds: new Set(),
+    changedCheckIds: new Set(["claude-md"]),
+  });
+  assert.doesNotMatch(notVerified.system[0].detail, /被改過/);
+  ok("驗過之後被動過的那一格：勾留著，多一句提醒");
+
   // 全螢幕那三格其實是兩步：前兩件在同一個視窗做完，第三件要另一個視窗（終端裡
   // 得先有一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生
   // 要自己配對（Reed 實測）。

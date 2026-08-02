@@ -24,6 +24,7 @@ import {
   clearBehaviorVerified,
   clearStepVerified,
   loadBehaviorVerifiedSteps,
+  loadChangedSteps,
   loadManualChecked,
   loadSelection,
   loadVerifiedSteps,
@@ -545,6 +546,8 @@ export async function startServer({
       sendJson(response, 200, {
         verified: await loadVerifiedSteps(),
         behavior: await loadBehaviorVerifiedSteps(),
+        // 驗過之後被動過的那幾步。不影響勾，只在卡片上多一句提醒。
+        changed: await loadChangedSteps(),
         manual: await loadManualChecked(),
         selection: await loadSelection(),
       });

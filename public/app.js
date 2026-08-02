@@ -88,6 +88,8 @@ const state = {
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
   behaviorVerifiedSteps: new Set(),
+  // 驗過之後那一步的檔案被動過。不影響勾，只在卡片上多一句提醒。
+  changedSteps: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
@@ -187,6 +189,7 @@ async function loadVerifiedSteps() {
     const result = await api.fetchState();
     state.verifiedSteps = new Set(result.verified);
     state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
+    state.changedSteps = new Set(result.changed ?? []);
     state.manualCheckedIds = new Set(result.manual ?? []);
 
     for (const id of state.manualCheckedIds) {
@@ -204,6 +207,7 @@ async function loadVerifiedSteps() {
   } catch {
     state.verifiedSteps = new Set();
     state.behaviorVerifiedSteps = new Set();
+    state.changedSteps = new Set();
     state.manualCheckedIds = new Set();
   }
 }
@@ -337,6 +341,8 @@ function renderWizard() {
     manualItems,
     checkedManualIds: state.manualCheckedIds,
     resultTexts: state.resultTexts,
+    // 驗過之後被動過的那幾步：勾留著，多一句提醒。
+    changedCheckIds: state.changedSteps,
   });
   const installChecks = cardChecks.filter(
     (check) => !check.id.endsWith("-auth"),
@@ -1032,6 +1038,11 @@ async function handleDone(
   if (step !== null && step !== undefined) {
     state.failedSteps.delete(step);
     state.resultTexts.delete(step);
+  }
+  // 重裝＝那一步的內容換了，上次驗過的結論不該延用。指紋不再自己作廢紀錄，所以
+  // 這條路要自己講清楚：裝完會接著驗一次，那次的結果才算數。
+  if (action === "install-config-step" && step !== null && step !== undefined) {
+    forgetVerification(step);
   }
   if (
     verifiedStep !== undefined &&
