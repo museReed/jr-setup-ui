@@ -172,6 +172,17 @@ try {
   assert(!files.view.includes("export function clearOutput"));
   ok("終端內容分張存，跑一輪只換掉原始輸出");
 
+  // 「重掃中」要在結果回來的那一刻關掉，然後才畫。留到 finally 才關的話，那次
+  // renderWizard 畫的還是退勾的清單，而後面沒有人再畫一次——畫面停在「0 / 1、
+  // 但徽章寫已完成」（VM 實測 Node.js 那張）。
+  assert.match(
+    files.app,
+    /state\.manualRecheck = false;\s*\n\s*renderWizard\(\);/,
+  );
+  // 環境檢查是一支 HTTP 請求，沒有逐字稿。把每一列的結果寫進原始輸出，那塊才不是空的。
+  assert(files.app.includes("view.addRawLine("));
+  ok("環境重掃畫完才關掉退勾狀態，原始輸出也留得下結果");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

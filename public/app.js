@@ -792,12 +792,25 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     const { os, checks } = await api.fetchEnv();
     state.envChecks = checks;
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
+    // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
+    // renderWizard 畫出來的清單還是退勾的狀態，而後面沒有人再畫一次——畫面就停在
+    // 「0 / 1、但徽章寫已完成」（VM 實測 Node.js 那張）。
+    state.manualRecheck = false;
     renderWizard();
     renderEnvActionButtons();
 
     // 學生自己按的那次要有結尾。重掃通常一秒內回來，只有轉圈圈閃一下的話，
     // 按鈕看起來還是像沒反應——而且多數時候狀態本來就不會變。
+    //
+    // 原始輸出那塊也要有東西：環境檢查是一支 HTTP 請求，不是跑一個程式，沒有
+    // 逐字稿可印。把每一列的結果寫進去，「看原始輸出」才不是空的。
     if (manual) {
+      for (const check of checks) {
+        view.addRawLine(
+          `[${check.status}] ${check.label}：${check.detail ?? ""}`,
+        );
+      }
+
       view.addLine("環境檢查完成，狀態已更新。", "succeeded");
     }
 
@@ -817,10 +830,13 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     return checks;
   } catch (error) {
     state.envChecks = [];
+    state.manualRecheck = false;
     view.renderEnvFailure(error.message);
+    renderWizard();
     return null;
   } finally {
     state.envCheckInProgress = false;
+    // 成功那條路上已經關掉了，這裡是失敗／例外的退路——不關的話清單會一直退勾。
     state.manualRecheck = false;
     view.renderEnvBusy(false);
     view.elements.recheckEnv.disabled = state.runInProgress;
