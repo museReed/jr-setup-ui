@@ -332,9 +332,14 @@ function renderWizard() {
   //
   // 「能往前」這個概念仍然存在，但它只該決定「下一張」按鈕，不該決定「完成」。
   // 那兩件事在這個嚮導裡刻意不同：驗證過不了的學生要能往前走，但那張卡不算做完。
+  const completedIds = completedCardIds(
+    cardSection.cards,
+    verified,
+    state.manualCheckedIds,
+  );
   const milestones = milestoneModels(
     cardSection.cards,
-    completedCardIds(cardSection.cards, verified, state.manualCheckedIds),
+    completedIds,
     currentIndex,
   );
   let row =
@@ -471,7 +476,7 @@ function renderWizard() {
     section,
     sectionStatus: sectionStatus(
       cardSection.cards,
-      completedCardIds,
+      completedIds,
       currentIndex,
     ),
     milestones,

@@ -80,6 +80,23 @@ try {
   }
   ok("app 只接線，DOM 操作留在 view");
 
+  // 把 viewmodel 的函式「本身」當參數傳出去，幾乎都是漏了呼叫。
+  // 實際踩過：sectionStatus(cards, completedCardIds, index) 少了一層括號，
+  // 於是 sectionStatus 拿到函式去呼叫 .has()，畫面停在「正在檢查目前進度」，
+  // 錯誤只在瀏覽器 console 出現。單元測試餵的是 Set，走不到這條呼叫路徑，
+  // 所以只能從 app.js 的原始碼守。
+  const viewmodelExports = [
+    ...files.viewmodel.matchAll(/export function (\w+)/g),
+  ].map((m) => m[1]);
+  const appBody = files.app.slice(files.app.indexOf('} from "./viewmodel.js";'));
+  for (const name of viewmodelExports) {
+    assert(
+      !new RegExp(`^\\s*${name},\\s*$`, "m").test(appBody),
+      `app.js 把 viewmodel 的 ${name} 當值傳出去了——少了呼叫的括號？`,
+    );
+  }
+  ok("app.js 傳的是 viewmodel 的計算結果，不是函式本身");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
