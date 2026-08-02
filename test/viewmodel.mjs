@@ -21,6 +21,7 @@ import {
   envButtonState,
   envCardRowModel,
   envRowModel,
+  eyeVerifiedSteps,
   extractLoginHints,
   impliedVerifiedSteps,
   installStatusMessage,
@@ -800,6 +801,30 @@ try {
     ["ext-playwright-claude"],
   );
   ok("沒有眼睛項的列，程式驗過就等於整列過了");
+
+  // 反過來，有眼睛項的列要兩半都成立。原本只要學生勾眼睛就算整列過——他可以完全
+  // 不跑驗證直接勾，卡片變成已完成並長出「下一張」，清單卻還停在 1 / 2
+  //（VM 實測 skill-claude-handoff）。
+  const eyeChecks = [
+    { id: "skill-claude-handoff", eyeCheck: "標題變成 📦…", verifyAction: "verify-in-terminal" },
+    // 沒有程式那半可跑的列不在此限：只有學生看得到，勾了就是過了。
+    { id: "look-only", eyeCheck: "看畫面", verifyAction: null },
+  ];
+  const ticked = new Set(["eye-skill-claude-handoff", "eye-look-only"]);
+  assert.deepEqual(
+    [...eyeVerifiedSteps(eyeChecks, ticked, new Set())],
+    ["look-only"],
+  );
+  assert.deepEqual(
+    [...eyeVerifiedSteps(eyeChecks, ticked, new Set(["skill-claude-handoff"]))],
+    ["skill-claude-handoff", "look-only"],
+  );
+  // 沒勾眼睛的話，程式那半過了也不算整列過。
+  assert.deepEqual(
+    [...eyeVerifiedSteps(eyeChecks, new Set(), new Set(["skill-claude-handoff"]))],
+    [],
+  );
+  ok("有眼睛項的列要兩半都成立：程式跑過，而且學生看過");
 
   // 全螢幕那三格其實是兩步：前兩件在同一個視窗做完，第三件要另一個視窗（終端裡
   // 得先有一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生

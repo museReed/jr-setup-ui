@@ -31,6 +31,7 @@ import {
   currentCardIndex,
   envButtonState,
   envCardRowModel,
+  eyeVerifiedSteps,
   extractLoginHints,
   guidanceModel,
   impliedVerifiedSteps,
@@ -216,10 +217,14 @@ async function loadVerifiedSteps() {
 function effectiveVerifiedSteps() {
   const verified = new Set(state.verifiedSteps);
 
-  for (const id of state.manualCheckedIds) {
-    if (id.startsWith("eye-")) {
-      verified.add(id.slice("eye-".length));
-    }
+  // 有眼睛項的列：兩半都要成立才算整列過了。只勾眼睛的話，卡片會說已完成、清單
+  // 卻還停在 1 / 2。
+  for (const id of eyeVerifiedSteps(
+    state.lastChecks,
+    state.manualCheckedIds,
+    state.behaviorVerifiedSteps,
+  )) {
+    verified.add(id);
   }
 
   // 沒有眼睛項的列，程式驗過了就是整列過了——不必等第二本帳也寫成功。

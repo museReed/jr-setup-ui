@@ -232,6 +232,22 @@ try {
   assert(files.view.includes('addEventListener("mouseleave"'));
   ok("里程碑預覽只在 hover 時切換 is-active");
 
+  // 小鴨抵達時自己跳出來的那張預覽三秒後自己收掉：它是報喜用的，不是要學生讀完
+  // 的東西，留著會蓋住下一張卡的標題。滑鼠移上去就取消倒數——那代表學生在讀。
+  assert.match(
+    files.view,
+    /autoUnpinTimer = window\.setTimeout\(\(\) => unpin\(point\), 3000\)/,
+  );
+  assert.match(
+    files.view,
+    /pin\(point, key\);\s*\n\s*autoUnpin\(point\);/,
+  );
+  assert.match(
+    files.view,
+    /"mouseenter",\s*\n\s*\(\) => window\.clearTimeout\(autoUnpinTimer\)/,
+  );
+  ok("抵達時跳出的預覽三秒後自己收掉，滑上去就不收");
+
   const index = readFileSync(
     new URL("../public/index.html", import.meta.url),
     "utf8",

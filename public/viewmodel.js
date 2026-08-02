@@ -603,6 +603,36 @@ export function impliedVerifiedSteps(checks, behaviorVerified = new Set()) {
   );
 }
 
+// 有眼睛項的列，「整列過了」要兩半都成立：程式那半跑過，而且學生看過畫面說對了。
+//
+// 原本只要學生勾眼睛就算整列過——於是他可以完全不跑驗證、直接勾，卡片就變成已完成
+// 並長出「下一張」，而清單還停在 1 / 2（VM 實測 skill-claude-handoff）。徽章與清單
+// 講的是同一件事，不能一邊說完成、一邊說還差一項。
+//
+// 沒有程式那半可跑的列（沒有 verifyAction）不在此限：那種列只有學生看得到，勾了
+// 就是過了。
+export function eyeVerifiedSteps(
+  checks,
+  checkedManualIds = new Set(),
+  behaviorVerified = new Set(),
+) {
+  const done = new Set();
+
+  for (const id of checkedManualIds) {
+    if (!id.startsWith("eye-")) continue;
+    const stepId = id.slice("eye-".length);
+    const check = checks.find((candidate) => candidate.id === stepId);
+
+    if (check?.verifyAction != null && !behaviorVerified.has(stepId)) {
+      continue;
+    }
+
+    done.add(stepId);
+  }
+
+  return done;
+}
+
 export function currentCardIndex(
   cards,
   verifiedSteps = new Set(),

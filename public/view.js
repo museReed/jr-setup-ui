@@ -48,6 +48,7 @@ let milestoneBusy = false;
 let stationTimer = null;
 let arrivalTimer = null;
 let fireworkTimer = null;
+let autoUnpinTimer = null;
 
 function createLogo(logo) {
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -81,11 +82,31 @@ function unpinAll() {
   }
 }
 
+function unpin(point) {
+  point.querySelector(".ds-milestone-card").classList.remove("is-pinned");
+  point.setAttribute("aria-hidden", "true");
+  pinnedStation = null;
+}
+
 function pin(point, key) {
   point.querySelector(".ds-milestone-card").classList.add("is-pinned");
   point.removeAttribute("aria-hidden");
   pinnedStation = key;
   milestoneBusy = false;
+}
+
+// 小鴨抵達時自己跳出來的那張預覽，三秒後自己收掉。
+//
+// 它是報喜用的，不是要學生讀完的東西——留著會蓋住下一張卡的標題（VM 實測）。
+// 滑鼠移上去就取消倒數：那代表學生真的在讀，這時收掉最惹人厭。
+function autoUnpin(point) {
+  window.clearTimeout(autoUnpinTimer);
+  autoUnpinTimer = window.setTimeout(() => unpin(point), 3000);
+  point.addEventListener(
+    "mouseenter",
+    () => window.clearTimeout(autoUnpinTimer),
+    { once: true },
+  );
 }
 
 function finishArrival(point, station, key) {
@@ -102,6 +123,7 @@ function finishArrival(point, station, key) {
   fireworkTimer = window.setTimeout(() => {
     firework.remove();
     pin(point, key);
+    autoUnpin(point);
   }, 800);
 }
 
@@ -115,6 +137,7 @@ function moveDuck(sectionId, station) {
   window.clearTimeout(stationTimer);
   window.clearTimeout(arrivalTimer);
   window.clearTimeout(fireworkTimer);
+  window.clearTimeout(autoUnpinTimer);
   elements.milestoneBar.querySelector(".ds-firework")?.remove();
   elements.milestoneDuck.classList.toggle("left", station.index < previousIndex);
   elements.milestoneDuck.style.left = `${station.percent}%`;
@@ -136,6 +159,7 @@ function moveDuck(sectionId, station) {
   if (reducedMotion.matches) {
     elements.milestoneDuck.classList.remove("is-running", "is-arriving");
     pin(point, nextKey);
+    autoUnpin(point);
     return;
   }
 
@@ -185,9 +209,8 @@ function renderMilestones(sectionId, milestones, onSelect) {
     point.addEventListener("mouseleave", () => point.classList.remove("is-active"));
     close.addEventListener("click", (event) => {
       event.stopPropagation();
-      preview.classList.remove("is-pinned");
-      point.setAttribute("aria-hidden", "true");
-      pinnedStation = null;
+      window.clearTimeout(autoUnpinTimer);
+      unpin(point);
     });
     point.addEventListener("click", () => {
       if (!milestoneBusy && station.unlocked) onSelect(station.index);
