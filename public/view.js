@@ -1132,6 +1132,7 @@ function paintTranscript(id) {
     elements.terminalLines.append(line);
   }
 
+  // 還原的是歷史，不是正在發生的事：直接印，也不留轉圈圈。
   renderCursor();
   elements.output.textContent = rawOutputs.get(id) ?? "";
 }
@@ -1190,13 +1191,15 @@ export function renderLoaders({ modifier, paused = false, label = null }) {
   hideLoaders();
   const line = document.createElement("div");
   line.className = spec.className;
-  line.textContent = spec.text;
+  // 字放在自己的 <span> 裡，轉圈圈掛在它旁邊。這一行也要逐字打，而打字是直接寫
+  // textContent——寫在整行上的話，每打一個字就把轉圈圈清掉一次。
+  const text = document.createElement("span");
+  line.append(text);
   loader.hidden = false;
   loader.classList.toggle("is-paused", paused);
   line.append(loader);
   elements.terminalLines.append(line);
-  // 這一行掛著轉圈圈，游標要讓位——兩個東西同時在動只是雜訊。
-  renderCursor();
+  typeInto(text, spec.text);
 }
 
 // 每跑一輪就把原始輸出換掉——它是這一次執行的逐字稿，留著上一次的只會分不清哪段

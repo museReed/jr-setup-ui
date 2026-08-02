@@ -449,8 +449,9 @@ function renderWizard() {
     (state.currentEnvAction?.startsWith("install-")
       ? state.currentEnvAction.slice("install-".length)
       : null);
+  const cardDone = cardIsComplete(card, verified, state.manualCheckedIds);
   const status = cardStatusModel({
-    completed: cardIsComplete(card, verified, state.manualCheckedIds),
+    completed: cardDone,
     running:
       state.runInProgress &&
       (card.kind === "setup" ||
@@ -522,7 +523,10 @@ function renderWizard() {
     // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
     retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
-    retestPrimary: card.kind !== "env" && row?.status === "unverified",
+    // 這張卡還沒完成，「重跑驗證」就是現在該按的那顆——不繞過「待驗證」那個中間
+    // 狀態去判斷。原本看的是那一列的狀態，於是驗證失敗、正在跑、或列的狀態是別的
+    // 值時，按鈕就退回空心，學生看不出該按哪顆（VM 實測 tab-sync 那張）。
+    retestPrimary: card.kind !== "env" && !cardDone,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") run(action, undefined, button);

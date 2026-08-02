@@ -343,6 +343,19 @@ try {
   );
   ok("終端逐字打字，但排太多、關動畫、翻舊紀錄時直接印完");
 
+  // 轉圈圈那幾行也要打字。字放在自己的 <span> 裡，轉圈圈掛在它旁邊——打字是直接寫
+  // textContent，寫在整行上的話每打一個字就把轉圈圈清掉一次。
+  assert.match(
+    files.view,
+    /const text = document\.createElement\("span"\);[\s\S]*?typeInto\(text, spec\.text\)/,
+  );
+  ok("正在跑的那幾行也逐字打，轉圈圈不會被洗掉");
+
+  // 這張卡還沒完成，「重跑驗證」就是現在該按的那顆。原本看那一列的狀態，於是驗證
+  // 失敗、正在跑、或狀態是別的值時按鈕就退回空心（VM 實測 tab-sync 那張）。
+  assert(files.app.includes("retestPrimary: card.kind !== \"env\" && !cardDone"));
+  ok("卡片沒完成時，重跑驗證一律是主要動作");
+
   // 卡片裡「照原樣印給你對照」的那幾行也畫成終端，不再是一個裸的 <code>。
   assert(files.view.includes('term.className = "ds-term card-hints-term"'));
   assert(!files.view.includes("card-hints-block"));
@@ -362,9 +375,17 @@ try {
       `${id} 要是灌色按鈕而且帶 icon`,
     );
   }
-  // 翻頁那兩顆不換：它們有自己的位置與形狀，跟卡片裡的動作按鈕不是同一類。
-  assert.match(cardIndex, /id="wizard-next" class="wizard-nav/);
+  // 翻頁那兩顆也是灌色按鈕，長相交給 .ds-btn-fill，styles.css 只管它們站在哪。
+  assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill wizard-nav/);
+  assert.match(cardIndex, /id="wizard-next" class="ds-btn-fill is-primary wizard-nav/);
+  assert.doesNotMatch(cardStyles, /^\.wizard-nav \{/m);
   ok("會按的按鈕都是灌色按鈕，每顆前面都有 icon");
+
+  // 灌滿之後字是白的。設計系統預設把字轉成深色，在橘色底上像沒對比的髒色；而且
+  // 實心的按鈕不需要再畫一圈同色外框，那只會在邊緣多一道深色（VM 實測）。
+  assert.match(cardStyles, /^\.ds-btn-fill \{\s*\n\s*--fill-ink: #fff;/m);
+  assert.match(cardStyles, /^\.ds-btn-fill\.is-primary \{[^}]*border-color: transparent;/m);
+  ok("灌滿之後字是白的，而且不留外框");
 
   // 換字只換裡面那個 <span>。整顆 textContent 洗掉的話，前面那個 icon 會一起不見。
   assert(files.view.includes("export function setButtonLabel"));
