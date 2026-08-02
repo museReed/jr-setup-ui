@@ -103,6 +103,19 @@ for (const [step, spec] of Object.entries(VERIFICATION)) {
 }
 console.log("ok - 每一列的終端驗證情境，腳本與白名單兩邊都認得");
 
+// 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
+// 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
+//（Reed 實測就是這樣問的）。當初誤判的兩個原因（測試開關名字、比對關鍵字）都由上面
+// 那兩條測試釘住了，所以加回來。
+for (const step of ["claude-monitor", "codex-monitor"]) {
+  assert.deepEqual(
+    VERIFICATION[step]?.terminal,
+    { case: "context", agent: step.startsWith("claude") ? "claude" : "codex" },
+    `${step} 少了行為驗證——兩邊的記憶體提醒要對稱`,
+  );
+}
+console.log("ok - Claude 與 Codex 的記憶體提醒都要真的跑一次");
+
 // handoff 那格靠「必讀檔案」判定：那四個字是 SKILL.md 規定的章節名，模型沒讀到
 // skill 不會自己想到。SKILL.md 改了章節名而這裡沒跟著改，判定就永遠不會中。
 for (const agent of ["claude", "codex"]) {
