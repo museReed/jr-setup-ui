@@ -1058,8 +1058,9 @@ function renderCursor() {
 //   排隊超過三行就整批直接印完——驗證一次會噴很多行，一行一行演會落後好幾秒
 //   系統設了「減少動態」就不演
 //   翻回舊卡片的紀錄不演（那是歷史，不是正在發生的事）
-// 一秒三個字（Reed 指定）。慢是刻意的：這幾行是講給學生看的白話進度，不是 log。
-const TYPING_CHARS_PER_SECOND = 3;
+// 一秒二十個字（Reed 指定）。一句 15 字的白話進度約 0.75 秒打完——看得出在打字，
+// 又不會讓學生等著讀完。
+const TYPING_CHARS_PER_SECOND = 20;
 const TYPING_STEP_MS = Math.round(1000 / TYPING_CHARS_PER_SECOND);
 const TYPING_CHARS_PER_STEP = 1;
 const typingQueue = [];

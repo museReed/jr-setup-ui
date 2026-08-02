@@ -331,7 +331,7 @@ try {
   // 就整批印完（驗證一次會噴很多行）、系統設了減少動態就不演、翻回舊卡片的紀錄
   // 直接印（那是歷史，不是正在發生的事）。
   assert(files.view.includes("typeInto(line, spec.text)"));
-  assert.match(files.view, /TYPING_CHARS_PER_SECOND = 3/);
+  assert.match(files.view, /TYPING_CHARS_PER_SECOND = 20/);
   assert.match(files.view, /if \(typingQueue\.length > 3\) \{\s*\n\s*flushTyping\(\);/);
   assert.match(
     files.view,
