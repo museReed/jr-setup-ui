@@ -42,6 +42,13 @@ const elements = {
 export { elements };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+// GSAP 是 vendor 進來的，理論上一定在。但這裡不假設它在——動畫是錦上添花，載入失敗
+// 時嚮導要照常能用，不能因為一個 window.gsap is not defined 就整頁死掉。
+// 所有用到的地方都先看 motion 是不是 null。
+const motion = window.gsap ?? null;
+
+let renderedCardKey = null;
 let renderedStation = null;
 let pinnedStation = null;
 let milestoneBusy = false;
@@ -148,6 +155,50 @@ function moveDuck(sectionId, station) {
       finishArrival(point, station, nextKey);
     }, 420);
   }, 1000);
+}
+
+// 一段做完時，小鴨從畫面右邊飛出去、再從左邊飛回來停在下一條 line 的第一站。
+//
+// 為什麼要飛出畫面再飛回來，而不是直接從 100% 滑回 0%：滑回去看起來像「退回上一
+// 步」，方向感是錯的。飛出右邊 = 這條走完了；從左邊進來 = 下一條從頭開始。
+//
+// 回傳 Promise，呼叫端等它結束再切 tab——切早了學生會看到小鴨在舊的那條 line 上飛。
+//
+// 用 x（transform）而不是改 left：left 會觸發版面重算，飛出畫面那段位移很大，用
+// transform 才不會拖幀。飛完 clearProps 把 transform 收掉，交還給原本那套 left 定位。
+export function flyDuckToNextSection() {
+  const duck = elements.milestoneDuck;
+
+  if (motion === null || reducedMotion.matches || duck === null) {
+    return Promise.resolve();
+  }
+
+  window.clearTimeout(stationTimer);
+  window.clearTimeout(arrivalTimer);
+  window.clearTimeout(fireworkTimer);
+  duck.classList.remove("is-running", "is-arriving", "left");
+  // 下一輪 moveDuck 一定要重跑，否則它會以為小鴨還在原位而不動。
+  renderedStation = null;
+
+  const width = elements.milestoneBar?.getBoundingClientRect().width ?? 640;
+  const away = width + 120;
+
+  return new Promise((resolve) => {
+    motion.killTweensOf(duck);
+    motion
+      .timeline({
+        onComplete: () => {
+          motion.set(duck, { clearProps: "transform" });
+          resolve();
+        },
+      })
+      // 起飛前先蹲一下：沒有這個預備動作，飛出去會很突兀。
+      .to(duck, { x: -12, y: 4, duration: 0.12, ease: "power1.in" })
+      .to(duck, { x: away, y: -28, duration: 0.5, ease: "power2.in" })
+      // 瞬間移到左邊畫面外，再飛進來。中間不留空白會顯得沒有「換一條線」的間隔。
+      .set(duck, { x: -away, y: -28 })
+      .to(duck, { x: 0, y: 0, duration: 0.55, ease: "power2.out" }, "+=0.1");
+  });
 }
 
 function renderMilestones(sectionId, milestones, onSelect) {
@@ -484,8 +535,36 @@ function renderCard(model) {
     footer.append(next);
     article.append(footer);
   }
+  const changed = renderedCardKey !== null && renderedCardKey !== model.card.checkId;
+  renderedCardKey = model.card.checkId;
+  // 先換終端再換卡：兩塊要在同一幀一起變，不然會閃過一格「新卡配舊輸出」。
+  setTerminalCard(model.card.checkId);
   elements.currentCard.replaceChildren(article);
   elements.currentCard.setAttribute("aria-busy", "false");
+
+  // 換卡才動；同一張卡因為狀態更新重畫（安裝完、驗證完）不動——那種重畫一秒鐘可能
+  // 好幾次，每次都滑一下會變成畫面在抽搐。
+  if (changed) {
+    playCardEnter(article);
+  }
+}
+
+// 位移只有 24px：卡片很高，大幅度位移容易拖幀，而且看得出「換了一張」不需要走那麼
+// 遠。250ms 是「看得到但不用等」的區間。
+//
+// 連按「下一張」時前一段動畫還沒跑完就會被下一次蓋掉——gsap.killTweensOf 先收掉舊的，
+// 不然兩段 tween 會搶同一個 transform，卡片會抖。
+function playCardEnter(article) {
+  if (motion === null || reducedMotion.matches) {
+    return;
+  }
+
+  motion.killTweensOf(article);
+  motion.fromTo(
+    article,
+    { opacity: 0, x: 24 },
+    { opacity: 1, x: 0, duration: 0.25, ease: "power2.out", clearProps: "transform" },
+  );
 }
 
 export function renderWizard(model) {
@@ -700,6 +779,48 @@ export function clearOutput() {
   elements.output.textContent = "";
   elements.terminalLines.replaceChildren();
   terminalLineModels = [];
+}
+
+// 終端的內容改成一張卡一份。
+//
+// 原本整個終端是全域共用的：換到下一張卡，上一張的白話訊息與原始輸出都還留著。學生
+// 看到的是「這張卡的畫面配上一張卡的錯誤訊息」——他沒有理由知道那行紅字是三張卡以前
+// 的事（VM 實測就是這樣誤判過）。
+//
+// 兩塊都收：白話那幾行（terminalLines）與原始輸出（output）。它們講的是同一次執行，
+// 分開存會出現「白話是這張卡的、原始輸出是上一張的」這種更難懂的組合。
+//
+// 保留而不是清空：學生切回上一張卡時，剛才那次的輸出還在，才查得下去。
+const transcripts = new Map();
+let terminalCardKey = null;
+
+function renderTranscript(transcript) {
+  elements.output.textContent = transcript.raw;
+  terminalLineModels = transcript.models;
+  elements.terminalLines.replaceChildren(
+    ...transcript.models.map((spec) => {
+      const line = document.createElement("div");
+      line.className = spec.className;
+      line.textContent = spec.text;
+      return line;
+    }),
+  );
+}
+
+export function setTerminalCard(cardKey) {
+  if (cardKey === terminalCardKey) {
+    return;
+  }
+
+  if (terminalCardKey !== null) {
+    transcripts.set(terminalCardKey, {
+      raw: elements.output.textContent,
+      models: terminalLineModels,
+    });
+  }
+
+  terminalCardKey = cardKey;
+  renderTranscript(transcripts.get(cardKey) ?? { raw: "", models: [] });
 }
 
 export function addRawLine(text) {

@@ -127,6 +127,8 @@
     <textarea id="prompt" hidden></textarea>
     <input type="checkbox" id="allow-write" hidden />
     <script src="/vendor/loader-orbs.js"></script>
+    <!-- GSAP 要在 app.js 之前載入：view.js 開場就會抓 window.gsap 判斷有沒有動畫可用。 -->
+    <script src="/vendor/gsap.min.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
