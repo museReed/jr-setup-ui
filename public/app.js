@@ -36,6 +36,8 @@ import {
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
+  isVerifyAction,
+  loaderLabel,
   loaderModifier,
   loginCardModel,
   loginWaitStep,
@@ -105,6 +107,8 @@ const state = {
   verifyShotVersion: 0,
   selectedTools: ["claude"],
   selectedLanguage: "zh-TW",
+  // 正在跑的是哪個 action。徽章與 loader 的字要靠它分「安裝中」與「驗證中」。
+  currentRunAction: "",
   pendingModalCheck: null,
   loginHints: { url: null, code: null },
 };
@@ -268,7 +272,15 @@ function renderWizard() {
         card.kind === "env"
           ? check.status === "ok"
           : systemRowChecked(check, {
-              rowVerified: verified.has(check.id),
+              // 這裡刻意用沒有加眼睛別名的 state.verifiedSteps。
+              //
+              // effectiveVerifiedSteps() 會把學生勾的 eye-xxx 換算成「xxx 驗過了」，
+              // 那是給「這張卡做完了沒」用的。第一格講的是程式那半，不能跟著眼睛動：
+              // 學生把眼睛那格取消，第一格「hook 檔案與 3 筆註冊都已生效」也跟著退勾、
+              // 2/2 變 0/2，看起來像整張卡被重置（VM 實測 claude-namer）。
+              //
+              // 檔案在不在跟學生看到什麼是兩件事，取消勾選只是在說「我看到的畫面不對」。
+              rowVerified: state.verifiedSteps.has(check.id),
               behaviorVerified: state.behaviorVerifiedSteps.has(check.id),
             }),
       )
@@ -375,6 +387,7 @@ function renderWizard() {
       state.runInProgress &&
       (card.kind === "setup" ||
         cardChecks.some((check) => check.id === activeCheckId)),
+    verifying: isVerifyAction(state.currentRunAction),
     failed: cardChecks.some(
       (check) =>
         state.failedSteps.has(check.id) ||
@@ -418,6 +431,10 @@ function renderWizard() {
           }
         : null,
     showRetest: card.kind === "env" || row?.showRetest === true,
+    // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
+    // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
+    retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
+    retestPrimary: card.kind !== "env" && row?.status === "unverified",
     showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
@@ -630,14 +647,16 @@ function renderRunLoader(modifier, paused = false) {
   }
 
   state.loaderPaused = paused;
+  const shown =
+    paused && state.currentLoaderModifier === null
+      ? LOADER_MODIFIERS.working
+      : state.currentLoaderModifier;
   view.renderLoaders({
-    modifier:
-      paused && state.currentLoaderModifier === null
-        ? LOADER_MODIFIERS.working
-        : state.currentLoaderModifier,
+    modifier: shown,
     button: state.activeRunButton,
     step: state.activeRunStep,
     paused,
+    label: loaderLabel({ action: state.currentRunAction, modifier: shown }),
   });
 }
 
@@ -1009,6 +1028,7 @@ async function run(action, promptText, button = null, options) {
   }
 
   state.agentName = agentNameFor(action);
+  state.currentRunAction = action;
   state.runId = null;
   state.acceptsInput = false;
   state.currentLoaderModifier =

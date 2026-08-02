@@ -459,8 +459,12 @@ function renderCard(model) {
     if (model.showRetest) {
       const retest = document.createElement("button");
       retest.type = "button";
-      retest.className = "ds-btn ds-btn-ghost ds-btn-sm";
-      retest.textContent = "再 check 一次";
+      // 裝好了、只差驗證的那張卡，主要動作就是這一顆——安裝按鈕已經灰掉了，
+      // 這裡不搶橘色的話整張卡會找不到「現在該按哪顆」。
+      retest.className = `ds-btn ds-btn-sm ${
+        model.retestPrimary === true ? "ds-btn-primary" : "ds-btn-ghost"
+      }`;
+      retest.textContent = model.retestText ?? "再 check 一次";
       retest.addEventListener("click", model.onRetest);
       actions.append(retest);
     }
@@ -682,12 +686,14 @@ export function hideLoaders() {
   }
 }
 
-export function renderLoaders({ modifier, paused = false }) {
+export function renderLoaders({ modifier, paused = false, label = null }) {
   const loader = loaders.get(modifier);
   if (loader === undefined) return;
   const spec = {
     className: "ds-term-line ds-term-line--dim terminal-loader-line",
-    text: paused ? "處理已停止。" : loaderLabels[modifier],
+    // label 是呼叫端指定的字：同一顆動畫可以用在不只一件事上（驗證借用安裝那顆），
+    // 動畫的預設字只在沒指定時才算數。
+    text: paused ? "處理已停止。" : (label ?? loaderLabels[modifier]),
   };
   if (!acceptsTerminalLine(spec)) return;
   hideLoaders();
