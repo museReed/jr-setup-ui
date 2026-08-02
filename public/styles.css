@@ -557,10 +557,15 @@ body {
   width: 100%;
 }
 
-/* 兩題照原樣印出來，換行要保留，寬度不夠時橫向捲而不是折行——折了就對不上畫面。 */
-.card-hints-block {
-  white-space: pre;
+/* 照原樣印出來的那幾行畫成設計系統的靜態終端，跟右邊那個會動的終端同一套視覺。
+   換行要保留，寬度不夠時橫向捲而不是折行——折了就對不上學生畫面上看到的樣子。 */
+/* 底色、內距、字色都由 .ds-term 自己決定，這裡只補「不要折行」。 */
+.card-hints-term .ds-term-body {
   overflow-x: auto;
+}
+
+.card-hints-term .ds-term-line {
+  white-space: pre;
 }
 
 .paste-proof-hint {

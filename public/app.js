@@ -9,6 +9,7 @@ import {
   PLAYWRIGHT_SHOT_AGENTS,
   flattenCheckCards,
   groupChecks,
+  nextInstallStep,
   matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
@@ -417,11 +418,15 @@ function renderWizard() {
     completedIds,
     currentIndex,
   );
+  // 合併的卡有兩份設定。按鈕要對著「還沒好的那一份」——兩份都好了才回到主 check，
+  // 因為驗證掛在它身上。
+  const rowCheck =
+    cardChecks.find((candidate) => candidate.status !== "ok") ?? card.check;
   let row =
     card.kind === "env"
       ? envCardRowModel(card, state.installedSteps)
       : card.kind === "config"
-        ? configRowModel(card.check, verified.has(card.checkId), {
+        ? configRowModel(rowCheck, verified.has(card.checkId), {
             availableActions: state.availableActions,
             installed: state.installedSteps.has(card.checkId),
             verificationAttempted: state.verificationAttempted.has(
@@ -521,7 +526,8 @@ function renderWizard() {
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") run(action, undefined, button);
-      else runConfigCheckAction(card.check, action, button, extra);
+      // 安裝按鈕對著還沒好的那一份（rowCheck），驗證仍然掛在主 check 上。
+      else runConfigCheckAction(rowCheck, action, button, extra);
     },
     onRetest: () => {
       if (card.kind === "env") {
@@ -1134,6 +1140,19 @@ async function handleDone(
     terminalOutcomeLines({ action, succeeded: true, check }),
   );
   resetRun();
+
+  // 合併的卡有兩份設定。裝完第一份先接著裝第二份，兩份都好了才輪到驗證——不然驗的
+  // 是只裝了一半的狀態。
+  const sibling =
+    action === "install-config-step"
+      ? nextInstallStep(step, state.lastChecks)
+      : null;
+
+  if (sibling !== null) {
+    view.addLine(`接著裝同一張卡的另一份：${sibling.label}`, "agent-status");
+    runConfigCheckAction(sibling, "install-config-step");
+    return;
+  }
 
   if (followUp === "auto") {
     run(

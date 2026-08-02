@@ -7,6 +7,7 @@ import {
   flattenCheckCards,
   groupChecks,
   matchesFullscreenProof,
+  nextInstallStep,
 } from "../public/model.js";
 import {
   cardIsComplete,
@@ -275,6 +276,69 @@ try {
     ["env-config", "execution-policy", "claude", "node"],
   );
   ok("執行原則排在環境段最前面，擋路的先修");
+
+  // 規矩與回話風格是同一件事的兩半，合成一張卡。分兩張只是把「設定它怎麼做事」
+  // 切成兩半讓學生做兩次，而且先驗的那次跑的是只裝了一半的狀態。
+  const merged = flattenCheckCards(
+    groupChecks([
+      check("claude-md"),
+      check("output-style"),
+      check("hook"),
+      check("codex-agents"),
+      check("codex-config"),
+    ]),
+    [],
+  );
+  const mergedRules = section(merged, "rules").cards;
+  assert.deepEqual(
+    mergedRules.map(({ checkId, checks }) => [
+      checkId,
+      checks.map(({ id }) => id).join("+"),
+    ]),
+    [
+      // 主 check 是最後那個：驗證掛在它身上，而驗證要等兩份都裝好。
+      ["output-style", "claude-md+output-style"],
+      ["hook", "hook"],
+      ["codex-config", "codex-agents+codex-config"],
+    ],
+  );
+  assert.match(
+    mergedRules[0].label,
+    /規矩與回話風格/,
+    "合併後的卡要有自己的標題，不能沿用其中一半的",
+  );
+  assert.match(mergedRules[0].detail, /兩份/);
+  ok("規矩與回話風格合成一張卡，主 check 是帶驗證的那一份");
+
+  // 裝完第一份要接著裝第二份，兩份都好了才輪到驗證。
+  assert.equal(
+    nextInstallStep("claude-md", [
+      check("claude-md"),
+      { ...check("output-style"), status: "missing" },
+    ])?.id,
+    "output-style",
+  );
+  // 第二份已經好了就沒有下一步，直接進驗證。
+  assert.equal(
+    nextInstallStep("claude-md", [check("claude-md"), check("output-style")]),
+    null,
+  );
+  // 最後那份裝完之後也沒有下一步——它自己就是驗證要跑的那一份。
+  assert.equal(nextInstallStep("output-style", [check("claude-md")]), null);
+  // 沒有被合併的步驟照舊。
+  assert.equal(nextInstallStep("hook", [check("hook")]), null);
+  ok("裝完第一份會接著裝第二份，都好了才輪到驗證");
+
+  // 伺服器少回其中一份時不要整張卡消失——另一份仍該自己出現。
+  const half = flattenCheckCards(
+    groupChecks([check("output-style"), check("hook")]),
+    [],
+  );
+  assert.deepEqual(
+    section(half, "rules").cards.map(({ checkId }) => checkId),
+    ["output-style", "hook"],
+  );
+  ok("只有其中一份時仍然畫得出卡片");
 
   // 全螢幕的三項掛在 Claude Code 那張卡上：裝好、登入了都還不算完，那三項也要
   // 勾完——不然那個 modal 會留到規則段的行為驗證中途才彈出來吃掉腳本送的句子。

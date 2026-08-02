@@ -569,6 +569,85 @@ function envOrder(card) {
   return index === -1 ? ENV_FIRST.length : index;
 }
 
+// 幾份設定合成一張卡：規矩與回話風格是同一件事的兩半，分兩張卡只是把「設定它怎麼
+// 做事」這件事切成兩半讓學生做兩次。兩份都裝好之後才跑一次驗證——分開驗的話，先驗
+// 的那次跑的是只裝了一半的狀態。
+//
+// key 是「最後裝的那一份」，也就是身上掛著行為驗證的那一份。
+const MERGED_CARDS = {
+  "output-style": {
+    label: "它做事的規矩與回話風格",
+    detail:
+      "兩份設定一起裝：一份是它做事的規矩（每次開新對話都會先讀，你不用每次重講），" +
+      "一份是回話的樣子（先給答案再解釋、比較用表格、不寫長篇大論）。" +
+      "兩份都裝好之後會真的問它一題，照規矩逐條檢查它的回答。",
+  },
+  "codex-config": {
+    label: "Codex 做事的規矩與回話風格",
+    detail:
+      "跟 Claude 那張同一件事，這是 Codex 這邊的兩份：一份是做事的規矩，" +
+      "一份寫在它的設定檔裡、決定回話的樣子。兩份都裝好之後會真的問它一題再檢查。",
+  },
+};
+
+// 合併之後，同一張卡的 checks 依「安裝順序」排，最後那個帶驗證。
+const MERGE_ORDER = {
+  "output-style": ["claude-md", "output-style"],
+  "codex-config": ["codex-agents", "codex-config"],
+};
+
+export function mergeCardChecks(checks) {
+  const byId = new Map(checks.map((check) => [check.id, check]));
+  const swallowed = new Set(
+    Object.values(MERGE_ORDER)
+      .flat()
+      .filter((id) => MERGE_ORDER[id] === undefined),
+  );
+  const groups = [];
+
+  for (const check of checks) {
+    const order = MERGE_ORDER[check.id];
+
+    if (order !== undefined) {
+      // 缺了其中一份（例如伺服器沒回那一列）就照常單獨出現，不要整張卡消失。
+      const merged = order
+        .map((id) => byId.get(id))
+        .filter((candidate) => candidate !== undefined);
+      groups.push(merged);
+      continue;
+    }
+
+    if (swallowed.has(check.id) && [...byId.keys()].some((id) => MERGE_ORDER[id]?.includes(check.id))) {
+      continue;
+    }
+
+    groups.push([check]);
+  }
+
+  return groups;
+}
+
+// 剛裝完 stepId 之後，同一張卡還有沒有沒裝的另一份。有的話先把它裝完再驗證。
+export function nextInstallStep(stepId, checks = []) {
+  const order = Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId));
+
+  if (order === undefined) {
+    return null;
+  }
+
+  const byId = new Map(checks.map((check) => [check.id, check]));
+
+  for (const id of order.slice(order.indexOf(stepId) + 1)) {
+    const check = byId.get(id);
+
+    if (check !== undefined && check.status !== "ok") {
+      return check;
+    }
+  }
+
+  return null;
+}
+
 export function flattenCheckCards(groupedSections, envChecks = []) {
   const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
   const mergedCheckIds = new Set(
@@ -623,7 +702,12 @@ export function flattenCheckCards(groupedSections, envChecks = []) {
 
   for (const section of groupedSections) {
     const cards = section.cards.flatMap((card) =>
-      card.checks.map((check) => checkCard(section.sectionId, card, check)),
+      mergeCardChecks(card.checks).map((checks) => ({
+        ...checkCard(section.sectionId, card, checks.at(-1)),
+        // 主 check 是最後那個：它身上掛著行為驗證，而驗證要在兩份都裝好之後才跑。
+        checks,
+        ...(MERGED_CARDS[checks.at(-1).id] ?? {}),
+      })),
     );
 
     sections.push({
