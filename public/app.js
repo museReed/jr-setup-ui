@@ -102,6 +102,8 @@ const state = {
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
   verifyShotVersion: 0,
+  // 已經演過「小鴨飛去下一段」的段落。一段只演一次。
+  celebratedSections: new Set(),
   selectedTools: ["claude"],
   selectedLanguage: "zh-TW",
   pendingModalCheck: null,
@@ -532,6 +534,40 @@ function sectionCompletion() {
   );
 }
 
+// 一段剛做完的那一瞬間：小鴨飛去下一條 line，飛完自動切過去。
+//
+// 只在「這次算完成、上次還沒完成」時觸發一次。每次 render 都問一次的話，學生停在
+// 已完成那段裡按任何東西都會再飛一次。
+//
+// 用 state 記而不是比對 DOM：完成狀態來自伺服器回來的檢查結果，render 之間會重算。
+async function playSectionHandoff(done) {
+  for (const [index, section] of SECTIONS.entries()) {
+    const next = SECTIONS[index + 1];
+
+    if (next === undefined || done[section.id] !== true) {
+      continue;
+    }
+
+    if (state.celebratedSections.has(section.id)) {
+      continue;
+    }
+
+    state.celebratedSections.add(section.id);
+
+    // 只在學生正看著剛做完的那一段時才演。他早就跳到別段去了還把畫面搶回來，
+    // 是把控制權從他手上拿走。
+    if (state.activeSectionId !== section.id) {
+      continue;
+    }
+
+    await view.flyDuckToNextSection();
+    state.activeSectionId = next.id;
+    view.hideSectionLockMessage();
+    renderWizard();
+    return;
+  }
+}
+
 function renderNavigation() {
   const tools = toolSelectionValue(state.selectedTools);
   const done = sectionCompletion();
@@ -557,6 +593,8 @@ function renderNavigation() {
   );
   view.renderSectionLocks(lockStates);
   view.renderGateVisibility(tools.split(",").includes("codex"));
+  // 動畫是錦上添花：它壞掉不該把導覽一起拖下水，所以不 await 也不讓它冒泡。
+  playSectionHandoff(done).catch(() => {});
   return lockStates;
 }
 

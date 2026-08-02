@@ -46,6 +46,9 @@ const ASSETS = [
   ["/styles.css", "text/css; charset=utf-8"],
   ["/vendor/design-system.css", "text/css; charset=utf-8"],
   ["/vendor/loader-orbs.js", "text/javascript; charset=utf-8"],
+  // GSAP 一律 vendor 不吃 CDN：這個嚮導跑在學生的 VM 上，整包離線自足，
+  // 掛 CDN 等於在網路不好的教室加一個會壞的點。
+  ["/vendor/gsap.min.js", "text/javascript; charset=utf-8"],
   ["/vendor/logos.svg", "image/svg+xml; charset=utf-8"],
   ["/app.js", "text/javascript; charset=utf-8"],
   ["/view.js", "text/javascript; charset=utf-8"],
