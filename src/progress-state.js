@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describeStep } from "./config-install.js";
@@ -49,8 +49,10 @@ function installedTargets(step) {
     return step.files.map((file) => file.target);
   }
 
+  // 第三方 skill 的落點是一個目錄（別人的東西，我們不比對內容）。MCP 那一種沒有
+  // 目錄，它的落點是 ~/.claude.json 裡的一段設定，走下面的切片。
   if (step.kind === "external-skill") {
-    return [step.marker ?? step.mcpConfig];
+    return step.marker === undefined ? [] : [step.marker];
   }
 
   return [];
@@ -112,6 +114,13 @@ function settingsSlice(step, settings) {
     }
 
     return slice;
+  }
+
+  // Playwright（Claude）的落點是 ~/.claude.json 裡的一段 MCP 設定。那個檔是 Claude
+  // Code 自己的（專案清單、歷史全在裡面），每開一次就變——整檔算指紋的話，學生只要
+  // 用過 Claude Code，這張卡就永遠在說「被改過」（VM 實測）。
+  if (step.kind === "external-skill" && step.mcpServer !== undefined) {
+    return { mcpServer: settings.mcpServers?.[step.mcpServer] ?? null };
   }
 
   return null;
@@ -230,19 +239,33 @@ export async function fingerprintStep(
   const contents = [];
 
   for (const target of targets) {
+    // 第三方 skill 的落點是目錄。readFile 讀目錄會丟 EISDIR，被下面接住之後整步的
+    // 指紋變成空字串——等於那一步沒有指紋，而且沒有人會發現（VM 實測：
+    // ext-playwright-codex 的 fingerprint 就是 ""）。目錄只認在不在，內容是別人的
+    // 東西，本來就不比對。
     try {
+      const info = await stat(target);
+
+      if (info.isDirectory()) {
+        contents.push(Buffer.from(`dir:${target}`));
+        continue;
+      }
+
       contents.push(await readFile(target));
     } catch {
       return "";
     }
   }
 
-  // settings.json 只取自己那一段，不是整本。
+  // 共用的設定檔只取自己那一段，不是整本。
+  const sliceFile =
+    step.settingsTarget ??
+    (step.mcpServer === undefined ? undefined : step.mcpConfig);
   let slice = null;
 
-  if (step.settingsTarget !== undefined) {
+  if (sliceFile !== undefined) {
     try {
-      slice = settingsSlice(step, JSON.parse(await readFile(step.settingsTarget, "utf8")));
+      slice = settingsSlice(step, JSON.parse(await readFile(sliceFile, "utf8")));
     } catch {
       slice = null;
     }

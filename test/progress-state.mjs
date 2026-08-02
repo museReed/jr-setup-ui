@@ -184,6 +184,60 @@ try {
   );
   assert.deepEqual(await loadChangedSteps(options), ["output-style"]);
   ok("自己那一段被改掉才回報被動過");
+
+  // Playwright（Claude）的落點是 ~/.claude.json 裡的一段 MCP 設定。那個檔是 Claude
+  // Code 自己的——專案清單、歷史全在裡面，每開一次就變。整檔算指紋的話，學生只要
+  // 用過 Claude Code，這張卡就永遠在說「被改過」（VM 實測）。
+  // 前面那幾筆已經各自演完了，留著會混進下面的回報清單。
+  await clearBehaviorVerified("output-style", options);
+  await clearStepVerified("claude-md", options);
+  await clearBehaviorVerified("claude-md", options);
+
+  const claudeJson = path.join(home, ".claude.json");
+  await writeFile(
+    claudeJson,
+    JSON.stringify({
+      mcpServers: { playwright: { command: "npx" } },
+      projects: { "C:/a": { history: ["one"] } },
+    }),
+  );
+  await markBehaviorVerified("ext-playwright-claude", options);
+  assert.deepEqual(await loadChangedSteps(options), []);
+
+  await writeFile(
+    claudeJson,
+    JSON.stringify({
+      mcpServers: { playwright: { command: "npx" } },
+      projects: { "C:/a": { history: ["one", "two", "three"] } },
+    }),
+  );
+  assert.deepEqual(await loadChangedSteps(options), []);
+  ok("Claude Code 自己在 ~/.claude.json 記東西，不會被當成這一步被改過");
+
+  await writeFile(claudeJson, JSON.stringify({ mcpServers: {} }));
+  assert.deepEqual(await loadChangedSteps(options), ["ext-playwright-claude"]);
+  ok("MCP 那一段真的被拿掉才回報被動過");
+
+  // 第三方 skill 的落點是一個目錄。readFile 讀目錄會丟 EISDIR，被接住之後整步的
+  // 指紋變成空字串——等於那一步沒有指紋，而且沒有人會發現（VM 實測：學生的
+  // ext-playwright-codex 存的就是 ""）。
+  await writeFile(claudeJson, JSON.stringify({ mcpServers: {} }));
+  const skillDir = path.join(home, ".agents", "skills", "playwright");
+  await mkdir(skillDir, { recursive: true });
+  await markBehaviorVerified("ext-playwright-codex", options);
+  const stored2 = JSON.parse(await readFile(stateFile, "utf8"));
+  assert.match(
+    stored2.behavior["ext-playwright-codex"].fingerprint,
+    /^[a-f0-9]{64}$/,
+  );
+  ok("落點是目錄的步驟也算得出指紋，不再靜靜地變成空字串");
+
+  await rm(skillDir, { recursive: true, force: true });
+  assert(
+    (await loadChangedSteps(options)).includes("ext-playwright-codex"),
+    "落點目錄被刪掉要回報被動過",
+  );
+  ok("落點目錄不見了會回報被動過");
 } finally {
   await rm(home, { recursive: true, force: true });
 }

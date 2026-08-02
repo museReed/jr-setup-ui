@@ -585,6 +585,24 @@ export function completedCardIds(
   );
 }
 
+// 沒有眼睛項的列：「程式驗過了」就是「整列過了」，不需要第二本帳來確認。
+//
+// 兩本帳分兩次寫，而寫成功一半就會卡住：VM 實測 ext-playwright-claude 只寫進
+// behavior、沒寫進 verified，於是清單那格打勾、徽章卻是待驗證，學生被要求重跑一次
+// 要開瀏覽器的驗證。旁邊 codex 那筆差 128 毫秒、兩本都成功——同一段程式，一次成功
+// 一次沒有。與其追那次為什麼漏，不如讓它不需要兩本都成立。
+//
+// 有眼睛項的列不在此列：那種列的「整列過了」本來就要學生看完說了算。
+export function impliedVerifiedSteps(checks, behaviorVerified = new Set()) {
+  return new Set(
+    checks
+      .filter(
+        (check) => check.eyeCheck == null && behaviorVerified.has(check.id),
+      )
+      .map((check) => check.id),
+  );
+}
+
 export function currentCardIndex(
   cards,
   verifiedSteps = new Set(),

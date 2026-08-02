@@ -33,6 +33,7 @@ import {
   envCardRowModel,
   extractLoginHints,
   guidanceModel,
+  impliedVerifiedSteps,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
@@ -219,6 +220,14 @@ function effectiveVerifiedSteps() {
     if (id.startsWith("eye-")) {
       verified.add(id.slice("eye-".length));
     }
+  }
+
+  // 沒有眼睛項的列，程式驗過了就是整列過了——不必等第二本帳也寫成功。
+  for (const id of impliedVerifiedSteps(
+    state.lastChecks,
+    state.behaviorVerifiedSteps,
+  )) {
+    verified.add(id);
   }
 
   return verified;

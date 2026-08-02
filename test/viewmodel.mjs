@@ -22,6 +22,7 @@ import {
   envCardRowModel,
   envRowModel,
   extractLoginHints,
+  impliedVerifiedSteps,
   installStatusMessage,
   isLoginAction,
   isVerifyAction,
@@ -777,6 +778,28 @@ try {
   });
   assert.doesNotMatch(notVerified.system[0].detail, /被改過/);
   ok("驗過之後被動過的那一格：勾留著，多一句提醒");
+
+  // 沒有眼睛項的列：程式驗過了就是整列過了，不必等第二本帳也寫成功。
+  //
+  // VM 實測 ext-playwright-claude 只寫進 behavior、沒寫進 verified，於是清單那格
+  // 打勾、徽章卻是待驗證，學生被要求重跑一次要開瀏覽器的驗證。旁邊 codex 那筆差
+  // 128 毫秒、兩本都成功——同一段程式，一次成功一次沒有。
+  const behaviorOnly = new Set(["ext-playwright-claude", "claude-namer"]);
+  assert.deepEqual(
+    [
+      ...impliedVerifiedSteps(
+        [
+          { id: "ext-playwright-claude", eyeCheck: null },
+          // 有眼睛項的列不算：那種列的「整列過了」本來就要學生看完說了算。
+          { id: "claude-namer", eyeCheck: "分頁標題變成…" },
+          { id: "hook", eyeCheck: null },
+        ],
+        behaviorOnly,
+      ),
+    ],
+    ["ext-playwright-claude"],
+  );
+  ok("沒有眼睛項的列，程式驗過就等於整列過了");
 
   // 全螢幕那三格其實是兩步：前兩件在同一個視窗做完，第三件要另一個視窗（終端裡
   // 得先有一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生
