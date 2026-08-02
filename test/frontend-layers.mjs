@@ -257,12 +257,12 @@ try {
   assert(cardIndex.includes('id="wizard-prev"'));
   assert(cardIndex.includes('id="wizard-next"'));
   assert(!files.view.includes('next.textContent = "下一張"'));
-  // 貼齊工作區的左右邊界＝卡片的最外緣。釘在視窗邊緣的話，螢幕一寬就離內容很遠。
-  assert.match(cardStyles, /^\.wizard-nav \{[^}]*position: absolute;/m);
-  assert.match(cardStyles, /^\.wizard-workspace \{[^}]*position: relative;/m);
-  assert.match(cardStyles, /^\.wizard-nav--prev \{\s*left: 0;/m);
-  assert.match(cardStyles, /^\.wizard-nav--next \{\s*right: 0;/m);
-  ok("翻頁按鈕貼齊卡片的最外緣，不隨卡片高度上下跳");
+  // 自成一列排在卡片下方，左右各自貼齊卡片與終端的外緣。只剩一顆時另一顆的位置
+  // 不能跑掉——所以兩顆各自用 auto margin 推到底，不是靠 space-between 分配。
+  assert.match(cardStyles, /^\.wizard-nav-row \{[^}]*justify-content: space-between;/m);
+  assert.match(cardStyles, /^\.wizard-nav--prev \{\s*margin-right: auto;/m);
+  assert.match(cardStyles, /^\.wizard-nav--next \{\s*margin-left: auto;/m);
+  ok("翻頁按鈕自成一列排在卡片下方，左右貼齊外緣");
 
   // 只有「往前」那顆值得慶祝——回頭的那顆出現不是成就，只是「你可以往回看」。
   assert.match(files.view, /key === "next" && !reducedMotion\.matches/);

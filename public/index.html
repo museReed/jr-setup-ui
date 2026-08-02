@@ -62,15 +62,6 @@
       </div>
 
       <div class="wizard-workspace">
-        <!-- 翻頁按鈕釘在畫面兩側，不在卡片裡：位置固定，學生不用每張卡重新找它在哪。 -->
-        <button type="button" id="wizard-prev" class="wizard-nav wizard-nav--prev" hidden>
-          <span class="wizard-nav-arrow" aria-hidden="true">←</span>
-          <span class="wizard-nav-label">上一張</span>
-        </button>
-        <button type="button" id="wizard-next" class="wizard-nav wizard-nav--next" hidden>
-          <span class="wizard-nav-label">下一張</span>
-          <span class="wizard-nav-arrow" aria-hidden="true">→</span>
-        </button>
         <div class="task-terminal-layout">
           <section class="task-column" data-section-panel aria-label="目前設定卡片">
             <div id="config-choice-panel" class="config-choice-panel" hidden>
@@ -113,6 +104,19 @@
               <pre id="output"></pre>
             </details>
           </section>
+        </div>
+
+        <!-- 翻頁按鈕排在卡片下方，左右各自貼齊卡片與終端的外緣。放在卡片裡的話，
+             每張卡高度不同，按鈕就會上下跳，學生每翻一張都要重新找它在哪。 -->
+        <div class="wizard-nav-row">
+          <button type="button" id="wizard-prev" class="wizard-nav wizard-nav--prev" hidden>
+            <span class="wizard-nav-arrow" aria-hidden="true">←</span>
+            <span class="wizard-nav-label">上一張</span>
+          </button>
+          <button type="button" id="wizard-next" class="wizard-nav wizard-nav--next" hidden>
+            <span class="wizard-nav-label">下一張</span>
+            <span class="wizard-nav-arrow" aria-hidden="true">→</span>
+          </button>
         </div>
       </div>
     </main>

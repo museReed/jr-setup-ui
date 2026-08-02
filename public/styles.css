@@ -173,11 +173,6 @@ body {
   min-width: 0;
 }
 
-/* 翻頁按鈕貼著這一塊的左右邊界，所以定位脈絡在這裡。 */
-.wizard-workspace {
-  position: relative;
-}
-
 .task-terminal-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -187,13 +182,17 @@ body {
 
 /* 翻頁按鈕釘在畫面兩側、垂直置中。放在卡片裡的話，每張卡高度不同，按鈕就會上下
    跳——學生每翻一張都要重新找它在哪。 */
-/* 貼齊工作區的左右邊界——也就是卡片的最外緣。釘在視窗邊緣的話，螢幕一寬按鈕就
-   離內容很遠，看起來跟卡片沒有關係。 */
+/* 翻頁按鈕自成一列，排在卡片下方：左邊那顆貼齊卡片左緣，右邊那顆貼齊終端右緣。
+   只剩一顆時另一顆的位置不能跑掉，所以「下一張」永遠靠右（margin-left: auto）。 */
+.wizard-nav-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-5);
+}
+
 .wizard-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 3;
+  /* 煙火是絕對定位的，要有這個才會掛在按鈕頭上而不是整頁的角落。 */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -217,12 +216,12 @@ body {
 }
 
 .wizard-nav--prev {
-  left: 0;
+  margin-right: auto;
 }
 
 /* 往前走是主要動作，橘色；回頭看不是。 */
 .wizard-nav--next {
-  right: 0;
+  margin-left: auto;
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: var(--color-bg);
