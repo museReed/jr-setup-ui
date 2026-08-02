@@ -9,6 +9,8 @@ import {
   agentNameFor,
   appendTermLine,
   behaviorFallbackState,
+  behaviorRuleLine,
+  behaviorTally,
   cardIsComplete,
   completedCardIds,
   cardResultItems,
@@ -825,6 +827,40 @@ try {
     [],
   );
   ok("有眼睛項的列要兩半都成立：程式跑過，而且學生看過");
+
+  // 行為驗證逐條判定五條規則，腳本每判完一條就送一個事件。原本這些事件只拿來換
+  // 轉圈圈的動畫，畫面上只留一句「驗證成功」——學生不知道驗了什麼、也不知道是不是
+  // 全過（Reed 實測就是這樣問的）。
+  assert.deepEqual(
+    behaviorRuleLine({ kind: "rule", name: "結論先行", pass: true }),
+    { text: "　✓ 結論先行", className: "ds-term-line ds-term-line--ok" },
+  );
+  // 沒過的那條要說為什麼——門檻是「五條中過幾條」，所以通過的那次也可能有沒過的。
+  assert.deepEqual(
+    behaviorRuleLine({
+      kind: "rule",
+      name: "比較用表格",
+      pass: false,
+      reason: "用了條列",
+    }),
+    {
+      text: "　✗ 比較用表格——用了條列",
+      className: "ds-term-line ds-term-line--err",
+    },
+  );
+  assert.equal(behaviorRuleLine({ kind: "stage", stage: "judging" }), null);
+  assert.equal(behaviorRuleLine(null), null);
+  ok("逐條判定的結果印成一行，沒過的那條附上原因");
+
+  assert.equal(
+    behaviorTally([{ pass: true }, { pass: true }, { pass: false }]).text,
+    "3 條規則中通過 2 條。",
+  );
+  assert.match(
+    behaviorTally([{ pass: true }]).className,
+    /ds-term-line--ok/,
+  );
+  ok("判完之後說總共過幾條");
 
   // 全螢幕那三格其實是兩步：前兩件在同一個視窗做完，第三件要另一個視窗（終端裡
   // 得先有一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生

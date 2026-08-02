@@ -21,6 +21,8 @@ import {
   LOADER_MODIFIERS,
   agentNameFor,
   behaviorFallbackState,
+  behaviorRuleLine,
+  behaviorTally,
   cardIsComplete,
   completedCardIds,
   cardResultItems,
@@ -1255,6 +1257,8 @@ async function run(action, promptText, button = null, options) {
       LOGIN_CHECK_IDS[action] ??
       (action.startsWith("install-") ? action.slice("install-".length) : null),
     rawOutput: [],
+    // 行為驗證逐條判定的結果，收齊了才數得出「五條中過幾條」。
+    rules: [],
     explanation: null,
   };
 
@@ -1343,6 +1347,20 @@ async function run(action, promptText, button = null, options) {
 
       if (nextModifier !== null) {
         renderRunLoader(nextModifier);
+      }
+
+      // 逐條判定的結果直接印在終端上：驗了哪幾條、哪幾條過。只留一句「驗證成功」
+      // 的話，學生不知道驗了什麼，也不知道是不是全過。
+      const ruleLine = behaviorRuleLine(jrEvent);
+
+      if (ruleLine !== null) {
+        runContext.rules.push(jrEvent);
+        view.addTerminalLines([ruleLine]);
+        return;
+      }
+
+      if (jrEvent.kind === "result" && runContext.rules.length > 0) {
+        view.addTerminalLines([behaviorTally(runContext.rules)]);
       }
     });
 

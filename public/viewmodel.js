@@ -1015,6 +1015,40 @@ export function installVerificationFollowUp({ action, result, check }) {
   return check.verifyKind === "terminal" ? "prompt" : "none";
 }
 
+// 行為驗證會逐條判定五條規則，腳本每判完一條就送一個事件過來。原本這些事件只拿來
+// 換轉圈圈的動畫，結果畫面上只留一句「驗證成功」——學生不知道驗了什麼、也不知道
+// 是不是全過（實測就是這樣問的：五條裡過幾條？）。
+//
+// 門檻是「五條中過幾條」而不是「全過」，所以通過的那次也要把沒過的那條印出來。
+export function behaviorRuleLine(jrEvent) {
+  if (jrEvent?.kind !== "rule") {
+    return null;
+  }
+
+  const mark = jrEvent.pass === true ? "✓" : "✗";
+  const reason =
+    jrEvent.pass === true || !jrEvent.reason ? "" : `——${jrEvent.reason}`;
+
+  return {
+    text: `　${mark} ${jrEvent.name}${reason}`,
+    className: `ds-term-line ${
+      jrEvent.pass === true ? "ds-term-line--ok" : "ds-term-line--err"
+    }`,
+  };
+}
+
+// 判完之後的總結：五條中過幾條。
+export function behaviorTally(rules) {
+  const passed = rules.filter((rule) => rule.pass === true).length;
+
+  return {
+    text: `${rules.length} 條規則中通過 ${passed} 條。`,
+    className: `ds-term-line ${
+      passed === rules.length ? "ds-term-line--ok" : "ds-term-line--dim"
+    }`,
+  };
+}
+
 export function loaderModifier({
   checking = false,
   action = "",

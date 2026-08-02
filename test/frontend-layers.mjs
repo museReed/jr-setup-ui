@@ -368,7 +368,12 @@ try {
   assert(files.view.includes("const ICONS = {"));
   assert(!files.view.includes("ds-btn ds-btn-primary ds-btn-sm"));
   assert(!files.view.includes("ds-btn-secondary"));
-  for (const id of ["recheck-configs", "recheck-env", "cancel", "verify-modal-confirm"]) {
+  // 彈窗那兩顆維持原本的實心／幽靈按鈕：它是一個「二選一」的問句，兩顆並排的
+  // 空心藥丸看起來像同一個選項的兩半（VM 實測）。
+  assert.match(cardIndex, /id="verify-modal-confirm" class="ds-btn ds-btn-primary"/);
+  assert.match(cardIndex, /id="verify-modal-later" class="ds-btn ds-btn-ghost"/);
+
+  for (const id of ["recheck-configs", "recheck-env", "cancel"]) {
     assert.match(
       cardIndex,
       new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),

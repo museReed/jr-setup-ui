@@ -252,6 +252,29 @@ try {
   }
   ok("卡片標題不帶實作名詞");
 
+  // skill 的卡片標題就是 skill 的名字。其他卡裝好就在背後生效，skill 不一樣——學生
+  // 要打那個名字才叫得動（Codex 那邊是 $handoff），標題不寫名字的話他知道有這個
+  // 功能卻不知道怎麼呼叫。做什麼用的在描述裡。
+  for (const [id, name] of [
+    ["skill-claude-handoff", "handoff"],
+    ["skill-codex-auto-rename", "auto-rename"],
+    ["skill-claude-structured-questions", "structured-questions"],
+    ["ext-frontend-design-claude", "frontend-design"],
+    ["ext-skill-creator-claude", "skill-creator"],
+    ["ext-playwright-codex", "playwright"],
+  ]) {
+    const { label } = describeStep(id, {
+      lang: "zh-TW",
+      home: "/home/x",
+      platform: "win32",
+    });
+    assert(
+      label.startsWith(name),
+      `${id} 的標題要以 skill 名字開頭，現在是「${label}」`,
+    );
+  }
+  ok("skill 卡片的標題就是 skill 的名字");
+
   // 環境那一段的描述也不准回到「安裝 X，才能…」——那種句型只是把標題再講一次，
   // 沒有回答「做完你會多出什麼」。
   for (const card of section(flattened, "env").cards) {

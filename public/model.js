@@ -503,19 +503,29 @@ export const CARD_DESCRIPTIONS = {
   "claude-monitor": "對話太長、它快忘記前面講過什麼時，會提早叫你收尾",
   "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
   "codex-monitor": "Codex 快忘記前面講過什麼時，也會提早叫你收尾",
-  "skill-claude-auto-rename": "上面那個是自動取名，這個是你不滿意時手動叫它重取",
-  "skill-codex-auto-rename": "上面那個是自動取名，這個是你不滿意時手動叫它重取",
-  "skill-claude-handoff": "快聊不下去時一句話產出交接文件，下次接得回來",
-  "skill-codex-handoff": "快聊不下去時一句話產出交接文件，下次接得回來",
+  // skill 的描述要回答「這支是拿來做什麼的」——標題已經是它的名字了。
+  "skill-claude-auto-rename":
+    "幫這次對話重新取名。上面那個 hook 是自動取，這支是你不滿意時手動叫它重取",
+  "skill-codex-auto-rename":
+    "幫這次對話重新取名。上面那個 hook 是自動取，這支是你不滿意時手動叫它重取",
+  "skill-claude-handoff":
+    "把這次做到哪、卡在哪寫成一份交接文件，下次開新對話貼給它就接得回來",
+  "skill-codex-handoff":
+    "把這次做到哪、卡在哪寫成一份交接文件，下次開新對話貼給它就接得回來",
   "skill-claude-structured-questions":
-    "要你做決定時跳出選項讓你點，不用自己想怎麼回",
+    "要你做決定時跳出選項讓你點，不用自己想怎麼描述需求",
   "skill-codex-structured-questions":
-    "要你做決定時跳出選項讓你點，不用自己想怎麼回",
-  "ext-frontend-design-claude": "產生的頁面不是預設樣板，會有配色與排版的品味",
-  "ext-frontend-design-codex": "產生的頁面不是預設樣板，會有配色與排版的品味",
-  "ext-skill-creator-claude": "把你反覆做的流程包成一個技能，以後一句話就能叫",
-  "ext-playwright-claude": "它可以自己開網頁、點按鈕、截圖回來給你看",
-  "ext-playwright-codex": "它可以自己開網頁、點按鈕、截圖回來給你看",
+    "要你做決定時跳出選項讓你點，不用自己想怎麼描述需求",
+  "ext-frontend-design-claude":
+    "叫它做網頁時會先想版面與配色，產出的不是預設樣板的樣子",
+  "ext-frontend-design-codex":
+    "叫它做網頁時會先想版面與配色，產出的不是預設樣板的樣子",
+  "ext-skill-creator-claude":
+    "把你反覆做的流程包成一支新的 skill，以後一句話就叫得動",
+  "ext-playwright-claude":
+    "讓它能開瀏覽器：自己導到網址、點按鈕、填表單，還會截圖回來給你看",
+  "ext-playwright-codex":
+    "讓它能開瀏覽器：自己導到網址、點按鈕、填表單，還會截圖回來給你看",
   "demo-claude": "它問你要什麼配色、生成一個網頁，右邊即時長出來給你看",
   "demo-codex": "它問你要什麼配色、生成一個網頁，右邊即時長出來給你看",
 };
@@ -576,17 +586,18 @@ function envOrder(card) {
 // key 是「最後裝的那一份」，也就是身上掛著行為驗證的那一份。
 const MERGED_CARDS = {
   "output-style": {
-    label: "它做事的規矩與回話風格",
+    label: "Claude Code CLI 做事的規矩與回話風格",
     detail:
-      "兩份設定一起裝：一份是它做事的規矩（每次開新對話都會先讀，你不用每次重講），" +
-      "一份是回話的樣子（先給答案再解釋、比較用表格、不寫長篇大論）。" +
-      "兩份都裝好之後會真的問它一題，照規矩逐條檢查它的回答。",
+      "兩份設定一起裝：一份是 Claude Code CLI 做事的規矩（每次開新對話都會先讀，" +
+      "你不用每次重講），一份是回話的樣子（先給答案再解釋、比較用表格、不寫長篇" +
+      "大論）。兩份都裝好之後會真的問它一題，照五條規矩逐條檢查它的回答。",
   },
   "codex-config": {
-    label: "Codex 做事的規矩與回話風格",
+    label: "Codex CLI 做事的規矩與回話風格",
     detail:
-      "跟 Claude 那張同一件事，這是 Codex 這邊的兩份：一份是做事的規矩，" +
-      "一份寫在它的設定檔裡、決定回話的樣子。兩份都裝好之後會真的問它一題再檢查。",
+      "跟上一張同一件事，這是 Codex CLI 這邊的兩份：一份是做事的規矩，" +
+      "一份寫在它的設定檔裡、決定回話的樣子。兩份都裝好之後會真的問它一題，" +
+      "照五條規矩逐條檢查它的回答。",
   },
 };
 

@@ -11,19 +11,22 @@ export const TOOLS = ["claude", "codex"];
 // 核心三件套。一個 skill 一列：壞了看得出來是哪一支，重裝也只重裝那一支。
 export const SKILL_NAMES = ["auto-rename", "handoff", "structured-questions"];
 
-// 卡片標題講「學生會看到的事」，不講做法。原本是「Skill：自動命名（Claude）」——
-// 那是我們的分類方式，學生沒看過那個畫面之前，這個名字對他等於沒有意義。
+// skill 的卡片標題就是 skill 的名字。
+//
+// 其他卡的標題講「學生會看到的事」，因為那些設定學生不用叫、裝好就在背後生效。
+// skill 不一樣：他要打那個名字才叫得動（Codex 那邊是 $handoff），標題不寫名字的話
+// 學生知道有這個功能卻不知道怎麼呼叫。做什麼用的移到描述裡。
 const SKILL_LABELS = {
-  "auto-rename": "想改名時叫它改",
-  handoff: "把進度交接給下一場",
-  "structured-questions": "讓它給你選項",
+  "auto-rename": "auto-rename",
+  handoff: "handoff",
+  "structured-questions": "structured-questions",
 };
 
 // 第三方 skill 走各自 GitHub 上定義的安裝法（npx skills / claude mcp），要網路與
 // Node——跟前面那些內建素材的離線安裝不同類，所以另開一種 kind，畫面上也標出來。
 const EXTERNAL_SKILL_STEPS = {
   "ext-frontend-design-claude": {
-    label: "做出來的網頁有設計感（Claude）",
+    label: "frontend-design（Claude）",
     agent: "claude",
     cmd: "npx",
     args: [
@@ -42,7 +45,7 @@ const EXTERNAL_SKILL_STEPS = {
     marker: ".claude/skills/frontend-design",
   },
   "ext-frontend-design-codex": {
-    label: "做出來的網頁有設計感（Codex）",
+    label: "frontend-design（Codex）",
     agent: "codex",
     cmd: "npx",
     args: [
@@ -60,7 +63,7 @@ const EXTERNAL_SKILL_STEPS = {
     marker: ".agents/skills/frontend-design",
   },
   "ext-skill-creator-claude": {
-    label: "教它學會新技能（Claude）",
+    label: "skill-creator（Claude）",
     agent: "claude",
     cmd: "npx",
     args: [
@@ -79,7 +82,7 @@ const EXTERNAL_SKILL_STEPS = {
     marker: ".claude/skills/skill-creator",
   },
   "ext-playwright-codex": {
-    label: "讓它能開瀏覽器（Codex）",
+    label: "playwright（Codex）",
     agent: "codex",
     cmd: "npx",
     args: [
@@ -107,7 +110,7 @@ const EXTERNAL_SKILL_STEPS = {
   // 要統一的話唯一已知可行的方向是「兩邊都用 MCP」（Codex 支援 MCP，config.toml
   // 的 [mcp_servers.*] 就是），不是「兩邊都用 skill」。目前決定維持現狀。
   "ext-playwright-claude": {
-    label: "讓它能開瀏覽器（Claude）",
+    label: "playwright（Claude）",
     agent: "claude",
     cmd: "claude",
     args: ["mcp", "add", "-s", "user", "playwright", "npx", "@playwright/mcp@latest"],
@@ -485,7 +488,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "claude-md":
       return {
         id,
-        label: "它做事的規矩",
+        label: "Claude Code CLI 做事的規矩",
         kind: "copy",
         source: `claude-code/${lang}/CLAUDE.md`,
         target: `${claudeDir}/CLAUDE.md`,
@@ -529,7 +532,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "codex-config":
       return {
         id,
-        label: "Codex 的規矩與回話風格",
+        label: "Codex CLI 的規矩與回話風格",
         kind: "copy",
         source: `codex/${lang}/config.toml.example`,
         target: `${codexDir}/config.toml`,
@@ -541,7 +544,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "codex-agents":
       return {
         id,
-        label: "Codex 做事的規矩",
+        label: "Codex CLI 做事的規矩",
         kind: "copy",
         source: `codex/${lang}/AGENTS.md`,
         target: `${codexDir}/AGENTS.md`,
