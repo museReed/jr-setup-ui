@@ -195,7 +195,8 @@ export function flyDuckToNextSection() {
     const flap = motion.to(wing, {
       rotation: -55,
       scaleY: 0.55,
-      duration: 0.11,
+      // 飛得慢，翅膀也跟著慢一點——快拍配慢飛看起來像在原地掙扎。
+      duration: 0.16,
       repeat: -1,
       yoyo: true,
       ease: "sine.inOut",
@@ -214,19 +215,21 @@ export function flyDuckToNextSection() {
       // 起飛前蹲一下。沒有這個預備動作，飛出去會像被彈走而不是自己飛。
       .to(duck, { x: -14, y: 6, duration: 0.18, ease: "power1.in" })
       .to(legs, { y: 4, scaleY: 0.5, duration: 0.18, ease: "power1.in" }, "<")
-      // 往右上：先仰角爬升，再拉平衝出畫面。分兩段才有「爬升→巡航」的層次，
-      // 一段到底看起來就只是平移。
-      .to(body, { rotation: -18, duration: 0.3, ease: "power2.out" })
-      .to(duck, { x: away * 0.42, y: -90, duration: 0.75, ease: "power1.out" }, "<")
-      .to(duck, { x: away, y: -130, duration: 0.55, ease: "power2.in" })
-      .to(body, { rotation: -8, duration: 0.55, ease: "none" }, "<")
+      // 往右上：先仰角爬升，再拉平巡航。分兩段才有層次，一段到底看起來只是平移。
+      //
+      // 高度上限 CEILING：小鴨飛過去的那條 line 上面就是 tab 列，飛超過就變成一隻鴨
+      // 蓋在導覽上面，而且會超出那塊區域的邊界被裁掉。爬升到 -34、巡航 -46 為止。
+      .to(body, { rotation: -16, duration: 0.4, ease: "power2.out" })
+      .to(duck, { x: away * 0.4, y: -34, duration: 1.1, ease: "power1.out" }, "<")
+      .to(duck, { x: away, y: -46, duration: 0.85, ease: "power2.in" })
+      .to(body, { rotation: -7, duration: 0.85, ease: "none" }, "<")
       // 從左邊畫面外、比目標高一點的位置進來，再滑降到第一站——降下來的那一段
       // 才是「飛到定點」的感覺，直線平移沒有。
-      .set(duck, { x: -away, y: -110 })
-      .set(body, { rotation: -10 })
-      .to(duck, { x: -away * 0.35, y: -70, duration: 0.6, ease: "power1.out" }, "+=0.12")
-      .to(duck, { x: 0, y: 0, duration: 0.85, ease: "power2.out" })
-      .to(body, { rotation: 0, duration: 0.5, ease: "power2.out" }, "-=0.5")
+      .set(duck, { x: -away, y: -42 })
+      .set(body, { rotation: -9 })
+      .to(duck, { x: -away * 0.35, y: -30, duration: 0.9, ease: "power1.out" }, "+=0.18")
+      .to(duck, { x: 0, y: 0, duration: 1.2, ease: "power2.out" })
+      .to(body, { rotation: 0, duration: 0.7, ease: "power2.out" }, "-=0.7")
       // 落地：翅膀停、腿放下、身體吸震壓一下再彈回來。
       .add(() => flap.kill())
       .to(wing, { rotation: 0, scaleY: 1, duration: 0.18, ease: "power2.out" })
@@ -718,9 +721,11 @@ function appendDots(parent, count) {
   }
 }
 
-function createLoader(modifier) {
+function createLoader(modifier, { onDark = true } = {}) {
   const loader = document.createElement("span");
-  loader.className = `ds-loader-orbs ds-loader-orbs--sm ds-loader-orbs--on-dark ${modifier}`;
+  loader.className = `ds-loader-orbs ds-loader-orbs--sm ${
+    onDark ? "ds-loader-orbs--on-dark " : ""
+  }${modifier}`;
   loader.setAttribute("role", "status");
   if (modifier === LOADER_MODIFIERS.working) {
     for (const [tilt, duration] of [["-22deg", "2.7s"], ["48deg", "2.2s"]]) {
@@ -770,6 +775,24 @@ for (const modifier of Object.keys(loaderLabels)) {
   elements.rowLoaderPool.append(loader);
   loaders.set(modifier, loader);
 }
+// 頂端那條在資料還沒回來時是「一行字 + 一條空的進度條 + 停在 0% 的小鴨」——三個
+// 元素都在，卻沒有一個在動，看起來像壞掉而不是在載入。
+//
+// 改成放 searching 那組點陣（終端裡「正在檢查目前狀態」用的同一顆），載入中就把進度
+// 條那排收起來，只留會動的東西。用的是同一個 createLoader，不另外做一顆——兩邊講的是
+// 同一件事（正在檢查），長得一樣才對。on-dark 關掉：頂端是淺底。
+const sectionLoader = createLoader(LOADER_MODIFIERS.searching, {
+  onDark: false,
+});
+sectionLoader.classList.add("section-loader");
+sectionLoader.hidden = true;
+elements.sectionStatus?.after(sectionLoader);
+
+export function setSectionBusy(busy) {
+  sectionLoader.hidden = !busy;
+  elements.milestoneBar?.classList.toggle("is-loading", busy);
+}
+
 let terminalLineModels = [...elements.terminalLines.children].map((line) => ({
   className: line.className,
   text: line.textContent,

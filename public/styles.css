@@ -348,6 +348,19 @@ body {
   width: 100%;
 }
 
+/* 頂端的載入指示：跟那行狀態文字並排，不另外佔一行——它只是那句話的動態部分。 */
+.section-loader {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: var(--space-2);
+}
+
+/* 載入中把進度條那排收起來：空的條配停住的小鴨看起來像壞掉，不像在載入。
+   用 visibility 不用 display，版面高度才不會跳。 */
+.ds-pbar--milestones.is-loading {
+  visibility: hidden;
+}
+
 .verify-shot {
   margin: 0;
   display: flex;

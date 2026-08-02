@@ -486,6 +486,11 @@ function renderWizard() {
 }
 
 function renderCheckingLoader() {
+  // 頂端那條不受 runInProgress 影響：檢查在跑就轉，跟終端裡在跑什麼無關。
+  view.setSectionBusy(
+    state.envCheckInProgress || state.configCheckInProgress,
+  );
+
   if (state.runInProgress) {
     return;
   }
