@@ -43,6 +43,7 @@ import {
   configQuery,
 } from "../public/model.js";
 import { actions as ACTIONS } from "../src/actions.js";
+import { STEP_IDS } from "../src/config-install.js";
 import { VERIFICATION } from "../src/config-check.js";
 
 function ok(description) {
@@ -557,6 +558,22 @@ try {
   );
   assert.ok(CARD_HINTS["codex-namer"].lines.length >= 2);
   ok("codex 的兩題改用 CARD_HINTS 照原樣印出來，不再多一格勾選框");
+
+  // key 打錯的話那張卡就靜靜地沒有提示——畫面正常、沒有錯誤、只是少一塊，沒有人
+  // 會發現。所以逐個對回 STEP_IDS。
+  for (const id of Object.keys(CARD_HINTS)) {
+    assert.ok(
+      STEP_IDS.includes(id),
+      `CARD_HINTS 的 ${id} 不是真的 step id，那塊提示永遠不會出現`,
+    );
+  }
+  // 規則段那十一張是學生最沒有頭緒的一段（裝的東西他沒看過），一張都不能少。
+  for (const id of STEP_IDS.slice(0, 11)) {
+    const hint = CARD_HINTS[id];
+    assert.ok(hint !== undefined, `${id} 少了提示`);
+    assert.ok(hint.title.length > 0 && hint.lines.length >= 2, `${id} 的提示太空`);
+  }
+  ok("每張規則卡都有自己的提示，且 key 都對得回真的 step id");
 
   // 清單第一格該不該打勾——三種情況各錯過一次，所以三種都釘住。
   const okRow = { id: "x", label: "x", status: "ok", detail: "" };

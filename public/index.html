@@ -53,6 +53,9 @@
                   <circle cx="25" cy="12" r="7" fill="var(--duck-body)" />
                   <path d="M31 11 l7 2 -7 3 z" fill="var(--color-accent)" />
                   <circle cx="26" cy="11" r="1.5" fill="var(--color-text-strong)" />
+                  <!-- 翅膀：平常收在身體上看不太出來，飛的時候由 GSAP 繞著肩點拍動。
+                       畫在 body 之後才會蓋在上面。 -->
+                  <ellipse class="ds-wing" cx="14" cy="18" rx="7" ry="4.5" fill="var(--color-accent)" opacity="0.55" />
                 </g>
               </svg>
             </div>

@@ -84,12 +84,97 @@ export const PLAYWRIGHT_SHOT_AGENTS = {
   "ext-playwright-codex": "codex",
 };
 
+// 每張卡自己的提示塊。內容一律回答同一個問題：**這一步做完之後，會發生什麼你看得
+// 到的事**——不是重複卡片標題，也不是解釋設定檔格式。
+//
+// 為什麼要逐張寫：這些步驟裝的東西學生沒看過，光看「Shell 不串接 hook」四個字不知道
+// 那是什麼、更不知道驗證時該看哪裡。原本只有 codex-namer 一張有提示，其餘全靠那句
+// 罐頭說明「設定 X，讓這項功能能在接下來的課程中正常使用」——等於什麼都沒說。
 export const CARD_HINTS = {
+  "claude-md": {
+    title: "裝好之後，Claude 會多守這些規矩：",
+    lines: [
+      "回答一律結論先行、比較用表格、不灌水",
+      "這份規則放在 ~/.claude/CLAUDE.md，每次開 session 自動讀",
+      "已經有自己的版本？按「用 AI 合併」，不會蓋掉你寫的",
+    ],
+  },
+  "output-style": {
+    title: "這一步管的是「回話的長相」：",
+    lines: [
+      "CLAUDE.md 是規則，output style 是套用那套規則的開關",
+      "只裝 CLAUDE.md 不開 style，規則讀得到但不生效，而且不會報錯",
+      "驗證會問 Claude 一題，再拿它的回答逐條對規則",
+    ],
+  },
+  hook: {
+    title: "驗證時你會看到 Claude 被擋下來：",
+    lines: [
+      "它會去跑 echo a && echo b 這種串接指令",
+      "畫面應該出現「一次只跑一個指令」，第二個指令不會執行",
+      "擋下來才是對的——這個 hook 的工作就是擋",
+    ],
+  },
+  allowlist: {
+    title: "這一步是讓你少按幾百次「同意」：",
+    lines: [
+      "常用指令（ls、git status…）先寫進白名單，Claude 跑它們不用問你",
+      "同時把預設模式設成 acceptEdits：工作區內改檔案也不逐次問",
+      "工作區外、動網路的操作仍然會停下來問——那條線不動",
+    ],
+  },
+  "codex-config": {
+    title: "Codex 的設定檔，兩件事：",
+    lines: [
+      "personality / instructions：讓它照 AGENTS.md 的規矩回話",
+      "sandbox_mode = workspace-write：工作區內改檔案不逐次問",
+      "已經有自己的 config.toml？只會補上缺的那幾行，其餘一個字不動",
+    ],
+  },
+  "codex-agents": {
+    title: "AGENTS.md 之於 Codex，就是 CLAUDE.md 之於 Claude：",
+    lines: [
+      "同一套回話規則，換一個工具讀",
+      "放在 ~/.codex/AGENTS.md",
+      "已經有自己的版本一樣走合併，不會被蓋掉",
+    ],
+  },
+  "tab-sync": {
+    title: "裝好之後，終端分頁會自己改名字：",
+    lines: [
+      "驗證會開一個新視窗，標題應該變成「🔍 標題同步測試」，五秒後還原",
+      "這一步要排在其他 hook 前面——後面幾張都靠它才看得到標題變化",
+      "沒看到標題變？那是 watcher 沒掛上，不是命名 hook 壞了",
+    ],
+  },
+  "claude-namer": {
+    title: "之後每個 session 會自己取名字：",
+    lines: [
+      "你講第一句話之後，分頁標題會變成「{emoji} 中文敘述」",
+      "emoji 只從規定的 8 個裡選（🏗️🔧🐛📐📋💬⛴️🔍）",
+      "程式驗得到「名字有沒有產生」，但「標題有沒有變」只有你看得到",
+    ],
+  },
+  "claude-monitor": {
+    title: "這個 hook 會在你快用完 context 時提醒你：",
+    lines: [
+      "用到七成時跳一行「Context 已用 ~N tokens」",
+      "看到它就去寫交接文件，不要硬撐到滿",
+      "驗證會把上限假裝成很小的視窗，逼它現在就跳給你看",
+    ],
+  },
   "codex-namer": {
     title: "第一次跑 codex 會問這兩題，照這樣選：",
     lines: [
       "Allow this hook to run? → Yes（不接受的話整組 hook 都不會跑）",
       "Select sandbox mode?   → default（課堂用預設就好）",
+    ],
+  },
+  "codex-monitor": {
+    title: "跟 Claude 那邊同一件事，換 Codex 讀：",
+    lines: [
+      "context 快用完時提醒你去寫交接文件",
+      "這一格只驗檔案與註冊——hook 跑不跑得起來，命名那格已經驗過了",
     ],
   },
 };

@@ -183,21 +183,56 @@ export function flyDuckToNextSection() {
   const width = elements.milestoneBar?.getBoundingClientRect().width ?? 640;
   const away = width + 120;
 
+  const body = duck.querySelector(".ds-bodyg");
+  const wing = duck.querySelector(".ds-wing");
+  const legs = duck.querySelector(".ds-legs");
+
   return new Promise((resolve) => {
-    motion.killTweensOf(duck);
+    motion.killTweensOf([duck, body, wing, legs]);
+
+    // 拍翅膀是獨立的一條無限迴圈，不放進主時間軸——它的節奏跟位移無關，而且要能
+    // 在落地時單獨停掉。繞著靠近身體那一側轉，才像翅膀而不像螺旋槳。
+    const flap = motion.to(wing, {
+      rotation: -55,
+      scaleY: 0.55,
+      duration: 0.11,
+      repeat: -1,
+      yoyo: true,
+      ease: "sine.inOut",
+      transformOrigin: "22px 18px",
+      svgOrigin: "22 18",
+    });
+
     motion
       .timeline({
         onComplete: () => {
-          motion.set(duck, { clearProps: "transform" });
+          flap.kill();
+          motion.set([duck, body, wing, legs], { clearProps: "all" });
           resolve();
         },
       })
-      // 起飛前先蹲一下：沒有這個預備動作，飛出去會很突兀。
-      .to(duck, { x: -12, y: 4, duration: 0.12, ease: "power1.in" })
-      .to(duck, { x: away, y: -28, duration: 0.5, ease: "power2.in" })
-      // 瞬間移到左邊畫面外，再飛進來。中間不留空白會顯得沒有「換一條線」的間隔。
-      .set(duck, { x: -away, y: -28 })
-      .to(duck, { x: 0, y: 0, duration: 0.55, ease: "power2.out" }, "+=0.1");
+      // 起飛前蹲一下。沒有這個預備動作，飛出去會像被彈走而不是自己飛。
+      .to(duck, { x: -14, y: 6, duration: 0.18, ease: "power1.in" })
+      .to(legs, { y: 4, scaleY: 0.5, duration: 0.18, ease: "power1.in" }, "<")
+      // 往右上：先仰角爬升，再拉平衝出畫面。分兩段才有「爬升→巡航」的層次，
+      // 一段到底看起來就只是平移。
+      .to(body, { rotation: -18, duration: 0.3, ease: "power2.out" })
+      .to(duck, { x: away * 0.42, y: -90, duration: 0.75, ease: "power1.out" }, "<")
+      .to(duck, { x: away, y: -130, duration: 0.55, ease: "power2.in" })
+      .to(body, { rotation: -8, duration: 0.55, ease: "none" }, "<")
+      // 從左邊畫面外、比目標高一點的位置進來，再滑降到第一站——降下來的那一段
+      // 才是「飛到定點」的感覺，直線平移沒有。
+      .set(duck, { x: -away, y: -110 })
+      .set(body, { rotation: -10 })
+      .to(duck, { x: -away * 0.35, y: -70, duration: 0.6, ease: "power1.out" }, "+=0.12")
+      .to(duck, { x: 0, y: 0, duration: 0.85, ease: "power2.out" })
+      .to(body, { rotation: 0, duration: 0.5, ease: "power2.out" }, "-=0.5")
+      // 落地：翅膀停、腿放下、身體吸震壓一下再彈回來。
+      .add(() => flap.kill())
+      .to(wing, { rotation: 0, scaleY: 1, duration: 0.18, ease: "power2.out" })
+      .to(legs, { y: 0, scaleY: 1, duration: 0.18, ease: "back.out(2)" }, "<")
+      .to(duck, { y: 3, duration: 0.09, ease: "power2.in" }, "<")
+      .to(duck, { y: 0, duration: 0.28, ease: "elastic.out(1, 0.45)" });
   });
 }
 
@@ -549,10 +584,12 @@ function renderCard(model) {
   }
 }
 
-// 位移只有 24px：卡片很高，大幅度位移容易拖幀，而且看得出「換了一張」不需要走那麼
-// 遠。250ms 是「看得到但不用等」的區間。
+// 450ms、位移 40px。原本 250 / 24 太快，快到只看得到閃一下、看不出是「滑進來」。
 //
-// 連按「下一張」時前一段動畫還沒跑完就會被下一次蓋掉——gsap.killTweensOf 先收掉舊的，
+// 上限抓在這裡：這是學生一天要看幾十次的動作，再慢就變成在等它。位移也不能再大
+// ——卡片很高，大幅度位移容易拖幀。
+//
+// 連按「下一張」時前一段動畫還沒跑完就會被下一次蓋掉——killTweensOf 先收掉舊的，
 // 不然兩段 tween 會搶同一個 transform，卡片會抖。
 function playCardEnter(article) {
   if (motion === null || reducedMotion.matches) {
@@ -562,8 +599,8 @@ function playCardEnter(article) {
   motion.killTweensOf(article);
   motion.fromTo(
     article,
-    { opacity: 0, x: 24 },
-    { opacity: 1, x: 0, duration: 0.25, ease: "power2.out", clearProps: "transform" },
+    { opacity: 0, x: 40 },
+    { opacity: 1, x: 0, duration: 0.45, ease: "power2.out", clearProps: "transform" },
   );
 }
 
