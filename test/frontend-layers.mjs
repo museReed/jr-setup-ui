@@ -143,6 +143,15 @@ try {
   }
   ok("勾選、貼上、換卡都會在終端留一句話");
 
+  // 開視窗的按鈕搬進清單、掛在它負責的那一步旁邊。留在 paste-proof 裡的話學生
+  // 仍然要自己配對哪顆帶他做哪一格。
+  const cardStyles = read("styles.css");
+  assert(!files.view.includes("paste-proof-actions"));
+  assert(files.view.includes("checklist-step"));
+  assert(!cardStyles.includes(".paste-proof-actions"));
+  assert.match(cardStyles, /^\.checklist-step \{/m);
+  ok("開視窗的按鈕掛在清單裡它負責的那一步旁邊");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

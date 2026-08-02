@@ -233,26 +233,12 @@ function actionButton(spec, onActionClick) {
 // 不顯示那句要貼進終端的話：按鈕已經會把它送進去了，印出來只是多一份要學生自己
 // 一字不差複製的東西——而那正是按鈕要取代的手動步驟。字串本身仍然由
 // test/fullscreen-proof.mjs 釘住，確保按鈕送的跟要比對的一致。
-function pasteProofElement({ value, matched, onInput, onOpen }) {
+function pasteProofElement({ value, matched, onInput }) {
   const wrap = document.createElement("div");
   wrap.className = "paste-proof";
 
-  // 兩顆都只是「幫學生把終端開起來」——方框沒辦法代按，但至少不用叫學生自己去找
-  // 終端、自己打 claude。第一顆開空的讓方框跳出來，第二顆連那句話一起送進去。
-  const openRow = document.createElement("div");
-  openRow.className = "paste-proof-actions";
-  for (const [testCase, label] of [
-    ["fullscreen-open", "開啟 Claude Code（讓方框跳出來）"],
-    ["fullscreen-proof", "開啟並自動送出這句話"],
-  ]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ds-btn ds-btn-secondary ds-btn-sm";
-    button.textContent = label;
-    button.addEventListener("click", () => onOpen(testCase));
-    openRow.append(button);
-  }
-
+  // 開視窗的按鈕不在這裡：它掛在清單裡它負責的那一步旁邊（見 checklistElement）。
+  // 原本兩顆都擠在欄位上方，學生要自己猜哪顆帶他做哪一格。
   const field = document.createElement("input");
   field.type = "text";
   field.className = "ds-input paste-proof-input";
@@ -270,11 +256,15 @@ function pasteProofElement({ value, matched, onInput, onOpen }) {
       ? ""
       : "跟代碼對不起來，再圈選一次整行試試。";
 
-  wrap.append(openRow, field, status);
+  wrap.append(field, status);
   return wrap;
 }
 
-function checklistElement(groups, onManualToggle) {
+function checklistElement(
+  groups,
+  onManualToggle,
+  { manualSteps = [], pasteProof = null, onOpen = () => {} } = {},
+) {
   const items = [...groups.system, ...groups.manual];
   const checked = items.filter((item) => item.checked).length;
   const checklist = document.createElement("section");
@@ -293,8 +283,8 @@ function checklistElement(groups, onManualToggle) {
   head.append(count);
   checklist.append(head);
 
-  for (const group of [groups.system, groups.manual]) {
-    for (const item of group) {
+  const appendItems = (list) => {
+    for (const item of list) {
       const label = document.createElement("label");
       label.className = "ds-check";
       label.classList.add(item.automatic ? "is-system" : "is-manual");
@@ -325,6 +315,40 @@ function checklistElement(groups, onManualToggle) {
 
       label.append(input, checkMark(), text);
       checklist.append(label);
+    }
+  };
+
+  appendItems(groups.system);
+
+  // 人工項目照步驟分組：一步一個標題 + 一顆把視窗開起來的按鈕。原本按鈕全擠在
+  // 清單下面，學生要自己猜哪顆帶他做哪一格。
+  for (const step of manualSteps) {
+    if (step.title !== null) {
+      const head = document.createElement("div");
+      head.className = "checklist-step";
+      const title = document.createElement("span");
+      title.className = "checklist-step-title";
+      title.textContent = step.title;
+      head.append(title);
+
+      if (step.action !== null) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ds-btn ds-btn-secondary ds-btn-sm";
+        button.textContent = step.buttonText;
+        button.addEventListener("click", () => onOpen(step.action));
+        head.append(button);
+      }
+
+      checklist.append(head);
+    }
+
+    appendItems(step.items);
+
+    // 貼上欄位就放在它證明的那一格底下——放在清單外面的話，學生貼完不會馬上看到
+    // 那一格被打勾。
+    if (pasteProof !== null && step.id === "fullscreen-proof") {
+      checklist.append(pasteProofElement(pasteProof));
     }
   }
 
@@ -415,7 +439,13 @@ function renderCard(model) {
     // 執行結果不另外開一塊——它掛在自查清單每一項底下（見 checklistGroups），
     // 同一個檢查的名稱與結果放在一起，讀的人不用自己配對。
     if (model.showChecklist) {
-      body.append(checklistElement(model.checklist, model.onManualToggle));
+      body.append(
+        checklistElement(model.checklist, model.onManualToggle, {
+          manualSteps: model.manualSteps ?? [],
+          pasteProof: model.pasteProof ?? null,
+          onOpen: model.onOpenStep ?? (() => {}),
+        }),
+      );
     }
     // 驗證留下的截圖直接貼在卡片上。這一格的證據就是那個檔案，看得到那片圖牆，
     // 「真的有一顆瀏覽器被開起來」才不只是一句話。
@@ -445,7 +475,16 @@ function renderCard(model) {
       hints.append(title, block);
       body.append(hints);
     }
-    if (model.pasteProof !== null && model.pasteProof !== undefined) {
+    // 貼上欄位已經被畫在清單裡它證明的那一格底下時，這裡就不再畫一次。
+    const pasteInChecklist =
+      model.showChecklist === true &&
+      (model.manualSteps ?? []).some((step) => step.id === "fullscreen-proof");
+
+    if (
+      !pasteInChecklist &&
+      model.pasteProof !== null &&
+      model.pasteProof !== undefined
+    ) {
       body.append(pasteProofElement(model.pasteProof));
     }
     const actions = document.createElement("div");

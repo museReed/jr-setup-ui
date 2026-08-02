@@ -41,6 +41,7 @@ import {
   loaderModifier,
   loginCardModel,
   loginWaitStep,
+  manualStepGroups,
   rowRunOptions,
   runControlsState,
   runOutcome,
@@ -420,6 +421,13 @@ function renderWizard() {
     status,
     login,
     checklist: groups,
+    // 人工項目照步驟分組，每一步配一顆把視窗開起來的按鈕。
+    manualSteps: manualStepGroups(groups.manual),
+    onOpenStep: (action) =>
+      run("verify-in-terminal", undefined, undefined, {
+        case: action,
+        agent: "claude",
+      }),
     showChecklist: card.kind !== "setup",
     hints: CARD_HINTS[card.checkId] ?? null,
     // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
@@ -435,11 +443,6 @@ function renderWizard() {
             value: state.pasteProofValue,
             matched: matchesFullscreenProof(state.pasteProofValue),
             onInput: (value) => cardModel.onPasteProofInput(value),
-            onOpen: (testCase) =>
-              run("verify-in-terminal", undefined, undefined, {
-                case: testCase,
-                agent: "claude",
-              }),
           }
         : null,
     showRetest: card.kind === "env" || row?.showRetest === true,

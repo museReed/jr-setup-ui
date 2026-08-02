@@ -54,19 +54,39 @@ export function matchesFullscreenProof(pasted) {
   return typeof pasted === "string" && pasted.trim() === FULLSCREEN_PROOF;
 }
 
+// 三格其實是兩步：前兩件在同一個視窗裡做完，第三件要另一個視窗（終端裡得先有
+// 一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生要自己
+// 配對哪顆按鈕帶他做哪一格（Reed 實測）。stepId 把它們綁回去。
+export const MANUAL_STEPS = {
+  "fullscreen-open": {
+    title: "第一步：開一個視窗，把這兩件做完",
+    action: "fullscreen-open",
+    buttonText: "開啟 Claude Code",
+  },
+  "fullscreen-proof": {
+    title: "第二步：再開一個，圈選代碼貼回來",
+    action: "fullscreen-proof",
+    buttonText: "開啟並送出測試句",
+  },
+};
+
 export const FULLSCREEN_ITEMS = [
   {
     id: "fullscreen-yes",
+    stepId: "fullscreen-open",
     title: "跳出方框時按 1. Yes, try it",
     detail: "畫面會整個重畫一次，方框消失",
   },
   {
     id: "fullscreen-mouse",
+    stepId: "fullscreen-open",
     title: "打一句話，用滑鼠點那句話中間",
-    detail: "游標會跳到你點的位置，不用按左右鍵移過去",
+    // 同一個視窗，不用再開一個——沒講的話學生會以為每一格都要按一次按鈕。
+    detail: "就在剛才那個視窗裡；游標會跳到你點的位置，不用按左右鍵移過去",
   },
   {
     id: "fullscreen-copy",
+    stepId: "fullscreen-proof",
     title: "圈選代碼那一行，貼進下面的欄位",
     detail: "放開滑鼠就複製好了，不要按 Ctrl+C——在這個模式下它是中斷執行",
   },

@@ -28,6 +28,7 @@ import {
   loaderLabel,
   loginCardModel,
   loginWaitStep,
+  manualStepGroups,
   milestoneModels,
   nextCardUnlocked,
   rowRunOptions,
@@ -751,6 +752,40 @@ try {
   });
   assert.doesNotMatch(ranAlready.system[0].detail, /還沒實際跑跑看/);
   ok("還沒跑過驗證的那一格會說自己在等什麼");
+
+  // 全螢幕那三格其實是兩步：前兩件在同一個視窗做完，第三件要另一個視窗（終端裡
+  // 得先有一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生
+  // 要自己配對（Reed 實測）。
+  const fullscreenSteps = manualStepGroups(
+    sectionManualItems("env", 0, 3, "claude", "claude"),
+  );
+  assert.deepEqual(
+    fullscreenSteps.map(({ id, buttonText, items }) => ({
+      id,
+      buttonText,
+      ids: items.map((item) => item.id),
+    })),
+    [
+      {
+        id: "fullscreen-open",
+        buttonText: "開啟 Claude Code",
+        ids: ["fullscreen-yes", "fullscreen-mouse"],
+      },
+      {
+        id: "fullscreen-proof",
+        buttonText: "開啟並送出測試句",
+        ids: ["fullscreen-copy"],
+      },
+    ],
+  );
+  ok("全螢幕三格照兩步分組，每一步配自己的按鈕");
+
+  // 沒有 stepId 的人工項目（段落閘門那種）不長出標題，照原樣排成一組。
+  const plain = manualStepGroups([{ id: "a", text: "隨便一格" }]);
+  assert.equal(plain.length, 1);
+  assert.equal(plain[0].title, null);
+  assert.equal(plain[0].action, null);
+  ok("沒有分步的人工項目不會被硬塞一個標題");
 
   // 檔案已經是學生自己的版本時，安裝刻意不覆蓋，腳本什麼都沒做就 exit 0。
   // 照著 exit code 印「安裝成功，已完成」是騙人的——列上還寫著「需要合併」。

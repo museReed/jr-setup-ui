@@ -348,6 +348,27 @@ body {
   width: 100%;
 }
 
+/* 人工項目的步驟標題：一步一列，標題在左、把視窗開起來的按鈕在右。清單本身是
+   暗底的，所以這一列用終端那組顏色，不是卡片的。 */
+.checklist-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.checklist-step-title {
+  color: var(--term-ink-dim);
+  font-size: var(--fs-sm);
+}
+
+/* 貼上欄位畫在清單裡面時，要跟項目對齊，不要貼著暗底的邊緣。 */
+.ds-checklist .paste-proof {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .verify-shot {
   margin: 0;
   display: flex;
@@ -382,12 +403,6 @@ body {
 .card-hints-block {
   white-space: pre;
   overflow-x: auto;
-}
-
-.paste-proof-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .paste-proof-hint {

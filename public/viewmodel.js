@@ -1,7 +1,13 @@
 // ViewModel：畫面「該長什麼樣」的所有判斷都在這裡。
 // 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
 // View 只負責把這裡算出來的結果畫出去。
-import { CARD_GATES, GUIDANCE, SECTION_GATES, SECTIONS } from "./model.js";
+import {
+  CARD_GATES,
+  GUIDANCE,
+  MANUAL_STEPS,
+  SECTION_GATES,
+  SECTIONS,
+} from "./model.js";
 
 export const LOGIN_CHECK_IDS = {
   "login-claude": "claude-auth",
@@ -462,7 +468,13 @@ export function sectionManualItems(
   const usable = (gates) =>
     gates
       .filter((gate) => gate.codexOnly !== true || codexSelected)
-      .map((gate) => ({ id: gate.id, text: gate.title, detail: gate.detail }));
+      .map((gate) => ({
+        id: gate.id,
+        text: gate.title,
+        detail: gate.detail,
+        // 這一格屬於哪一步。沒有 stepId 的（段落閘門那種）就不分步。
+        stepId: gate.stepId ?? null,
+      }));
 
   // 掛在這張卡上的關卡：在真正需要它的那一張就提醒，不是等走完整段。
   const cardGates = usable(CARD_GATES[cardId] ?? []);
@@ -479,6 +491,34 @@ export function sectionManualItems(
   }
 
   return [...cardGates, ...usable(SECTION_GATES[nextSection.id] ?? [])];
+}
+
+// 人工項目照「步驟」分組：同一步的項目在同一個視窗裡做完，那一步配一顆把視窗開
+// 起來的按鈕。沒有 stepId 的項目照原樣排在最後，不長出標題。
+export function manualStepGroups(items, steps = MANUAL_STEPS) {
+  const groups = [];
+  const byStep = new Map();
+
+  for (const item of items) {
+    const step = item.stepId == null ? null : steps[item.stepId];
+    const key = step === undefined || step === null ? null : item.stepId;
+
+    if (!byStep.has(key)) {
+      const group = {
+        id: key,
+        title: step?.title ?? null,
+        action: step?.action ?? null,
+        buttonText: step?.buttonText ?? null,
+        items: [],
+      };
+      byStep.set(key, group);
+      groups.push(group);
+    }
+
+    byStep.get(key).items.push(item);
+  }
+
+  return groups;
 }
 
 export function toggleToolSelection(selectedTools, tool) {
