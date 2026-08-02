@@ -152,6 +152,26 @@ try {
   assert.match(cardStyles, /^\.checklist-step \{/m);
   ok("開視窗的按鈕掛在清單裡它負責的那一步旁邊");
 
+  // 每張卡各有一份終端內容。共用一份的話，換一張卡就看到上一張的驗證訊息——
+  // 那些話講的是別的東西，留著只會讓學生以為現在這張已經跑過了。
+  for (const name of ["showTranscript", "pinTranscript", "unpinTranscript"]) {
+    assert(
+      files.view.includes(`export function ${name}`),
+      `view 要有 ${name}——終端內容分張存`,
+    );
+    assert(files.app.includes(`view.${name}(`), `app 要呼叫 ${name}`);
+  }
+  // 換卡時先切終端再講話，不然「現在這張」會落在上一張的那一份裡。
+  assert.match(
+    files.app,
+    /view\.showTranscript\(card\.checkId\);\s*\n\s*view\.addLine\(`現在這張/,
+  );
+  // 跑一輪只換掉原始輸出。連白話那幾行一起清的話，翻回這張卡就看不到當時的紀錄，
+  // 而且按「重跑驗證」時剛印的那句話會被自己的執行清掉。
+  assert(files.app.includes("view.clearRawOutput()"));
+  assert(!files.view.includes("export function clearOutput"));
+  ok("終端內容分張存，跑一輪只換掉原始輸出");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

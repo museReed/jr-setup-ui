@@ -282,6 +282,8 @@ function renderWizard() {
   // 那張卡的時候講——不然同一句話會洗滿整個終端。
   if (state.announcedCardId !== card.checkId) {
     state.announcedCardId = card.checkId;
+    // 每張卡各有一份終端內容：切過去先換成它自己那份，翻回來時原樣還在。
+    view.showTranscript(card.checkId);
     view.addLine(`現在這張：${card.label}`, "agent-status");
   }
 
@@ -703,6 +705,8 @@ function setRunning(running) {
 }
 
 function resetRun({ keepLoader = false } = {}) {
+  // 跑完就鬆開：接下來的輸出（環境重掃、勾選）屬於學生現在看的那張卡。
+  view.unpinTranscript();
   state.runId = null;
   state.acceptsInput = false;
   state.activeEnvButton = null;
@@ -1100,7 +1104,13 @@ async function run(action, promptText, button = null, options) {
     stopLoginWait();
   }
 
-  view.clearOutput();
+  // 這一輪的輸出屬於發動它的那張卡。釘住之後，學生跑到一半翻去看別張，結果仍然
+  // 記在原來那張上，不會印進他正在看的那一份。
+  if (state.announcedCardId !== null) {
+    view.pinTranscript(state.announcedCardId);
+  }
+
+  view.clearRawOutput();
   view.clearLoginHints();
   state.activeEnvButton = envButton;
   state.activeRunButton = button;

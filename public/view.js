@@ -701,20 +701,79 @@ for (const modifier of Object.keys(loaderLabels)) {
   elements.rowLoaderPool.append(loader);
   loaders.set(modifier, loader);
 }
-let terminalLineModels = [...elements.terminalLines.children].map((line) => ({
-  className: line.className,
-  text: line.textContent,
-}));
+// 每張卡各有一份終端內容。原本全站共用一份，於是換一張卡就看到上一張的驗證訊息
+// ——那些話講的是別的東西，留在畫面上只會讓學生以為現在這張已經跑過了。翻回上一張
+// 時也要看得到當時那一份，不然「剛才那句錯誤訊息寫什麼」就再也查不到了。
+const transcripts = new Map();
+const rawOutputs = new Map();
+const INITIAL_TRANSCRIPT = "__opening__";
+let activeTranscriptId = INITIAL_TRANSCRIPT;
 
+// 跑起來之後就釘住：驗證跑到一半學生翻回上一張卡，結果仍然要記在發動它的那張卡
+// 上，不能印到他現在正在看的這張。
+let pinnedTranscriptId = null;
+
+transcripts.set(
+  INITIAL_TRANSCRIPT,
+  [...elements.terminalLines.children].map((line) => ({
+    className: line.className,
+    text: line.textContent,
+  })),
+);
+
+function linesOf(id) {
+  if (!transcripts.has(id)) {
+    transcripts.set(id, []);
+  }
+
+  return transcripts.get(id);
+}
+
+function writeTargetId() {
+  return pinnedTranscriptId ?? activeTranscriptId;
+}
+
+// 收下這一行嗎？收下的話還要回答「現在看得到嗎」——寫進別張卡的那一份時只存不畫。
 function acceptsTerminalLine(spec) {
-  const next = appendTermLine(terminalLineModels, spec);
+  const id = writeTargetId();
+  const lines = linesOf(id);
+  const next = appendTermLine(lines, spec);
 
-  if (next === terminalLineModels) {
+  if (next === lines) {
     return false;
   }
 
-  terminalLineModels = next;
-  return true;
+  transcripts.set(id, next);
+  return id === activeTranscriptId;
+}
+
+function paintTranscript(id) {
+  elements.terminalLines.replaceChildren();
+
+  for (const spec of linesOf(id)) {
+    const line = document.createElement("div");
+    line.className = spec.className;
+    line.textContent = spec.text;
+    elements.terminalLines.append(line);
+  }
+
+  elements.output.textContent = rawOutputs.get(id) ?? "";
+}
+
+// 切到某一張卡的終端。沒看過的卡從空的開始——開場白那份留在它自己的位置上。
+export function showTranscript(id) {
+  if (id === activeTranscriptId) return;
+  hideLoaders();
+  activeTranscriptId = id;
+  paintTranscript(id);
+}
+
+export function pinTranscript(id) {
+  pinnedTranscriptId = id;
+}
+
+export function unpinTranscript() {
+  pinnedTranscriptId = null;
 }
 
 export function hideLoaders() {
@@ -762,14 +821,24 @@ export function renderLoaders({ modifier, paused = false, label = null }) {
   elements.terminalLines.append(line);
 }
 
-export function clearOutput() {
-  elements.output.textContent = "";
-  elements.terminalLines.replaceChildren();
-  terminalLineModels = [];
+// 每跑一輪就把原始輸出換掉——它是這一次執行的逐字稿，留著上一次的只會分不清哪段
+// 是剛才那次。白話那幾行不清：那是這張卡的紀錄，學生翻回來要看得到當時發生什麼事。
+export function clearRawOutput() {
+  const id = writeTargetId();
+  rawOutputs.set(id, "");
+
+  if (id === activeTranscriptId) {
+    elements.output.textContent = "";
+  }
 }
 
 export function addRawLine(text) {
-  elements.output.textContent += `${text}\n`;
+  const id = writeTargetId();
+  rawOutputs.set(id, `${rawOutputs.get(id) ?? ""}${text}\n`);
+
+  if (id === activeTranscriptId) {
+    elements.output.textContent += `${text}\n`;
+  }
 }
 
 export function addLine(text, className = "") {
