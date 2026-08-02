@@ -222,6 +222,17 @@ try {
   );
   ok("每次重畫卡片都跟著重算分頁的鎖");
 
+  // 合併的卡有兩份設定：裝完第一份要接著裝第二份，兩份都好了才輪到驗證。順序反了
+  // 的話，驗的是只裝了一半的狀態。
+  assert.match(
+    files.app,
+    /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n\s*if \(followUp === "auto"\)/,
+  );
+  // 安裝按鈕對著還沒好的那一份，驗證仍然掛在主 check 上。
+  assert(files.app.includes("runConfigCheckAction(rowCheck, action, button, extra)"));
+  assert.match(files.app, /configRowModel\(rowCheck,/);
+  ok("合併卡先把兩份都裝完才驗證，按鈕對著還沒好的那一份");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
@@ -244,19 +255,18 @@ try {
 
   // 小鴨抵達時自己跳出來的那張預覽三秒後自己收掉：它是報喜用的，不是要學生讀完
   // 的東西，留著會蓋住下一張卡的標題。滑鼠移上去就取消倒數——那代表學生在讀。
+  assert.match(files.view, /closePreviewAt = Date\.now\(\) \+ 3000/);
+  assert.match(files.view, /pin\(point, key\);\s*\n\s*autoUnpin\(point\);/);
+  assert(files.view.includes('preview.addEventListener("mouseenter", keepPreviewOpen)'));
+  // 記的是「收掉的時刻」而不是「還剩幾秒」：renderWizard 跑得很勤，每次重畫都會
+  // 清掉計時器再重新釘住——只記剩餘秒數的話那三秒永遠重新開始，預覽再也不會關
+  //（VM 實測：驗證中的卡片，預覽一直掛著）。
+  assert.match(files.view, /const left = closePreviewAt - Date\.now\(\)/);
   assert.match(
     files.view,
-    /autoUnpinTimer = window\.setTimeout\(\(\) => unpin\(point\), 3000\)/,
+    /pin\(point, nextKey\);\s*\n\s*scheduleUnpin\(point\);/,
   );
-  assert.match(
-    files.view,
-    /pin\(point, key\);\s*\n\s*autoUnpin\(point\);/,
-  );
-  assert.match(
-    files.view,
-    /"mouseenter",\s*\n\s*\(\) => window\.clearTimeout\(autoUnpinTimer\)/,
-  );
-  ok("抵達時跳出的預覽三秒後自己收掉，滑上去就不收");
+  ok("抵達時跳出的預覽三秒後自己收掉，重畫也不會把倒數洗掉");
 
   // 翻頁按鈕釘在畫面兩側，不在卡片裡：每張卡高度不同，放在卡片裡按鈕就會上下跳，
   // 學生每翻一張都要重新找它在哪。
@@ -308,6 +318,35 @@ try {
   assert(!index.includes("ds-term-title"));
   assert.match(index, /class="ds-term-chrome"/);
   ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
+
+  // .ds-term--typing 這個 component 唯一看得出來的地方就是那顆閃爍游標。我們一直
+  // 掛著那個 class 卻從來沒把游標畫出來，右邊那個終端看起來像截圖不像活的視窗。
+  assert.match(index, /class="ds-term ds-term--typing/);
+  assert(files.view.includes('cursor.className = "ds-term-cursor"'));
+  // 掛著轉圈圈的那一行不放游標——兩個東西同時在動只是雜訊。
+  assert.match(files.view, /last\.querySelector\("\.ds-loader-orbs"\) !== null/);
+  ok("會動的終端補上 .ds-term-cursor，轉圈圈那一行讓位");
+
+  // 新的一行逐字打出來。三條規矩都是為了「動畫不能拖慢真的進度」：排隊超過三行
+  // 就整批印完（驗證一次會噴很多行）、系統設了減少動態就不演、翻回舊卡片的紀錄
+  // 直接印（那是歷史，不是正在發生的事）。
+  assert(files.view.includes("typeInto(line, spec.text)"));
+  assert.match(files.view, /if \(typingQueue\.length > 3\) \{\s*\n\s*flushTyping\(\);/);
+  assert.match(
+    files.view,
+    /function typeInto\([^)]*\) \{\s*\n\s*if \(reducedMotion\.matches\)/,
+  );
+  assert.match(
+    files.view,
+    /function paintTranscript\([^)]*\) \{\s*\n(\s*\/\/[^\n]*\n)*\s*flushTyping\(\);/,
+  );
+  ok("終端逐字打字，但排太多、關動畫、翻舊紀錄時直接印完");
+
+  // 卡片裡「照原樣印給你對照」的那幾行也畫成終端，不再是一個裸的 <code>。
+  assert(files.view.includes('term.className = "ds-term card-hints-term"'));
+  assert(!files.view.includes("card-hints-block"));
+  assert.match(cardStyles, /^\.card-hints-term \.ds-term-line \{/m);
+  ok("卡片裡的提示區塊改用設計系統的靜態終端");
 
   // 設計系統的 .ds-btn 沒有 disabled 樣式，置灰得靠本 repo 的 .is-done。
   // 契約檔禁止覆寫既有 ds-* selector，所以選擇器裡不能出現 .ds-btn。

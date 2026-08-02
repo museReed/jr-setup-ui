@@ -101,14 +101,39 @@ function pin(point, key) {
 //
 // 它是報喜用的，不是要學生讀完的東西——留著會蓋住下一張卡的標題（VM 實測）。
 // 滑鼠移上去就取消倒數：那代表學生真的在讀，這時收掉最惹人厭。
-function autoUnpin(point) {
+//
+// 記的是「收掉的時刻」而不是「還剩幾秒」。renderWizard 跑得很勤（驗證時每一行輸出
+// 都會重畫），而每次重畫都會重建里程碑、清掉計時器再重新釘住——只記剩餘秒數的話，
+// 那三秒永遠重新開始，預覽就再也不會關（VM 實測：驗證中的卡片，預覽一直掛著）。
+let closePreviewAt = null;
+
+function scheduleUnpin(point) {
   window.clearTimeout(autoUnpinTimer);
-  autoUnpinTimer = window.setTimeout(() => unpin(point), 3000);
-  point.addEventListener(
-    "mouseenter",
-    () => window.clearTimeout(autoUnpinTimer),
-    { once: true },
-  );
+
+  if (closePreviewAt === null) return;
+
+  const left = closePreviewAt - Date.now();
+
+  if (left <= 0) {
+    closePreviewAt = null;
+    unpin(point);
+    return;
+  }
+
+  autoUnpinTimer = window.setTimeout(() => {
+    closePreviewAt = null;
+    unpin(point);
+  }, left);
+}
+
+function autoUnpin(point) {
+  closePreviewAt = Date.now() + 3000;
+  scheduleUnpin(point);
+}
+
+function keepPreviewOpen() {
+  closePreviewAt = null;
+  window.clearTimeout(autoUnpinTimer);
 }
 
 function finishArrival(point, station, key) {
@@ -152,7 +177,14 @@ function moveDuck(sectionId, station) {
 
   if (!moving) {
     elements.milestoneDuck.classList.remove("is-running", "is-arriving");
-    if (pinnedStation === nextKey) pin(point, nextKey);
+
+    // 重畫時把原本釘著的那張還原——連同它原本要收掉的時刻。上面剛清掉計時器，
+    // 這裡不重新排的話，這張預覽就再也不會關。
+    if (pinnedStation === nextKey) {
+      pin(point, nextKey);
+      scheduleUnpin(point);
+    }
+
     return;
   }
 
@@ -209,9 +241,12 @@ function renderMilestones(sectionId, milestones, onSelect) {
     point.append(preview);
     point.addEventListener("mouseenter", () => point.classList.add("is-active"));
     point.addEventListener("mouseleave", () => point.classList.remove("is-active"));
+    // 滑鼠移到預覽上就別再倒數了：那代表學生正在讀它。放開也不重新倒數——要收就
+    // 按 ×，或等小鴨移動到下一站。
+    preview.addEventListener("mouseenter", keepPreviewOpen);
     close.addEventListener("click", (event) => {
       event.stopPropagation();
-      window.clearTimeout(autoUnpinTimer);
+      keepPreviewOpen();
       unpin(point);
     });
     point.addEventListener("click", () => {
@@ -391,6 +426,36 @@ function checklistElement(
   return checklist;
 }
 
+// 卡片裡「照原樣印出來給你對照」的那幾塊，畫成設計系統的靜態終端（.ds-term）：
+// 跟右邊那個會動的終端同一套視覺，學生一眼看得出「這是終端裡會出現的字」。
+function staticTerminal(lines) {
+  const term = document.createElement("div");
+  term.className = "ds-term card-hints-term";
+  const chrome = document.createElement("div");
+  chrome.className = "ds-term-chrome";
+
+  for (const color of ["--red-4", "--amber-4", "--teal-4"]) {
+    const dot = document.createElement("span");
+    dot.className = "ds-term-dot";
+    dot.style.background = `var(${color})`;
+    dot.setAttribute("aria-hidden", "true");
+    chrome.append(dot);
+  }
+
+  const body = document.createElement("div");
+  body.className = "ds-term-body";
+
+  for (const text of lines) {
+    const line = document.createElement("div");
+    line.className = "ds-term-line";
+    line.textContent = text;
+    body.append(line);
+  }
+
+  term.append(chrome, body);
+  return term;
+}
+
 function loginControlsElement(model) {
   const hints = document.createElement("div");
   hints.id = "login-hints";
@@ -517,10 +582,9 @@ function renderCard(model) {
       const title = document.createElement("p");
       title.className = "paste-proof-hint";
       title.textContent = model.hints.title;
-      const block = document.createElement("code");
-      block.className = "paste-proof-command card-hints-block";
-      block.textContent = model.hints.lines.join("\n");
-      hints.append(title, block);
+      // 這一塊照原樣印終端裡會出現的字，所以就畫成一個終端。原本是一個裸的 <code>
+      //（淺底、跟卡片同色），學生要自己想像它在終端裡長什麼樣。
+      hints.append(title, staticTerminal(model.hints.lines));
       body.append(hints);
     }
     // 貼上欄位已經被畫在清單裡它證明的那一格底下時，這裡就不再畫一次。
@@ -894,7 +958,94 @@ function acceptsTerminalLine(spec) {
   return id === activeTranscriptId;
 }
 
+// 閃爍游標永遠待在最後一行的字尾。那是 .ds-term--typing 這個 component 唯一看得出來
+// 的地方——我們一直掛著那個 class，卻從來沒把游標畫出來，所以右邊那個終端看起來
+// 像一張截圖，不像一個活著的視窗。
+//
+// 掛著轉圈圈的那一行不放：那一行已經在講「正在跑」，再加一個游標只是兩個東西同時
+// 在動。
+function renderCursor() {
+  elements.terminal.querySelector(".ds-term-cursor")?.remove();
+  const last = elements.terminalLines.lastElementChild;
+
+  if (last === null || last.querySelector(".ds-loader-orbs") !== null) {
+    return;
+  }
+
+  const cursor = document.createElement("span");
+  cursor.className = "ds-term-cursor";
+  cursor.setAttribute("aria-hidden", "true");
+  last.append(cursor);
+}
+
+// 新的一行逐字打出來，像真的終端在跑。
+//
+// 三條規矩，都是為了「動畫不能拖慢真的進度」：
+//   排隊超過三行就整批直接印完——驗證一次會噴很多行，一行一行演會落後好幾秒
+//   系統設了「減少動態」就不演
+//   翻回舊卡片的紀錄不演（那是歷史，不是正在發生的事）
+const TYPING_STEP_MS = 16;
+const TYPING_CHARS_PER_STEP = 2;
+const typingQueue = [];
+let typingTimer = null;
+
+function stopTyping() {
+  window.clearInterval(typingTimer);
+  typingTimer = null;
+}
+
+function flushTyping() {
+  for (const job of typingQueue) {
+    job.line.textContent = job.text;
+  }
+
+  typingQueue.length = 0;
+  stopTyping();
+  renderCursor();
+}
+
+function startTyping() {
+  if (typingQueue.length > 3) {
+    flushTyping();
+    return;
+  }
+
+  if (typingTimer !== null) return;
+
+  typingTimer = window.setInterval(() => {
+    const job = typingQueue[0];
+
+    if (job === undefined) {
+      stopTyping();
+      renderCursor();
+      return;
+    }
+
+    job.at += TYPING_CHARS_PER_STEP;
+    job.line.textContent = job.text.slice(0, job.at);
+
+    if (job.at >= job.text.length) {
+      typingQueue.shift();
+      renderCursor();
+    }
+  }, TYPING_STEP_MS);
+}
+
+function typeInto(line, text) {
+  if (reducedMotion.matches) {
+    line.textContent = text;
+    renderCursor();
+    return;
+  }
+
+  line.textContent = "";
+  typingQueue.push({ line, text, at: 0 });
+  startTyping();
+}
+
 function paintTranscript(id) {
+  // 換卡片時把還在演的那幾行直接印完，不然它們會打在新那張卡的終端上。
+  flushTyping();
   elements.terminalLines.replaceChildren();
 
   for (const spec of linesOf(id)) {
@@ -904,6 +1055,7 @@ function paintTranscript(id) {
     elements.terminalLines.append(line);
   }
 
+  renderCursor();
   elements.output.textContent = rawOutputs.get(id) ?? "";
 }
 
@@ -966,6 +1118,8 @@ export function renderLoaders({ modifier, paused = false, label = null }) {
   loader.classList.toggle("is-paused", paused);
   line.append(loader);
   elements.terminalLines.append(line);
+  // 這一行掛著轉圈圈，游標要讓位——兩個東西同時在動只是雜訊。
+  renderCursor();
 }
 
 // 每跑一輪就把原始輸出換掉——它是這一次執行的逐字稿，留著上一次的只會分不清哪段
@@ -1002,8 +1156,8 @@ export function addLine(text, className = "") {
   if (!acceptsTerminalLine(spec)) return;
   const line = document.createElement("div");
   line.className = spec.className;
-  line.textContent = spec.text;
   elements.terminalLines.append(line);
+  typeInto(line, spec.text);
 }
 
 export function addTerminalLines(lines) {
@@ -1011,8 +1165,8 @@ export function addTerminalLines(lines) {
     if (!acceptsTerminalLine(spec)) continue;
     const line = document.createElement("div");
     line.className = spec.className;
-    line.textContent = spec.text;
     elements.terminalLines.append(line);
+    typeInto(line, spec.text);
   }
 }
 
