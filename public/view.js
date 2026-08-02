@@ -29,6 +29,8 @@ const elements = {
   milestoneFill: document.querySelector("#milestone-fill"),
   milestoneDuck: document.querySelector("#milestone-duck"),
   sectionLockMessage: document.querySelector("#section-lock-message"),
+  wizardPrev: document.querySelector("#wizard-prev"),
+  wizardNext: document.querySelector("#wizard-next"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
@@ -48,6 +50,7 @@ let milestoneBusy = false;
 let stationTimer = null;
 let arrivalTimer = null;
 let fireworkTimer = null;
+let autoUnpinTimer = null;
 
 function createLogo(logo) {
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -81,11 +84,31 @@ function unpinAll() {
   }
 }
 
+function unpin(point) {
+  point.querySelector(".ds-milestone-card").classList.remove("is-pinned");
+  point.setAttribute("aria-hidden", "true");
+  pinnedStation = null;
+}
+
 function pin(point, key) {
   point.querySelector(".ds-milestone-card").classList.add("is-pinned");
   point.removeAttribute("aria-hidden");
   pinnedStation = key;
   milestoneBusy = false;
+}
+
+// 小鴨抵達時自己跳出來的那張預覽，三秒後自己收掉。
+//
+// 它是報喜用的，不是要學生讀完的東西——留著會蓋住下一張卡的標題（VM 實測）。
+// 滑鼠移上去就取消倒數：那代表學生真的在讀，這時收掉最惹人厭。
+function autoUnpin(point) {
+  window.clearTimeout(autoUnpinTimer);
+  autoUnpinTimer = window.setTimeout(() => unpin(point), 3000);
+  point.addEventListener(
+    "mouseenter",
+    () => window.clearTimeout(autoUnpinTimer),
+    { once: true },
+  );
 }
 
 function finishArrival(point, station, key) {
@@ -102,6 +125,7 @@ function finishArrival(point, station, key) {
   fireworkTimer = window.setTimeout(() => {
     firework.remove();
     pin(point, key);
+    autoUnpin(point);
   }, 800);
 }
 
@@ -115,6 +139,7 @@ function moveDuck(sectionId, station) {
   window.clearTimeout(stationTimer);
   window.clearTimeout(arrivalTimer);
   window.clearTimeout(fireworkTimer);
+  window.clearTimeout(autoUnpinTimer);
   elements.milestoneBar.querySelector(".ds-firework")?.remove();
   elements.milestoneDuck.classList.toggle("left", station.index < previousIndex);
   elements.milestoneDuck.style.left = `${station.percent}%`;
@@ -136,6 +161,7 @@ function moveDuck(sectionId, station) {
   if (reducedMotion.matches) {
     elements.milestoneDuck.classList.remove("is-running", "is-arriving");
     pin(point, nextKey);
+    autoUnpin(point);
     return;
   }
 
@@ -185,9 +211,8 @@ function renderMilestones(sectionId, milestones, onSelect) {
     point.addEventListener("mouseleave", () => point.classList.remove("is-active"));
     close.addEventListener("click", (event) => {
       event.stopPropagation();
-      preview.classList.remove("is-pinned");
-      point.setAttribute("aria-hidden", "true");
-      pinnedStation = null;
+      window.clearTimeout(autoUnpinTimer);
+      unpin(point);
     });
     point.addEventListener("click", () => {
       if (!milestoneBusy && station.unlocked) onSelect(station.index);
@@ -210,7 +235,11 @@ function renderMilestones(sectionId, milestones, onSelect) {
 function actionButton(spec, onActionClick) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `ds-btn ds-btn-sm ${spec.className ?? "ds-btn-primary"}`;
+  // secondary：按得動、但不是這張卡的主要動作（例如已經裝好時的「重裝」）。
+  // 兩顆都橘色的話，學生分不出哪一顆才是現在該按的。
+  button.className = `ds-btn ds-btn-sm ${
+    spec.className ?? (spec.secondary === true ? "ds-btn-ghost" : "ds-btn-primary")
+  }`;
   button.dataset[spec.dataName] = spec.action;
   button.dataset.step = spec.step ?? "";
   button.dataset.idleText = spec.text;
@@ -229,26 +258,12 @@ function actionButton(spec, onActionClick) {
 // 不顯示那句要貼進終端的話：按鈕已經會把它送進去了，印出來只是多一份要學生自己
 // 一字不差複製的東西——而那正是按鈕要取代的手動步驟。字串本身仍然由
 // test/fullscreen-proof.mjs 釘住，確保按鈕送的跟要比對的一致。
-function pasteProofElement({ value, matched, onInput, onOpen }) {
+function pasteProofElement({ value, matched, onInput }) {
   const wrap = document.createElement("div");
   wrap.className = "paste-proof";
 
-  // 兩顆都只是「幫學生把終端開起來」——方框沒辦法代按，但至少不用叫學生自己去找
-  // 終端、自己打 claude。第一顆開空的讓方框跳出來，第二顆連那句話一起送進去。
-  const openRow = document.createElement("div");
-  openRow.className = "paste-proof-actions";
-  for (const [testCase, label] of [
-    ["fullscreen-open", "開啟 Claude Code（讓方框跳出來）"],
-    ["fullscreen-proof", "開啟並自動送出這句話"],
-  ]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ds-btn ds-btn-secondary ds-btn-sm";
-    button.textContent = label;
-    button.addEventListener("click", () => onOpen(testCase));
-    openRow.append(button);
-  }
-
+  // 開視窗的按鈕不在這裡：它掛在清單裡它負責的那一步旁邊（見 checklistElement）。
+  // 原本兩顆都擠在欄位上方，學生要自己猜哪顆帶他做哪一格。
   const field = document.createElement("input");
   field.type = "text";
   field.className = "ds-input paste-proof-input";
@@ -266,11 +281,15 @@ function pasteProofElement({ value, matched, onInput, onOpen }) {
       ? ""
       : "跟代碼對不起來，再圈選一次整行試試。";
 
-  wrap.append(openRow, field, status);
+  wrap.append(field, status);
   return wrap;
 }
 
-function checklistElement(groups, onManualToggle) {
+function checklistElement(
+  groups,
+  onManualToggle,
+  { manualSteps = [], pasteProof = null, onOpen = () => {} } = {},
+) {
   const items = [...groups.system, ...groups.manual];
   const checked = items.filter((item) => item.checked).length;
   const checklist = document.createElement("section");
@@ -289,8 +308,8 @@ function checklistElement(groups, onManualToggle) {
   head.append(count);
   checklist.append(head);
 
-  for (const group of [groups.system, groups.manual]) {
-    for (const item of group) {
+  const appendItems = (list) => {
+    for (const item of list) {
       const label = document.createElement("label");
       label.className = "ds-check";
       label.classList.add(item.automatic ? "is-system" : "is-manual");
@@ -321,6 +340,40 @@ function checklistElement(groups, onManualToggle) {
 
       label.append(input, checkMark(), text);
       checklist.append(label);
+    }
+  };
+
+  appendItems(groups.system);
+
+  // 人工項目照步驟分組：一步一個標題 + 一顆把視窗開起來的按鈕。原本按鈕全擠在
+  // 清單下面，學生要自己猜哪顆帶他做哪一格。
+  for (const step of manualSteps) {
+    if (step.title !== null) {
+      const head = document.createElement("div");
+      head.className = "checklist-step";
+      const title = document.createElement("span");
+      title.className = "checklist-step-title";
+      title.textContent = step.title;
+      head.append(title);
+
+      if (step.action !== null) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ds-btn ds-btn-secondary ds-btn-sm";
+        button.textContent = step.buttonText;
+        button.addEventListener("click", () => onOpen(step.action));
+        head.append(button);
+      }
+
+      checklist.append(head);
+    }
+
+    appendItems(step.items);
+
+    // 貼上欄位就放在它證明的那一格底下——放在清單外面的話，學生貼完不會馬上看到
+    // 那一格被打勾。
+    if (pasteProof !== null && step.id === "fullscreen-proof") {
+      checklist.append(pasteProofElement(pasteProof));
     }
   }
 
@@ -411,7 +464,13 @@ function renderCard(model) {
     // 執行結果不另外開一塊——它掛在自查清單每一項底下（見 checklistGroups），
     // 同一個檢查的名稱與結果放在一起，讀的人不用自己配對。
     if (model.showChecklist) {
-      body.append(checklistElement(model.checklist, model.onManualToggle));
+      body.append(
+        checklistElement(model.checklist, model.onManualToggle, {
+          manualSteps: model.manualSteps ?? [],
+          pasteProof: model.pasteProof ?? null,
+          onOpen: model.onOpenStep ?? (() => {}),
+        }),
+      );
     }
     // 驗證留下的截圖直接貼在卡片上。這一格的證據就是那個檔案，看得到那片圖牆，
     // 「真的有一顆瀏覽器被開起來」才不只是一句話。
@@ -441,7 +500,16 @@ function renderCard(model) {
       hints.append(title, block);
       body.append(hints);
     }
-    if (model.pasteProof !== null && model.pasteProof !== undefined) {
+    // 貼上欄位已經被畫在清單裡它證明的那一格底下時，這裡就不再畫一次。
+    const pasteInChecklist =
+      model.showChecklist === true &&
+      (model.manualSteps ?? []).some((step) => step.id === "fullscreen-proof");
+
+    if (
+      !pasteInChecklist &&
+      model.pasteProof !== null &&
+      model.pasteProof !== undefined
+    ) {
       body.append(pasteProofElement(model.pasteProof));
     }
     const actions = document.createElement("div");
@@ -455,8 +523,12 @@ function renderCard(model) {
     if (model.showRetest) {
       const retest = document.createElement("button");
       retest.type = "button";
-      retest.className = "ds-btn ds-btn-ghost ds-btn-sm";
-      retest.textContent = "再 check 一次";
+      // 裝好了、只差驗證的那張卡，主要動作就是這一顆——安裝按鈕已經灰掉了，
+      // 這裡不搶橘色的話整張卡會找不到「現在該按哪顆」。
+      retest.className = `ds-btn ds-btn-sm ${
+        model.retestPrimary === true ? "ds-btn-primary" : "ds-btn-ghost"
+      }`;
+      retest.textContent = model.retestText ?? "再 check 一次";
       retest.addEventListener("click", model.onRetest);
       actions.append(retest);
     }
@@ -473,19 +545,45 @@ function renderCard(model) {
     article.append(body);
   }
 
-  if (model.showNext) {
-    const footer = document.createElement("footer");
-    const next = document.createElement("button");
-    next.type = "button";
-    next.className = "ds-btn ds-btn-primary";
-    next.textContent = "下一張";
-    next.disabled = !model.nextUnlocked;
-    next.addEventListener("click", model.onNext);
-    footer.append(next);
-    article.append(footer);
-  }
+  // 翻頁按鈕不在卡片裡：它釘在畫面兩側，位置固定（見 renderWizardNav）。
   elements.currentCard.replaceChildren(article);
   elements.currentCard.setAttribute("aria-busy", "false");
+}
+
+// 上一次兩顆翻頁按鈕露臉了沒。慶祝只在「原本沒有、現在出現」那一刻放——每次重畫
+// 都放的話，勾一個項目就會炸一次煙火。
+const shownNav = { prev: false, next: false };
+
+function renderNavButton(button, spec, key) {
+  const show = spec.show === true;
+
+  if (show) {
+    button.querySelector(".wizard-nav-label").textContent = spec.label;
+    button.onclick = spec.onClick;
+  }
+
+  button.hidden = !show;
+
+  // 解鎖那一刻晃一下、炸一朵煙火，跟分頁解鎖同一種慶祝。回頭的那顆不用——它出現
+  // 不是成就，只是「你可以往回看」。
+  if (show && !shownNav[key] && key === "next" && !reducedMotion.matches) {
+    button.classList.remove("is-unlocking");
+    void button.offsetWidth;
+    button.classList.add("is-unlocking");
+    const firework = fireworkAt(50);
+    button.append(firework);
+    window.setTimeout(() => {
+      button.classList.remove("is-unlocking");
+      firework.remove();
+    }, 900);
+  }
+
+  shownNav[key] = show;
+}
+
+export function renderWizardNav({ prev, next }) {
+  renderNavButton(elements.wizardPrev, prev, "prev");
+  renderNavButton(elements.wizardNext, next, "next");
 }
 
 export function renderWizard(model) {
@@ -510,13 +608,86 @@ export function onSectionSelect(handler) {
   }
 }
 
+// 鎖頭畫在標題前面。原本鎖住的分頁只是淡一點——淡的東西看起來像「還沒載入」或
+// 「壞掉」，不像「做完前面才會開」。鎖頭一眼就說得清楚。
+function lockIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "section-tab-lock");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  // 鎖環另外一個群組：開鎖時只有它會動。
+  const shackle = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  shackle.setAttribute("class", "section-tab-shackle");
+  shackle.setAttribute("d", "M8 10V7a4 4 0 0 1 8 0v3");
+  shackle.setAttribute("fill", "none");
+  shackle.setAttribute("stroke", "currentColor");
+  shackle.setAttribute("stroke-width", "2");
+  shackle.setAttribute("stroke-linecap", "round");
+  const body = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  body.setAttribute("x", "5");
+  body.setAttribute("y", "10");
+  body.setAttribute("width", "14");
+  body.setAttribute("height", "10");
+  body.setAttribute("rx", "2");
+  body.setAttribute("fill", "currentColor");
+  svg.append(shackle, body);
+  return svg;
+}
+
+function fireworkAt(percent) {
+  const firework = document.createElement("span");
+  firework.className = "ds-firework";
+  firework.style.setProperty("--firework-at", `${percent}%`);
+  firework.setAttribute("aria-hidden", "true");
+  for (let ray = 0; ray < 10; ray += 1) {
+    const particle = document.createElement("i");
+    particle.style.setProperty("--ray", `${ray * 36}deg`);
+    firework.append(particle);
+  }
+  return firework;
+}
+
+// 上一次每個分頁鎖著沒有。動畫只在「原本鎖著、現在開了」那一刻放——每次重畫都放
+// 的話，光是勾一個項目就會炸一次煙火。
+let renderedLocks = null;
+
+function playUnlock(button) {
+  if (reducedMotion.matches) return;
+  button.classList.remove("is-unlocking");
+  // 讀一次 offsetWidth 逼瀏覽器結算，不然連續兩次解鎖的第二次不會重播動畫。
+  void button.offsetWidth;
+  button.classList.add("is-unlocking");
+  const firework = fireworkAt(50);
+  button.append(firework);
+  window.setTimeout(() => {
+    button.classList.remove("is-unlocking");
+    firework.remove();
+  }, 900);
+}
+
 export function renderSectionLocks(lockStates) {
+  const next = {};
+
   for (const button of elements.sectionButtons) {
-    const locked = lockStates[button.dataset.sectionTarget]?.locked === true;
+    const id = button.dataset.sectionTarget;
+    const locked = lockStates[id]?.locked === true;
+    next[id] = locked;
+
+    if (button.querySelector(".section-tab-lock") === null) {
+      button.prepend(lockIcon());
+    }
+
+    // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
+    if (renderedLocks !== null && renderedLocks[id] === true && !locked) {
+      playUnlock(button);
+    }
+
     button.classList.toggle("is-locked", locked);
     if (locked) button.setAttribute("aria-disabled", "true");
     else button.removeAttribute("aria-disabled");
   }
+
+  renderedLocks = next;
 }
 
 export function showSectionLockMessage(message) {
@@ -654,20 +825,79 @@ for (const modifier of Object.keys(loaderLabels)) {
   elements.rowLoaderPool.append(loader);
   loaders.set(modifier, loader);
 }
-let terminalLineModels = [...elements.terminalLines.children].map((line) => ({
-  className: line.className,
-  text: line.textContent,
-}));
+// 每張卡各有一份終端內容。原本全站共用一份，於是換一張卡就看到上一張的驗證訊息
+// ——那些話講的是別的東西，留在畫面上只會讓學生以為現在這張已經跑過了。翻回上一張
+// 時也要看得到當時那一份，不然「剛才那句錯誤訊息寫什麼」就再也查不到了。
+const transcripts = new Map();
+const rawOutputs = new Map();
+const INITIAL_TRANSCRIPT = "__opening__";
+let activeTranscriptId = INITIAL_TRANSCRIPT;
 
+// 跑起來之後就釘住：驗證跑到一半學生翻回上一張卡，結果仍然要記在發動它的那張卡
+// 上，不能印到他現在正在看的這張。
+let pinnedTranscriptId = null;
+
+transcripts.set(
+  INITIAL_TRANSCRIPT,
+  [...elements.terminalLines.children].map((line) => ({
+    className: line.className,
+    text: line.textContent,
+  })),
+);
+
+function linesOf(id) {
+  if (!transcripts.has(id)) {
+    transcripts.set(id, []);
+  }
+
+  return transcripts.get(id);
+}
+
+function writeTargetId() {
+  return pinnedTranscriptId ?? activeTranscriptId;
+}
+
+// 收下這一行嗎？收下的話還要回答「現在看得到嗎」——寫進別張卡的那一份時只存不畫。
 function acceptsTerminalLine(spec) {
-  const next = appendTermLine(terminalLineModels, spec);
+  const id = writeTargetId();
+  const lines = linesOf(id);
+  const next = appendTermLine(lines, spec);
 
-  if (next === terminalLineModels) {
+  if (next === lines) {
     return false;
   }
 
-  terminalLineModels = next;
-  return true;
+  transcripts.set(id, next);
+  return id === activeTranscriptId;
+}
+
+function paintTranscript(id) {
+  elements.terminalLines.replaceChildren();
+
+  for (const spec of linesOf(id)) {
+    const line = document.createElement("div");
+    line.className = spec.className;
+    line.textContent = spec.text;
+    elements.terminalLines.append(line);
+  }
+
+  elements.output.textContent = rawOutputs.get(id) ?? "";
+}
+
+// 切到某一張卡的終端。沒看過的卡從空的開始——開場白那份留在它自己的位置上。
+export function showTranscript(id) {
+  if (id === activeTranscriptId) return;
+  hideLoaders();
+  activeTranscriptId = id;
+  paintTranscript(id);
+}
+
+export function pinTranscript(id) {
+  pinnedTranscriptId = id;
+}
+
+export function unpinTranscript() {
+  pinnedTranscriptId = null;
 }
 
 export function hideLoaders() {
@@ -678,14 +908,33 @@ export function hideLoaders() {
   }
 }
 
-export function renderLoaders({ modifier, paused = false }) {
+export function renderLoaders({ modifier, paused = false, label = null }) {
   const loader = loaders.get(modifier);
   if (loader === undefined) return;
   const spec = {
     className: "ds-term-line ds-term-line--dim terminal-loader-line",
-    text: paused ? "處理已停止。" : loaderLabels[modifier],
+    // label 是呼叫端指定的字：同一顆動畫可以用在不只一件事上（驗證借用安裝那顆），
+    // 動畫的預設字只在沒指定時才算數。
+    text: paused ? "處理已停止。" : (label ?? loaderLabels[modifier]),
   };
-  if (!acceptsTerminalLine(spec)) return;
+  // 同一句話不重複印，但轉圈圈要重新掛回去。
+  //
+  // 學生在環境卡上按「再 check 一次」，那句「正在檢查目前狀態。」跟上一次一模一樣
+  // ——去重把整個 renderLoaders 擋掉，連轉圈圈都沒出現，看起來就是按了完全沒反應
+  // （VM 實測 Claude Code 那張卡）。檢查確實有跑，只是畫面一個字都沒動。
+  if (!acceptsTerminalLine(spec)) {
+    const last = elements.terminalLines.lastElementChild;
+
+    if (last?.classList.contains("terminal-loader-line") === true) {
+      hideLoaders();
+      loader.hidden = false;
+      loader.classList.toggle("is-paused", paused);
+      last.append(loader);
+    }
+
+    return;
+  }
+
   hideLoaders();
   const line = document.createElement("div");
   line.className = spec.className;
@@ -696,14 +945,24 @@ export function renderLoaders({ modifier, paused = false }) {
   elements.terminalLines.append(line);
 }
 
-export function clearOutput() {
-  elements.output.textContent = "";
-  elements.terminalLines.replaceChildren();
-  terminalLineModels = [];
+// 每跑一輪就把原始輸出換掉——它是這一次執行的逐字稿，留著上一次的只會分不清哪段
+// 是剛才那次。白話那幾行不清：那是這張卡的紀錄，學生翻回來要看得到當時發生什麼事。
+export function clearRawOutput() {
+  const id = writeTargetId();
+  rawOutputs.set(id, "");
+
+  if (id === activeTranscriptId) {
+    elements.output.textContent = "";
+  }
 }
 
 export function addRawLine(text) {
-  elements.output.textContent += `${text}\n`;
+  const id = writeTargetId();
+  rawOutputs.set(id, `${rawOutputs.get(id) ?? ""}${text}\n`);
+
+  if (id === activeTranscriptId) {
+    elements.output.textContent += `${text}\n`;
+  }
 }
 
 export function addLine(text, className = "") {

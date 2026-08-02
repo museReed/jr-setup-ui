@@ -1,7 +1,13 @@
 // ViewModel：畫面「該長什麼樣」的所有判斷都在這裡。
 // 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
 // View 只負責把這裡算出來的結果畫出去。
-import { CARD_GATES, GUIDANCE, SECTION_GATES, SECTIONS } from "./model.js";
+import {
+  CARD_GATES,
+  GUIDANCE,
+  MANUAL_STEPS,
+  SECTION_GATES,
+  SECTIONS,
+} from "./model.js";
 
 export const LOGIN_CHECK_IDS = {
   "login-claude": "claude-auth",
@@ -54,19 +60,26 @@ const STATUS_DISPLAY = {
 const CARD_STATUS_DISPLAY = {
   uninstalled: { text: "未安裝", className: "ds-pill" },
   installing: { text: "安裝中…", className: "ds-pill" },
+  verifying: { text: "驗證中…", className: "ds-pill" },
   pending: { text: "待驗證", className: "ds-pill" },
   complete: { text: "已完成", className: "ds-pill ds-pill-success" },
   failed: { text: "失敗", className: "ds-pill card-status-danger" },
 };
 
+// 安裝與驗證是兩件事，跑起來的時候也要分開講。原本只有一個 running 狀態，於是按
+// 「重跑驗證」時徽章寫「安裝中…」——學生剛裝完、只是想再驗一次，畫面卻說在裝
+// （Reed 實測）。
 export function cardStatusModel({
   completed = false,
   running = false,
+  verifying = false,
   failed = false,
   installed = false,
 } = {}) {
   const status = running
-    ? "installing"
+    ? verifying
+      ? "verifying"
+      : "installing"
     : completed
       ? "complete"
       : failed
@@ -76,6 +89,23 @@ export function cardStatusModel({
           : "uninstalled";
 
   return { status, ...CARD_STATUS_DISPLAY[status] };
+}
+
+// 動作是不是「驗證」而不是「安裝」。徽章與 loader 那行字都靠它分岔。
+// 認前綴不認反面：登入、開視窗那些動作兩者都不是，不能被當成驗證。
+export function isVerifyAction(action = "") {
+  return action.startsWith("verify-");
+}
+
+// loader 那行字。verify-in-terminal 沒有自己的動畫，會落回 working 那顆，而 working
+// 的預設字是「正在安裝」——學生按「重跑驗證」卻看到系統說在安裝（Reed 實測）。
+// 回 null 表示照那顆動畫本來的字。
+export function loaderLabel({ action = "", modifier = null } = {}) {
+  if (modifier !== LOADER_MODIFIERS.working) {
+    return null;
+  }
+
+  return isVerifyAction(action) ? "正在驗證，完成後會自動更新。" : null;
 }
 
 const ENV_LOGOS = {
@@ -172,7 +202,7 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: installed ? "✅ 安裝" : "安裝",
+      text: installed ? "✅ 已安裝" : "安裝",
       ...(installed ? { disabled: true, done: true } : {}),
     });
   } else if (installed && check.hasInstaller !== false) {
@@ -182,7 +212,7 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: "",
       dataName: "installAction",
-      text: "✅ 安裝",
+      text: "✅ 已安裝",
       disabled: true,
       done: true,
     });
@@ -315,7 +345,15 @@ export function configRowModel(
     verificationDeferred = false,
   } = {},
 ) {
-  const installationDone = installed || verified;
+  // 「裝好了沒」的權威來源是伺服器剛跑完的檢查（status === "ok"），不是「這次
+  // 開著的網頁裡有沒有按過安裝」。
+  //
+  // 原本只看 installed（本次 session 的樂觀記憶）與 verified。於是一個早就裝好、
+  // 只差行為驗證的列——例如 Playwright MCP 顯示「已註冊 MCP server：playwright」
+  // ——按鈕仍然是橘色的「安裝」，看起來像「你還沒裝，按這裡」。學生按下去，指令
+  // 回「already exists」，什麼也沒發生（VM 實測）。
+  const alreadyInstalled = check.status === "ok";
+  const installationDone = installed || verified || alreadyInstalled;
   const pending =
     check.status === "ok" &&
     !verified &&
@@ -331,12 +369,26 @@ export function configRowModel(
     (pending && check.noInstall !== true ? "install-config-step" : null);
 
   if (installAction !== null && installAction !== undefined) {
+    // 安裝按鈕只管安裝：
+    //
+    //   還沒裝                「安裝」      主要動作，橘色
+    //   裝好了                「✅ 已安裝」  灰掉——沒事可做，要驗證請按「重跑驗證」
+    //   裝好了但驗證失敗過      「重裝」      按得動但不是主角
+    //
+    // 中間那態原本一律是可按的「重裝」，於是「裝好、只差看一眼」的列也長出一顆安裝
+    // 按鈕，學生按下去畫面說「正在安裝」——他要的只是再驗一次（Reed 實測 claude-namer）。
+    //
+    // 但驗證失敗時那顆要活過來：裝歪了（舊版、裝一半）而 check 仍是 ok 的情況存在，
+    // 那時重跑安裝是唯一的自救手段，拿掉就沒路走了。
+    const rescueReinstall = installationDone && verificationFailed;
+    const done = installationDone && !rescueReinstall;
     buttons.push({
       action: installAction,
       dataName: "installAction",
-      text: installationDone ? "✅ 安裝" : "安裝",
+      text: done ? "✅ 已安裝" : installationDone ? "重裝" : "安裝",
       step: check.id,
-      ...(installationDone ? { disabled: true, done: true } : {}),
+      ...(done ? { disabled: true, done: true } : {}),
+      ...(rescueReinstall ? { secondary: true } : {}),
     });
   } else if (check.noInstall !== true) {
     // 沒有安裝動作時補一顆停用的佔位，讓每一列的按鈕位置對齊。
@@ -347,7 +399,7 @@ export function configRowModel(
     buttons.push({
       action: "",
       dataName: "installAction",
-      text: installationDone ? "✅ 安裝" : "安裝",
+      text: installationDone ? "✅ 已安裝" : "安裝",
       step: check.id,
       disabled: true,
       ...(installationDone ? { done: true } : {}),
@@ -416,7 +468,13 @@ export function sectionManualItems(
   const usable = (gates) =>
     gates
       .filter((gate) => gate.codexOnly !== true || codexSelected)
-      .map((gate) => ({ id: gate.id, text: gate.title, detail: gate.detail }));
+      .map((gate) => ({
+        id: gate.id,
+        text: gate.title,
+        detail: gate.detail,
+        // 這一格屬於哪一步。沒有 stepId 的（段落閘門那種）就不分步。
+        stepId: gate.stepId ?? null,
+      }));
 
   // 掛在這張卡上的關卡：在真正需要它的那一張就提醒，不是等走完整段。
   const cardGates = usable(CARD_GATES[cardId] ?? []);
@@ -433,6 +491,34 @@ export function sectionManualItems(
   }
 
   return [...cardGates, ...usable(SECTION_GATES[nextSection.id] ?? [])];
+}
+
+// 人工項目照「步驟」分組：同一步的項目在同一個視窗裡做完，那一步配一顆把視窗開
+// 起來的按鈕。沒有 stepId 的項目照原樣排在最後，不長出標題。
+export function manualStepGroups(items, steps = MANUAL_STEPS) {
+  const groups = [];
+  const byStep = new Map();
+
+  for (const item of items) {
+    const step = item.stepId == null ? null : steps[item.stepId];
+    const key = step === undefined || step === null ? null : item.stepId;
+
+    if (!byStep.has(key)) {
+      const group = {
+        id: key,
+        title: step?.title ?? null,
+        action: step?.action ?? null,
+        buttonText: step?.buttonText ?? null,
+        items: [],
+      };
+      byStep.set(key, group);
+      groups.push(group);
+    }
+
+    byStep.get(key).items.push(item);
+  }
+
+  return groups;
 }
 
 export function toggleToolSelection(selectedTools, tool) {
@@ -480,6 +566,71 @@ export function cardIsComplete(
     (check) =>
       configRowModel(check, verifiedSteps.has(check.id)).status === "ok",
   );
+}
+
+// 一段裡「已完成」的卡有哪些。全站只有這一個答案，五個顯示位置（徽章、清單、
+// 里程碑、段落狀態、tab 解鎖）都從這裡或 cardIsComplete 出發。
+//
+// 抽成純函式是為了測得到。它原本內嵌在 renderWizard 裡，於是額外的完成路徑可以
+// 悄悄長出來而沒有任何測試會紅——稽核報告七項不一致裡有三項就是這樣來的。
+export function completedCardIds(
+  cards,
+  verifiedSteps = new Set(),
+  checkedManualIds = new Set(),
+) {
+  return new Set(
+    cards
+      .filter((card) => cardIsComplete(card, verifiedSteps, checkedManualIds))
+      .map(({ checkId }) => checkId),
+  );
+}
+
+// 沒有眼睛項的列：「程式驗過了」就是「整列過了」，不需要第二本帳來確認。
+//
+// 兩本帳分兩次寫，而寫成功一半就會卡住：VM 實測 ext-playwright-claude 只寫進
+// behavior、沒寫進 verified，於是清單那格打勾、徽章卻是待驗證，學生被要求重跑一次
+// 要開瀏覽器的驗證。旁邊 codex 那筆差 128 毫秒、兩本都成功——同一段程式，一次成功
+// 一次沒有。與其追那次為什麼漏，不如讓它不需要兩本都成立。
+//
+// 有眼睛項的列不在此列：那種列的「整列過了」本來就要學生看完說了算。
+export function impliedVerifiedSteps(checks, behaviorVerified = new Set()) {
+  return new Set(
+    checks
+      .filter(
+        (check) => check.eyeCheck == null && behaviorVerified.has(check.id),
+      )
+      .map((check) => check.id),
+  );
+}
+
+// 有眼睛項的列，「整列過了」要兩半都成立：程式那半跑過，而且學生看過畫面說對了。
+//
+// 原本只要學生勾眼睛就算整列過——於是他可以完全不跑驗證、直接勾，卡片就變成已完成
+// 並長出「下一張」，而清單還停在 1 / 2（VM 實測 skill-claude-handoff）。徽章與清單
+// 講的是同一件事，不能一邊說完成、一邊說還差一項。
+//
+// 沒有程式那半可跑的列（沒有 verifyAction）不在此限：那種列只有學生看得到，勾了
+// 就是過了。
+export function eyeVerifiedSteps(
+  checks,
+  checkedManualIds = new Set(),
+  behaviorVerified = new Set(),
+) {
+  const done = new Set();
+
+  for (const id of checkedManualIds) {
+    if (!id.startsWith("eye-")) continue;
+    const stepId = id.slice("eye-".length);
+    const check = checks.find((candidate) => candidate.id === stepId);
+
+    if (check?.verifyAction != null && !behaviorVerified.has(stepId)) {
+      continue;
+    }
+
+    done.add(stepId);
+  }
+
+  return done;
 }
 
 export function currentCardIndex(
@@ -573,6 +724,22 @@ export function systemRowChecked(check, { rowVerified, behaviorVerified }) {
   return behaviorVerified && check.status === "ok";
 }
 
+// 「結構都對了，但還沒實際跑跑看」——這句只在該跑而還沒跑的時候補。
+const PENDING_RUN_HINT = "還沒實際跑跑看——按「重跑驗證」";
+
+// 驗過之後那一步的檔案被動過。不作廢那個勾，只提醒——改的可能是學生自己那半
+// （合併過的 CLAUDE.md），程式看不出來會不會影響，決定權給他。
+const CHANGED_HINT = "這個檔案在你驗證之後被改過，要不要再驗一次？";
+
+function appendHint(detail, hint) {
+  if (hint === null) return detail;
+  return detail === "" ? hint : `${detail}，${hint}`;
+}
+
+function appendPendingRunHint(detail, pending) {
+  return appendHint(detail, pending ? PENDING_RUN_HINT : null);
+}
+
 export function checklistGroups({
   check,
   checks = check == null ? [] : [check],
@@ -583,20 +750,42 @@ export function checklistGroups({
   manualItems = [],
   checkedManualIds = new Set(),
   resultTexts = new Map(),
+  changedCheckIds = new Set(),
 }) {
   const system = [];
+  // 前綴只在同一張清單裡兩種項目並存時才加。整張都是程式檢查的卡（環境那幾張）
+  // 每一行都掛「程式檢查：」只是噪音。
+  const mixed =
+    checks.some((candidate) => candidate.eyeCheck != null) ||
+    manualItems.length > 0;
 
   for (const candidate of checks) {
+    const checked =
+      verifiedCheckIds === null ? verified : verifiedCheckIds.has(candidate.id);
     system.push({
       id: `system-${candidate.id}`,
-      text: candidate.label,
+      // 前綴講清楚這一格在問什麼。原本第一格寫「自動命名 hook／hook 檔案與 3 筆註冊
+      // 都已生效」——那句話講的是檔案在不在，但那個勾代表的是「真的跑起來了」。
+      // 兩件事共用一句話，學生看到檔案明明都在卻沒打勾，只能猜（Reed 實測）。
+      text: mixed ? `程式檢查：${candidate.label}` : candidate.label,
       // 執行結果就掛在這一項底下，不另外開一塊「結果」——同一個檢查的名稱與結果
       // 分兩個地方講，讀的人要自己配對。
-      detail: resultTexts.get(candidate.id) ?? candidate.detail ?? "",
-      checked:
-        verifiedCheckIds === null
-          ? verified
-          : verifiedCheckIds.has(candidate.id),
+      //
+      // 還沒驗過就補一句說明那個空格在等什麼。少了它，畫面是「檔案與註冊都已生效」
+      // 配一個空格，看起來像壞掉。
+      //
+      // 已經驗過、但那一步的檔案之後被動過：勾留著，補一句提醒就好。改的可能是
+      // 學生自己那半（合併過的 CLAUDE.md），程式看不出來會不會影響驗過的行為。
+      detail: appendHint(
+        appendPendingRunHint(
+          resultTexts.get(candidate.id) ?? candidate.detail ?? "",
+          !checked &&
+            candidate.status === "ok" &&
+            candidate.verifyAction != null,
+        ),
+        checked && changedCheckIds.has(candidate.id) ? CHANGED_HINT : null,
+      ),
+      checked,
       automatic: true,
       disabled: true,
       failedReason:
@@ -611,8 +800,9 @@ export function checklistGroups({
       (candidate) =>
         ({
           id: `eye-${candidate.id}`,
-          text: candidate.eyeCheck,
-          detail: "這一項需要你看畫面確認。",
+          // 跟第一格的「程式檢查：」對稱：一眼看得出哪一格是程式的事、哪一格是你的事。
+          text: `你要看的：${candidate.eyeCheck}`,
+          detail: "這一項程式驗不到，要你看畫面確認。",
         }),
     ),
     ...manualItems,
@@ -717,7 +907,7 @@ export function terminalOutcomeLines({
           // 設計系統只有 prompt / ok / err 三個修飾 class，沒有 warn——用不存在的
           // class 不會報錯，只會靜靜地沒有樣式。這句不是錯誤，是「還要你做一件事」。
           className: "ds-term-line ds-term-line--prompt",
-          text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按「再 check 一次」。`,
+          text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按「重跑驗證」。`,
         },
       ];
     }

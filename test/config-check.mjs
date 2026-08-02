@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  VERIFICATION,
   checkAgentHooks,
   checkCopyStep,
   checkTabSync,
@@ -220,6 +221,17 @@ process.stdin.on("end", () => {
   assert.equal(staleHook.status, "warn");
   assert.match(staleHook.detail, /舊版/);
   ok("hook 檔案是舊版時不給綠燈——註冊與白名單都對也一樣");
+
+  // 清單第一格「程式那半驗過了嗎」只認 behavior 那一筆。所以一列如果要學生用眼睛
+  // 確認，就必須同時有程式驗得到的那半，否則第一格永遠空著、學生的 2/2 湊不齊。
+  for (const [id, spec] of Object.entries(VERIFICATION)) {
+    if (spec?.eye == null) continue;
+    assert(
+      spec.terminal != null || spec.behavior != null,
+      `${id} 有眼睛確認項卻沒有程式驗證那半——清單第一格會永遠勾不起來`,
+    );
+  }
+  ok("每個要用眼睛確認的檢查都有程式驗證那半");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

@@ -48,6 +48,11 @@ body {
 /* 只有一列標題、沒有副標，所以也沒有收合這回事——高度自始至終固定。 */
 .section-tab {
   flex: 0 0 auto;
+  /* 鎖頭在標題前面，煙火掛在自己身上——兩者都要這個定位脈絡。 */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border: 0;
   border-bottom: 3px solid transparent;
@@ -81,6 +86,81 @@ body {
   opacity: 0.55;
 }
 
+/* 鎖頭只在鎖著時佔位置。開鎖動畫期間要留著——那半秒正是它在演的東西。 */
+.section-tab-lock {
+  display: none;
+  width: 0.9em;
+  height: 0.9em;
+  flex: 0 0 auto;
+}
+
+.section-tab.is-locked .section-tab-lock,
+.section-tab.is-unlocking .section-tab-lock {
+  display: block;
+}
+
+/* 開鎖：鎖環先彈起來轉開，鎖身跟著淡掉，整個分頁晃一下。
+   煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。 */
+.section-tab.is-unlocking {
+  animation: tab-unlock-shake 0.5s ease;
+}
+
+.section-tab.is-unlocking .section-tab-lock {
+  animation: tab-unlock-fade 0.9s ease forwards;
+}
+
+.section-tab.is-unlocking .section-tab-shackle {
+  transform-origin: 16px 10px;
+  animation: tab-unlock-shackle 0.45s ease forwards;
+}
+
+@keyframes tab-unlock-shackle {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  45% {
+    transform: translateY(-2px) rotate(0deg);
+  }
+  100% {
+    transform: translateY(-2px) rotate(38deg);
+  }
+}
+
+@keyframes tab-unlock-fade {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes tab-unlock-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  45% {
+    transform: translateX(3px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+}
+
+/* 會動的東西一律尊重系統設定。這一段的動畫是慶祝，不是資訊——關掉不影響理解。 */
+@media (prefers-reduced-motion: reduce) {
+  .section-tab.is-unlocking,
+  .section-tab.is-unlocking .section-tab-lock,
+  .section-tab.is-unlocking .section-tab-shackle {
+    animation: none;
+  }
+}
+
 .section-lock-message {
   margin: var(--space-3) 0 0;
   color: var(--color-warn);
@@ -98,6 +178,79 @@ body {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
+}
+
+/* 翻頁按鈕釘在畫面兩側、垂直置中。放在卡片裡的話，每張卡高度不同，按鈕就會上下
+   跳——學生每翻一張都要重新找它在哪。 */
+/* 翻頁按鈕自成一列，排在卡片下方：左邊那顆貼齊卡片左緣，右邊那顆貼齊終端右緣。
+   只剩一顆時另一顆的位置不能跑掉，所以「下一張」永遠靠右（margin-left: auto）。 */
+.wizard-nav-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-5);
+}
+
+.wizard-nav {
+  /* 煙火是絕對定位的，要有這個才會掛在按鈕頭上而不是整頁的角落。 */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-pill);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-soft);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.wizard-nav:hover {
+  background: var(--color-bg-inset);
+}
+
+.wizard-nav--prev {
+  margin-right: auto;
+}
+
+/* 往前走是主要動作，橘色；回頭看不是。 */
+.wizard-nav--next {
+  margin-left: auto;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+.wizard-nav--next:hover {
+  background: var(--color-accent-hover);
+}
+
+/* 剛解鎖：晃一下 + 頭上一朵煙火（跟分頁解鎖用同一種慶祝）。 */
+.wizard-nav.is-unlocking {
+  animation: tab-unlock-shake 0.5s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wizard-nav.is-unlocking {
+    animation: none;
+  }
+}
+
+/* 窄螢幕留字會擠到卡片，只留箭頭。 */
+@media (max-width: 1200px) {
+  .wizard-nav-label {
+    display: none;
+  }
+
+  .wizard-nav {
+    padding: var(--space-3);
+  }
 }
 
 #section-status {
@@ -348,6 +501,27 @@ body {
   width: 100%;
 }
 
+/* 人工項目的步驟標題：一步一列，標題在左、把視窗開起來的按鈕在右。清單本身是
+   暗底的，所以這一列用終端那組顏色，不是卡片的。 */
+.checklist-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.checklist-step-title {
+  color: var(--term-ink-dim);
+  font-size: var(--fs-sm);
+}
+
+/* 貼上欄位畫在清單裡面時，要跟項目對齊，不要貼著暗底的邊緣。 */
+.ds-checklist .paste-proof {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .verify-shot {
   margin: 0;
   display: flex;
@@ -382,12 +556,6 @@ body {
 .card-hints-block {
   white-space: pre;
   overflow-x: auto;
-}
-
-.paste-proof-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .paste-proof-hint {

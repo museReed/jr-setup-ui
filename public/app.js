@@ -21,6 +21,7 @@ import {
   agentNameFor,
   behaviorFallbackState,
   cardIsComplete,
+  completedCardIds,
   cardResultItems,
   cardResultText,
   cardStatusModel,
@@ -30,14 +31,19 @@ import {
   currentCardIndex,
   envButtonState,
   envCardRowModel,
+  eyeVerifiedSteps,
   extractLoginHints,
   guidanceModel,
+  impliedVerifiedSteps,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
+  isVerifyAction,
+  loaderLabel,
   loaderModifier,
   loginCardModel,
   loginWaitStep,
+  manualStepGroups,
   rowRunOptions,
   runControlsState,
   runOutcome,
@@ -84,6 +90,8 @@ const state = {
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
   behaviorVerifiedSteps: new Set(),
+  // 驗過之後那一步的檔案被動過。不影響勾，只在卡片上多一句提醒。
+  changedSteps: new Set(),
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
@@ -104,6 +112,12 @@ const state = {
   verifyShotVersion: 0,
   selectedTools: ["claude"],
   selectedLanguage: "zh-TW",
+  // 正在跑的是哪個 action。徽章與 loader 的字要靠它分「安裝中」與「驗證中」。
+  currentRunAction: "",
+  // 這次的環境檢查是學生自己按的，還是開頁／裝完自己跑的。只有前者要講話。
+  manualRecheck: false,
+  // 終端上已經報過的那張卡。renderWizard 跑得很勤，沒有它會一直重複同一句。
+  announcedCardId: null,
   pendingModalCheck: null,
   loginHints: { url: null, code: null },
 };
@@ -134,6 +148,32 @@ function setManualChecked(id, checked) {
     .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
 }
 
+// 重跑之前先把上一輪的結論忘掉：清單先退回未勾，再照這一次的結果打勾。
+//
+// 不清的話畫面會停在上一輪的答案上——重驗跑到一半，清單還是全綠；驗證失敗了，
+// 那個勾也還在。學生按下重驗就是在說「上次那個結論我不算數了」。
+//
+// 眼睛那格一起清：重驗會開一個新的視窗，上次看到的是上一個視窗的事。
+function forgetVerification(stepId, manualIds = []) {
+  state.verifiedSteps.delete(stepId);
+  state.behaviorVerifiedSteps.delete(stepId);
+  state.failedVerificationSteps.delete(stepId);
+  state.verificationAttempted.delete(stepId);
+  state.deferredVerificationSteps.delete(stepId);
+
+  for (const id of [`eye-${stepId}`, ...manualIds]) {
+    state.manualCheckedIds.delete(id);
+    state.completedGateIds.delete(id);
+  }
+
+  api
+    .saveManualChecked([...state.manualCheckedIds])
+    .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
+  api
+    .forgetVerification(stepId)
+    .catch((error) => view.addLine(`無法清除舊的驗證結果：${error.message}`, "failed"));
+}
+
 // 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
 // 「驗證成功」，不能等學生勾完眼睛才一起變。
 async function rememberBehaviorVerified(step) {
@@ -151,6 +191,7 @@ async function loadVerifiedSteps() {
     const result = await api.fetchState();
     state.verifiedSteps = new Set(result.verified);
     state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
+    state.changedSteps = new Set(result.changed ?? []);
     state.manualCheckedIds = new Set(result.manual ?? []);
 
     for (const id of state.manualCheckedIds) {
@@ -168,6 +209,7 @@ async function loadVerifiedSteps() {
   } catch {
     state.verifiedSteps = new Set();
     state.behaviorVerifiedSteps = new Set();
+    state.changedSteps = new Set();
     state.manualCheckedIds = new Set();
   }
 }
@@ -175,10 +217,22 @@ async function loadVerifiedSteps() {
 function effectiveVerifiedSteps() {
   const verified = new Set(state.verifiedSteps);
 
-  for (const id of state.manualCheckedIds) {
-    if (id.startsWith("eye-")) {
-      verified.add(id.slice("eye-".length));
-    }
+  // 有眼睛項的列：兩半都要成立才算整列過了。只勾眼睛的話，卡片會說已完成、清單
+  // 卻還停在 1 / 2。
+  for (const id of eyeVerifiedSteps(
+    state.lastChecks,
+    state.manualCheckedIds,
+    state.behaviorVerifiedSteps,
+  )) {
+    verified.add(id);
+  }
+
+  // 沒有眼睛項的列，程式驗過了就是整列過了——不必等第二本帳也寫成功。
+  for (const id of impliedVerifiedSteps(
+    state.lastChecks,
+    state.behaviorVerifiedSteps,
+  )) {
+    verified.add(id);
   }
 
   return verified;
@@ -241,6 +295,16 @@ function renderWizard() {
     state.viewingCardIndex[state.activeSectionId] = derivedIndex;
   }
   const card = cardSection.cards[currentIndex];
+
+  // 換卡也要留一句。renderWizard 每次環境檢查、每次勾選都會跑，所以只在真的換了
+  // 那張卡的時候講——不然同一句話會洗滿整個終端。
+  if (state.announcedCardId !== card.checkId) {
+    state.announcedCardId = card.checkId;
+    // 每張卡各有一份終端內容：切過去先換成它自己那份，翻回來時原樣還在。
+    view.showTranscript(card.checkId);
+    view.addLine(`現在這張：${card.label}`, "agent-status");
+  }
+
   const manualItems = sectionManualItems(
     section.id,
     currentIndex,
@@ -265,9 +329,19 @@ function renderWizard() {
     cardChecks
       .filter((check) =>
         card.kind === "env"
-          ? check.status === "ok"
+          ? // 學生按下重掃的那段時間先退回未勾——結果還沒回來，畫面不該還掛著
+            // 上一次的答案。掃完（通常一秒內）會照新結果重新打勾。
+            check.status === "ok" && !state.manualRecheck
           : systemRowChecked(check, {
-              rowVerified: verified.has(check.id),
+              // 這裡刻意用沒有加眼睛別名的 state.verifiedSteps。
+              //
+              // effectiveVerifiedSteps() 會把學生勾的 eye-xxx 換算成「xxx 驗過了」，
+              // 那是給「這張卡做完了沒」用的。第一格講的是程式那半，不能跟著眼睛動：
+              // 學生把眼睛那格取消，第一格「hook 檔案與 3 筆註冊都已生效」也跟著退勾、
+              // 2/2 變 0/2，看起來像整張卡被重置（VM 實測 claude-namer）。
+              //
+              // 檔案在不在跟學生看到什麼是兩件事，取消勾選只是在說「我看到的畫面不對」。
+              rowVerified: state.verifiedSteps.has(check.id),
               behaviorVerified: state.behaviorVerifiedSteps.has(check.id),
             }),
       )
@@ -281,6 +355,8 @@ function renderWizard() {
     manualItems,
     checkedManualIds: state.manualCheckedIds,
     resultTexts: state.resultTexts,
+    // 驗過之後被動過的那幾步：勾留著，多一句提醒。
+    changedCheckIds: state.changedSteps,
   });
   const installChecks = cardChecks.filter(
     (check) => !check.id.endsWith("-auth"),
@@ -319,20 +395,26 @@ function renderWizard() {
           verificationAttempted,
           manualItems: groups.manual,
         });
-  const completedCardIds = new Set(
-    cardSection.cards
-      .filter((candidate) => {
-        if (candidate.kind === "setup") return candidate.completed === true;
-        if (cardIsComplete(candidate, verified, state.manualCheckedIds)) return true;
-        if (candidate.checkId === card.checkId) return nextUnlocked;
-        return state.verificationAttempted.has(candidate.checkId) &&
-          state.installedSteps.has(candidate.checkId);
-      })
-      .map(({ checkId }) => checkId),
+  // 「這張卡完成了嗎」全站只有一個答案：cardIsComplete。
+  //
+  // 這裡原本另外收三條路：
+  //   1. setup 自己看 completed          —— cardIsComplete 裡面本來就有這條，重複
+  //   2. 目前這張卡改看 nextUnlocked      —— 「能往前」不等於「已完成」
+  //   3. 其他卡看 attempted && installed —— 驗證失敗也算 attempted
+  //
+  // 後兩條讓進度條比徽章寬鬆：同一張卡「圓點亮了、徽章還是待驗證」。第 3 條最寬——
+  // 它不看驗證有沒有成功、不看最新狀態、也不看人工項有沒有勾（稽核報告第 1~3 項）。
+  //
+  // 「能往前」這個概念仍然存在，但它只該決定「下一張」按鈕，不該決定「完成」。
+  // 那兩件事在這個嚮導裡刻意不同：驗證過不了的學生要能往前走，但那張卡不算做完。
+  const completedIds = completedCardIds(
+    cardSection.cards,
+    verified,
+    state.manualCheckedIds,
   );
   const milestones = milestoneModels(
     cardSection.cards,
-    completedCardIds,
+    completedIds,
     currentIndex,
   );
   let row =
@@ -368,6 +450,7 @@ function renderWizard() {
       state.runInProgress &&
       (card.kind === "setup" ||
         cardChecks.some((check) => check.id === activeCheckId)),
+    verifying: isVerifyAction(state.currentRunAction),
     failed: cardChecks.some(
       (check) =>
         state.failedSteps.has(check.id) ||
@@ -388,6 +471,31 @@ function renderWizard() {
     status,
     login,
     checklist: groups,
+    // 人工項目照步驟分組，每一步配一顆把視窗開起來的按鈕。
+    manualSteps: manualStepGroups(groups.manual),
+    // 開一個新視窗＝那一步從頭做一次，所以那一步的勾先退掉。學生按第一步的按鈕，
+    // 講的是「我要再做一次這兩件事」，不是「我做完了」。
+    onOpenStep: (action) => {
+      const step = manualStepGroups(groups.manual).find(
+        (entry) => entry.action === action,
+      );
+      const ids = (step?.items ?? []).map((item) => item.id);
+
+      if (ids.length > 0) {
+        forgetVerification(card.checkId, ids);
+
+        if (ids.includes("fullscreen-copy")) {
+          state.pasteProofValue = "";
+        }
+
+        view.addLine(`先清掉這一步的勾，重新做一次：${step.title}`, "agent-status");
+      }
+
+      run("verify-in-terminal", undefined, undefined, {
+        case: action,
+        agent: "claude",
+      });
+    },
     showChecklist: card.kind !== "setup",
     hints: CARD_HINTS[card.checkId] ?? null,
     // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
@@ -403,15 +511,13 @@ function renderWizard() {
             value: state.pasteProofValue,
             matched: matchesFullscreenProof(state.pasteProofValue),
             onInput: (value) => cardModel.onPasteProofInput(value),
-            onOpen: (testCase) =>
-              run("verify-in-terminal", undefined, undefined, {
-                case: testCase,
-                agent: "claude",
-              }),
           }
         : null,
     showRetest: card.kind === "env" || row?.showRetest === true,
-    showNext: currentIndex < cardSection.cards.length - 1 && nextUnlocked,
+    // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
+    // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
+    retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
+    retestPrimary: card.kind !== "env" && row?.status === "unverified",
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") run(action, undefined, button);
@@ -419,9 +525,14 @@ function renderWizard() {
     },
     onRetest: () => {
       if (card.kind === "env") {
-        checkEnvironment();
+        checkEnvironment(true, { manual: true });
         return;
       }
+
+      // 先退回未勾，再照這一次的結果打勾。
+      forgetVerification(card.check.id);
+      view.addLine("先清掉上一輪的結果，重新驗證。", "agent-status");
+      renderWizard();
       runConfigCheckAction(
         card.check,
         card.check.verifyAction,
@@ -447,16 +558,30 @@ function renderWizard() {
         view.addLine(`無法送出：${error.message}`, "failed");
       }
     },
+    // 終端是「現在正在做什麼」，學生的每一個動作都要在裡面留下一句話。勾一格卻
+    // 什麼都沒發生的話，學生不知道那一勾有沒有被記住（重整之後才會發現）。
     onManualToggle: (id, checked) => {
+      const item = groups.manual.find((entry) => entry.id === id);
       setManualChecked(id, checked);
-      renderNavigation();
+      view.addLine(
+        `${checked ? "已勾選" : "取消勾選"}：${item?.text ?? id}`,
+        checked ? "succeeded" : "",
+      );
+      // renderWizard 自己會重算鎖狀態，不用在這裡先叫一次。
       renderWizard();
     },
     // 貼對了就自己打勾，貼錯或清空就取消——學生不用再多按一次勾選框。
     onPasteProofInput: (value) => {
+      const wasMatched = matchesFullscreenProof(state.pasteProofValue);
+      const matched = matchesFullscreenProof(value);
       state.pasteProofValue = value;
-      setManualChecked("fullscreen-copy", matchesFullscreenProof(value));
-      renderNavigation();
+      setManualChecked("fullscreen-copy", matched);
+
+      // 只在「對上」那一刻講一次。每打一個字都講的話，貼的過程會洗出一整片。
+      if (matched && !wasMatched) {
+        view.addLine("貼上的代碼對上了，這一項算過。", "succeeded");
+      }
+
       renderWizard();
     },
     onNext: () => {
@@ -469,7 +594,7 @@ function renderWizard() {
     section,
     sectionStatus: sectionStatus(
       cardSection.cards,
-      completedCardIds,
+      completedIds,
       currentIndex,
     ),
     milestones,
@@ -481,6 +606,75 @@ function renderWizard() {
     },
   });
   renderControls();
+  // 分頁的鎖跟著一起更新。原本只有勾選、換工具、點分頁才會重算，於是「最後一張
+  // 卡驗過了」的當下沒有人去看鎖狀態——下一段其實已經開了，畫面上還鎖著，等學生
+  // 去點才發現。開鎖動畫也因此永遠錯過那一刻（VM 實測）。
+  const lockStates = renderNavigation();
+  renderWizardNav({ cardSection, currentIndex, nextUnlocked, lockStates, onNext: cardModel.onNext });
+}
+
+// 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
+//
+// 走到一段的最後一張時，「下一張」換成「下一段：⋯」——那一段做完了，下一步是換段，
+// 不是回頭去點上面的分頁。點下去落在新那段的第一張。
+function renderWizardNav({
+  cardSection,
+  currentIndex,
+  nextUnlocked,
+  lockStates,
+  onNext,
+}) {
+  const cards = cardSection.cards;
+  const sectionIndex = SECTIONS.findIndex(
+    (section) => section.id === state.activeSectionId,
+  );
+  const previousSection = SECTIONS[sectionIndex - 1];
+  const nextSection = SECTIONS[sectionIndex + 1];
+  const atLast = currentIndex >= cards.length - 1;
+  const nextSectionOpen =
+    nextSection !== undefined && lockStates[nextSection.id]?.locked !== true;
+
+  view.renderWizardNav({
+    prev: {
+      show: currentIndex > 0 || previousSection !== undefined,
+      label: currentIndex > 0 ? "上一張" : `上一段：${previousSection?.title ?? ""}`,
+      onClick: () => {
+        if (currentIndex > 0) {
+          state.viewingCardIndex[state.activeSectionId] = currentIndex - 1;
+          renderWizard();
+          return;
+        }
+
+        goToSection(previousSection.id, "last");
+      },
+    },
+    next: atLast
+      ? {
+          show: nextSectionOpen,
+          label: `下一段：${nextSection?.title ?? ""}`,
+          onClick: () => goToSection(nextSection.id, "first"),
+        }
+      : { show: nextUnlocked, label: "下一張", onClick: onNext },
+  });
+}
+
+function goToSection(sectionId, landing) {
+  state.activeSectionId = sectionId;
+  view.hideSectionLockMessage();
+
+  if (landing === "first") {
+    state.viewingCardIndex[sectionId] = 0;
+  } else {
+    const found = allCardSections().find(
+      (section) => section.sectionId === sectionId,
+    );
+    state.viewingCardIndex[sectionId] = Math.max(
+      (found?.cards.length ?? 1) - 1,
+      0,
+    );
+  }
+
+  renderWizard();
 }
 
 function renderCheckingLoader() {
@@ -493,6 +687,9 @@ function renderCheckingLoader() {
     view.renderLoaders({
       modifier: loaderModifier({ checking: true }),
       topOnly: true,
+      // 學生自己按的那次要講得更明確。開頁時的自動檢查說「正在檢查目前狀態」就夠，
+      // 但按鈕按下去看到同一句話（而且是已經在畫面上的那句），等於沒有回饋。
+      label: state.manualRecheck ? "正在重新檢查環境狀態。" : null,
     });
   } else if (!state.loaderPaused) {
     view.hideLoaders();
@@ -504,11 +701,9 @@ function renderCheckingLoader() {
 function incompleteCards(cards, verified) {
   return cards
     .map((card, index) => ({ card, index }))
-    .filter(({ card }) =>
-      card.kind === "setup"
-        ? card.completed !== true
-        : !cardIsComplete(card, verified, state.manualCheckedIds),
-    )
+    // setup 不再另外判：cardIsComplete 裡面已經有 setup 那條，寫兩次只會有一天
+    // 只改到其中一邊。
+    .filter(({ card }) => !cardIsComplete(card, verified, state.manualCheckedIds))
     .map(({ card, index }) => ({ label: card.label, index }));
 }
 
@@ -597,6 +792,8 @@ function setRunning(running) {
 }
 
 function resetRun({ keepLoader = false } = {}) {
+  // 跑完就鬆開：接下來的輸出（環境重掃、勾選）屬於學生現在看的那張卡。
+  view.unpinTranscript();
   state.runId = null;
   state.acceptsInput = false;
   state.activeEnvButton = null;
@@ -625,14 +822,16 @@ function renderRunLoader(modifier, paused = false) {
   }
 
   state.loaderPaused = paused;
+  const shown =
+    paused && state.currentLoaderModifier === null
+      ? LOADER_MODIFIERS.working
+      : state.currentLoaderModifier;
   view.renderLoaders({
-    modifier:
-      paused && state.currentLoaderModifier === null
-        ? LOADER_MODIFIERS.working
-        : state.currentLoaderModifier,
+    modifier: shown,
     button: state.activeRunButton,
     step: state.activeRunStep,
     paused,
+    label: loaderLabel({ action: state.currentRunAction, modifier: shown }),
   });
 }
 
@@ -655,12 +854,19 @@ function finishLoginWait(step) {
   view.finishLoginWaiting(step.text, step.failed);
 }
 
-async function checkEnvironment(showLoading = true) {
+async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   if (state.envCheckInProgress) {
     return null;
   }
 
+  state.manualRecheck = manual;
   state.envCheckInProgress = true;
+
+  // 先畫一次，讓清單當場退回未勾——不畫的話學生只會在結果回來時看到「沒有變化」。
+  if (manual) {
+    renderWizard();
+  }
+
   view.elements.recheckEnv.disabled = true;
   view.renderEnvBusy(true);
   renderCheckingLoader();
@@ -673,8 +879,27 @@ async function checkEnvironment(showLoading = true) {
     const { os, checks } = await api.fetchEnv();
     state.envChecks = checks;
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
+    // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
+    // renderWizard 畫出來的清單還是退勾的狀態，而後面沒有人再畫一次——畫面就停在
+    // 「0 / 1、但徽章寫已完成」（VM 實測 Node.js 那張）。
+    state.manualRecheck = false;
     renderWizard();
     renderEnvActionButtons();
+
+    // 學生自己按的那次要有結尾。重掃通常一秒內回來，只有轉圈圈閃一下的話，
+    // 按鈕看起來還是像沒反應——而且多數時候狀態本來就不會變。
+    //
+    // 原始輸出那塊也要有東西：環境檢查是一支 HTTP 請求，不是跑一個程式，沒有
+    // 逐字稿可印。把每一列的結果寫進去，「看原始輸出」才不是空的。
+    if (manual) {
+      for (const check of checks) {
+        view.addRawLine(
+          `[${check.status}] ${check.label}：${check.detail ?? ""}`,
+        );
+      }
+
+      view.addLine("環境檢查完成，狀態已更新。", "succeeded");
+    }
 
     if (state.loginWait !== null) {
       const step = loginWaitStep({
@@ -692,10 +917,14 @@ async function checkEnvironment(showLoading = true) {
     return checks;
   } catch (error) {
     state.envChecks = [];
+    state.manualRecheck = false;
     view.renderEnvFailure(error.message);
+    renderWizard();
     return null;
   } finally {
     state.envCheckInProgress = false;
+    // 成功那條路上已經關掉了，這裡是失敗／例外的退路——不關的話清單會一直退勾。
+    state.manualRecheck = false;
     view.renderEnvBusy(false);
     view.elements.recheckEnv.disabled = state.runInProgress;
     renderCheckingLoader();
@@ -888,6 +1117,11 @@ async function handleDone(
     state.failedSteps.delete(step);
     state.resultTexts.delete(step);
   }
+  // 重裝＝那一步的內容換了，上次驗過的結論不該延用。指紋不再自己作廢紀錄，所以
+  // 這條路要自己講清楚：裝完會接著驗一次，那次的結果才算數。
+  if (action === "install-config-step" && step !== null && step !== undefined) {
+    forgetVerification(step);
+  }
   if (
     verifiedStep !== undefined &&
     (action.startsWith("verify-") || AUTO_VERIFY_ACTIONS.has(action))
@@ -978,7 +1212,13 @@ async function run(action, promptText, button = null, options) {
     stopLoginWait();
   }
 
-  view.clearOutput();
+  // 這一輪的輸出屬於發動它的那張卡。釘住之後，學生跑到一半翻去看別張，結果仍然
+  // 記在原來那張上，不會印進他正在看的那一份。
+  if (state.announcedCardId !== null) {
+    view.pinTranscript(state.announcedCardId);
+  }
+
+  view.clearRawOutput();
   view.clearLoginHints();
   state.activeEnvButton = envButton;
   state.activeRunButton = button;
@@ -1004,6 +1244,7 @@ async function run(action, promptText, button = null, options) {
   }
 
   state.agentName = agentNameFor(action);
+  state.currentRunAction = action;
   state.runId = null;
   state.acceptsInput = false;
   state.currentLoaderModifier =

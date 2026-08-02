@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import {
   BEHAVIOR_CHECKLIST,
   BEHAVIOR_QUESTION,
+  LOADER_MODIFIERS,
   LOGIN_WAIT_TIMEOUT_MS,
   AUTO_VERIFY_ACTIONS,
   agentNameFor,
   appendTermLine,
   behaviorFallbackState,
   cardIsComplete,
+  completedCardIds,
   cardResultItems,
   cardResultText,
   cardStatusModel,
@@ -19,11 +21,16 @@ import {
   envButtonState,
   envCardRowModel,
   envRowModel,
+  eyeVerifiedSteps,
   extractLoginHints,
+  impliedVerifiedSteps,
   installStatusMessage,
   isLoginAction,
+  isVerifyAction,
+  loaderLabel,
   loginCardModel,
   loginWaitStep,
+  manualStepGroups,
   milestoneModels,
   nextCardUnlocked,
   rowRunOptions,
@@ -138,12 +145,58 @@ try {
   assert.match(pending.detail, /尚未驗證/);
   // 不放「驗證」按鈕：安裝完會自動接驗證，那顆只會閃一下就消失，學生不知道驗了沒
   // （Reed 實測）。重驗一律走「再 check 一次」，而它一直都在。
+  //
+  // 裝好了就灰掉，即使還沒驗過：安裝按鈕只管安裝。原本這一態給可按的「重裝」，
+  // 於是「只差看一眼」的列也長出一顆安裝按鈕，學生按下去畫面說「正在安裝」——
+  // 他要的只是再驗一次（Reed 實測 claude-namer）。驗證請按「重跑驗證」。
   assert.deepEqual(
-    pending.buttons.map((button) => button.text),
-    ["安裝"],
+    pending.buttons.map(({ text, disabled }) => ({ text, disabled })),
+    [{ text: "✅ 已安裝", disabled: true }],
   );
   assert.equal(pending.showRetest, true);
-  ok("結構齊全但沒驗過行為的列不給綠燈，且沒有會閃現的「驗證」按鈕");
+  ok("裝好但沒驗過的列：安裝按鈕灰掉，驗證交給「重跑驗證」");
+
+  // 例外：驗證真的失敗過的時候那顆要活過來。裝歪了（舊版、裝一半）而 check 仍是
+  // ok 的情況存在，那時重跑安裝是唯一的自救手段。
+  const rescue = configRowModel(
+    {
+      id: "hook",
+      label: "Shell 不串接 hook",
+      status: "ok",
+      detail: "已安裝",
+      installAction: null,
+      mergeAction: null,
+      verifyAction: "verify-behavior",
+      eyeCheck: null,
+    },
+    false,
+    { verificationFailed: true },
+  );
+  assert.deepEqual(
+    rescue.buttons.map(({ text, secondary, disabled }) => ({
+      text,
+      secondary,
+      disabled,
+    })),
+    [{ text: "重裝", secondary: true, disabled: undefined }],
+  );
+  ok("驗證失敗過的列才把「重裝」放回來，而且不是主要動作");
+
+  // 還沒裝的列才是「安裝」，而且是主要動作。
+  const notInstalledYet = configRowModel({
+    id: "hook",
+    label: "Shell 不串接 hook",
+    status: "missing",
+    detail: "未安裝",
+    installAction: "install-config-step",
+    verifyAction: "verify-behavior",
+    eyeCheck: null,
+  });
+  assert.deepEqual(
+    notInstalledYet.buttons.map(({ text, secondary }) => ({ text, secondary })),
+    [{ text: "安裝", secondary: undefined }],
+  );
+  ok("還沒裝的列才給主要動作的「安裝」");
 
   // demo 那種 noInstall 的列從頭到尾沒有「安裝」這個概念。原本會補一顆按不動的
   // 佔位按鈕（為了讓每列的按鈕位置對齊），學生盯著它想「是不是要先按這個」。
@@ -182,7 +235,7 @@ try {
   assert.equal(verified.status, "ok");
   assert.deepEqual(
     verified.buttons.map(({ text, disabled }) => ({ text, disabled })),
-    [{ text: "✅ 安裝", disabled: true }],
+    [{ text: "✅ 已安裝", disabled: true }],
   );
   assert.equal(verified.showRetest, true);
   ok("驗過之後才變綠，安裝按鈕置灰並可再次驗證");
@@ -229,6 +282,40 @@ try {
     2,
   );
   ok("目前卡片會推導成第一張未完成卡，整段完成則停在最後一張");
+
+  // 「這張卡完成了嗎」全站只有一個答案。稽核（docs/audit-card-logic.md）找到進度條
+  // 另外收了三條路：setup 自己判、目前這張卡改看 nextUnlocked、其他卡看
+  // attempted && installed。後兩條讓圓點比徽章寬鬆——同一張卡「圓點亮了、徽章還是
+  // 待驗證」，而且第三條連驗證有沒有成功都不看。
+  //
+  // 這條測試把那三條路釘死：completedCardIds 的結果必須等於逐張 cardIsComplete。
+  const completed = completedCardIds(cards, new Set(), new Set());
+  assert.deepEqual(
+    [...completed],
+    cards
+      .filter((card) => cardIsComplete(card, new Set(), new Set()))
+      .map(({ checkId }) => checkId),
+  );
+  assert.deepEqual([...completed], ["one", "two"]);
+  ok("進度條的完成集合＝逐張 cardIsComplete，沒有別的路徑");
+
+  // 驗證失敗但「試過了」不算完成——那是「下一張」的條件，不是完成的條件。
+  const attemptedOnly = [
+    {
+      kind: "config",
+      checkId: "pending-one",
+      check: {
+        id: "pending-one",
+        label: "待驗證",
+        status: "ok",
+        detail: "已安裝",
+        verifyAction: "verify-behavior",
+        eyeCheck: null,
+      },
+    },
+  ];
+  assert.deepEqual([...completedCardIds(attemptedOnly, new Set(), new Set())], []);
+  ok("裝好但沒驗過的卡不算完成，就算學生已經按過驗證");
 
   const milestones = milestoneModels(
     cards,
@@ -429,7 +516,7 @@ try {
       new Set(["gh"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
     [
-      { text: "✅ 安裝", disabled: true },
+      { text: "✅ 已安裝", disabled: true },
       { text: "開始登入", disabled: false },
     ],
   );
@@ -486,7 +573,7 @@ try {
       },
       new Set(["node"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
-    [{ text: "✅ 安裝", disabled: true }],
+    [{ text: "✅ 已安裝", disabled: true }],
   );
   ok("沒有 installer 的設定類項目不放安裝按鈕，只放修正");
 
@@ -583,6 +670,196 @@ try {
   );
   ok("程式驗過的勾，只在那一列現在還是好的時候才算數");
 
+  // 安裝與驗證是兩件事，跑起來的時候畫面也要分開講。原本只有一個 running 狀態，
+  // 按「重跑驗證」時徽章寫「安裝中…」、終端寫「正在安裝」——學生只是想再驗一次
+  // （Reed 實測 claude-namer）。
+  assert.equal(cardStatusModel({ running: true }).text, "安裝中…");
+  assert.equal(
+    cardStatusModel({ running: true, verifying: true }).text,
+    "驗證中…",
+  );
+  assert.equal(isVerifyAction("verify-in-terminal"), true);
+  assert.equal(isVerifyAction("install-config-step"), false);
+  // 登入、開視窗那些兩者都不是，不能被當成驗證。
+  assert.equal(isVerifyAction("login-claude"), false);
+  assert.equal(isVerifyAction(""), false);
+  ok("安裝中與驗證中是兩種狀態，靠 action 前綴分");
+
+  // verify-in-terminal 沒有自己的動畫，會落回 working 那顆——而那顆的預設字是
+  // 「正在安裝」。字要跟著動作走，不是跟著動畫走。
+  assert.equal(
+    loaderLabel({
+      action: "verify-in-terminal",
+      modifier: LOADER_MODIFIERS.working,
+    }),
+    "正在驗證，完成後會自動更新。",
+  );
+  assert.equal(
+    loaderLabel({
+      action: "install-config-step",
+      modifier: LOADER_MODIFIERS.working,
+    }),
+    null,
+  );
+  // 其他動畫本來就有對的字，不要蓋掉。
+  assert.equal(
+    loaderLabel({
+      action: "verify-in-terminal",
+      modifier: LOADER_MODIFIERS.listening,
+    }),
+    null,
+  );
+  ok("借用安裝那顆動畫的驗證，字改講驗證");
+
+  // 同一張清單裡兩種項目並存時才加前綴：第一格講的是程式查得到的結構，第二格是
+  // 學生要自己看的畫面。原本兩格共用一種句型，學生看到檔案明明都在卻沒打勾。
+  const mixedGroups = checklistGroups({
+    checks: [{ ...eyeRow, label: "自動命名 hook", detail: "檔案與註冊都在" }],
+    verifiedCheckIds: new Set(),
+  });
+  assert.match(mixedGroups.system[0].text, /^程式檢查：/);
+  assert.match(mixedGroups.manual[0].text, /^你要看的：/);
+  // 整張都是程式檢查的卡不加前綴——每一行都掛「程式檢查：」只是噪音。
+  const systemOnly = checklistGroups({
+    checks: [{ id: "node", label: "Node.js", status: "ok", detail: "20.x" }],
+    verifiedCheckIds: new Set(),
+  });
+  assert.equal(systemOnly.system[0].text, "Node.js");
+  ok("程式檢查與眼睛確認並存時才加前綴，分清楚哪一格是誰的事");
+
+  // 結構都對了卻還沒打勾的那一格，要說清楚它在等什麼——不然畫面是「都已生效」
+  // 配一個空格，看起來像壞掉。
+  const notRunYet = checklistGroups({
+    checks: [
+      {
+        ...eyeRow,
+        label: "自動命名 hook",
+        detail: "hook 檔案與 3 筆註冊都已生效",
+        verifyAction: "verify-in-terminal",
+      },
+    ],
+    verifiedCheckIds: new Set(),
+  });
+  assert.match(notRunYet.system[0].detail, /還沒實際跑跑看/);
+  const ranAlready = checklistGroups({
+    checks: [
+      {
+        ...eyeRow,
+        label: "自動命名 hook",
+        detail: "hook 檔案與 3 筆註冊都已生效",
+        verifyAction: "verify-in-terminal",
+      },
+    ],
+    verifiedCheckIds: new Set(["x"]),
+  });
+  assert.doesNotMatch(ranAlready.system[0].detail, /還沒實際跑跑看/);
+  ok("還沒跑過驗證的那一格會說自己在等什麼");
+
+  // 驗過之後檔案被動過：勾留著，補一句提醒。改的可能是學生自己那半（合併過的
+  // CLAUDE.md，工作坊那段還在所以檢查照樣說 ok），程式看不出來會不會影響驗過的
+  // 行為——這種情況值得提醒，不值得直接作廢。
+  const changed = checklistGroups({
+    checks: [{ id: "claude-md", label: "CLAUDE.md", status: "ok", detail: "已安裝" }],
+    verifiedCheckIds: new Set(["claude-md"]),
+    changedCheckIds: new Set(["claude-md"]),
+  });
+  assert.equal(changed.system[0].checked, true);
+  assert.match(changed.system[0].detail, /在你驗證之後被改過/);
+  // 沒被動過就不要多那句話。
+  const untouched = checklistGroups({
+    checks: [{ id: "claude-md", label: "CLAUDE.md", status: "ok", detail: "已安裝" }],
+    verifiedCheckIds: new Set(["claude-md"]),
+  });
+  assert.doesNotMatch(untouched.system[0].detail, /被改過/);
+  // 還沒驗過的那一格不講這句：它要的是「按重跑驗證」，不是「要不要再驗一次」。
+  const notVerified = checklistGroups({
+    checks: [{ id: "claude-md", label: "CLAUDE.md", status: "ok", detail: "已安裝" }],
+    verifiedCheckIds: new Set(),
+    changedCheckIds: new Set(["claude-md"]),
+  });
+  assert.doesNotMatch(notVerified.system[0].detail, /被改過/);
+  ok("驗過之後被動過的那一格：勾留著，多一句提醒");
+
+  // 沒有眼睛項的列：程式驗過了就是整列過了，不必等第二本帳也寫成功。
+  //
+  // VM 實測 ext-playwright-claude 只寫進 behavior、沒寫進 verified，於是清單那格
+  // 打勾、徽章卻是待驗證，學生被要求重跑一次要開瀏覽器的驗證。旁邊 codex 那筆差
+  // 128 毫秒、兩本都成功——同一段程式，一次成功一次沒有。
+  const behaviorOnly = new Set(["ext-playwright-claude", "claude-namer"]);
+  assert.deepEqual(
+    [
+      ...impliedVerifiedSteps(
+        [
+          { id: "ext-playwright-claude", eyeCheck: null },
+          // 有眼睛項的列不算：那種列的「整列過了」本來就要學生看完說了算。
+          { id: "claude-namer", eyeCheck: "分頁標題變成…" },
+          { id: "hook", eyeCheck: null },
+        ],
+        behaviorOnly,
+      ),
+    ],
+    ["ext-playwright-claude"],
+  );
+  ok("沒有眼睛項的列，程式驗過就等於整列過了");
+
+  // 反過來，有眼睛項的列要兩半都成立。原本只要學生勾眼睛就算整列過——他可以完全
+  // 不跑驗證直接勾，卡片變成已完成並長出「下一張」，清單卻還停在 1 / 2
+  //（VM 實測 skill-claude-handoff）。
+  const eyeChecks = [
+    { id: "skill-claude-handoff", eyeCheck: "標題變成 📦…", verifyAction: "verify-in-terminal" },
+    // 沒有程式那半可跑的列不在此限：只有學生看得到，勾了就是過了。
+    { id: "look-only", eyeCheck: "看畫面", verifyAction: null },
+  ];
+  const ticked = new Set(["eye-skill-claude-handoff", "eye-look-only"]);
+  assert.deepEqual(
+    [...eyeVerifiedSteps(eyeChecks, ticked, new Set())],
+    ["look-only"],
+  );
+  assert.deepEqual(
+    [...eyeVerifiedSteps(eyeChecks, ticked, new Set(["skill-claude-handoff"]))],
+    ["skill-claude-handoff", "look-only"],
+  );
+  // 沒勾眼睛的話，程式那半過了也不算整列過。
+  assert.deepEqual(
+    [...eyeVerifiedSteps(eyeChecks, new Set(), new Set(["skill-claude-handoff"]))],
+    [],
+  );
+  ok("有眼睛項的列要兩半都成立：程式跑過，而且學生看過");
+
+  // 全螢幕那三格其實是兩步：前兩件在同一個視窗做完，第三件要另一個視窗（終端裡
+  // 得先有一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生
+  // 要自己配對（Reed 實測）。
+  const fullscreenSteps = manualStepGroups(
+    sectionManualItems("env", 0, 3, "claude", "claude"),
+  );
+  assert.deepEqual(
+    fullscreenSteps.map(({ id, buttonText, items }) => ({
+      id,
+      buttonText,
+      ids: items.map((item) => item.id),
+    })),
+    [
+      {
+        id: "fullscreen-open",
+        buttonText: "開啟 Claude Code",
+        ids: ["fullscreen-yes", "fullscreen-mouse"],
+      },
+      {
+        id: "fullscreen-proof",
+        buttonText: "開啟並送出測試句",
+        ids: ["fullscreen-copy"],
+      },
+    ],
+  );
+  ok("全螢幕三格照兩步分組，每一步配自己的按鈕");
+
+  // 沒有 stepId 的人工項目（段落閘門那種）不長出標題，照原樣排成一組。
+  const plain = manualStepGroups([{ id: "a", text: "隨便一格" }]);
+  assert.equal(plain.length, 1);
+  assert.equal(plain[0].title, null);
+  assert.equal(plain[0].action, null);
+  ok("沒有分步的人工項目不會被硬塞一個標題");
+
   // 檔案已經是學生自己的版本時，安裝刻意不覆蓋，腳本什麼都沒做就 exit 0。
   // 照著 exit code 印「安裝成功，已完成」是騙人的——列上還寫著「需要合併」。
   const mergeOutcome = terminalOutcomeLines({
@@ -593,7 +870,7 @@ try {
   assert.doesNotMatch(mergeOutcome[0].text, /安裝成功/);
   assert.match(mergeOutcome[0].text, /沒有覆蓋/);
   assert.match(mergeOutcome[0].text, /用 AI 合併/);
-  assert.match(mergeOutcome[0].text, /再 check 一次/);
+  assert.match(mergeOutcome[0].text, /重跑驗證/);
   // 設計系統只有 prompt / ok / err，用不存在的 class 只會靜靜地沒有樣式。
   assert.match(mergeOutcome[0].className, /ds-term-line--(prompt|ok|err)$/);
   ok("需要合併的列不印假的「安裝成功」，改成講下一步");
