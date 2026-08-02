@@ -695,7 +695,24 @@ export function renderLoaders({ modifier, paused = false, label = null }) {
     // 動畫的預設字只在沒指定時才算數。
     text: paused ? "處理已停止。" : (label ?? loaderLabels[modifier]),
   };
-  if (!acceptsTerminalLine(spec)) return;
+  // 同一句話不重複印，但轉圈圈要重新掛回去。
+  //
+  // 學生在環境卡上按「再 check 一次」，那句「正在檢查目前狀態。」跟上一次一模一樣
+  // ——去重把整個 renderLoaders 擋掉，連轉圈圈都沒出現，看起來就是按了完全沒反應
+  // （VM 實測 Claude Code 那張卡）。檢查確實有跑，只是畫面一個字都沒動。
+  if (!acceptsTerminalLine(spec)) {
+    const last = elements.terminalLines.lastElementChild;
+
+    if (last?.classList.contains("terminal-loader-line") === true) {
+      hideLoaders();
+      loader.hidden = false;
+      loader.classList.toggle("is-paused", paused);
+      last.append(loader);
+    }
+
+    return;
+  }
+
   hideLoaders();
   const line = document.createElement("div");
   line.className = spec.className;

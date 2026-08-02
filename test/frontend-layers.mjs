@@ -111,6 +111,38 @@ try {
   assert(files.app.includes('retestText: card.kind === "env"'));
   ok("重驗按鈕的字跟著卡片種類走，不是寫死在 view 裡");
 
+  // 去重只擋文字，不能連轉圈圈一起擋掉。環境卡按「再 check 一次」印的字跟上一次
+  // 一樣，整個 renderLoaders 被擋住，畫面一個字都沒動——學生只會以為按鈕壞了。
+  const renderLoadersBody =
+    files.view.match(/export function renderLoaders\([^)]*\)\s*\{[\s\S]*?\n\}/)?.[0] ??
+    "";
+  assert(
+    /acceptsTerminalLine\(spec\)\)\s*\{[\s\S]*terminal-loader-line[\s\S]*loader\.hidden = false/.test(
+      renderLoadersBody,
+    ),
+    "renderLoaders 遇到重複的字時仍要把轉圈圈掛回最後那一行",
+  );
+  ok("重複的進度字不再連轉圈圈一起吞掉");
+
+  // 學生自己按的重掃要在終端留下頭尾兩句話。自動跑的那些（開頁、裝完接著跑）不講，
+  // 否則每裝一個東西就多兩行雜訊。
+  assert(files.app.includes('checkEnvironment(true, { manual: true })'));
+  assert(files.app.includes("正在重新檢查環境狀態。"));
+  assert(files.app.includes("環境檢查完成，狀態已更新。"));
+  ok("學生按的環境重掃會在終端說開始與結束");
+
+  // 終端是「現在正在做什麼」，學生的每個動作都要在裡面留下一句話。勾一格卻什麼都
+  // 沒發生的話，學生不知道那一勾有沒有被記住。
+  for (const [snippet, what] of [
+    ["已勾選", "人工項目勾選"],
+    ["取消勾選", "人工項目取消"],
+    ["貼上的代碼對上了", "貼上證明"],
+    ["現在這張：", "換卡"],
+  ]) {
+    assert(files.app.includes(snippet), `${what}要在終端留一句話`);
+  }
+  ok("勾選、貼上、換卡都會在終端留一句話");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

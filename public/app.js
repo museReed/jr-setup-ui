@@ -109,6 +109,10 @@ const state = {
   selectedLanguage: "zh-TW",
   // 正在跑的是哪個 action。徽章與 loader 的字要靠它分「安裝中」與「驗證中」。
   currentRunAction: "",
+  // 這次的環境檢查是學生自己按的，還是開頁／裝完自己跑的。只有前者要講話。
+  manualRecheck: false,
+  // 終端上已經報過的那張卡。renderWizard 跑得很勤，沒有它會一直重複同一句。
+  announcedCardId: null,
   pendingModalCheck: null,
   loginHints: { url: null, code: null },
 };
@@ -246,6 +250,14 @@ function renderWizard() {
     state.viewingCardIndex[state.activeSectionId] = derivedIndex;
   }
   const card = cardSection.cards[currentIndex];
+
+  // 換卡也要留一句。renderWizard 每次環境檢查、每次勾選都會跑，所以只在真的換了
+  // 那張卡的時候講——不然同一句話會洗滿整個終端。
+  if (state.announcedCardId !== card.checkId) {
+    state.announcedCardId = card.checkId;
+    view.addLine(`現在這張：${card.label}`, "agent-status");
+  }
+
   const manualItems = sectionManualItems(
     section.id,
     currentIndex,
@@ -443,7 +455,7 @@ function renderWizard() {
     },
     onRetest: () => {
       if (card.kind === "env") {
-        checkEnvironment();
+        checkEnvironment(true, { manual: true });
         return;
       }
       runConfigCheckAction(
@@ -471,15 +483,30 @@ function renderWizard() {
         view.addLine(`無法送出：${error.message}`, "failed");
       }
     },
+    // 終端是「現在正在做什麼」，學生的每一個動作都要在裡面留下一句話。勾一格卻
+    // 什麼都沒發生的話，學生不知道那一勾有沒有被記住（重整之後才會發現）。
     onManualToggle: (id, checked) => {
+      const item = groups.manual.find((entry) => entry.id === id);
       setManualChecked(id, checked);
+      view.addLine(
+        `${checked ? "已勾選" : "取消勾選"}：${item?.text ?? id}`,
+        checked ? "succeeded" : "",
+      );
       renderNavigation();
       renderWizard();
     },
     // 貼對了就自己打勾，貼錯或清空就取消——學生不用再多按一次勾選框。
     onPasteProofInput: (value) => {
+      const wasMatched = matchesFullscreenProof(state.pasteProofValue);
+      const matched = matchesFullscreenProof(value);
       state.pasteProofValue = value;
-      setManualChecked("fullscreen-copy", matchesFullscreenProof(value));
+      setManualChecked("fullscreen-copy", matched);
+
+      // 只在「對上」那一刻講一次。每打一個字都講的話，貼的過程會洗出一整片。
+      if (matched && !wasMatched) {
+        view.addLine("貼上的代碼對上了，這一項算過。", "succeeded");
+      }
+
       renderNavigation();
       renderWizard();
     },
@@ -517,6 +544,9 @@ function renderCheckingLoader() {
     view.renderLoaders({
       modifier: loaderModifier({ checking: true }),
       topOnly: true,
+      // 學生自己按的那次要講得更明確。開頁時的自動檢查說「正在檢查目前狀態」就夠，
+      // 但按鈕按下去看到同一句話（而且是已經在畫面上的那句），等於沒有回饋。
+      label: state.manualRecheck ? "正在重新檢查環境狀態。" : null,
     });
   } else if (!state.loaderPaused) {
     view.hideLoaders();
@@ -679,11 +709,12 @@ function finishLoginWait(step) {
   view.finishLoginWaiting(step.text, step.failed);
 }
 
-async function checkEnvironment(showLoading = true) {
+async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   if (state.envCheckInProgress) {
     return null;
   }
 
+  state.manualRecheck = manual;
   state.envCheckInProgress = true;
   view.elements.recheckEnv.disabled = true;
   view.renderEnvBusy(true);
@@ -699,6 +730,12 @@ async function checkEnvironment(showLoading = true) {
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     renderWizard();
     renderEnvActionButtons();
+
+    // 學生自己按的那次要有結尾。重掃通常一秒內回來，只有轉圈圈閃一下的話，
+    // 按鈕看起來還是像沒反應——而且多數時候狀態本來就不會變。
+    if (manual) {
+      view.addLine("環境檢查完成，狀態已更新。", "succeeded");
+    }
 
     if (state.loginWait !== null) {
       const step = loginWaitStep({
@@ -720,6 +757,7 @@ async function checkEnvironment(showLoading = true) {
     return null;
   } finally {
     state.envCheckInProgress = false;
+    state.manualRecheck = false;
     view.renderEnvBusy(false);
     view.elements.recheckEnv.disabled = state.runInProgress;
     renderCheckingLoader();
