@@ -843,8 +843,13 @@ function renderCard(model) {
         primary: model.retestPrimary === true,
         onClick: model.onRetest,
       });
-      // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。
+      // 導覽要指得到這顆（見 tour-model.js 的 COMPONENT_TOUR_STEPS）。
       retest.dataset.retest = "true";
+      // 兩顆長得一樣、做的事不一樣：env 卡是重掃電腦狀態，config 卡是真的開一個
+      // 終端跑一遍。導覽要當成兩個元件各講一次，不然學生第一次遇到會開終端的那顆
+      // 時，說明已經在環境段被當成「講過了」。
+      retest.dataset.retestKind =
+        model.retestText === "再 check 一次" ? "rescan" : "verify";
       actions.append(retest);
     }
     body.append(actions);

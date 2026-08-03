@@ -805,8 +805,11 @@ function renderEnvActionButtons() {
 
 function setRunning(running) {
   state.runInProgress = running;
-  renderWizard();
+  // 控制列先畫：取消鈕要露臉之後，卡片那邊的導覽才指得到它。反過來的話，導覽問
+  // 「取消鈕在不在」時它還 hidden，那一步會被當成指不到而跳過——取消鈕就永遠
+  // 沒人講（它只有正在跑的時候才出現，沒有第二次機會）。
   renderControls();
+  renderWizard();
   renderEnvActionButtons();
 }
 

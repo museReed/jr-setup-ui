@@ -3,10 +3,11 @@
 import assert from "node:assert/strict";
 import {
   CARD_HINTS,
-  CARD_TOUR_STEPS,
+  COMPONENT_TOUR_STEPS,
   LAYOUT_TOUR_STEPS,
   hintForCard,
-  shouldRunCardTour,
+  newComponentSteps,
+  replayableSteps,
   shouldRunLayoutTour,
 } from "../public/tour-model.js";
 
@@ -116,42 +117,117 @@ try {
   ]);
   ok("只有六張會卡死或誤判的卡片有提示");
 
-  // ── 「這張卡怎麼用」──────────────────────────────────────────
+  // ── 元件導覽 ────────────────────────────────────────────────
   //
-  // 要等第一張真的有自查清單的卡，而且不能跟版面導覽疊在一起跑。
-  const base = {
-    seen: false,
-    hasChecklist: true,
+  // 八個元件一定要講到，順序就是學生操作的順序。以元件為單位記，不是以卡為單位：
+  // 手動清單要到第三張卡才第一次出現，貼證明的輸入框只有 Claude Code 那張有，
+  // 「重跑驗證」跟環境段的「再 check 一次」是兩件事——以卡為單位的話，這些後面
+  // 才第一次遇到的元件永遠沒人講（Reed 在 VM 上實際卡到）。
+  assert.deepEqual(
+    COMPONENT_TOUR_STEPS.map((step) => step.id),
+    [
+      "checklist-system",
+      "checklist-manual",
+      "step-action",
+      "paste-proof",
+      "retest-rescan",
+      "retest-verify",
+      "cancel-run",
+      "raw-output",
+    ],
+  );
+  for (const step of COMPONENT_TOUR_STEPS) {
+    assert(step.element.length > 0);
+    assert(step.title.length > 0);
+    assert(step.description.length > 0);
+  }
+  ok("元件導覽涵蓋八個元件：兩種清單、開視窗、貼證明、兩種重驗、取消、原始輸出");
+
+  const all = new Set(COMPONENT_TOUR_STEPS.map((step) => step.id));
+  const componentBase = {
+    present: all,
+    seenIds: new Set(),
     layoutSeen: true,
     runInProgress: false,
     tourRunning: false,
   };
-  assert.equal(shouldRunCardTour(base), true);
-  assert.equal(shouldRunCardTour({ ...base, hasChecklist: false }), false);
-  assert.equal(shouldRunCardTour({ ...base, layoutSeen: false }), false);
-  assert.equal(shouldRunCardTour({ ...base, seen: true }), false);
-  assert.equal(shouldRunCardTour({ ...base, runInProgress: true }), false);
-  assert.equal(shouldRunCardTour({ ...base, tourRunning: true }), false);
-  ok("卡片導覽只在第一張有清單的卡、版面導覽看完之後跑一次");
 
-  // 五件事一定要講到：系統驗的、你自己勾的（手動驗證）、把視窗開起來的那顆、
-  // 重驗的那顆、原始輸出是什麼。順序就是學生操作的順序。
-  assert.equal(CARD_TOUR_STEPS.length, 5);
+  // 沒講過而且現在指得到的才講。
   assert.deepEqual(
-    CARD_TOUR_STEPS.map((step) => step.element),
+    newComponentSteps(componentBase).map((step) => step.id),
     [
-      ".ds-checklist .ds-check.is-system",
-      ".ds-checklist .ds-check.is-manual",
-      ".checklist-step [data-step-action]",
-      ".env-actions [data-retest]",
-      "#raw-output-details",
+      "checklist-system",
+      "checklist-manual",
+      "step-action",
+      "paste-proof",
+      "retest-rescan",
+      "retest-verify",
+      "raw-output",
     ],
   );
-  for (const step of CARD_TOUR_STEPS) {
-    assert(step.title.length > 0);
-    assert(step.description.length > 0);
-  }
-  ok("卡片導覽講滿五件事：系統驗的、手動勾的、開視窗、重驗、原始輸出");
+  assert.deepEqual(
+    newComponentSteps({
+      ...componentBase,
+      seenIds: new Set(["checklist-system", "raw-output"]),
+    }).map((step) => step.id),
+    [
+      "checklist-manual",
+      "step-action",
+      "paste-proof",
+      "retest-rescan",
+      "retest-verify",
+    ],
+  );
+  assert.deepEqual(
+    newComponentSteps({
+      ...componentBase,
+      present: new Set(["checklist-system"]),
+    }).map((step) => step.id),
+    ["checklist-system"],
+  );
+  assert.deepEqual(newComponentSteps({ ...componentBase, layoutSeen: false }), []);
+  assert.deepEqual(newComponentSteps({ ...componentBase, tourRunning: true }), []);
+  ok("元件導覽只講「沒講過而且現在指得到」的那幾個");
+
+  // 取消鈕只有跑起來才出現，所以它反過來：正在跑的時候只講它，其餘一律等跑完
+  // ——泡泡會蓋住終端正在印的字。
+  assert.deepEqual(
+    newComponentSteps({ ...componentBase, runInProgress: true }).map(
+      (step) => step.id,
+    ),
+    ["cancel-run"],
+  );
+  assert.deepEqual(
+    newComponentSteps({
+      ...componentBase,
+      runInProgress: true,
+      seenIds: new Set(["cancel-run"]),
+    }),
+    [],
+  );
+  ok("取消鈕只在跑起來那一刻講一次，其餘元件不在執行中打斷");
+
+  // 「這頁怎麼用」把這張卡上的元件重講一遍，包含已經講過的——但不包含只有執行中
+  // 才指得到的取消鈕（按下去的當下沒在跑，那一步會貼到畫面左上角）。
+  assert.deepEqual(
+    replayableSteps({ present: all }).map((step) => step.id),
+    [
+      "checklist-system",
+      "checklist-manual",
+      "step-action",
+      "paste-proof",
+      "retest-rescan",
+      "retest-verify",
+      "raw-output",
+    ],
+  );
+  assert.deepEqual(
+    replayableSteps({ present: new Set(["raw-output"]) }).map((step) => step.id),
+    ["raw-output"],
+  );
+  // 一個元件都指不到的卡（選工具那張）就沒有東西好重看，按鈕跟著收起來。
+  assert.deepEqual(replayableSteps({ present: new Set() }), []);
+  ok("這頁怎麼用重講這張卡上的元件，沒有元件的卡不留按鈕");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

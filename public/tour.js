@@ -7,13 +7,14 @@
 import { driver } from "/vendor/driver.mjs";
 import {
   CARD_HINTS,
-  CARD_TOUR_SEEN_KEY,
-  CARD_TOUR_STEPS,
+  COMPONENT_SEEN_PREFIX,
+  COMPONENT_TOUR_STEPS,
   HINT_SEEN_PREFIX,
   LAYOUT_TOUR_STEPS,
   TOUR_SEEN_KEY,
   hintForCard,
-  shouldRunCardTour,
+  newComponentSteps,
+  replayableSteps,
   shouldRunLayoutTour,
 } from "./tour-model.js";
 
@@ -44,6 +45,7 @@ const store = {
 };
 
 const seenHints = new Set();
+const seenComponents = new Set();
 let tourRunning = false;
 let layoutDriver = null;
 let cardDriver = null;
@@ -83,22 +85,33 @@ function layoutTour() {
       //
       // 等一拍再叫：driver 的收尾會把遮罩與泡泡移掉，同一個 tick 裡就開下一輪的話
       // 兩者會疊在一起。
-      window.setTimeout(() => startCardTour({}), 0);
+      window.setTimeout(() => startComponentTour({}), 0);
     },
   });
   return layoutDriver;
 }
 
-// 說明講完就把「這頁怎麼用」收起來。前三張卡把該講的講完，之後畫面上不該再留
-// 一顆隨時會打斷人的按鈕（Reed 指定）。
+// 「這頁怎麼用」跟著這張卡上有沒有講得出來的元件走：有就留著，沒有就收起來。
 //
-// 只是 hidden，不是從 DOM 拿掉：replayTour() 仍然叫得動（console 或之後想加回
-// 一個入口都行），而且下一次重整時 initTour 會照紀錄決定要不要藏。
-function hideReplay() {
+// 原本是整份說明講完就永久收起來，於是後面才第一次出現的元件（貼證明的輸入框、
+// 會開終端的「重跑驗證」）連手動重看都沒辦法（Reed 在 VM 上實際卡到）。
+function showReplay(show) {
   const button = document.querySelector("#replay-tour");
 
-  if (button !== null) button.hidden = true;
+  if (button !== null) button.hidden = !show;
 }
+
+// 這一輪講完的元件記起來，下次遇到同一個就不再打斷。
+function markSeen(steps) {
+  for (const { id } of steps) {
+    seenComponents.add(id);
+    store.set(`${COMPONENT_SEEN_PREFIX}${id}`, "1");
+  }
+}
+
+// driver 實例是共用的（只建一次），所以「這一輪結束要記哪些元件」不能綁在建構
+// 時的閉包上——每一輪開跑前換掉這個。
+let onCardTourDone = null;
 
 function cardTour() {
   cardDriver ??= makeDriver({
@@ -109,8 +122,7 @@ function cardTour() {
     doneBtnText: "知道了",
     onDestroyed: () => {
       tourRunning = false;
-      store.set(CARD_TOUR_SEEN_KEY, "1");
-      hideReplay();
+      onCardTourDone?.();
     },
   });
   return cardDriver;
@@ -158,34 +170,17 @@ export function startLayoutTour({ force = false } = {}) {
   return true;
 }
 
-// 「這張卡怎麼用」：只在第一張真的有自查清單的卡上跑一次。
-//
-// 這四步指的是卡片內部的元素，翻到下一張就整批被丟掉重生——所以它是一次性的，
-// 不像版面導覽那樣可以隨時重跑。要重看就從「這頁怎麼用」整套走一遍。
-export function startCardTour({ runInProgress } = {}) {
-  const checklist = document.querySelector(
-    "#current-card .ds-checklist .ds-check.is-system",
-  );
+// 現在畫面上真的指得到的元件有哪些。判定跟 visibleSteps 同一條：元素在、而且
+// 沒被藏起來（指一個 hidden 的元素，driver 會把泡泡貼到畫面左上角）。
+function presentComponents() {
+  return new Set(visibleSteps(COMPONENT_TOUR_STEPS).map(({ id }) => id));
+}
 
-  if (
-    !shouldRunCardTour({
-      seen: store.get(CARD_TOUR_SEEN_KEY) === "1",
-      hasChecklist: checklist !== null,
-      layoutSeen: store.get(TOUR_SEEN_KEY) === "1",
-      runInProgress,
-      tourRunning,
-    })
-  ) {
-    return false;
-  }
-
-  // 這張卡沒有「你自己勾」那一格（例如全是系統驗的），那一步就不講——指一個
-  // 不存在的元素，泡泡會貼到畫面左上角。
-  const steps = visibleSteps(CARD_TOUR_STEPS);
-
+function driveCardTour(steps, onDone) {
   if (steps.length === 0) return false;
 
   tourRunning = true;
+  onCardTourDone = onDone;
   const instance = cardTour();
   instance.setSteps(
     steps.map(({ element, title, description }) => ({
@@ -197,18 +192,33 @@ export function startCardTour({ runInProgress } = {}) {
   return true;
 }
 
+// 這張卡上有沒有「沒講過」的元件，有就講那幾個。
+//
+// 以元件為單位，不是以卡為單位：手動清單要到第三張卡才第一次出現，貼證明的輸入框
+// 只有 Claude Code 那張有，「重跑驗證」跟環境段的「再 check 一次」是兩件事——
+// 這些都是後面才第一次遇到的，以卡為單位的話它們永遠沒人講。
+export function startComponentTour({ runInProgress } = {}) {
+  const steps = newComponentSteps({
+    present: presentComponents(),
+    seenIds: seenComponents,
+    layoutSeen: store.get(TOUR_SEEN_KEY) === "1",
+    runInProgress,
+    tourRunning,
+  });
+
+  return driveCardTour(steps, () => markSeen(steps));
+}
+
+// 「這頁怎麼用」：把這張卡上所有元件重講一遍，包含已經講過的。
+//
+// 重看不該把「看過了」的紀錄清掉：清掉的話翻到下一張又會自動跳一次，變成手動重看
+// 反而害自己多被打斷一輪。
 export function replayTour() {
-  const button = document.querySelector("#replay-tour");
+  if (tourRunning) return false;
 
-  if (button !== null) button.hidden = false;
+  const steps = replayableSteps({ present: presentComponents() });
 
-  store.remove(TOUR_SEEN_KEY);
-  store.remove(CARD_TOUR_SEEN_KEY);
-  for (const cardId of Object.keys(CARD_HINTS)) {
-    store.remove(`${HINT_SEEN_PREFIX}${cardId}`);
-    seenHints.delete(cardId);
-  }
-  return startLayoutTour({ force: true });
+  return driveCardTour(steps, () => markSeen(steps));
 }
 
 function cardIsPainted() {
@@ -222,12 +232,23 @@ function loadSeenHints() {
       seenHints.add(cardId);
     }
   }
+
+  for (const { id } of COMPONENT_TOUR_STEPS) {
+    if (store.get(`${COMPONENT_SEEN_PREFIX}${id}`) === "1") {
+      seenComponents.add(id);
+    }
+  }
 }
 
-// app.js 每畫完一輪卡片就叫這個。第一輪負責把版面導覽跑起來，之後負責單張提示。
+// app.js 每畫完一輪卡片就叫這個。第一輪負責把版面導覽跑起來，之後負責元件導覽
+// 與單張提示。
 export function onCardRendered({ cardId, runInProgress }) {
+  // 「這頁怎麼用」跟著這張卡有沒有元件走，每一輪重畫都要重算——上一張有、這一張
+  // 沒有的話按下去會是一場空白的導覽。
+  showReplay(replayableSteps({ present: presentComponents() }).length > 0);
+
   if (startLayoutTour()) return;
-  if (startCardTour({ runInProgress })) return;
+  if (startComponentTour({ runInProgress })) return;
 
   const hint = hintForCard({
     cardId,
@@ -255,6 +276,6 @@ export function onCardRendered({ cardId, runInProgress }) {
 export function initTour() {
   loadSeenHints();
 
-  // 重整之後也要維持收起來的狀態——說明已經看完了。
-  if (store.get(CARD_TOUR_SEEN_KEY) === "1") hideReplay();
+  // 第一張卡還沒畫出來之前沒有元件可講，先收著；onCardRendered 每一輪會重算。
+  showReplay(false);
 }

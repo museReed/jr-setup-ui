@@ -16,11 +16,11 @@
 // 那顆按鈕在他們身上已經收起來了，連手動重看都沒辦法（Reed 在 VM 上實際卡到）。
 //
 // 改導覽的步驟時把這個號碼加一，看過舊版的人會自動再看一次。
-const TOUR_VERSION = 2;
+const TOUR_VERSION = 3;
 
 export const TOUR_SEEN_KEY = `jr-setup-ui:tour-seen:v${TOUR_VERSION}`;
-export const CARD_TOUR_SEEN_KEY = `jr-setup-ui:card-tour-seen:v${TOUR_VERSION}`;
 export const HINT_SEEN_PREFIX = `jr-setup-ui:hint-seen:v${TOUR_VERSION}:`;
+export const COMPONENT_SEEN_PREFIX = `jr-setup-ui:comp-seen:v${TOUR_VERSION}:`;
 
 // A：版面導覽。element 全是 index.html 裡寫死的骨架，不隨卡片重畫消失。
 export const LAYOUT_TOUR_STEPS = [
@@ -107,23 +107,27 @@ export const CARD_HINTS = {
   },
 };
 
-// C：「這張卡怎麼用」。
+// C：卡片裡面那些元件怎麼用。
 //
 // 版面導覽講的是整頁的骨架，講不到卡片裡面——而卡片裡面才是學生真正要操作的東西：
 // 哪幾格是系統驗的、哪幾格要他自己看了再勾、把視窗開起來的那顆、重驗的那顆、
-// 原始輸出是什麼。
+// 貼證明的那格、原始輸出是什麼。
 //
-// 這一輪只跑一次，而且要等第一張「真的有自查清單」的卡出現才跑：第一張卡是選工具
-// 與選語言，它沒有清單，在那裡講清單學生看不到我們在指什麼。
+// 以「元件」為單位記，不是以「卡」為單位。
 //
-// 整份說明就到這裡為止——這一輪走完，「這頁怎麼用」那顆按鈕會收起來（見 tour.js
-// 的 hideReplay）。前三張卡把該講的講完，之後畫面上不該再留一顆隨時會打斷人的
-// 按鈕（Reed 指定）。
+// 原本整份只在第一張有清單的卡上跑一次，跑完就把「這頁怎麼用」收起來。代價是後面
+// 才第一次出現的元件永遠沒人講：手動清單（橘的）要到第三張卡才有、貼證明的輸入框
+// 只有 Claude Code 那張有、「重跑驗證」會開終端跟 env 段的「再 check 一次」是兩件
+// 事——學生第一次遇到它們時，說明早就收掉了（Reed 在 VM 上實際卡到）。
 //
-// 指不到的步驟會被跳過（見 tour.js 的 visibleSteps）：不是每張卡都有手動項目或
-// 開視窗的按鈕，那幾張就少講那幾步。
-export const CARD_TOUR_STEPS = [
+// 現在每個元件各記各的：某張卡上出現了沒講過的元件才跳，講過的不再打斷。實際會
+// 觸發的只有三、四次（前兩張環境卡與規則段第一張），之後全是重複元件。
+//
+// id 是記憶的 key，改了等於當成新元件重講一次。
+// whileRunning 的那一步反過來：只在「正在跑」的時候才指得到（見 tour.js）。
+export const COMPONENT_TOUR_STEPS = [
   {
+    id: "checklist-system",
     element: ".ds-checklist .ds-check.is-system",
     title: "青色的：系統自己驗",
     description:
@@ -131,6 +135,7 @@ export const CARD_TOUR_STEPS = [
       "你不用動它，也點不動。",
   },
   {
+    id: "checklist-manual",
     element: ".ds-checklist .ds-check.is-manual",
     title: "橘色的：要你自己看",
     description:
@@ -138,6 +143,7 @@ export const CARD_TOUR_STEPS = [
       "照那句話去看，真的看到了再勾起來。沒看到就別勾——勾了只是騙自己。",
   },
   {
+    id: "step-action",
     element: ".checklist-step [data-step-action]",
     title: "這顆幫你把視窗開起來",
     description:
@@ -145,13 +151,40 @@ export const CARD_TOUR_STEPS = [
       "視窗開好，你只要照那幾句話做，回來把看到的勾起來。",
   },
   {
-    element: ".env-actions [data-retest]",
-    title: "做完按這顆重驗",
+    id: "paste-proof",
+    element: ".paste-proof-input",
+    title: "把圈選到的那一行貼進來",
     description:
-      "動過設定之後，程式那半要重跑才知道結果。按下去右邊終端會重新檢查一次，" +
+      "有些事只有你在那個視窗裡看得到，所以這裡要你把看到的那一行貼回來當證據。" +
+      "貼對了這一格會自己打勾，貼錯了它會告訴你對不起來——不是你做錯，再圈一次整行就好。",
+  },
+  {
+    id: "retest-rescan",
+    element: "[data-retest][data-retest-kind='rescan']",
+    title: "做完按這顆重看一次",
+    description:
+      "動過設定之後，程式那半要重跑才知道結果。按下去會重新掃一次你電腦上的狀態，" +
       "青色那幾格跟著更新。灰掉的按鈕代表那件事已經做完，不用再按。",
   },
   {
+    id: "retest-verify",
+    element: "[data-retest][data-retest-kind='verify']",
+    title: "這顆會真的開一個終端跑",
+    description:
+      "跟環境那幾張的「再 check 一次」不一樣：這顆會開一個新的終端視窗，真的把" +
+      "剛才裝的東西叫起來跑一遍。跑起來要一段時間，右邊終端會一路印它在做什麼。",
+  },
+  {
+    id: "cancel-run",
+    element: "#cancel",
+    whileRunning: true,
+    title: "跑太久想停下來按這顆",
+    description:
+      "正在跑的時候右上角會出現這顆。按下去會把它停掉，已經做完的部分不會消失，" +
+      "回到原本的畫面再按一次就好。等它自己跑完也可以——不按不會怎麼樣。",
+  },
+  {
+    id: "raw-output",
     element: "#raw-output-details",
     title: "卡住的時候點這裡",
     description:
@@ -166,17 +199,40 @@ export function shouldRunLayoutTour({ seen, cardReady }) {
   return cardReady === true && seen !== true;
 }
 
-// 「這張卡怎麼用」要等第一張真的有清單的卡，而且不能跟版面導覽疊在一起跑。
-export function shouldRunCardTour({
-  seen,
-  hasChecklist,
+// 這張卡上有哪些「沒講過而且現在指得到」的元件。
+//
+// 正在跑的時候只挑 whileRunning 那幾步（目前只有取消鈕，它本來就只有跑起來才出現），
+// 其餘一律等它跑完——泡泡會蓋住終端正在印的字。
+//
+// present 是呼叫端量出來的「現在畫面上真的看得到」那組 id，這裡不碰 DOM。
+export function newComponentSteps({
+  steps = COMPONENT_TOUR_STEPS,
+  present,
+  seenIds,
   layoutSeen,
   runInProgress,
   tourRunning,
 }) {
-  if (runInProgress === true || tourRunning === true) return false;
+  if (layoutSeen !== true || tourRunning === true) return [];
 
-  return hasChecklist === true && layoutSeen === true && seen !== true;
+  return steps.filter((step) => {
+    if ((step.whileRunning === true) !== (runInProgress === true)) return false;
+    if (present instanceof Set && !present.has(step.id)) return false;
+    return !(seenIds instanceof Set && seenIds.has(step.id));
+  });
+}
+
+// 「這頁怎麼用」那顆的去留：這張卡上只要有講得出來的元件就留著，讓學生隨時能把
+// 這一頁的說明重看一遍。
+//
+// 原本是整份講完就永久收起來，於是後面才第一次出現的元件連手動重看都沒辦法
+//（Reed 在 VM 上實際卡到）。
+export function replayableSteps({ steps = COMPONENT_TOUR_STEPS, present }) {
+  return steps.filter(
+    (step) =>
+      step.whileRunning !== true &&
+      (!(present instanceof Set) || present.has(step.id)),
+  );
 }
 
 // 跑到一半跳提示會蓋住終端正在印的字，所以 runInProgress 的時候一律不跳，
