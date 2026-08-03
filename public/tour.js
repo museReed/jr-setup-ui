@@ -7,10 +7,13 @@
 import { driver } from "/vendor/driver.mjs";
 import {
   CARD_HINTS,
+  CARD_TOUR_SEEN_KEY,
+  CARD_TOUR_STEPS,
   HINT_SEEN_PREFIX,
   LAYOUT_TOUR_STEPS,
   TOUR_SEEN_KEY,
   hintForCard,
+  shouldRunCardTour,
   shouldRunLayoutTour,
 } from "./tour-model.js";
 
@@ -43,6 +46,7 @@ const store = {
 const seenHints = new Set();
 let tourRunning = false;
 let layoutDriver = null;
+let cardDriver = null;
 let hintDriver = null;
 
 function makeDriver(options) {
@@ -73,6 +77,21 @@ function layoutTour() {
     },
   });
   return layoutDriver;
+}
+
+function cardTour() {
+  cardDriver ??= makeDriver({
+    showProgress: true,
+    progressText: "{{current}} / {{total}}",
+    nextBtnText: "下一個",
+    prevBtnText: "上一個",
+    doneBtnText: "知道了",
+    onDestroyed: () => {
+      tourRunning = false;
+      store.set(CARD_TOUR_SEEN_KEY, "1");
+    },
+  });
+  return cardDriver;
 }
 
 function singleHint() {
@@ -117,8 +136,48 @@ export function startLayoutTour({ force = false } = {}) {
   return true;
 }
 
+// 「這張卡怎麼用」：只在第一張真的有自查清單的卡上跑一次。
+//
+// 這四步指的是卡片內部的元素，翻到下一張就整批被丟掉重生——所以它是一次性的，
+// 不像版面導覽那樣可以隨時重跑。要重看就從「這頁怎麼用」整套走一遍。
+export function startCardTour({ runInProgress } = {}) {
+  const checklist = document.querySelector(
+    "#current-card .ds-checklist .ds-check.is-system",
+  );
+
+  if (
+    !shouldRunCardTour({
+      seen: store.get(CARD_TOUR_SEEN_KEY) === "1",
+      hasChecklist: checklist !== null,
+      layoutSeen: store.get(TOUR_SEEN_KEY) === "1",
+      runInProgress,
+      tourRunning,
+    })
+  ) {
+    return false;
+  }
+
+  // 這張卡沒有「你自己勾」那一格（例如全是系統驗的），那一步就不講——指一個
+  // 不存在的元素，泡泡會貼到畫面左上角。
+  const steps = visibleSteps(CARD_TOUR_STEPS);
+
+  if (steps.length === 0) return false;
+
+  tourRunning = true;
+  const instance = cardTour();
+  instance.setSteps(
+    steps.map(({ element, title, description }) => ({
+      element,
+      popover: { title, description },
+    })),
+  );
+  instance.drive();
+  return true;
+}
+
 export function replayTour() {
   store.remove(TOUR_SEEN_KEY);
+  store.remove(CARD_TOUR_SEEN_KEY);
   for (const cardId of Object.keys(CARD_HINTS)) {
     store.remove(`${HINT_SEEN_PREFIX}${cardId}`);
     seenHints.delete(cardId);
@@ -142,6 +201,7 @@ function loadSeenHints() {
 // app.js 每畫完一輪卡片就叫這個。第一輪負責把版面導覽跑起來，之後負責單張提示。
 export function onCardRendered({ cardId, runInProgress }) {
   if (startLayoutTour()) return;
+  if (startCardTour({ runInProgress })) return;
 
   const hint = hintForCard({
     cardId,

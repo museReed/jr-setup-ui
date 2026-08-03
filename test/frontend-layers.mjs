@@ -381,7 +381,8 @@ try {
     );
   }
   // 翻頁那兩顆也是灌色按鈕，長相交給 .ds-btn-fill，styles.css 只管它們站在哪。
-  assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill wizard-nav/);
+  // 兩顆都預先灌滿：空心那顆並排時看起來像停用的（Reed 指定統一）。
+  assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill is-primary wizard-nav/);
   assert.match(cardIndex, /id="wizard-next" class="ds-btn-fill is-primary wizard-nav/);
   assert.doesNotMatch(cardStyles, /^\.wizard-nav \{/m);
   ok("會按的按鈕都是灌色按鈕，每顆前面都有 icon");

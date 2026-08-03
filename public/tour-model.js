@@ -11,6 +11,7 @@
 //              卡片順序決定——driver 只負責畫泡泡，不管流程。
 
 export const TOUR_SEEN_KEY = "jr-setup-ui:tour-seen";
+export const CARD_TOUR_SEEN_KEY = "jr-setup-ui:card-tour-seen";
 export const HINT_SEEN_PREFIX = "jr-setup-ui:hint-seen:";
 
 // A：版面導覽。element 全是 index.html 裡寫死的骨架，不隨卡片重畫消失。
@@ -49,7 +50,20 @@ export const LAYOUT_TOUR_STEPS = [
   },
 ];
 
-// B：單張卡的提示。只挑「不講學生會踩坑」的那幾張，不是每張都要跳泡泡。
+// B：單張卡的提示。
+//
+// 三十張卡有二十張跳泡泡的話，第五張之後學生就開始無腦點掉了——泡泡的價值來自
+// 它很少出現。所以只留「不講就會卡死或誤判」的那幾張，其餘的寫在卡片描述或
+// 清單的眼睛文案裡（那些地方學生本來就會看，不用打斷他）。
+//
+// 留下來的四種訊息：
+//   擋路的      執行原則沒放行，後面每張卡按下去都失敗
+//   改完要重開  中文編碼在原本那個視窗永遠是亂碼
+//   會被問一題  Codex 第一次跑會問信不信任 hook，不接受就永遠不會過
+//   慢到像當掉  playwright 第一次要下載一顆瀏覽器
+//
+// 刻意沒有的：合併卡（「兩份一起裝」卡片描述已經整段講完了，泡泡只是再講一次）、
+// 命名那幾張（「要看分頁標題」是清單裡眼睛那一格的文案，就在他要勾的地方）。
 //
 // key 是卡片的 checkId（renderCard 會把它寫進 data-card-id）。
 export const CARD_HINTS = {
@@ -58,23 +72,88 @@ export const CARD_HINTS = {
       "這張要排在最前面做。系統預設擋掉所有 .ps1 腳本，不先放行的話，" +
       "後面每一張卡按下去都會失敗——不是那些卡壞了。",
   },
+  "powershell-encoding": {
+    description:
+      "改完要把現在這個終端關掉、重開一個新的才算數。原本那個視窗印出來的中文" +
+      "還是會是問號，那不代表沒設定成功。",
+  },
   "tab-sync": {
     description:
       "這張裝好之後，之後每個新開的終端才會把自己的名字放到分頁標題上。" +
       "後面有幾張卡要你「看標題有沒有變」，靠的就是這個。",
   },
-  "output-style": {
-    description: "這張一次裝兩份設定，兩份都裝完才會去驗。中途停下來會驗不過。",
+  "codex-namer": {
+    description:
+      "第一次跑 Codex 會問你要不要信任 hook——一定要接受。沒接受的話 hook 不會跑，" +
+      "分頁標題永遠不會變，看起來就像這張卡壞了。",
   },
-  "codex-config": {
-    description: "跟上一張同一件事，這是 Codex 這邊的兩份。一樣兩份都裝完才驗。",
+  "ext-playwright-claude": {
+    description:
+      "這張會真的開一顆瀏覽器去截圖。第一次要先把瀏覽器下載下來，可能要等好幾分鐘，" +
+      "畫面沒動不代表當掉了。",
+  },
+  "ext-playwright-codex": {
+    description:
+      "這張會真的開一顆瀏覽器去截圖。第一次要先把瀏覽器下載下來，可能要等好幾分鐘，" +
+      "畫面沒動不代表當掉了。",
   },
 };
+
+// C：「這張卡怎麼用」。
+//
+// 版面導覽講的是整頁的骨架，講不到卡片裡面——而卡片裡面才是學生真正要操作的東西：
+// 哪幾格是系統自己驗的、哪幾格要他自己看了再勾、按鈕什麼時候按、原始輸出是什麼。
+//
+// 這一輪只跑一次，而且要等第一張「真的有自查清單」的卡出現才跑：第一張卡是選工具
+// 與選語言，它沒有清單，在那裡講清單學生看不到我們在指什麼。
+export const CARD_TOUR_STEPS = [
+  {
+    element: ".ds-checklist .ds-check.is-system",
+    title: "青色的：系統自己驗",
+    description:
+      "這幾格是程式跑去查了才打勾的——檔案在不在、設定有沒有生效。" +
+      "你不用動它，也點不動。",
+  },
+  {
+    element: ".ds-checklist .ds-check.is-manual",
+    title: "橘色的：要你自己看",
+    description:
+      "這幾格程式驗不到（像「分頁標題有沒有變」），只有你看得到。" +
+      "照那句話去看，真的看到了再勾起來。沒看到就別勾——勾了只是騙自己。",
+  },
+  {
+    element: ".env-actions",
+    title: "按鈕什麼時候按",
+    description:
+      "由左往右按。先按安裝那顆，等右邊終端跑完，再按驗證那顆。" +
+      "已經做完的會變灰色，代表不用再按了。",
+  },
+  {
+    element: "#raw-output-details",
+    title: "卡住的時候點這裡",
+    description:
+      "右邊終端印的是白話版。點開這個會看到原封不動的原始輸出——" +
+      "自己看不懂沒關係，把它整段複製給助教，那才是查得出原因的東西。",
+  },
+];
 
 // 版面導覽只跑一次，而且要等第一張卡真的畫出來——骨架在、卡片區還空的話，
 // 泡泡會指到一個沒有高度的方框。
 export function shouldRunLayoutTour({ seen, cardReady }) {
   return cardReady === true && seen !== true;
+}
+
+// 「這張卡怎麼用」要等第一張真的有清單的卡，而且不能跟版面導覽疊在一起跑。
+export function shouldRunCardTour({
+  seen,
+  hasChecklist,
+  layoutSeen,
+  runInProgress,
+  tourRunning,
+}) {
+  if (runInProgress === true || tourRunning === true) return false;
+
+  return hasChecklist === true && layoutSeen === true && seen !== true;
 }
 
 // 跑到一半跳提示會蓋住終端正在印的字，所以 runInProgress 的時候一律不跳，
