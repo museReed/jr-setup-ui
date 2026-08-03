@@ -234,13 +234,30 @@ export function sectionGateState(
   const missing = required.filter((gate) => !completedGateIds.has(gate.id));
 
   const index = SECTIONS.findIndex((section) => section.id === sectionId);
-  const previous = SECTIONS[index - 1];
-  // undefined 代表「還不知道」（資料還沒回來），那就不要擋——寧可放行也不要在
-  // 載入中把人鎖在外面。
+  // 前面「任何一段」沒回報做完就擋著，不是只看上一段。undefined（資料還沒回來）
+  // 也算沒做完。
+  //
+  // 原本只擋 false，理由是「寧可放行也不要在載入中把人鎖在外面」。VM 的紀錄器
+  // 顯示那個代價是實的：開頁最初 8.4 秒，技能包與 demo 兩段都是解鎖狀態，手快的
+  // 學生點得進去，然後才被鎖回來。
+  //
+  // 「把人鎖在外面」的疑慮其實不成立：第一段永遠沒有前面的段，所以永遠是開的，
+  // 學生一進來就有事可做；其餘幾段等檢查結果回來就會自己開。
+  //
+  // 只看上一段不夠：卡片之間有相依性（技能包那支 auto-rename 呼叫的是規則段裝的
+  // 命名 hook），跳著做的話後面那段就算做完也是空的。而且畫面會自相矛盾——第一段
+  // 沒做完鎖住第二段，第二段做完了卻把第三段開了（Reed 實測看到一三開、二鎖）。
+  //
+  // 點名最早那一段：中間幾段擋人的理由都源自它，那才是學生該回去的地方。
   const previousPending =
-    previous !== undefined && sectionDone[previous.id] === false
-      ? previous
-      : null;
+    SECTIONS.slice(0, index).find(
+      (section) => sectionDone[section.id] !== true,
+    ) ?? null;
+  const previousDone =
+    previousPending === null ? true : sectionDone[previousPending.id];
+  // 分開記「還不知道」與「確定沒做完」：兩者都擋，但話要講得不一樣——資料還沒
+  // 回來時說「先把某某做完」是在講一件我們並不知道的事。
+  const stillChecking = previousPending !== null && previousDone === undefined;
 
   // 「先把上一段做完」對學生沒有用——他人在那一段的最後一張，畫面顯示已完成，被
   // 告知這段沒做完卻無從下手，只能一張一張往回翻（VM 實測）。
@@ -263,9 +280,11 @@ export function sectionGateState(
     ...(previousPending === null
       ? []
       : [
-          named === ""
-            ? `先把「${previousPending.title}」做完`
-            : `先回去做完${named}${rest}`,
+          stillChecking
+            ? "正在檢查目前進度，等一下就會開"
+            : named === ""
+              ? `先把「${previousPending.title}」做完`
+              : `先回去做完${named}${rest}`,
         ]),
     ...missing.map((gate) => `完成「${gate.title}」`),
   ];
@@ -500,9 +519,13 @@ export const CARD_DESCRIPTIONS = {
   "codex-agents": "同上，這一份是 Codex 會讀的規矩",
   "tab-sync": "開十個終端視窗也認得出哪個在做什麼",
   "claude-namer": "你講第一句話之後，分頁標題就變成這次在做的事",
-  "claude-monitor": "對話太長、它快忘記前面講過什麼時，會提早叫你收尾",
+  // 這兩張的驗證要跑一分多鐘（每次兩趟 LLM）。不寫的話畫面看起來像當掉了，
+  // 學生會去按取消——這是唯一「慢到需要先講」的兩張，所以寫在描述裡而不是跳泡泡。
+  "claude-monitor":
+    "對話太長、它快忘記前面講過什麼時，會提早叫你收尾。這張的驗證要跑一分多鐘",
   "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
-  "codex-monitor": "Codex 快忘記前面講過什麼時，也會提早叫你收尾",
+  "codex-monitor":
+    "Codex 快忘記前面講過什麼時，也會提早叫你收尾。這張的驗證一樣要跑一分多鐘",
   // skill 的描述要回答「這支是拿來做什麼的」——標題已經是它的名字了。
   "skill-claude-auto-rename":
     "幫這次對話重新取名。上面那個 hook 是自動取，這支是你不滿意時手動叫它重取",

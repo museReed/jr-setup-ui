@@ -196,22 +196,124 @@ try {
   // 鎖住的分頁原本只是淡一點——淡的東西看起來像「還沒載入」或「壞掉」，不像
   // 「做完前面才會開」。鎖頭一眼就說得清楚。
   assert(files.view.includes("section-tab-lock"));
-  assert.match(cardStyles, /^\.section-tab\.is-locked \.section-tab-lock,$/m);
   ok("鎖住的分頁在標題前面畫一個鎖頭");
 
-  // 開鎖動畫只在「原本鎖著、現在開了」那一刻放。每次重畫都放的話，光是勾一個
-  // 項目就會炸一次煙火；第一次畫也不放，一開頁就慶祝學生不知道在慶祝什麼。
-  assert(files.view.includes("renderedLocks !== null"));
-  assert.match(files.view, /renderedLocks\[id\] === true && !locked/);
+  // 進度條上那隻從左邊外面滾進來，換段時從右邊外面滾出去。兩個位置都要超出
+  // 0% / 100%——停在 0% 是「站在第一個點左邊一點」，看起來像被截斷。
+  // 起訖點是「進度條邊緣再往外半個螢幕寬」，而且每次都重算——視窗縮放、側邊欄
+  // 出現都會改變進度條寬度，寫死的百分比馬上就不是半個螢幕了。
+  assert(files.view.includes("const CAT_OFFSCREEN_RATIO = 0.5;"));
+  assert.match(files.view, /function offscreenPercent\(\)/);
+  assert.match(files.view, /placeCatInstantly\(-offscreenPercent\(\)\)/);
+  assert.match(files.view, /`\$\{100 \+ offscreenPercent\(\)\}%`/);
+  // 滾出畫面不能把頁面撐寬。clip 不是 hidden：hidden 會生出捲動容器，上方那排
+  // sticky 的分頁就黏不住了。
+  // 兩條要成對：只寫 body 的話貓滾出右邊時 <html> 仍然被撐寬，照樣長出橫向捲軸
+  // （實測 scrollWidth 1722 > 視窗 1200）。
+  assert.match(cardStyles, /^body \{[^}]*overflow-x: clip;/m);
+  assert.match(cardStyles, /^:root \{[^}]*overflow-x: clip;/m);
+  assert.match(files.view, /firstPaint \|\| sectionChanged/);
+  // 收手的計時器只在真的重開一輪進出場時清掉。無條件清的話，環境檢查期間的每次
+  // 重畫都會把「滾完了要收手」那一刀清掉，牠就一直轉下去（實際踩到）。
+  assert.match(
+    files.view,
+    /firstPaint \|\| sectionChanged\)\) \{\s*\n(\s*\/\/[^\n]*\n)*\s*window\.clearTimeout\(catTimer\);/,
+  );
+  // 搬到畫面外面時不能有過渡，不然「搬過去」跟「滾回來」會被合併成一次。
+  assert(files.view.includes("classList.add(\"no-transition\")"));
+  assert.match(cardStyles, /\.ds-pbar--milestones \.ds-duck\.no-transition \{\s*\n\s*transition: none;/);
+  // 滾動掛在裡面那層：外層已經用 transform 做水平翻轉，兩個 transform 不能疊在
+  // 同一個元素上。
+  assert.match(cardStyles, /\.is-rolling \.milestone-cat-art \{\s*\n\s*animation: cat-roll/);
+  assert.match(cardStyles, /^\.milestone-cat \{[^}]*transform: scaleX\(-1\);/m);
+  ok("進度條上那隻從左邊滾進來、換段時從右邊滾出去");
+
+  // 鎖頭是常駐的三態指示，不是一次性的慶祝動畫：鎖著、開了、打勾各停在動畫的
+  // 一格。所以它不能再淡出——淡掉的話「這一段做完了」在分頁上就沒有痕跡了。
+  assert.match(cardStyles, /\.section-tab > \.section-tab-lock \{\s*\n\s*display: block;/);
+  assert(!cardStyles.includes("tab-unlock-fade"));
+  assert(files.view.includes("const LOCK_CLOSED_FRAME = 32;"));
+  assert(files.view.includes("const LOCK_OPEN_FRAME = 60;"));
+  assert(files.view.includes("const LOCK_DONE_FRAME = 140;"));
+  assert.match(files.view, /startFrame: LOCK_CLOSED_FRAME/);
+  assert.match(
+    files.view,
+    /playSegments\(\[LOCK_FRAMES\[previous\], frame\], true\)/,
+  );
+  // 「開了但還沒做完」跟「做完了」是兩態。先看鎖再看做完沒——一段可以開了還沒
+  // 做完，但不可能做完了還鎖著。done 是 undefined（資料還沒回來）時不給打勾。
+  assert.match(files.view, /if \(lockStates\[id\]\?\.locked === true\) return "locked";/);
+  assert.match(files.view, /done\?\.\[id\] === true \? "done" : "open"/);
+  assert(files.app.includes("view.renderSectionLocks(lockStates, done)"));
+
+  // 動畫只在「真的換了一態」那一刻放。每次重畫都放的話，光是勾一個項目就會炸
+  // 一次煙火；第一次畫（previous 是 null）也不放，一開頁就慶祝學生不知道在慶祝什麼。
+  assert.match(files.view, /const previous = renderedLocks\?\.\[id\] \?\? null;/);
+  // 只往前演、只往前慶祝。往回退（換了工具選項害某一段又鎖回去）不是成就，而且
+  // lottie 的 playSegments 只往前播——餵一段反向的區間會停在中間某一格不動。
+  assert.match(
+    files.view,
+    /LOCK_STATES\.indexOf\(state\) > LOCK_STATES\.indexOf\(previous\)/,
+  );
+  assert(files.view.includes('const LOCK_STATES = ["locked", "open", "done"];'));
+
+  // 剛達成解鎖條件時不放開鎖動畫：學生人在別的分頁上做事，演完他也沒看到——
+  // 而那正是最需要讓他知道的一件事。改成放大兩倍加輕微搖晃，一直招手到他點進來。
+  assert.match(files.view, /previous === "locked" && state === "open"/);
+  assert(files.view.includes("pendingUnlock.add(id);"));
+  // 招手期間要餵 locked 給 playLockTo，餵真的 state 它就直接跳到開鎖那一格，
+  // 學生點進來也沒東西可演。
+  assert.match(
+    files.view,
+    /playLockTo\(button, pending \? "locked" : state, pending \? null : previous\)/,
+  );
+  // 開鎖動畫在點下去那一刻才放，而且演完才縮回原尺寸。
+  assert.match(files.view, /openPendingLock\(button\);\s*\n\s*handler\(/);
+  assert.match(files.view, /animation\.addEventListener\("complete", shrink\)/);
+  // 演的那 0.6 秒不要碰它：renderSectionLocks 每次重畫都會跑，這時餵 open 就是
+  // goToAndStop 到最後一格，動畫演到一半被切掉。
+  assert.match(files.view, /!lock\?\.classList\.contains\("is-opening"\) &&/);
+  assert.match(files.view, /!lock\?\.classList\.contains\("is-playing"\)/);
+
+  // 狀態一算出來就照做，不再等第二次確認。那道關卡（confirmedState）曾經存在，
+  // 用來擋疑似一閃而過的完成度；紀錄器裝上去之後 VM 的 log 推翻了那個假設——
+  // 每一筆變化都是持久的，而它讓每一次真實的變化都慢一整輪重畫（實測 8.7 秒與
+  // 11 秒，因為重畫是事件驅動的）。
+  assert(!files.view.includes("function confirmedState"));
+  assert.match(files.view, /observedLocks = observed;/);
+
+  // 擋住症狀不等於查到根因。狀態變化要留紀錄，讓 VM 上跑到的人按一顆按鈕整包
+  // 送回來——只記變化，不記每一次重畫（重畫一秒好幾次，全記會把那一筆淹掉）。
+  assert(files.view.includes("export async function lockDiagnostics()"));
+  assert.match(files.view, /if \(raw !== \(observedLocks\?\.\[id\] \?\? null\) \|\| state !== previous\) \{/);
+  assert(files.view.includes("const LOCK_LOG_LIMIT = 200;"));
+  // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
+  assert.match(files.view, /locked: lockStates\[id\]\?\.locked \?\? null,\s*\n\s*done: done\?\.\[id\] \?\? null,/);
+  assert(files.app.includes("await view.lockDiagnostics()"));
+  // 演完一定要回到定格，被打斷也一樣。resetSegments 要排在 goToAndStop 前面：
+  // 播過區間之後 lottie 的 currentFrame 是「從區間起點算起」的相對值——播完
+  // [32, 60] 它回報 27（32 + 27 = 59），診斷資料看起來像停在還沒成形的那一格。
+  assert.match(
+    files.view,
+    /animation\.resetSegments\(true\);\s*\n\s*animation\.goToAndStop\(frame, true\);/,
+  );
+  assert.match(
+    files.view,
+    /animation\.resetSegments\(true\);\s*\n\s*animation\.goToAndStop\(LOCK_OPEN_FRAME, true\);/,
+  );
+  assert.match(cardStyles, /\.section-tab-lock\.is-announcing \{\s*\n\s*animation: lock-wave/);
+  assert.match(cardStyles, /@keyframes lock-wave \{[\s\S]*?scale\(2\)/);
+  assert.match(cardStyles, /\.section-tab-lock\.is-opening \{\s*\n\s*transform: scale\(2\);/);
   assert(files.view.includes("if (reducedMotion.matches) return;"));
-  assert.match(cardStyles, /@keyframes tab-unlock-shackle/);
   assert.match(cardStyles, /@keyframes tab-unlock-shake/);
-  // 慶祝用的動畫要尊重系統設定：關掉不影響理解。
+  // 慶祝用的動畫要尊重系統設定：關掉不影響理解。減少動態時鎖頭直接跳到該停的
+  // 那一格，狀態還是看得到——那是資訊，不是慶祝。
+  assert.match(files.view, /if \(!forward \|\| reducedMotion\.matches\) \{/);
   assert.match(
     cardStyles,
     /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.section-tab\.is-unlocking/,
   );
-  ok("開鎖動畫只在真的解鎖那一刻放，且尊重減少動態設定");
+  ok("分頁鎖頭是三態指示，只在真的換態時演，且尊重減少動態設定");
 
   // 鎖狀態要跟著每一次重畫一起算。原本只有勾選、換工具、點分頁才重算，於是最後
   // 一張卡驗過的當下沒有人去看鎖——下一段其實開了，畫面還鎖著，開鎖動畫也就永遠
@@ -319,13 +421,13 @@ try {
   assert.match(index, /class="ds-term-chrome"/);
   ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
 
-  // .ds-term--typing 這個 component 唯一看得出來的地方就是那顆閃爍游標。我們一直
-  // 掛著那個 class 卻從來沒把游標畫出來，右邊那個終端看起來像截圖不像活的視窗。
+  // 閃爍游標拿掉了（Reed 指定）：終端裡本來就有逐字打字與轉圈圈兩種東西在動，
+  // 再多一個一直閃的方塊只是把視線扯走。這條擋的是「哪天又順手加回來」。
   assert.match(index, /class="ds-term ds-term--typing/);
-  assert(files.view.includes('cursor.className = "ds-term-cursor"'));
-  // 掛著轉圈圈的那一行不放游標——兩個東西同時在動只是雜訊。
-  assert.match(files.view, /last\.querySelector\("\.ds-loader-orbs"\) !== null/);
-  ok("會動的終端補上 .ds-term-cursor，轉圈圈那一行讓位");
+  assert(!files.view.includes("ds-term-cursor"));
+  assert(!files.view.includes("renderCursor"));
+  assert(!cardStyles.includes("ds-term-cursor"));
+  ok("終端不放閃爍游標");
 
   // 新的一行逐字打出來。三條規矩都是為了「動畫不能拖慢真的進度」：排隊超過三行
   // 就整批印完（驗證一次會噴很多行）、系統設了減少動態就不演、翻回舊卡片的紀錄
@@ -373,17 +475,24 @@ try {
   assert.match(cardIndex, /id="verify-modal-confirm" class="ds-btn ds-btn-primary"/);
   assert.match(cardIndex, /id="verify-modal-later" class="ds-btn ds-btn-ghost"/);
 
-  for (const id of ["recheck-configs", "recheck-env", "cancel"]) {
+  for (const id of ["recheck-configs", "recheck-env", "cancel", "copy-diagnostics"]) {
     assert.match(
       cardIndex,
       new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),
       `${id} 要是灌色按鈕而且帶 icon`,
     );
   }
-  // 翻頁那兩顆也是灌色按鈕，長相交給 .ds-btn-fill，styles.css 只管它們站在哪。
-  assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill wizard-nav/);
+  // 翻頁那兩顆也是灌色按鈕，兩顆都預先灌滿：空心那顆並排時看起來像停用的
+  // （Reed 指定統一）。
+  assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill is-primary wizard-nav/);
   assert.match(cardIndex, /id="wizard-next" class="ds-btn-fill is-primary wizard-nav/);
-  assert.doesNotMatch(cardStyles, /^\.wizard-nav \{/m);
+  // 形狀改成純圓形、裡面只有一支箭頭（Reed 指定），所以尺寸與圓角由本 repo 決定，
+  // 不再只是「管它們站在哪」。
+  assert.match(cardStyles, /^\.wizard-nav \{[^}]*border-radius: 50%;/m);
+  // 字仍然畫在 DOM 裡但只給讀螢幕用：那串字會跟著卡片變（「下一段：⋯」），
+  // 拿掉的話按鍵盤操作的人不知道自己要去哪。
+  assert.match(cardIndex, /<span class="wizard-nav-label">/);
+  assert.match(cardStyles, /^\.wizard-nav-label \{[^}]*clip-path: inset\(50%\);/m);
   ok("會按的按鈕都是灌色按鈕，每顆前面都有 icon");
 
   // 灌滿之後字是白的。設計系統預設把字轉成深色，在橘色底上像沒對比的髒色；而且
@@ -424,6 +533,97 @@ try {
   assert(!index.includes("wizard-sidebar"));
   assert.match(index, /<nav id="section-nav" class="section-tabs"/);
   ok("段落導覽改成上方 tab，整頁大標已移除");
+
+  // ── 導覽（driver.js）─────────────────────────────────────────────
+  //
+  // driver 只負責畫高亮泡泡。卡片順序、解鎖、完成判定仍然由 model / viewmodel 決定，
+  // 所以 tour 這一層不准反過來去碰它們，也不准自己打 API。
+  const tourModel = read("tour-model.js");
+  const tour = read("tour.js");
+
+  assert.deepEqual(importsOf(tourModel), []);
+  for (const forbidden of ["document.", "window.", "querySelector", "fetch("]) {
+    assert(
+      !tourModel.includes(forbidden),
+      `tour-model 不可以出現 ${forbidden}——那是 tour.js 的事`,
+    );
+  }
+  ok("tour-model 是純函式：只決定要不要講、講什麼");
+
+  assert(!importsOf(tour).includes("api"), "tour 不可以直接打 API");
+  assert(!importsOf(tour).includes("viewmodel"), "tour 不可以依賴 viewmodel");
+  assert(!tour.includes("fetch("), "tour 不可以直接 fetch");
+  ok("tour 只畫泡泡，不打 API、不碰 viewmodel");
+
+  // driver.js 跟設計系統一樣走 vendor：學生的 VM 常常連不到外網，指向 CDN 的話
+  // 導覽會靜靜地不出現，而且沒有人會知道為什麼。
+  assert.match(index, /<link rel="stylesheet" href="\/vendor\/driver\.css" \/>/);
+  assert.match(tour, /from "\/vendor\/driver\.mjs"/);
+  assert(!index.includes("cdn.jsdelivr"));
+  assert(!index.includes("unpkg.com"));
+  ok("driver.js 走 vendor，不從 CDN 抓");
+
+  // 頁面同一時間只有一張卡在 DOM 裡（renderCard 每次都重畫一張 article），所以
+  // 導覽指得到「現在這張卡」的唯一辦法就是每次把身分寫回元素上。
+  assert(files.view.includes("article.dataset.cardId = model.card.checkId"));
+  ok("卡片身分寫在 data-card-id 上，導覽才指得到現在這張");
+
+  // 版面導覽指的必須是 index.html 裡寫死的骨架。指到卡片內部生出來的元素，
+  // 學生翻到下一張時泡泡就會貼到畫面左上角。
+  // 卡片導覽指的是卡片裡面的東西，那些是每次重畫都會重生的，所以身分要寫在元素
+  // 上（開視窗那顆、重驗那顆）。按文字找不行——每張卡的字都不一樣。
+  assert(files.view.includes("open.dataset.stepAction = step.action;"));
+  assert(files.view.includes('retest.dataset.retest = "true";'));
+  // 重驗那顆兩張卡長得一樣、做的事不一樣（env 重掃狀態／config 真的開終端跑），
+  // 導覽要當成兩個元件各講一次，所以身分也要寫在元素上。
+  assert(files.view.includes("retest.dataset.retestKind ="));
+  // 版面導覽收掉就馬上接元件導覽。原本只在 onCardRendered 裡試，而那是「畫完一輪
+  // 卡片」才跑的——學生已經停在一張有清單的卡上時（重整之後很常見），版面導覽
+  // 結束後畫面沒有任何事發生，也就沒有人再問一次，那一輪永遠不會出現（VM 實測）。
+  assert.match(tour, /store\.set\(TOUR_SEEN_KEY, "1"\);\s*\n(\s*\/\/[^\n]*\n)*\s*window\.setTimeout\(\(\) => startComponentTour\(\{\}\), 0\);/);
+  // 「看過了」的紀錄要帶版本：不帶的話，改過導覽內容之後看過舊版的人永遠看不到
+  // 新版，而且那顆重看的按鈕在他們身上已經收起來了（VM 實測卡到）。
+  assert(tourModel.includes("const TOUR_VERSION = 3;"));
+  assert.match(tourModel, /jr-setup-ui:tour-seen:v\$\{TOUR_VERSION\}/);
+  assert.match(tourModel, /jr-setup-ui:comp-seen:v\$\{TOUR_VERSION\}/);
+
+  // 「這頁怎麼用」跟著這張卡有沒有元件走，每一輪重畫都重算——不再是「講完就永久
+  // 收起來」。收起來的話後面才第一次出現的元件連手動重看都沒辦法（VM 實測卡到）。
+  assert(tour.includes("function showReplay(show)"));
+  assert.match(tour, /button\.hidden = !show;/);
+  assert.match(
+    tour,
+    /showReplay\(replayableSteps\(\{ present: presentComponents\(\) \}\)\.length > 0\);/,
+  );
+  // 重看不清「看過了」的紀錄：清掉的話翻到下一張又會自動跳一次，手動重看反而
+  // 害自己多被打斷一輪。
+  assert(!tour.includes("store.remove(`${COMPONENT_SEEN_PREFIX}"));
+  // 取消鈕只有正在跑的時候才出現，沒有第二次機會：控制列要先畫，卡片那邊的導覽
+  // 才指得到它。反過來的話那一步會被當成指不到而永遠跳過。
+  assert.match(
+    files.app,
+    /state\.runInProgress = running;\s*\n(\s*\/\/[^\n]*\n)*\s*renderControls\(\);\s*\n\s*renderWizard\(\);/,
+  );
+
+  for (const selector of ["#section-nav", "#milestone-bar", "#current-card", "#terminal", "#wizard-nav-row"]) {
+    assert(
+      index.includes(`id="${selector.slice(1)}"`),
+      `版面導覽指的 ${selector} 必須是 index.html 的骨架`,
+    );
+  }
+  ok("版面導覽只指不會被重畫的骨架");
+
+  // 跑到一半跳提示會蓋住終端正在印的字。
+  assert(tourModel.includes("if (runInProgress === true || tourRunning === true) return null;"));
+  ok("執行中不跳導覽提示");
+
+  // 重看導覽那顆也照灌色按鈕的規矩來。
+  assert.match(
+    index,
+    /id="replay-tour" class="ds-btn-fill[^"]*"[^>]*>\s*<svg/,
+    "replay-tour 要是灌色按鈕而且帶 icon",
+  );
+  ok("重看導覽是灌色按鈕，前面帶 icon");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

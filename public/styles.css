@@ -3,6 +3,9 @@
   font-family: var(--font-sans);
   background: var(--color-bg);
   color: var(--color-text);
+  /* 這一條與 body 那條要成對。只寫 body 的話，貓滾出右邊時 <html> 仍然被撐寬，
+     底下照樣長出一條橫向捲軸（實測 scrollWidth 1722 > 視窗 1200）。 */
+  overflow-x: clip;
 }
 
 * {
@@ -13,6 +16,11 @@ body {
   min-width: 320px;
   margin: 0;
   background: var(--color-bg);
+  /* 進度條上那隻會滾到螢幕外面半個畫面（見 view.js 的 offscreenPercent）。不裁掉
+     的話牠會把頁面撐寬，底下多一條橫向捲軸。
+     用 clip 不用 hidden：hidden 會生出一個捲動容器，上方那排 sticky 的分頁就黏
+     不住了。clip 只裁不捲，sticky 照常。 */
+  overflow-x: clip;
 }
 
 [hidden] {
@@ -86,54 +94,62 @@ body {
   opacity: 0.55;
 }
 
-/* 鎖頭只在鎖著時佔位置。開鎖動畫期間要留著——那半秒正是它在演的東西。 */
-.section-tab-lock {
-  display: none;
-  width: 0.9em;
-  height: 0.9em;
+/* 鎖頭一直在。它現在是這一段的狀態指示，三態各停在動畫的一格（見 view.js 的
+   LOCK_FRAMES）：鎖著、開了、打勾。原本只有鎖著時才出現，開了就淡掉——那樣
+   「這一段做完了」在分頁上就沒有任何痕跡，學生要自己記得哪幾段驗過了。
+   內容是一支 lottie（見 lockIcon），顏色寫在動畫裡，不再吃 currentColor。
+
+   選擇器要用子代（權重 0,2,0）：鎖頭從 <svg> 改成 <span> 之後，上面那條
+   `.section-tab span { display: block }`（0,1,1）會蓋掉單寫 .section-tab-lock 的
+   宣告。 */
+.section-tab > .section-tab-lock {
+  display: block;
+  width: 1.35em;
+  height: 1.35em;
   flex: 0 0 auto;
 }
 
-.section-tab.is-locked .section-tab-lock,
-.section-tab.is-unlocking .section-tab-lock {
+.section-tab-lock svg {
   display: block;
+  width: 100%;
+  height: 100%;
 }
 
-/* 開鎖：鎖環先彈起來轉開，鎖身跟著淡掉，整個分頁晃一下。
-   煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。 */
+/* 剛達成解鎖條件、學生還沒點進來：放大兩倍、輕微左右搖，一直招手到他點進來。
+   縮回去交給 transition，開鎖動畫演完才發生（見 view.js 的 openPendingLock）。 */
+.section-tab > .section-tab-lock {
+  transform-origin: 50% 50%;
+  transition: transform 0.3s ease;
+}
+
+.section-tab-lock.is-announcing {
+  animation: lock-wave 0.9s ease-in-out infinite;
+}
+
+/* 開鎖那 0.6 秒還維持放大，演完才縮——邊開邊縮的話只看得到一個越來越小的東西，
+   看不清楚它在開。 */
+.section-tab-lock.is-opening {
+  transform: scale(2);
+}
+
+/* 搖的幅度刻意小：這是「這裡開了」的提醒，不是警告。搖太大會讓人以為出錯了。 */
+@keyframes lock-wave {
+  0%,
+  100% {
+    transform: scale(2) rotate(-6deg);
+  }
+  50% {
+    transform: scale(2) rotate(6deg);
+  }
+}
+
+/* 換態：鎖頭那支 lottie 自己演（開鎖、打勾，見 view.js 的 playLockTo），
+   這裡只負責讓整個分頁晃一下。
+   煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。
+   鎖頭本身不再淡出——它現在是常駐的狀態指示（鎖著／開了／打勾），不是一次性的
+   慶祝動畫。 */
 .section-tab.is-unlocking {
   animation: tab-unlock-shake 0.5s ease;
-}
-
-.section-tab.is-unlocking .section-tab-lock {
-  animation: tab-unlock-fade 0.9s ease forwards;
-}
-
-.section-tab.is-unlocking .section-tab-shackle {
-  transform-origin: 16px 10px;
-  animation: tab-unlock-shackle 0.45s ease forwards;
-}
-
-@keyframes tab-unlock-shackle {
-  0% {
-    transform: translateY(0) rotate(0deg);
-  }
-  45% {
-    transform: translateY(-2px) rotate(0deg);
-  }
-  100% {
-    transform: translateY(-2px) rotate(38deg);
-  }
-}
-
-@keyframes tab-unlock-fade {
-  0%,
-  55% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
 }
 
 @keyframes tab-unlock-shake {
@@ -155,8 +171,7 @@ body {
 /* 會動的東西一律尊重系統設定。這一段的動畫是慶祝，不是資訊——關掉不影響理解。 */
 @media (prefers-reduced-motion: reduce) {
   .section-tab.is-unlocking,
-  .section-tab.is-unlocking .section-tab-lock,
-  .section-tab.is-unlocking .section-tab-shackle {
+  .section-tab-lock.is-announcing {
     animation: none;
   }
 }
@@ -237,11 +252,39 @@ body {
 .wizard-nav-row {
   display: flex;
   justify-content: space-between;
+  /* 兩顆都還沒露臉時也要佔住高度：一來按鈕出現時版面不會往上跳，二來導覽指得到
+     這一列（指一顆 hidden 的按鈕，泡泡會貼到畫面左上角）。 */
+  min-height: 44px;
   margin-top: var(--space-5);
 }
 
-/* 翻頁這兩顆也是灌色按鈕，長相由 .ds-btn-fill 決定。這裡只管它們站在哪。
-   往前走是主要動作（is-primary，預先灌滿）；回頭看不是。 */
+/* 翻頁這兩顆是純圓形，裡面只有一支白色箭頭（Reed 指定）。
+   字仍然畫在 DOM 裡但只給讀螢幕用——那串字會跟著卡片變（「下一段：⋯」），
+   拿掉的話按鍵盤操作的人就不知道自己要去哪。 */
+.wizard-nav {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 50%;
+  justify-content: center;
+}
+
+.wizard-nav > svg {
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
+.wizard-nav-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 兩顆都預先灌滿（is-primary）：原本回頭那顆是空心的，跟旁邊實心的並排時看起來
+   像停用的按鈕，而它其實隨時可以按（Reed 指定統一）。 */
 .wizard-nav--prev {
   margin-right: auto;
 }
@@ -261,23 +304,230 @@ body {
   }
 }
 
-/* 窄螢幕留字會擠到卡片，只留箭頭。 */
-@media (max-width: 1200px) {
-  .wizard-nav-label {
-    display: none;
-  }
-
-  .wizard-nav {
-    padding: var(--space-3);
-  }
-}
+/* 窄螢幕的那條規則沒了：兩顆本來就只有箭頭，寬螢幕也一樣，不需要分兩種長相。 */
 
 #section-status {
   display: block;
-  margin: 0 0 var(--space-3);
+  margin: 0;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+}
+
+/* 走在進度條上的那隻貓（取代設計系統的小鴨）。
+   動畫本身面向左邊，這裡整隻水平翻轉讓牠面向前進方向——翻轉做在容器上，JSON
+   一個字都沒改。往回走時設計系統會對裡面的 <svg> 再翻一次（.ds-duck.left svg），
+   兩次相乘就變回面向左邊，剛好是對的。 */
+/* 設計系統的小鴨格子是 40×40。那隻貓在 40px 下只剩一團黑影（牠是一張畫得很細的
+   圖，不是為了小尺寸畫的），所以放大過一輪；45px 是那一輪的 75%（Reed 指定）。 */
+.ds-pbar--milestones .ds-duck:has(.milestone-cat) {
+  width: 45px;
+  height: 45px;
+}
+
+.milestone-cat {
+  display: block;
+  width: 45px;
+  height: 45px;
+  transform: scaleX(-1);
+}
+
+/* 進出場：從進度條左邊外面滾進來，換段時從右邊外面滾出去。
+   進場慢一點（0.9s）是給人看的，退場快一點（0.6s）——那是「這段結束了」的收尾，
+   拖太久會擋著下一段開場。 */
+.ds-pbar--milestones .ds-duck.is-entering {
+  transition: left 0.9s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.ds-pbar--milestones .ds-duck.is-exiting {
+  transition: left 0.6s ease-in;
+}
+
+/* 瞬間搬位置用的：把牠丟到畫面外面時不能有過渡，不然「搬過去」跟「滾回來」
+   會被瀏覽器合併成一次，等於沒搬（見 view.js 的 placeCatInstantly）。 */
+.ds-pbar--milestones .ds-duck.no-transition {
+  transition: none;
+}
+
+/* 滾動本身掛在裡面那層：外面那層 .milestone-cat 已經佔用 transform 做水平翻轉。
+   角度是負的——被鏡射過的東西，正角度看起來會往反方向轉。 */
+.milestone-cat-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.is-rolling .milestone-cat-art {
+  animation: cat-roll 0.55s linear infinite;
+}
+
+/* 原地踏步時補一個連續的上下微幅起伏。逐格切換只有六格可用（那支動畫裡站姿就
+   這麼多），一格一格跳看得出斷點；疊一個不間斷的位移上去，眼睛會把中間補起來。
+   幅度只有 1.5px：這是「牠還活著」的暗示，不是跳躍。
+   跟 cat-roll 不會同時出現——滾動與踏步是互斥的兩種狀態。 */
+.is-stepping .milestone-cat-art {
+  animation: cat-step 0.55s ease-in-out infinite;
+}
+
+@keyframes cat-step {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1.5px);
+  }
+}
+
+@keyframes cat-roll {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+/* 滾進滾出是氣氛，不是資訊——關掉之後牠仍然停在正確的那一個點上。
+   view.js 的 moveDuck 也會跳過整段進出場，直接把牠放到定位。 */
+@media (prefers-reduced-motion: reduce) {
+  .is-rolling .milestone-cat-art,
+  .is-stepping .milestone-cat-art {
+    animation: none;
+  }
+}
+
+/* 設計系統的 .ds-duck svg 把尺寸釘在 40px，這裡要蓋掉，不然 lottie 的 svg
+   還是 40px、只有外框變大。 */
+.ds-pbar--milestones .ds-duck .milestone-cat svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 正在跑的那幾行前面的轉圈圈。設計系統的 .ds-loader-orbs 換掉了（見 view.js 的
+   createLoader），尺寸與對齊改由這裡管。 */
+/* 貓畫成兩倍大（40px），但佔的位置還是 20px。
+   直接把整個框放大到 40px 的話，執行中那幾行的行高會從 24px 變成 40px，終端整段
+   看起來鬆掉——而那幾行是驗證時一次噴好幾行的地方。所以框維持原本大小，讓貓從
+   中心往外溢出去（Reed 指定）。
+   vertical-align 要寫 middle：預設 baseline 會把這個行內方塊的底邊對到文字基線，
+   貓就浮在字的左上角。 */
+.row-loader {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+/* 動畫本身是 2750×1850（約 3:2 的橫幅），塞進正方形會上下留白、圖也變小。
+   所以畫成 60×40 的橫幅，一樣從中心往外溢出去——佔位仍然是 20px，執行中那幾行
+   的行高不會被撐開。 */
+.row-loader-art {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 60px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+}
+
+.row-loader-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 進度文字與右邊那幾顆按鈕排同一行。按鈕要黏在一起靠右，所以把空白全推給進度
+   文字（margin-right: auto）——用 space-between 的話兩顆按鈕會被拆到兩端。 */
+.milestone-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.milestone-heading > #section-status {
+  margin-right: auto;
+}
+
+/* driver.js 的泡泡預設是白底藍鈕，跟這頁的暗色卡片不同世界。長相全部拉回
+   設計系統的變數，只留它的定位與遮罩邏輯。 */
+.driver-popover.jr-tour {
+  max-width: 320px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+.driver-popover.jr-tour .driver-popover-title {
+  color: var(--color-text-strong);
+  font-size: var(--fs-md);
+}
+
+.driver-popover.jr-tour .driver-popover-description {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+
+.driver-popover.jr-tour .driver-popover-progress-text {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.driver-popover.jr-tour .driver-popover-navigation-btns button {
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--r-sm);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  text-shadow: none;
+}
+
+.driver-popover.jr-tour .driver-popover-navigation-btns button:hover {
+  background: var(--color-accent-hover);
+}
+
+/* 「上一個」不是主要動作。兩顆同樣灌滿的話，第一步就有兩顆一樣搶眼的按鈕，
+   而其中一顆還是停用的。 */
+/* 選擇器要跟上面那條一樣長：只寫 .driver-popover-prev-btn 的話少一個 type
+   selector，權重輸給灌滿那條，兩顆還是一樣橘。 */
+.driver-popover.jr-tour .driver-popover-navigation-btns button.driver-popover-prev-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.driver-popover.jr-tour .driver-popover-navigation-btns button.driver-popover-prev-btn:hover {
+  background: var(--color-accent-bg);
+  color: var(--color-text-strong);
+}
+
+.driver-popover.jr-tour .driver-popover-btn-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-top {
+  border-top-color: var(--color-bg-elevated);
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-bottom {
+  border-bottom-color: var(--color-bg-elevated);
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-left {
+  border-left-color: var(--color-bg-elevated);
+}
+
+.driver-popover.jr-tour .driver-popover-arrow-side-right {
+  border-right-color: var(--color-bg-elevated);
 }
 
 /* 上緣的留白就是小鴨站的地方——貼齊 tab 下緣，小鴨剛好在 tab 底下不被切到。 */

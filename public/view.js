@@ -1,5 +1,6 @@
 // View：只把 app 傳進來的畫面模型畫成 DOM，不做流程判斷或資料請求。
 import { LOADER_MODIFIERS, appendTermLine } from "./viewmodel.js";
+import { lottieBox, lottieControl } from "./lottie-player.js";
 
 const elements = {
   output: document.querySelector("#output"),
@@ -24,10 +25,13 @@ const elements = {
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
   sectionPanel: document.querySelector("[data-section-panel]"),
   sectionStatus: document.querySelector("#section-status"),
+  replayTour: document.querySelector("#replay-tour"),
+  copyDiagnostics: document.querySelector("#copy-diagnostics"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
   milestoneFill: document.querySelector("#milestone-fill"),
   milestoneDuck: document.querySelector("#milestone-duck"),
+  milestoneCat: document.querySelector("#milestone-cat"),
   sectionLockMessage: document.querySelector("#section-lock-message"),
   wizardPrev: document.querySelector("#wizard-prev"),
   wizardNext: document.querySelector("#wizard-next"),
@@ -136,7 +140,72 @@ function keepPreviewOpen() {
   window.clearTimeout(autoUnpinTimer);
 }
 
+// 進度條上那隻只有一個，開頁時掛一次就好——每次重畫都重掛的話，那隻 261KB 的
+// 逐格動畫會被重新解析一遍，而且動作會從第一格重來（走一半突然重播）。
+const milestoneCat = lottieControl({
+  url: "/vendor/milestone-cat.json",
+  className: "milestone-cat-art",
+});
+elements.milestoneCat.append(milestoneCat.box);
+
+// 停下來之後的原地小動作。
+//
+// 那支動畫整段 33 格是一次翻滾（蹲下 → 縮成球 → 翻過去 → 站回來）。移動時就播
+// 整段，停下來之後再一直翻就變成「站在原地一直跌倒」——所以改成只在最後那三格
+// 之間來回：30 → 31 → 32 → 31 → …。那三格都是站姿，來回播看起來像原地踏步。
+//
+// 用計時器一格一格 goToAndStop，不用 lottie 的反向區間：反向的區間它只往前播，
+// 會停在中間某一格不動（分頁鎖頭那邊已經踩過一次）。
+// 只有三格來回會一格一格跳（Reed 回報：不流暢）。往前多借三格：27–29 是同一段
+// 站起來的過程（蹲坐 → 撐起 → 站直），跟 30–32 是連續的，湊成六格，來回一輪
+// 十格。步距也縮到 110 毫秒。
+//
+// 六格是這支動畫給得起的上限——33 格裡站姿只有這幾格，其餘都在翻滾。剩下的順暢
+// 感靠 CSS 補：踏步時外面那層做一個連續的上下微幅起伏（見 .is-stepping），
+// 逐格跳的斷點被那個連續運動蓋過去。
+const CAT_IDLE_FRAMES = [27, 28, 29, 30, 31, 32, 31, 30, 29, 28];
+const CAT_IDLE_STEP_MS = 110;
+let catIdleTimer = null;
+// 「現在應該原地踏步嗎」。動畫是非同步載入的，所以要記下意圖：等 promise 回來時
+// 學生可能已經又往下一站走了，這時候不能接手。
+let catIdleWanted = false;
+
+export function stopCatIdle() {
+  catIdleWanted = false;
+  elements.milestoneDuck.classList.remove("is-stepping");
+
+  if (catIdleTimer === null) return;
+
+  window.clearInterval(catIdleTimer);
+  catIdleTimer = null;
+  // 回去播整段翻滾——移動中要的是那個。
+  milestoneCat.ready.then((animation) => {
+    if (catIdleWanted) return;
+    animation?.play();
+  });
+}
+
+export function startCatIdle() {
+  if (reducedMotion.matches || catIdleTimer !== null) return;
+
+  catIdleWanted = true;
+  milestoneCat.ready.then((animation) => {
+    if (!catIdleWanted || catIdleTimer !== null) return;
+    if (animation === null || animation === undefined) return;
+
+    animation.pause();
+    elements.milestoneDuck.classList.add("is-stepping");
+    let index = 0;
+    catIdleTimer = window.setInterval(() => {
+      animation.goToAndStop(CAT_IDLE_FRAMES[index], true);
+      index = (index + 1) % CAT_IDLE_FRAMES.length;
+    }, CAT_IDLE_STEP_MS);
+  });
+}
+
 function finishArrival(point, station, key) {
+  // 彈跳（is-arriving）剛演完，接手成原地踏步。
+  startCatIdle();
   const firework = document.createElement("span");
   firework.className = "ds-firework";
   firework.style.setProperty("--firework-at", `${station.percent}%`);
@@ -154,12 +223,59 @@ function finishArrival(point, station, key) {
   }, 800);
 }
 
+// 進出場：牠從螢幕外面滾進來，換段時滾到螢幕外面去。
+//
+// 起訖點是「進度條邊緣再往外半個螢幕寬」。原本只給 ±8%（約 90px），那只是滾到
+// 進度條旁邊——學生還看得到牠停在那裡，不像真的離場（Reed 回報）。
+//
+// left 吃的是進度條寬度的百分比，所以半個螢幕要換算成百分比，而且每次都重算：
+// 視窗縮放、側邊欄出現都會改變進度條寬度，寫死的數字馬上就不是半個螢幕了。
+const CAT_OFFSCREEN_RATIO = 0.5;
+const CAT_EXIT_MS = 600;
+const CAT_ENTER_MS = 900;
+let catTimer = null;
+
+function offscreenPercent() {
+  const bar = elements.milestoneBar.getBoundingClientRect().width;
+
+  // 還沒排版完（寬度 0）就給一個夠遠的保底值，不要算出 Infinity。
+  if (bar === 0) return 120;
+
+  return ((window.innerWidth * CAT_OFFSCREEN_RATIO) / bar) * 100;
+}
+
+// 換位置但不要有過渡——把牠瞬間搬到畫面外面，準備滾進來。
+function placeCatInstantly(percent) {
+  elements.milestoneDuck.classList.add("no-transition");
+  elements.milestoneDuck.style.left = `${percent}%`;
+  // 讀一次 offsetWidth 逼瀏覽器把這個位置結算掉，不然移掉 no-transition 之後
+  // 瀏覽器會把「搬過去」跟「滾回來」合併成一次過渡，等於沒搬。
+  void elements.milestoneDuck.offsetWidth;
+  elements.milestoneDuck.classList.remove("no-transition");
+}
+
+function rollIn(percent) {
+  stopCatIdle();
+  placeCatInstantly(-offscreenPercent());
+  elements.milestoneDuck.classList.add("is-rolling", "is-entering");
+  elements.milestoneDuck.style.left = `${percent}%`;
+  catTimer = window.setTimeout(() => {
+    elements.milestoneDuck.classList.remove("is-rolling", "is-entering");
+    // 滾到定位就站著踏步。這一段沒有 is-arriving 的彈跳（那是站到站之間才有的），
+    // 所以直接接手。
+    startCatIdle();
+  }, CAT_ENTER_MS);
+}
+
 function moveDuck(sectionId, station) {
   const nextKey = `${sectionId}:${station.index}`;
   const previousIndex = renderedStation?.sectionId === sectionId
     ? renderedStation.index
     : station.index;
   const moving = renderedStation !== null && nextKey !== renderedStation.key;
+  const firstPaint = renderedStation === null;
+  const sectionChanged =
+    !firstPaint && renderedStation.sectionId !== sectionId;
   renderedStation = { key: nextKey, sectionId, index: station.index };
   window.clearTimeout(stationTimer);
   window.clearTimeout(arrivalTimer);
@@ -167,9 +283,36 @@ function moveDuck(sectionId, station) {
   window.clearTimeout(autoUnpinTimer);
   elements.milestoneBar.querySelector(".ds-firework")?.remove();
   elements.milestoneDuck.classList.toggle("left", station.index < previousIndex);
-  elements.milestoneDuck.style.left = `${station.percent}%`;
   elements.milestoneFill.style.width = `${station.percent}%`;
   elements.milestoneFill.setAttribute("aria-valuenow", String(station.percent));
+
+  // 進場與退場自己管位置，不要在這裡先把 left 設成目的地——設了就等於直接
+  // 跳到定位，滾進來那一段永遠看不到。
+  if (!reducedMotion.matches && (firstPaint || sectionChanged)) {
+    // 只有真的要重新開一輪進出場時才收掉上一輪的計時器。無條件清掉的話，環境檢查
+    // 期間的每一次重畫都會把「滾完了要收手」那一刀清掉——牠就一直轉下去。
+    window.clearTimeout(catTimer);
+    elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    unpinAll();
+
+    if (firstPaint) {
+      rollIn(station.percent);
+      return;
+    }
+
+    // 換段：先滾出右邊，出去了再從左邊滾回來。中間不能有第三種狀態——
+    // 牠一路都在滾，只是位置從畫面外的一邊換到另一邊。
+    stopCatIdle();
+    elements.milestoneDuck.classList.add("is-rolling", "is-exiting");
+    elements.milestoneDuck.style.left = `${100 + offscreenPercent()}%`;
+    catTimer = window.setTimeout(() => {
+      elements.milestoneDuck.classList.remove("is-exiting");
+      rollIn(station.percent);
+    }, CAT_EXIT_MS);
+    return;
+  }
+
+  elements.milestoneDuck.style.left = `${station.percent}%`;
 
   const point = elements.milestoneBar.querySelector(
     `[data-card-index="${station.index}"]`,
@@ -177,6 +320,9 @@ function moveDuck(sectionId, station) {
 
   if (!moving) {
     elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    // 站在原地的重畫（勾一個項目、檢查回來）也要維持踏步。startCatIdle 本身
+    // 有擋重入，重複叫沒有副作用。
+    startCatIdle();
 
     // 重畫時把原本釘著的那張還原——連同它原本要收掉的時刻。上面剛清掉計時器，
     // 這裡不重新排的話，這張預覽就再也不會關。
@@ -197,6 +343,8 @@ function moveDuck(sectionId, station) {
     return;
   }
 
+  // 要移動了：把原地踏步收掉，回去播整段翻滾。
+  stopCatIdle();
   elements.milestoneDuck.classList.add("is-running");
   stationTimer = window.setTimeout(() => {
     elements.milestoneDuck.classList.remove("is-running");
@@ -475,14 +623,16 @@ function checklistElement(
       head.append(title);
 
       if (step.action !== null) {
-        head.append(
-          fillButton({
-            // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
-            icon: step.action === "fullscreen-proof" ? "send" : "terminal",
-            text: step.buttonText,
-            onClick: () => onOpen(step.action),
-          }),
-        );
+        const open = fillButton({
+          // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
+          icon: step.action === "fullscreen-proof" ? "send" : "terminal",
+          text: step.buttonText,
+          onClick: () => onOpen(step.action),
+        });
+        // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。按文字找不行，
+        // 每張卡的字都不一樣。
+        open.dataset.stepAction = step.action;
+        head.append(open);
       }
 
       checklist.append(head);
@@ -586,6 +736,9 @@ function renderCard(model) {
   elements.configChoicePanel.hidden = model.card.kind !== "setup";
   const article = document.createElement("article");
   article.className = `ds-card current-task-card current-task-card--${model.card.agent}`;
+  // 導覽要指得到「現在這張卡」。卡片每次都是重畫一張新的 article，所以身分要寫在
+  // 元素上，tour.js 才有東西可以 querySelector。
+  article.dataset.cardId = model.card.checkId ?? "";
   const header = document.createElement("header");
   header.className = "config-card-header";
   header.append(createLogo(model.card.logo));
@@ -683,15 +836,21 @@ function renderCard(model) {
     if (model.showRetest) {
       // 裝好了、只差驗證的那張卡，主要動作就是這一顆——安裝按鈕已經灰掉了，
       // 這裡不預先灌滿的話整張卡會找不到「現在該按哪顆」。
-      actions.append(
-        fillButton({
-          // env 卡按下去是重掃一次狀態，config 卡是真的開終端跑。
-          icon: model.retestText === "再 check 一次" ? "reinstall" : "terminal",
-          text: model.retestText ?? "再 check 一次",
-          primary: model.retestPrimary === true,
-          onClick: model.onRetest,
-        }),
-      );
+      const retest = fillButton({
+        // env 卡按下去是重掃一次狀態，config 卡是真的開終端跑。
+        icon: model.retestText === "再 check 一次" ? "reinstall" : "terminal",
+        text: model.retestText ?? "再 check 一次",
+        primary: model.retestPrimary === true,
+        onClick: model.onRetest,
+      });
+      // 導覽要指得到這顆（見 tour-model.js 的 COMPONENT_TOUR_STEPS）。
+      retest.dataset.retest = "true";
+      // 兩顆長得一樣、做的事不一樣：env 卡是重掃電腦狀態，config 卡是真的開一個
+      // 終端跑一遍。導覽要當成兩個元件各講一次，不然學生第一次遇到會開終端的那顆
+      // 時，說明已經在環境段被當成「講過了」。
+      retest.dataset.retestKind =
+        model.retestText === "再 check 一次" ? "rescan" : "verify";
+      actions.append(retest);
     }
     body.append(actions);
     if (!loginInChecklist && model.login !== null) {
@@ -765,34 +924,147 @@ export function showSection(sectionId) {
 
 export function onSectionSelect(handler) {
   for (const button of elements.sectionButtons) {
-    button.addEventListener("click", () => handler(button.dataset.sectionTarget));
+    button.addEventListener("click", () => {
+      // 開鎖動畫在這裡放，不在剛達成條件的那一刻放。剛開的時候學生多半人在別的
+      // 分頁上做事，動畫演完他也沒看到——那正是要提醒他的那件事。
+      openPendingLock(button);
+      handler(button.dataset.sectionTarget);
+    });
   }
 }
 
 // 鎖頭畫在標題前面。原本鎖住的分頁只是淡一點——淡的東西看起來像「還沒載入」或
 // 「壞掉」，不像「做完前面才會開」。鎖頭一眼就說得清楚。
-function lockIcon() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "section-tab-lock");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  // 鎖環另外一個群組：開鎖時只有它會動。
-  const shackle = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  shackle.setAttribute("class", "section-tab-shackle");
-  shackle.setAttribute("d", "M8 10V7a4 4 0 0 1 8 0v3");
-  shackle.setAttribute("fill", "none");
-  shackle.setAttribute("stroke", "currentColor");
-  shackle.setAttribute("stroke-width", "2");
-  shackle.setAttribute("stroke-linecap", "round");
-  const body = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  body.setAttribute("x", "5");
-  body.setAttribute("y", "10");
-  body.setAttribute("width", "14");
-  body.setAttribute("height", "10");
-  body.setAttribute("rx", "2");
-  body.setAttribute("fill", "currentColor");
-  svg.append(shackle, body);
-  return svg;
+//
+// 改用 lottie（Reed 指定的 LOCK WITH GREEN TICK）之後，鎖頭變成一個三態的東西，
+// 剛好對上分頁的三種狀態。那支動畫整段是「組裝 → 上鎖 → 晃 → 開鎖 → 打勾」：
+//
+//   0 – 31    組裝（一個點長成一把鎖）——沒有任何狀態要演這段，會一直在動
+//   32        鎖成形、靜止              ← 鎖著（前面還沒做完）
+//   60        鎖環開了、鎖身還在        ← 開了，但這一段還沒做完
+//   140       綠色打勾                  ← 這一段最後一張也驗過了
+//
+// 三個數字都是把每一格畫出來看出來的（這支沒有 markers 可以照），不是猜的。
+// 60 特別挑過：61 之後鎖身開始傾斜縮小要離場，停在那裡看起來像畫到一半。
+const LOCK_CLOSED_FRAME = 32;
+const LOCK_OPEN_FRAME = 60;
+const LOCK_DONE_FRAME = 140;
+// 原速 30fps。開鎖 28 格、打勾 80 格，照原速是 0.9 秒與 2.7 秒——後者對一個分頁
+// 上的小圖示太久，所以各自加速。
+const LOCK_UNLOCK_SPEED = 1.5;
+const LOCK_DONE_SPEED = 2;
+
+// 每個分頁的鎖頭各有一份動畫實例與目前停在哪一態，狀態變了才播。
+const lockAnimations = new WeakMap();
+
+function lockIcon(button) {
+  const { box, ready } = lottieControl({
+    url: "/vendor/lock.json",
+    className: "section-tab-lock",
+    loop: false,
+    autoplay: false,
+    startFrame: LOCK_CLOSED_FRAME,
+  });
+  lockAnimations.set(button, ready);
+  return box;
+}
+
+// 三態在動畫上是由早到晚的三格，順序有意義（見底下只往前演的規則）。
+const LOCK_STATES = ["locked", "open", "done"];
+const LOCK_FRAMES = {
+  locked: LOCK_CLOSED_FRAME,
+  open: LOCK_OPEN_FRAME,
+  done: LOCK_DONE_FRAME,
+};
+
+// 剛達成解鎖條件、但學生還沒點進去的那幾個分頁。
+//
+// 這一刻不放開鎖動畫：學生人在別的分頁上做事，演完他也沒看到——而那正是最需要
+// 讓他知道的一件事。所以鎖頭留在上鎖那一格，改成放大兩倍加輕微左右搖（見
+// styles.css 的 .is-announcing），一直招手到他點進來為止。點進來才放開鎖動畫，
+// 演完定格在開鎖那一格，再縮回原尺寸（Reed 指定的順序）。
+const pendingUnlock = new Set();
+
+function openPendingLock(button) {
+  const id = button.dataset.sectionTarget;
+
+  if (!pendingUnlock.has(id)) return;
+
+  pendingUnlock.delete(id);
+  const lock = button.querySelector(".section-tab-lock");
+
+  // 先收掉搖晃，但尺寸留到動畫演完才縮——邊開鎖邊縮小的話，那 0.6 秒只看得到
+  // 一個越來越小的東西，看不清楚它在開。
+  lock?.classList.remove("is-announcing");
+  lock?.classList.add("is-opening");
+
+  lockAnimations.get(button)?.then((animation) => {
+    if (animation === null || animation === undefined) {
+      lock?.classList.remove("is-opening");
+      return;
+    }
+
+    const shrink = () => {
+      animation.removeEventListener("complete", shrink);
+      lock?.classList.remove("is-opening");
+      // 同 playLockTo：播過區間之後 currentFrame 變成相對值，要收回來才對得上。
+      animation.resetSegments(true);
+      animation.goToAndStop(LOCK_OPEN_FRAME, true);
+    };
+
+    if (reducedMotion.matches) {
+      animation.goToAndStop(LOCK_OPEN_FRAME, true);
+      shrink();
+      return;
+    }
+
+    animation.addEventListener("complete", shrink);
+    animation.setSpeed(LOCK_UNLOCK_SPEED);
+    animation.playSegments([LOCK_CLOSED_FRAME, LOCK_OPEN_FRAME], true);
+  });
+}
+
+// 從哪一態走到哪一態，就播那一段。三種情況不演，直接跳到該停的那一格：
+//
+//   第一次畫       一開頁四個鎖頭一起演，學生根本不知道那是在演什麼
+//   往回退         例如換了工具選項害某一段又鎖回去。往回不是慶祝，不用演；
+//                  而且 lottie 的 playSegments 只往前播，餵一段反向的區間會停在
+//                  中間某一格不動（實際踩到：兩個鎖頭卡在開到一半的姿勢，
+//                  程式問它在第幾格還是回答對的那一格，對不起來）
+//   減少動態       系統設定要尊重，但狀態還是要看得到
+function playLockTo(button, state, previous) {
+  const lock = button.querySelector(".section-tab-lock");
+
+  lockAnimations.get(button)?.then((animation) => {
+    if (animation === null || animation === undefined) return;
+
+    const frame = LOCK_FRAMES[state];
+    const forward =
+      previous !== null &&
+      LOCK_STATES.indexOf(state) > LOCK_STATES.indexOf(previous);
+
+    if (!forward || reducedMotion.matches) {
+      animation.goToAndStop(frame, true);
+      return;
+    }
+
+    // 演完一定要回到定格。原本只靠 playSegments 自己停，被打斷就停在半路——
+    // VM 上看到打勾那段停在綠底、勾還沒畫出來的那一格（Reed 回報）。
+    const settle = () => {
+      animation.removeEventListener("complete", settle);
+      lock?.classList.remove("is-playing");
+      // resetSegments 一定要在 goToAndStop 之前。播過區間之後，lottie 的
+      // currentFrame 是「從區間起點算起」的相對值——播完 [32, 60] 它會回報 27
+      // （32 + 27 = 59），診斷資料上看起來像停在還沒成形的那一格。
+      animation.resetSegments(true);
+      animation.goToAndStop(frame, true);
+    };
+
+    lock?.classList.add("is-playing");
+    animation.addEventListener("complete", settle);
+    animation.setSpeed(state === "done" ? LOCK_DONE_SPEED : LOCK_UNLOCK_SPEED);
+    animation.playSegments([LOCK_FRAMES[previous], frame], true);
+  });
 }
 
 function fireworkAt(percent) {
@@ -808,11 +1080,89 @@ function fireworkAt(percent) {
   return firework;
 }
 
-// 上一次每個分頁鎖著沒有。動畫只在「原本鎖著、現在開了」那一刻放——每次重畫都放
-// 的話，光是勾一個項目就會炸一次煙火。
+// 上一次每個分頁停在哪一態。動畫只在「真的換了一態」那一刻放——每次重畫都放的話，
+// 光是勾一個項目就會炸一次煙火。
 let renderedLocks = null;
+// 上一次「算出來」的狀態。跟上面那份的差別是：這份照單全收，上面那份只收連續
+// 兩次算出同一個答案的（見 confirmedState）。
+let observedLocks = null;
 
-function playUnlock(button) {
+// 只出現一次的狀態不算數。
+//
+// VM 實測：規矩段才做到第一張，分頁上的鎖頭卻開始播打勾，播到一半又被打斷，
+// 停在「綠底、勾還沒畫完」那一格。事後去問每一格的狀態，答案全是對的——代表
+// 完成度在某一次重畫時短暫算成了 true，下一次又回到 false。
+//
+// 那種一閃而過的值不該觸發一秒多的動畫。所以要連續兩次算出同一個狀態才承認，
+// 中間那一次不一致就沿用上次承認過的。第一次畫沒有東西可比，直接承認。
+//
+// 這沒有修掉「為什麼會短暫算錯」——那要另外查。但一次性的雜訊本來就不該讓畫面
+// 演一段慶祝動畫，這道關卡該有，跟根因是什麼無關。
+// 鎖頭狀態的變化紀錄。
+//
+// 上面那道關卡擋住了症狀（一閃而過的狀態不再讓畫面演動畫），但沒有解釋「為什麼
+// 完成度會短暫算錯」。那個瞬間本機重現不出來——要先做完一整段才走得到——所以把
+// 它記下來，讓 VM 上跑到的人可以按一顆按鈕整包送回來。
+//
+// 只記變化，不記每一次重畫：重畫一秒好幾次，全記下來會把真正的那一筆淹掉。
+const LOCK_LOG_LIMIT = 200;
+const lockLog = [];
+
+function logLock(entry) {
+  lockLog.push({ at: Math.round(window.performance.now()), ...entry });
+
+  if (lockLog.length > LOCK_LOG_LIMIT) {
+    lockLog.shift();
+  }
+}
+
+// 按下「複製診斷資料」時收集的東西：現在每一格長怎樣，加上一路走來的變化紀錄。
+export async function lockDiagnostics() {
+  const tabs = await Promise.all(
+    elements.sectionButtons.map(async (button) => {
+      const animation = await lockAnimations.get(button);
+
+      return {
+        tab: button.dataset.sectionTarget,
+        classes: button.className,
+        lockClasses: button.querySelector(".section-tab-lock")?.className ?? null,
+        frame: animation ? Math.round(animation.currentFrame) : null,
+        paused: animation ? animation.isPaused : null,
+      };
+    }),
+  );
+
+  return {
+    committed: renderedLocks,
+    observed: observedLocks,
+    pendingUnlock: [...pendingUnlock],
+    tabs,
+    log: lockLog,
+  };
+}
+
+// 這裡曾經有一道「要連續兩次算出同一個狀態才承認」的關卡（confirmedState），
+// 用來擋掉疑似一閃而過的完成度。紀錄器裝上去之後，VM 的實際 log 推翻了那個假設：
+//
+//   8387   skills / demo 算出 locked，畫面上到 17131 才變 locked（慢了 8.7 秒）
+//   19920  env 算出 done，打勾到 30938 才演（慢了 11 秒）
+//
+// 每一筆狀態變化都是持久的，沒有任何一筆閃一下就回去。那道關卡沒擋到雜訊，只是
+// 讓每一次真實的變化都慢一整輪重畫——而重畫是事件驅動的，兩輪之間可能隔十幾秒。
+// 已經拿掉。紀錄器留著：綠圈圈那個畫面如果再出現，這次會有完整的軌跡可以看。
+
+// 鎖著 → 開了 → 打勾。三態各對應鎖頭動畫的一格（見 LOCK_FRAMES）。
+//
+// 判斷順序有意義：一段可以「開了但還沒做完」，但不可能「做完了還鎖著」——
+// 所以先看鎖，再看做完沒。
+function lockStateOf(lockStates, done, id) {
+  if (lockStates[id]?.locked === true) return "locked";
+  // undefined 是「還不知道」（資料還沒回來），那就當還沒做完，不要先給人打勾。
+  return done?.[id] === true ? "done" : "open";
+}
+
+// 煙火只放在解鎖與完成那兩刻，而且只放一次。
+function celebrate(button) {
   if (reducedMotion.matches) return;
   button.classList.remove("is-unlocking");
   // 讀一次 offsetWidth 逼瀏覽器結算，不然連續兩次解鎖的第二次不會重播動畫。
@@ -826,29 +1176,86 @@ function playUnlock(button) {
   }, 900);
 }
 
-export function renderSectionLocks(lockStates) {
+export function renderSectionLocks(lockStates, done = {}) {
   const next = {};
+  const observed = {};
 
   for (const button of elements.sectionButtons) {
     const id = button.dataset.sectionTarget;
-    const locked = lockStates[id]?.locked === true;
-    next[id] = locked;
+    const state = lockStateOf(lockStates, done, id);
+    const raw = state;
+    const previous = renderedLocks?.[id] ?? null;
+    observed[id] = raw;
+    next[id] = state;
+
+    // 只在「算出來的」或「承認的」真的變了那一刻記一筆。原始輸入（locked / done）
+    // 一起記下來——要找的就是它們哪一個閃了一下。
+    if (raw !== (observedLocks?.[id] ?? null) || state !== previous) {
+      logLock({
+        tab: id,
+        raw,
+        state,
+        was: previous,
+        locked: lockStates[id]?.locked ?? null,
+        done: done?.[id] ?? null,
+      });
+    }
 
     if (button.querySelector(".section-tab-lock") === null) {
-      button.prepend(lockIcon());
+      button.prepend(lockIcon(button));
     }
 
-    // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
-    if (renderedLocks !== null && renderedLocks[id] === true && !locked) {
-      playUnlock(button);
+    // 剛從鎖著變成開了：先不演，改成招手（放大＋搖晃），等學生點進來才開鎖。
+    // 減少動態時不招手，照常直接開——會動的東西是提醒，關掉就得換個方式講，
+    // 而這裡「換個方式」就是分頁本來就變得可以點了。
+    const justOpened =
+      previous === "locked" && state === "open" && !reducedMotion.matches;
+
+    if (justOpened) {
+      pendingUnlock.add(id);
     }
 
+    // 又鎖回去、或整段已經做完了，就沒有什麼好招手的。
+    if (state !== "open") {
+      pendingUnlock.delete(id);
+    }
+
+    // 招手期間鎖頭留在上鎖那一格。這裡不能餵真正的 state，餵了它就直接跳到開鎖，
+    // 學生點進來也沒東西可演。
+    const pending = pendingUnlock.has(id);
+    const lock = button.querySelector(".section-tab-lock");
+
+    // 開鎖動畫正在演的那 0.6 秒不要碰它。這個函式每次重畫都會跑（勾一個項目、
+    // 環境檢查回來都算），這時候餵它 open 就是 goToAndStop 到最後一格——動畫演到
+    // 一半被切掉，學生只看到鎖突然變成開的。
+    // is-playing 是同一件事的另一半：打勾那 1.35 秒也不能被重畫打斷（見 playLockTo）。
+    if (
+      !lock?.classList.contains("is-opening") &&
+      !lock?.classList.contains("is-playing")
+    ) {
+      // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
+      playLockTo(button, pending ? "locked" : state, pending ? null : previous);
+    }
+    lock?.classList.toggle("is-announcing", pending);
+
+    // 慶祝只給往前走的那一步。往回退（例如換了工具選項害某一段又鎖回去）不是
+    // 成就，炸煙火只會讓人以為自己做對了什麼。
+    if (
+      previous !== null &&
+      LOCK_STATES.indexOf(state) > LOCK_STATES.indexOf(previous)
+    ) {
+      celebrate(button);
+    }
+
+    const locked = state === "locked";
     button.classList.toggle("is-locked", locked);
+    button.classList.toggle("is-section-done", state === "done");
     if (locked) button.setAttribute("aria-disabled", "true");
     else button.removeAttribute("aria-disabled");
   }
 
   renderedLocks = next;
+  observedLocks = observed;
 }
 
 export function showSectionLockMessage(message) {
@@ -925,49 +1332,25 @@ export function onLanguageSelect(handler) {
   });
 }
 
-function appendDots(parent, count) {
-  for (let index = 0; index < count; index += 1) {
-    const dot = document.createElement("i");
-    dot.style.setProperty("--i", index);
-    dot.setAttribute("aria-hidden", "true");
-    parent.append(dot);
-  }
-}
-
+// 正在跑的那幾行前面的轉圈圈。
+//
+// 原本是設計系統的 .ds-loader-orbs，六種 modifier 各有一種畫法（軌道、緯線、環）。
+// Reed 指定全部換成同一支 lottie（Bad Cat），所以六種長相收斂成一種——差別只剩
+// 讀螢幕唸出來的那句話（loaderLabels），那個仍然照每一種情境不同。
+//
+// class 保留 row-loader 這個自己的名字：不要再掛 .ds-loader-orbs，那是設計系統的
+// component，裡面已經沒有它的東西了，留著只會讓下一個人去 design-system.css 找
+// 為什麼改了沒反應。
 function createLoader(modifier) {
   const loader = document.createElement("span");
-  loader.className = `ds-loader-orbs ds-loader-orbs--sm ds-loader-orbs--on-dark ${modifier}`;
+  loader.className = `row-loader ${modifier}`;
   loader.setAttribute("role", "status");
-  if (modifier === LOADER_MODIFIERS.working) {
-    for (const [tilt, duration] of [["-22deg", "2.7s"], ["48deg", "2.2s"]]) {
-      const orbit = document.createElement("span");
-      orbit.className = "ds-loader-orbs__orbit";
-      orbit.style.setProperty("--tilt", tilt);
-      orbit.style.setProperty("--orbit-duration", duration);
-      appendDots(orbit, 6);
-      loader.append(orbit);
-    }
-  } else if (modifier === LOADER_MODIFIERS.searching) {
-    [2, 4, 2].forEach((count, row) => {
-      const latitude = document.createElement("span");
-      latitude.className = "ds-loader-orbs__latitude";
-      latitude.style.setProperty("--row", row);
-      latitude.style.setProperty("--mid", (count - 1) / 2);
-      latitude.style.setProperty("--step", "4.5px");
-      latitude.style.setProperty("--delay-step", `${(-1.6 / count).toFixed(3)}s`);
-      appendDots(latitude, count);
-      loader.append(latitude);
-    });
-  } else if (modifier === LOADER_MODIFIERS.listening) {
-    [3, 7].forEach((radius, ringIndex) => {
-      const ring = document.createElement("span");
-      ring.className = "ds-loader-orbs__ring";
-      ring.style.setProperty("--ring", ringIndex);
-      ring.style.setProperty("--ring-radius", `${radius}px`);
-      appendDots(ring, 6);
-      loader.append(ring);
-    });
-  }
+  loader.append(
+    lottieBox({
+      url: "/vendor/loader-claude.json",
+      className: "row-loader-art",
+    }),
+  );
   return loader;
 }
 
@@ -1032,25 +1415,11 @@ function acceptsTerminalLine(spec) {
   return id === activeTranscriptId;
 }
 
-// 閃爍游標永遠待在最後一行的字尾。那是 .ds-term--typing 這個 component 唯一看得出來
-// 的地方——我們一直掛著那個 class，卻從來沒把游標畫出來，所以右邊那個終端看起來
-// 像一張截圖，不像一個活著的視窗。
+// 這裡曾經有一個永遠待在最後一行字尾的閃爍游標。拿掉了（Reed 指定）：終端裡本來
+// 就有逐字打字與轉圈圈兩種東西在動，再多一個一直閃的方塊只是把視線扯走。
 //
-// 掛著轉圈圈的那一行不放：那一行已經在講「正在跑」，再加一個游標只是兩個東西同時
-// 在動。
-function renderCursor() {
-  elements.terminal.querySelector(".ds-term-cursor")?.remove();
-  const last = elements.terminalLines.lastElementChild;
+// 保留這個空函式的位置沒有意義，呼叫端也一併清掉了。
 
-  if (last === null || last.querySelector(".ds-loader-orbs") !== null) {
-    return;
-  }
-
-  const cursor = document.createElement("span");
-  cursor.className = "ds-term-cursor";
-  cursor.setAttribute("aria-hidden", "true");
-  last.append(cursor);
-}
 
 // 新的一行逐字打出來，像真的終端在跑。
 //
@@ -1078,7 +1447,6 @@ function flushTyping() {
 
   typingQueue.length = 0;
   stopTyping();
-  renderCursor();
 }
 
 function startTyping() {
@@ -1094,7 +1462,6 @@ function startTyping() {
 
     if (job === undefined) {
       stopTyping();
-      renderCursor();
       return;
     }
 
@@ -1103,7 +1470,6 @@ function startTyping() {
 
     if (job.at >= job.text.length) {
       typingQueue.shift();
-      renderCursor();
     }
   }, TYPING_STEP_MS);
 }
@@ -1111,7 +1477,6 @@ function startTyping() {
 function typeInto(line, text) {
   if (reducedMotion.matches) {
     line.textContent = text;
-    renderCursor();
     return;
   }
 
@@ -1133,7 +1498,6 @@ function paintTranscript(id) {
   }
 
   // 還原的是歷史，不是正在發生的事：直接印，也不留轉圈圈。
-  renderCursor();
   elements.output.textContent = rawOutputs.get(id) ?? "";
 }
 

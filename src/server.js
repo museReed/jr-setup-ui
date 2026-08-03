@@ -48,13 +48,23 @@ const EXPLAIN_FALLBACK = "（無法翻譯，請看下方原始輸出）";
 const ASSETS = [
   ["/styles.css", "text/css; charset=utf-8"],
   ["/vendor/design-system.css", "text/css; charset=utf-8"],
-  ["/vendor/loader-orbs.js", "text/javascript; charset=utf-8"],
   ["/vendor/logos.svg", "image/svg+xml; charset=utf-8"],
   ["/app.js", "text/javascript; charset=utf-8"],
   ["/view.js", "text/javascript; charset=utf-8"],
   ["/viewmodel.js", "text/javascript; charset=utf-8"],
   ["/model.js", "text/javascript; charset=utf-8"],
   ["/api.js", "text/javascript; charset=utf-8"],
+  ["/tour.js", "text/javascript; charset=utf-8"],
+  ["/tour-model.js", "text/javascript; charset=utf-8"],
+  ["/vendor/driver.mjs", "text/javascript; charset=utf-8"],
+  ["/vendor/driver.css", "text/css; charset=utf-8"],
+  // 動畫：播放器與三支 lottie。走 vendor 不走 CDN，理由跟 driver.js 一樣——
+  // 學生的 VM 常常連不到外網，指 CDN 的話動畫會靜靜地不出現。
+  ["/lottie-player.js", "text/javascript; charset=utf-8"],
+  ["/vendor/lottie-light.min.js", "text/javascript; charset=utf-8"],
+  ["/vendor/milestone-cat.json", "application/json; charset=utf-8"],
+  ["/vendor/loader-claude.json", "application/json; charset=utf-8"],
+  ["/vendor/lock.json", "application/json; charset=utf-8"],
 ];
 
 async function loadAssets() {

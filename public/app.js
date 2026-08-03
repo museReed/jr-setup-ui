@@ -2,6 +2,7 @@
 // 這裡只做接線與狀態保管，判斷邏輯在 viewmodel.js、畫面操作在 view.js。
 import * as api from "./api.js";
 import * as view from "./view.js";
+import { initTour, onCardRendered, replayTour } from "./tour.js";
 import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
@@ -623,6 +624,15 @@ function renderWizard() {
   // 去點才發現。開鎖動畫也因此永遠錯過那一刻（VM 實測）。
   const lockStates = renderNavigation();
   renderWizardNav({ cardSection, currentIndex, nextUnlocked, lockStates, onNext: cardModel.onNext });
+  // 導覽排在最後：翻頁按鈕這時候才決定要不要露臉，太早問會指到一顆還 hidden 的
+  // 按鈕，泡泡就貼到畫面左上角去了。
+  onCardRendered({
+    cardId: card.checkId,
+    runInProgress: state.runInProgress,
+    // 已經做完的卡不跳提示：那六張的提示全是「不先知道就會卡死或誤判」，卡片綠了
+    // 之後那句話講的是一件已經發生過的事（見 tour-model.js 的 hintForCard）。
+    cardDone,
+  });
 }
 
 // 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
@@ -762,7 +772,7 @@ function renderNavigation() {
       ),
     ]),
   );
-  view.renderSectionLocks(lockStates);
+  view.renderSectionLocks(lockStates, done);
   view.renderGateVisibility(tools.split(",").includes("codex"));
   return lockStates;
 }
@@ -798,8 +808,11 @@ function renderEnvActionButtons() {
 
 function setRunning(running) {
   state.runInProgress = running;
-  renderWizard();
+  // 控制列先畫：取消鈕要露臉之後，卡片那邊的導覽才指得到它。反過來的話，導覽問
+  // 「取消鈕在不在」時它還 hidden，那一步會被當成指不到而跳過——取消鈕就永遠
+  // 沒人講（它只有正在跑的時候才出現，沒有第二次機會）。
   renderControls();
+  renderWizard();
   renderEnvActionButtons();
 }
 
@@ -1537,6 +1550,23 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
   }
 });
 
+initTour();
+view.elements.replayTour.addEventListener("click", () => replayTour());
+// 分頁鎖頭演錯時按這顆，整包貼給助教。收集在 view 那邊（那裡才看得到動畫實例與
+// 變化紀錄），這裡只負責把它變成一段文字丟進剪貼簿。
+view.elements.copyDiagnostics.addEventListener("click", async () => {
+  try {
+    const diagnostics = await view.lockDiagnostics();
+    await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+    view.setButtonLabel(view.elements.copyDiagnostics, "已複製");
+    // 字要換回來：留著「已複製」的話，下次真的要按時看起來像已經按過了。
+    window.setTimeout(() => {
+      view.setButtonLabel(view.elements.copyDiagnostics, "複製診斷資料");
+    }, 2000);
+  } catch (error) {
+    view.addLine(`無法複製診斷資料：${error.message}`, "failed");
+  }
+});
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
