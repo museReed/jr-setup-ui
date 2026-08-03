@@ -200,8 +200,18 @@ try {
 
   // 進度條上那隻從左邊外面滾進來，換段時從右邊外面滾出去。兩個位置都要超出
   // 0% / 100%——停在 0% 是「站在第一個點左邊一點」，看起來像被截斷。
-  assert(files.view.includes("const CAT_ENTER_FROM = -8;"));
-  assert(files.view.includes("const CAT_EXIT_TO = 108;"));
+  // 起訖點是「進度條邊緣再往外半個螢幕寬」，而且每次都重算——視窗縮放、側邊欄
+  // 出現都會改變進度條寬度，寫死的百分比馬上就不是半個螢幕了。
+  assert(files.view.includes("const CAT_OFFSCREEN_RATIO = 0.5;"));
+  assert.match(files.view, /function offscreenPercent\(\)/);
+  assert.match(files.view, /placeCatInstantly\(-offscreenPercent\(\)\)/);
+  assert.match(files.view, /`\$\{100 \+ offscreenPercent\(\)\}%`/);
+  // 滾出畫面不能把頁面撐寬。clip 不是 hidden：hidden 會生出捲動容器，上方那排
+  // sticky 的分頁就黏不住了。
+  // 兩條要成對：只寫 body 的話貓滾出右邊時 <html> 仍然被撐寬，照樣長出橫向捲軸
+  // （實測 scrollWidth 1722 > 視窗 1200）。
+  assert.match(cardStyles, /^body \{[^}]*overflow-x: clip;/m);
+  assert.match(cardStyles, /^:root \{[^}]*overflow-x: clip;/m);
   assert.match(files.view, /firstPaint \|\| sectionChanged/);
   // 收手的計時器只在真的重開一輪進出場時清掉。無條件清的話，環境檢查期間的每次
   // 重畫都會把「滾完了要收手」那一刀清掉，牠就一直轉下去（實際踩到）。

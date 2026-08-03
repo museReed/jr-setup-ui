@@ -223,15 +223,26 @@ function finishArrival(point, station, key) {
   }, 800);
 }
 
-// 進出場：牠從進度條左邊外面滾進來，換段時從右邊外面滾出去。
+// 進出場：牠從螢幕外面滾進來，換段時滾到螢幕外面去。
 //
-// 兩個位置都刻意超出 0% / 100%：停在 0% 的話牠是「站在第一個點左邊一點」，
-// 看起來像走到一半被截斷，不像從畫面外面進來。
-const CAT_ENTER_FROM = -8;
-const CAT_EXIT_TO = 108;
+// 起訖點是「進度條邊緣再往外半個螢幕寬」。原本只給 ±8%（約 90px），那只是滾到
+// 進度條旁邊——學生還看得到牠停在那裡，不像真的離場（Reed 回報）。
+//
+// left 吃的是進度條寬度的百分比，所以半個螢幕要換算成百分比，而且每次都重算：
+// 視窗縮放、側邊欄出現都會改變進度條寬度，寫死的數字馬上就不是半個螢幕了。
+const CAT_OFFSCREEN_RATIO = 0.5;
 const CAT_EXIT_MS = 600;
 const CAT_ENTER_MS = 900;
 let catTimer = null;
+
+function offscreenPercent() {
+  const bar = elements.milestoneBar.getBoundingClientRect().width;
+
+  // 還沒排版完（寬度 0）就給一個夠遠的保底值，不要算出 Infinity。
+  if (bar === 0) return 120;
+
+  return ((window.innerWidth * CAT_OFFSCREEN_RATIO) / bar) * 100;
+}
 
 // 換位置但不要有過渡——把牠瞬間搬到畫面外面，準備滾進來。
 function placeCatInstantly(percent) {
@@ -245,7 +256,7 @@ function placeCatInstantly(percent) {
 
 function rollIn(percent) {
   stopCatIdle();
-  placeCatInstantly(CAT_ENTER_FROM);
+  placeCatInstantly(-offscreenPercent());
   elements.milestoneDuck.classList.add("is-rolling", "is-entering");
   elements.milestoneDuck.style.left = `${percent}%`;
   catTimer = window.setTimeout(() => {
@@ -293,7 +304,7 @@ function moveDuck(sectionId, station) {
     // 牠一路都在滾，只是位置從畫面外的一邊換到另一邊。
     stopCatIdle();
     elements.milestoneDuck.classList.add("is-rolling", "is-exiting");
-    elements.milestoneDuck.style.left = `${CAT_EXIT_TO}%`;
+    elements.milestoneDuck.style.left = `${100 + offscreenPercent()}%`;
     catTimer = window.setTimeout(() => {
       elements.milestoneDuck.classList.remove("is-exiting");
       rollIn(station.percent);

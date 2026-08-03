@@ -3,6 +3,9 @@
   font-family: var(--font-sans);
   background: var(--color-bg);
   color: var(--color-text);
+  /* 這一條與 body 那條要成對。只寫 body 的話，貓滾出右邊時 <html> 仍然被撐寬，
+     底下照樣長出一條橫向捲軸（實測 scrollWidth 1722 > 視窗 1200）。 */
+  overflow-x: clip;
 }
 
 * {
@@ -13,6 +16,11 @@ body {
   min-width: 320px;
   margin: 0;
   background: var(--color-bg);
+  /* 進度條上那隻會滾到螢幕外面半個畫面（見 view.js 的 offscreenPercent）。不裁掉
+     的話牠會把頁面撐寬，底下多一條橫向捲軸。
+     用 clip 不用 hidden：hidden 會生出一個捲動容器，上方那排 sticky 的分頁就黏
+     不住了。clip 只裁不捲，sticky 照常。 */
+  overflow-x: clip;
 }
 
 [hidden] {
