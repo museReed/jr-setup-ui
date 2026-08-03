@@ -168,6 +168,32 @@ try {
   assert(!files.view.includes("row-loader"));
   ok("小人常駐在終端頂欄，三段幀號釘住，收電腦只演一次");
 
+  // 翻頁兩顆釘在畫面左右、垂直永遠置中（Reed 指定）。跟著卡片走的話，卡片一長
+  // 按鈕就被推到很下面，而每張卡的高度都不一樣。
+  const navStyles = readFileSync(
+    new URL("../public/styles.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    navStyles,
+    /\.wizard-nav-row \{[^}]*position: fixed;[^}]*top: 50%;[^}]*transform: translateY\(-50%\);/s,
+  );
+  // 整列橫跨畫面，中間那一大片透明區域不能蓋住卡片。
+  assert.match(navStyles, /\.wizard-nav-row \{[^}]*pointer-events: none;/s);
+  assert.match(
+    navStyles,
+    /\.wizard-nav-row > \.wizard-nav \{\s*pointer-events: auto;/,
+  );
+  // 導覽的「看得到才留下」不能用 offsetParent：fixed 元素它一律回 null，版面導覽
+  // 會靜靜地少掉「做完就往下一張」那一步，六步變五步而且沒有人會發現。
+  const tourSource = readFileSync(
+    new URL("../public/tour.js", import.meta.url),
+    "utf8",
+  );
+  assert(!tourSource.includes("node.offsetParent"));
+  assert(tourSource.includes("node.getClientRects().length > 0"));
+  ok("翻頁兩顆釘在畫面垂直中央，導覽仍指得到那一列");
+
   // 學生自己按的重掃要在終端留下頭尾兩句話。自動跑的那些（開頁、裝完接著跑）不講，
   // 否則每裝一個東西就多兩行雜訊。
   assert(files.app.includes('checkEnvironment(true, { manual: true })'));

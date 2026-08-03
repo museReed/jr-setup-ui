@@ -167,10 +167,16 @@ function singleHint() {
 
 // 翻頁按鈕平常是 hidden 的（第一張沒有「上一張」），指一個 hidden 的元素
 // driver 會把泡泡貼到畫面左上角。看得到的才留下來。
+//
+// 判定不能用 offsetParent：position: fixed 的元素它一律回 null，而翻頁那一列正是
+// fixed（釘在畫面左右、垂直置中）——用 offsetParent 的話，版面導覽會靜靜地少掉
+// 「做完就往下一張」那一步，六步變五步而且沒有人會發現。
+// getClientRects 看的是「有沒有畫出來」：display: none 與 hidden 都是空的，
+// fixed 則照常回傳矩形。
 function visibleSteps(steps) {
   return steps.filter(({ element }) => {
     const node = document.querySelector(element);
-    return node !== null && node.offsetParent !== null;
+    return node !== null && node.getClientRects().length > 0;
   });
 }
 
