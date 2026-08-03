@@ -47,6 +47,29 @@ const store = {
 const seenHints = new Set();
 const seenComponents = new Set();
 let tourRunning = false;
+
+// 導覽跑了什麼、為什麼沒跑，全部記下來，跟著「複製診斷資料」一起交出去。
+//
+// 起因：Reed 在 VM 上看到版面導覽沒出現就直接跳了元件導覽，而同一份 code 在 Mac
+// 上重現不出來。沒有紀錄的話只能一路猜——鎖頭那邊裝了紀錄器之後推翻了兩個猜錯的
+// 假設，這裡照做。
+const tourLog = [];
+
+function logTour(event, detail = {}) {
+  // 只留最近幾十筆：每畫一輪卡片都會問一次，跑久了會長到複製不動。
+  if (tourLog.length > 80) tourLog.shift();
+  tourLog.push({ at: Math.round(performance.now()), event, ...detail });
+}
+
+export function tourDiagnostics() {
+  return {
+    layoutSeen: store.get(TOUR_SEEN_KEY),
+    seenComponents: [...seenComponents],
+    seenHints: [...seenHints],
+    tourRunning,
+    log: tourLog,
+  };
+}
 let layoutDriver = null;
 let cardDriver = null;
 let hintDriver = null;
@@ -73,8 +96,14 @@ function layoutTour() {
       element,
       popover: { title, description },
     })),
-    onDestroyed: () => {
+    onDestroyed: (element, step, options) => {
       tourRunning = false;
+      // 停在第幾步一起記：整份走完、中途按叉、或是根本沒畫出來就被收掉，三者的
+      // 差別只有這個數字看得出來。
+      logTour("layout-destroyed", {
+        activeIndex: options?.state?.activeIndex ?? null,
+        steps: options?.config?.steps?.length ?? null,
+      });
       store.set(TOUR_SEEN_KEY, "1");
       // 版面導覽一結束就馬上接卡片導覽，不要等下一次重畫。
       //
@@ -149,14 +178,25 @@ export function startLayoutTour({ force = false } = {}) {
   if (tourRunning) return false;
 
   const seen = store.get(TOUR_SEEN_KEY) === "1";
+  const cardReady = cardIsPainted();
 
-  if (!force && !shouldRunLayoutTour({ seen, cardReady: cardIsPainted() })) {
+  if (!force && !shouldRunLayoutTour({ seen, cardReady })) {
+    logTour("layout-skipped", { seen, cardReady });
     return false;
   }
 
   const steps = visibleSteps(LAYOUT_TOUR_STEPS);
 
-  if (steps.length === 0) return false;
+  // 一步都指不到的話什麼都不做，而且不記「看過了」——記了的話學生永遠等不到它，
+  // 而元件導覽會以為版面導覽已經講完（它就是靠這個旗標排隊的）。
+  if (steps.length === 0) {
+    logTour("layout-no-visible-steps", {
+      elements: LAYOUT_TOUR_STEPS.map(({ element }) => element),
+    });
+    return false;
+  }
+
+  logTour("layout-start", { steps: steps.map(({ element }) => element) });
 
   tourRunning = true;
   const instance = layoutTour();
@@ -198,13 +238,22 @@ function driveCardTour(steps, onDone) {
 // 只有 Claude Code 那張有，「重跑驗證」跟環境段的「再 check 一次」是兩件事——
 // 這些都是後面才第一次遇到的，以卡為單位的話它們永遠沒人講。
 export function startComponentTour({ runInProgress } = {}) {
+  const present = presentComponents();
   const steps = newComponentSteps({
-    present: presentComponents(),
+    present,
     seenIds: seenComponents,
     layoutSeen: store.get(TOUR_SEEN_KEY) === "1",
     runInProgress,
     tourRunning,
   });
+
+  if (steps.length > 0) {
+    logTour("component-start", {
+      present: [...present],
+      steps: steps.map(({ id }) => id),
+      runInProgress: runInProgress === true,
+    });
+  }
 
   return driveCardTour(steps, () => markSeen(steps));
 }
