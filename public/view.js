@@ -1413,10 +1413,26 @@ export function onLanguageSelect(handler) {
 // 三段的幀號是拿 tools/loader-frame-inspector.html 逐幀圈出來的（決策與否決的
 // 路線見 docs/loader-frame-inspector.md）：這支動畫沒有 marker、也沒有圖片資產，
 // 只能靠幀號切。改動畫之後這三組數字要重圈。
+// 四段，不是三段：「抽出電腦」是過場，只能演一次。
+//
+// 一開始把 9–35 整段當成「工作中」循環播，畫面上每 2.25 秒就重演一次抽電腦——
+// 看起來像動畫在輪播，不像一直在做同一件事（Reed 實測指出）。過場拆出來之後，
+// 循環的只剩真的在打字的那 20 幀。
+//
+// 幀號是拿 tools/loader-frame-inspector.html 逐幀圈出來的（決策與否決的路線見
+// docs/loader-frame-inspector.md）：這支動畫沒有 marker、也沒有圖片資產，只能靠
+// 幀號切。動畫是逐格的（0–42 每一幀都是關鍵幀），換動畫之後這幾組數字要重圈。
 const MASCOT_SEGMENTS = {
   idle: [0, 8],
-  work: [9, 35],
+  "work-in": [9, 15],
+  work: [16, 35],
   outro: [36, 42],
+};
+
+// 演完就自己走到下一個狀態的那兩段。循環的兩段不在這裡。
+const MASCOT_NEXT = {
+  "work-in": "work",
+  outro: "idle",
 };
 
 let mascotAnimation = null;
@@ -1435,20 +1451,27 @@ function applyMascotState(state) {
     return;
   }
 
-  // 收電腦只演一次，演完自己回到待機；另外兩段是循環的。
-  mascotAnimation.loop = state !== "outro";
+  mascotAnimation.loop = MASCOT_NEXT[state] === undefined;
   mascotAnimation.playSegments(segment, true);
 }
 
-// 沒事＝待機、開跑＝打電腦、跑完＝收電腦再回待機。
+// 沒事＝待機、開跑＝抽出電腦再打字、跑完＝收電腦再回待機。
 //
-// 同一個狀態重複設不重播：renderLoaders 每印一行就會叫一次，重播的話小人會一直
-// 從頭抽電腦。
+// 已經在工作就不重來：renderLoaders 每印一行就會叫一次，每次都從頭抽電腦的話，
+// 小人會卡在過場裡永遠打不到字。收電腦同理。
 export function setMascotState(state) {
+  if (state === "work" && (mascotState === "work" || mascotState === "work-in")) {
+    return;
+  }
+
+  if (state === "outro" && (mascotState === "outro" || mascotState === "idle")) {
+    return;
+  }
+
   if (state === mascotState) return;
 
-  mascotState = state;
-  applyMascotState(state);
+  mascotState = state === "work" ? "work-in" : state;
+  applyMascotState(mascotState);
 }
 
 const mascot = lottieControl({
@@ -1463,11 +1486,14 @@ mascot.ready.then((animation) => {
 
   mascotAnimation = animation;
   animation.addEventListener("complete", () => {
-    // 收完電腦就回到待機。complete 只有非循環那段（outro）會發。
-    if (mascotState !== "outro") return;
+    // 只有那兩段過場會發 complete（循環的兩段不會）：抽完電腦接著打字，收完電腦
+    // 回到待機。
+    const next = MASCOT_NEXT[mascotState];
 
-    mascotState = "idle";
-    applyMascotState("idle");
+    if (next === undefined) return;
+
+    mascotState = next;
+    applyMascotState(next);
   });
   applyMascotState(mascotState);
 });
