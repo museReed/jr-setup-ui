@@ -455,6 +455,18 @@ async function runAction(
     finish(null, null);
   });
   child.once("close", finish);
+  // close 要等行程結束「而且」所有 stdio 都關掉。子行程再開一個孫行程、讓它繼承
+  // stdout/stderr 的話（claude login 會開瀏覽器的 helper），殺掉子行程之後那根管子
+  // 還握在孫行程手上——close 永遠不會來，前端就永遠等不到 done：畫面停在
+  // 「正在取消…」，按鈕留在「開始登入中…」，連取消鈕都是灰的，整頁做不了下一步
+  //（Reed 實測截圖）。
+  //
+  // exit 只看行程本身，一定會來。給 close 一秒走正常路徑（它會把剩下的輸出沖乾淨），
+  // 沒來就自己收尾。finish 本身有 run.finished 擋重入，兩條路徑不會收兩次。
+  child.once("exit", (exitCode, signal) => {
+    const timer = setTimeout(() => finish(exitCode, signal), 1000);
+    timer.unref();
+  });
   response.on("close", () => terminateRun(run));
 }
 
