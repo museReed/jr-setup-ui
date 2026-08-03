@@ -114,10 +114,15 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="wizard-nav-label">上一張</span>
           </button>
-          <button type="button" id="wizard-next" class="ds-btn-fill is-primary wizard-nav wizard-nav--next" hidden>
-            <span class="wizard-nav-label">下一張</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <!-- 下一張那顆包一層：解鎖時巫師與爆炸要疊在它的位置上演，而按鈕本身在
+               那段期間是隱形的（特效不能跟著一起被藏掉，所以不能塞在按鈕裡面）。 -->
+          <span class="wizard-nav-slot">
+            <span id="wizard-unlock" class="wizard-unlock" aria-hidden="true"></span>
+            <button type="button" id="wizard-next" class="ds-btn-fill is-primary wizard-nav wizard-nav--next" hidden>
+              <span class="wizard-nav-label">下一張</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </span>
         </div>
       </div>
     </main>

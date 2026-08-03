@@ -269,8 +269,98 @@ body {
   pointer-events: none;
 }
 
-.wizard-nav-row > .wizard-nav {
+.wizard-nav-row > .wizard-nav,
+.wizard-nav-slot > .wizard-nav {
   pointer-events: auto;
+}
+
+/* 下一張那顆的位置錨點：特效要疊在它上面，而它自己在特效期間是隱形的。 */
+.wizard-nav-slot {
+  position: relative;
+  display: flex;
+}
+
+/* 解鎖特效：巫師與爆炸都畫在按鈕中心，往外溢出去。
+   兩支動畫的原始尺寸差很多（巫師 800×600、爆炸 2000×2000），所以各自給大小，
+   靠 translate(-50%, -50%) 對齊同一個中心點。 */
+.wizard-unlock {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  display: none;
+  pointer-events: none;
+}
+
+.wizard-unlock.is-casting {
+  display: block;
+}
+
+.wizard-unlock-wizard,
+.wizard-unlock-blast {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+}
+
+.wizard-unlock-wizard {
+  width: 260px;
+  height: 195px;
+}
+
+/* 爆炸開始的同時巫師縮到最小再消失，兩件事同時長（時間由 JS 拿爆炸的實際秒數設，
+   見 view.js 的 playUnlockSpell）。 */
+.wizard-unlock-wizard.is-shrinking {
+  transform: translate(-50%, -50%) scale(0.02);
+  opacity: 0;
+  transition:
+    transform var(--spell-shrink, 1.5s) ease-in,
+    opacity var(--spell-shrink, 1.5s) ease-in;
+}
+
+.wizard-unlock-blast {
+  width: 240px;
+  height: 240px;
+}
+
+.wizard-unlock-wizard svg,
+.wizard-unlock-blast svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 施法期間按鈕不在畫面上（但仍佔位，不然特效的中心點會跑掉）。炸完再淡進來。 */
+.wizard-nav.is-casting {
+  opacity: 0;
+}
+
+.wizard-nav.is-revealing {
+  animation: wizard-nav-reveal 0.45s ease-out both;
+}
+
+@keyframes wizard-nav-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wizard-nav.is-revealing {
+    animation: none;
+  }
+
+  .wizard-unlock-wizard.is-shrinking {
+    transition: none;
+  }
 }
 
 /* 翻頁這兩顆是純圓形，裡面只有一支白色箭頭（Reed 指定）。

@@ -65,6 +65,9 @@ const ASSETS = [
   ["/vendor/milestone-cat.json", "application/json; charset=utf-8"],
   ["/vendor/loader-claude.json", "application/json; charset=utf-8"],
   ["/vendor/lock.json", "application/json; charset=utf-8"],
+  // 解鎖下一張時放的那一段：巫師施法，接著炸開。
+  ["/vendor/wizard.json", "application/json; charset=utf-8"],
+  ["/vendor/explosion.json", "application/json; charset=utf-8"],
 ];
 
 async function loadAssets() {

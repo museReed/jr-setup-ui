@@ -35,6 +35,7 @@ const elements = {
   sectionLockMessage: document.querySelector("#section-lock-message"),
   wizardPrev: document.querySelector("#wizard-prev"),
   wizardNext: document.querySelector("#wizard-next"),
+  wizardUnlock: document.querySelector("#wizard-unlock"),
   behaviorFallback: document.querySelector("#behavior-fallback"),
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
@@ -959,21 +960,92 @@ function renderNavButton(button, spec, key) {
 
   button.hidden = !show;
 
-  // 解鎖那一刻晃一下、炸一朵煙火，跟分頁解鎖同一種慶祝。回頭的那顆不用——它出現
-  // 不是成就，只是「你可以往回看」。
+  // 解鎖那一刻放一段施法特效。回頭的那顆不用——它出現不是成就，只是「你可以往回看」。
   if (show && !shownNav[key] && key === "next" && !reducedMotion.matches) {
-    button.classList.remove("is-unlocking");
-    void button.offsetWidth;
-    button.classList.add("is-unlocking");
-    const firework = fireworkAt(50);
-    button.append(firework);
-    window.setTimeout(() => {
-      button.classList.remove("is-unlocking");
-      firework.remove();
-    }, 900);
+    playUnlockSpell(button);
   }
 
   shownNav[key] = show;
+}
+
+// 解鎖下一張時的那一段（Reed 指定的順序）：
+//
+//   1. 巫師在按鈕的位置施法，演完
+//   2. 爆炸開始的同時，巫師縮到最小再消失——縮的時間跟爆炸一樣長
+//   3. 爆炸演完收掉
+//   4. 按鈕淡進來
+//
+// 施法期間按鈕是隱形的，但仍然佔著位置：拿掉的話它旁邊的東西會位移，特效的中心點
+// 也跟著跑掉。
+let castingSpell = false;
+
+function playUnlockSpell(button) {
+  // 同一輪只放一次。renderWizardNav 每次重畫都會叫，中途再叫一次會把演到一半的
+  // 特效洗掉。
+  if (castingSpell) return;
+
+  const stage = elements.wizardUnlock;
+
+  if (stage === null) return;
+
+  castingSpell = true;
+  stage.replaceChildren();
+  stage.classList.add("is-casting");
+  button.classList.add("is-casting");
+
+  const finish = () => {
+    castingSpell = false;
+    stage.classList.remove("is-casting");
+    stage.replaceChildren();
+    button.classList.remove("is-casting");
+    button.classList.add("is-revealing");
+    window.setTimeout(() => button.classList.remove("is-revealing"), 600);
+  };
+
+  const wizard = lottieControl({
+    url: "/vendor/wizard.json",
+    className: "wizard-unlock-wizard",
+    loop: false,
+    autoplay: false,
+  });
+  stage.append(wizard.box);
+
+  wizard.ready.then((wizardAnimation) => {
+    // 動畫載不到就別讓按鈕卡在隱形狀態——少一段特效不該把「下一張」弄不見。
+    if (wizardAnimation === null) {
+      finish();
+      return;
+    }
+
+    wizardAnimation.addEventListener("complete", () => {
+      const blast = lottieControl({
+        url: "/vendor/explosion.json",
+        className: "wizard-unlock-blast",
+        loop: false,
+        autoplay: false,
+      });
+      stage.append(blast.box);
+
+      blast.ready.then((blastAnimation) => {
+        if (blastAnimation === null) {
+          finish();
+          return;
+        }
+
+        // 縮小的時間就是爆炸的時間——問動畫本人，不要另外寫一個會跟它對不起來的
+        // 常數（換一版動畫長度就變了）。
+        const seconds = blastAnimation.getDuration(false);
+        wizard.box.style.setProperty("--spell-shrink", `${seconds}s`);
+        // 先讓瀏覽器結算一次，transition 才會從原本的大小開始跑，而不是直接跳到底。
+        void wizard.box.offsetWidth;
+        wizard.box.classList.add("is-shrinking");
+        blastAnimation.addEventListener("complete", finish);
+        blastAnimation.play();
+      });
+    });
+
+    wizardAnimation.play();
+  });
 }
 
 export function renderWizardNav({ prev, next }) {
