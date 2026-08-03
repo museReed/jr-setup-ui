@@ -527,7 +527,9 @@ function actionButton(spec, onActionClick) {
   const button = fillButton({
     icon: actionIcon(spec),
     text: spec.text,
-    primary: spec.secondary !== true,
+    // hoverFill：掛在清單裡那幾顆（「開始登入」）要的是滑上去才灌滿的動作，
+    // 不預先灌色（Reed 指定，跟旁邊兩顆開視窗的一致）。
+    primary: spec.hoverFill === true ? false : spec.secondary !== true,
     onClick: () => onActionClick(spec.action, button, spec.step, spec.options),
   });
   button.dataset[spec.dataName] = spec.action;
@@ -671,9 +673,9 @@ function checklistElement(
           // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
           icon: step.action === "fullscreen-proof" ? "send" : "terminal",
           text: step.buttonText,
-          // 灌滿的：這一步要學生做的就是按它，空心會讓人以為是次要動作
-          //（Reed 指定，跟同一張卡的「開始登入」一致）。
-          primary: true,
+          // 不預先灌滿：清單裡這幾顆要的是滑上去從左往右灌滿的那個動作
+          //（Reed 指定）。代價是少了「現在該按哪一顆」的預先灌色，靠位置與文字辨識。
+          primary: false,
           onClick: () => onOpen(step.action),
         });
         // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。按文字找不行，
@@ -831,7 +833,7 @@ function renderCard(model) {
     const inlineActions = new Map(
       inlineSpecs.map((spec) => [
         `system-${spec.checkId}`,
-        actionButton(spec, model.onActionClick),
+        actionButton({ ...spec, hoverFill: true }, model.onActionClick),
       ]),
     );
 

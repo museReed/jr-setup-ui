@@ -101,6 +101,22 @@ try {
       args: ["--version"],
       launchesWindow: true,
     },
+    // 子行程開了一個孫行程並讓它繼承 stdout，然後自己很快就結束。
+    //
+    // 這是 claude login 的形狀：它會開一個瀏覽器的 helper。殺掉子行程之後那根管子
+    // 還握在孫行程手上，child 的 "close" 要等管子關掉才會來——只聽 close 的話，
+    // 前端永遠等不到 done（Reed 實測：畫面停在「正在取消…」，整頁做不了下一步）。
+    "orphan-pipe-test": {
+      kind: "fixed",
+      label: "孫行程握著管子",
+      cmd: process.execPath,
+      args: [
+        "-e",
+        "const cp=require('node:child_process');" +
+          "cp.spawn(process.execPath,['-e','setTimeout(()=>{},4000)'],{stdio:'inherit'});" +
+          "setTimeout(()=>process.exit(0),100);",
+      ],
+    },
     "input-echo-test": {
       kind: "fixed",
       label: "stdin 測試",
@@ -540,6 +556,21 @@ try {
     slowEvents.find(({ event }) => event === "done")?.data.signal,
   );
   ok("slow-count 可取消且 done 帶回 signal");
+
+  // 行程結束了就要收尾，不能等管子——孫行程握著 stdout 的話那根管子要好幾秒才關，
+  // 而前端在那之前完全動不了（按鈕停在「⋯中…」、取消鈕是灰的）。
+  const orphanStart = Date.now();
+  const orphanRunId = await createRun(baseUrl, token, "orphan-pipe-test");
+  const orphanEvents = await readSse(baseUrl, token, orphanRunId);
+  const orphanElapsed = Date.now() - orphanStart;
+  assert(orphanEvents.find(({ event }) => event === "done"));
+  // 孫行程握著管子 4 秒；exit 那條路走完是 100ms + 1 秒寬限。抓 3 秒當門檻，
+  // 只有「等管子」那條路會超過。
+  assert(
+    orphanElapsed < 3000,
+    `孫行程握著管子時仍在等 close：${orphanElapsed}ms`,
+  );
+  ok("子行程結束就收尾，不會被孫行程握著的管子拖住");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exitCode = 1;
