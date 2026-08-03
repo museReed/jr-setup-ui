@@ -414,6 +414,22 @@ try {
   );
   ok("終端標題使用設計系統的暗底次要文字色");
 
+  // 青＝系統自己驗、橘＝要你自己看，這是導覽裡講的判準，顏色要一直成立才有用。
+  //
+  // 兩組都只動 token，不覆寫 ds-* selector（契約檔的要求）。系統項那條是必要的：
+  // 系統項一律 disabled，而設計系統最尾端的 input:disabled 規則會把方框與文字刷成
+  // --color-text-faint，把青色蓋掉——未通過的系統項會變成看起來壞掉的灰格子
+  //（Reed 在執行原則那張看到的）。在這個 scope 內把那個 token 指向青色就繞開了。
+  assert.match(
+    styles,
+    /\.current-task-card \.ds-check\.is-manual\s*\{\s*--gl-ink: var\(--color-accent\);/,
+  );
+  assert.match(
+    styles,
+    /\.current-task-card \.ds-check\.is-system\s*\{\s*--color-text-faint: var\(--color-success\);/,
+  );
+  ok("系統項青、手動項橘，兩組都只動 token 不覆寫 ds-* selector");
+
   // .ds-term-bar / .ds-term-title 在設計系統裡不存在，用了就是沒樣式的裸 div，
   // 標題會貼在圓角外被切掉。終端的頂欄只能用 .ds-term-chrome。
   assert(!index.includes("ds-term-bar"));
