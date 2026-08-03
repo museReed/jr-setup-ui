@@ -2,7 +2,12 @@
 // 這裡只做接線與狀態保管，判斷邏輯在 viewmodel.js、畫面操作在 view.js。
 import * as api from "./api.js";
 import * as view from "./view.js";
-import { initTour, onCardRendered, replayTour } from "./tour.js";
+import {
+  initTour,
+  onCardRendered,
+  replayTour,
+  tourDiagnostics,
+} from "./tour.js";
 import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
@@ -1552,11 +1557,16 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
 
 initTour();
 view.elements.replayTour.addEventListener("click", () => replayTour());
-// 分頁鎖頭演錯時按這顆，整包貼給助教。收集在 view 那邊（那裡才看得到動畫實例與
-// 變化紀錄），這裡只負責把它變成一段文字丟進剪貼簿。
+// 分頁鎖頭演錯、或導覽該跳沒跳時按這顆，整包貼給助教。收集在 view 與 tour 那邊
+//（那裡才看得到動畫實例與變化紀錄），這裡只負責把它變成一段文字丟進剪貼簿。
 view.elements.copyDiagnostics.addEventListener("click", async () => {
   try {
-    const diagnostics = await view.lockDiagnostics();
+    const diagnostics = {
+      locks: await view.lockDiagnostics(),
+      // 導覽跑了什麼、為什麼沒跑。Reed 在 VM 上看到版面導覽沒出現就直接跳了元件
+      // 導覽，而同一份 code 在 Mac 上重現不出來——沒有紀錄只能一路猜。
+      tour: tourDiagnostics(),
+    };
     await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
     view.setButtonLabel(view.elements.copyDiagnostics, "已複製");
     // 字要換回來：留著「已複製」的話，下次真的要按時看起來像已經按過了。

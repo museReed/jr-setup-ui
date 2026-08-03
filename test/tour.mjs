@@ -145,10 +145,13 @@ try {
 
   // ── 元件導覽 ────────────────────────────────────────────────
   //
-  // 八個元件一定要講到，順序就是學生操作的順序。以元件為單位記，不是以卡為單位：
+  // 七個元件一定要講到，順序就是學生操作的順序。以元件為單位記，不是以卡為單位：
   // 手動清單要到第三張卡才第一次出現，貼證明的輸入框只有 Claude Code 那張有，
   // 「重跑驗證」跟環境段的「再 check 一次」是兩件事——以卡為單位的話，這些後面
   // 才第一次遇到的元件永遠沒人講（Reed 在 VM 上實際卡到）。
+  //
+  // 原始輸出不在這裡：它是右邊終端的一部分，不屬於任何一張卡，已經併進版面導覽
+  //（留在這裡的話，第一張卡會為了它單獨跳一個 1/1 的泡泡）。
   assert.deepEqual(
     COMPONENT_TOUR_STEPS.map((step) => step.id),
     [
@@ -159,15 +162,20 @@ try {
       "retest-rescan",
       "retest-verify",
       "cancel-run",
-      "raw-output",
     ],
+  );
+  assert(
+    !COMPONENT_TOUR_STEPS.some((step) => step.element === "#raw-output-details"),
+  );
+  assert(
+    LAYOUT_TOUR_STEPS.some((step) => step.element === "#raw-output-details"),
   );
   for (const step of COMPONENT_TOUR_STEPS) {
     assert(step.element.length > 0);
     assert(step.title.length > 0);
     assert(step.description.length > 0);
   }
-  ok("元件導覽涵蓋八個元件：兩種清單、開視窗、貼證明、兩種重驗、取消、原始輸出");
+  ok("元件導覽涵蓋七個元件；原始輸出歸版面導覽，不讓第一張卡為它單獨跳一次");
 
   const all = new Set(COMPONENT_TOUR_STEPS.map((step) => step.id));
   const componentBase = {
@@ -188,21 +196,14 @@ try {
       "paste-proof",
       "retest-rescan",
       "retest-verify",
-      "raw-output",
     ],
   );
   assert.deepEqual(
     newComponentSteps({
       ...componentBase,
-      seenIds: new Set(["checklist-system", "raw-output"]),
+      seenIds: new Set(["checklist-system", "retest-verify"]),
     }).map((step) => step.id),
-    [
-      "checklist-manual",
-      "step-action",
-      "paste-proof",
-      "retest-rescan",
-      "retest-verify",
-    ],
+    ["checklist-manual", "step-action", "paste-proof", "retest-rescan"],
   );
   assert.deepEqual(
     newComponentSteps({
@@ -244,12 +245,13 @@ try {
       "paste-proof",
       "retest-rescan",
       "retest-verify",
-      "raw-output",
     ],
   );
   assert.deepEqual(
-    replayableSteps({ present: new Set(["raw-output"]) }).map((step) => step.id),
-    ["raw-output"],
+    replayableSteps({ present: new Set(["retest-rescan"]) }).map(
+      (step) => step.id,
+    ),
+    ["retest-rescan"],
   );
   // 一個元件都指不到的卡（選工具那張）就沒有東西好重看，按鈕跟著收起來。
   assert.deepEqual(replayableSteps({ present: new Set() }), []);
