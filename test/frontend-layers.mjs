@@ -596,6 +596,28 @@ try {
 
   // 修某一格的按鈕（「開始登入」）掛回那一格底下，而且不在按鈕列再畫一次。原本
   // 「未登入」在清單裡、按鈕在清單外，學生要自己把兩者連起來（Reed 實測）。
+  // 會產生副作用的按鈕要防連點：開視窗那顆連點兩下會真的開兩個終端視窗，安裝那顆
+  // 會跑兩次同一個安裝，授權碼送兩次第二次一定失敗（碼已經被用掉了）。
+  //
+  // 鎖的是閉包不是 button.disabled——disabled 由每一輪重畫依真正的狀態決定，
+  // 在事件處理器裡動它會跟重畫互相蓋來蓋去。
+  assert(files.view.includes("function guardClick(handler)"));
+  assert(!files.view.includes("setTimeout(() => { busy = false"));
+  // 灌色按鈕（安裝／開始登入／修正／開視窗／重驗／複製）統一從這裡包。
+  assert(files.view.includes('button.addEventListener("click", guardClick(onClick))'));
+  // 送出那顆是 type=submit，動作掛在 form 上，要另外包。
+  assert.match(files.view, /form\.addEventListener\(\s*"submit",\s*\n\s*guardClick\(/);
+  // 驗證 modal 的「確認」會真的開終端跑一次；「稍後」只是關掉，冪等不用包。
+  assert(
+    files.view.includes(
+      'elements.verifyModalConfirm.addEventListener("click", guardClick(confirm))',
+    ),
+  );
+  assert(
+    files.view.includes('elements.verifyModalLater.addEventListener("click", later)'),
+  );
+  ok("會產生副作用的按鈕都防連點，冪等的不包");
+
   assert(files.view.includes("inlineActions.get(item.id)"));
   // 放在那一格「裡面」而不是另起一列——另起一列會把清單撐高一截。
   assert(files.view.includes("label.append(inline)"));
