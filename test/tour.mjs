@@ -72,6 +72,32 @@ try {
   );
   ok("有提示的卡片會回傳文案，看過之後不再回傳");
 
+  // 已經做完的卡不跳。這幾張的提示全是「不先知道就會卡死或誤判」——「改完要重開
+  // 終端」「不先放行後面都會失敗」——那些話只在還沒做成的時候有用。卡片已經綠了
+  // 還跳出來教人怎麼做，是在講一件已經發生過的事（Reed 在中文編碼那張看到的：
+  // 清單寫著「讀得到中文」，泡泡還在說改完要重開）。
+  assert.equal(
+    hintForCard({
+      cardId: "powershell-encoding",
+      seenIds: new Set(),
+      runInProgress: false,
+      tourRunning: false,
+      cardDone: true,
+    }),
+    null,
+  );
+  assert.equal(
+    hintForCard({
+      cardId: "powershell-encoding",
+      seenIds: new Set(),
+      runInProgress: false,
+      tourRunning: false,
+      cardDone: false,
+    })?.cardId,
+    "powershell-encoding",
+  );
+  ok("已經做完的卡不跳提示——那句話講的是還沒做成時才成立的事");
+
   // 沒登記的卡片安安靜靜。不是每張都要跳泡泡。
   assert.equal(
     hintForCard({

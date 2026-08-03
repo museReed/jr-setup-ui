@@ -629,6 +629,9 @@ function renderWizard() {
   onCardRendered({
     cardId: card.checkId,
     runInProgress: state.runInProgress,
+    // 已經做完的卡不跳提示：那六張的提示全是「不先知道就會卡死或誤判」，卡片綠了
+    // 之後那句話講的是一件已經發生過的事（見 tour-model.js 的 hintForCard）。
+    cardDone,
   });
 }
 

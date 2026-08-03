@@ -242,7 +242,7 @@ function loadSeenHints() {
 
 // app.js 每畫完一輪卡片就叫這個。第一輪負責把版面導覽跑起來，之後負責元件導覽
 // 與單張提示。
-export function onCardRendered({ cardId, runInProgress }) {
+export function onCardRendered({ cardId, runInProgress, cardDone }) {
   // 「這頁怎麼用」跟著這張卡有沒有元件走，每一輪重畫都要重算——上一張有、這一張
   // 沒有的話按下去會是一場空白的導覽。
   showReplay(replayableSteps({ present: presentComponents() }).length > 0);
@@ -255,6 +255,7 @@ export function onCardRendered({ cardId, runInProgress }) {
     seenIds: seenHints,
     runInProgress,
     tourRunning,
+    cardDone,
   });
 
   if (hint === null) return;

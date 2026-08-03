@@ -237,8 +237,20 @@ export function replayableSteps({ steps = COMPONENT_TOUR_STEPS, present }) {
 
 // 跑到一半跳提示會蓋住終端正在印的字，所以 runInProgress 的時候一律不跳，
 // 等它跑完那一輪 render 再說。
-export function hintForCard({ cardId, seenIds, runInProgress, tourRunning }) {
+//
+// 已經完成的卡也不跳。這六張的提示全是「不先知道就會卡死或誤判」——「改完要重開
+// 終端」「不先放行後面都會失敗」「第一次要等瀏覽器下載」——這些話只在還沒做成的
+// 時候有用。卡片已經綠了還跳出來教人怎麼做，是在講一件已經發生過的事（Reed 在
+// 中文編碼那張看到的：清單寫著「讀得到中文」，泡泡還在說改完要重開）。
+export function hintForCard({
+  cardId,
+  seenIds,
+  runInProgress,
+  tourRunning,
+  cardDone,
+}) {
   if (runInProgress === true || tourRunning === true) return null;
+  if (cardDone === true) return null;
   if (typeof cardId !== "string" || cardId === "") return null;
   if (seenIds instanceof Set && seenIds.has(cardId)) return null;
 
