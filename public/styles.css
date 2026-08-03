@@ -274,10 +274,14 @@ body {
   pointer-events: auto;
 }
 
-/* 下一張那顆的位置錨點：特效要疊在它上面，而它自己在特效期間是隱形的。 */
+/* 下一張那顆的位置錨點：特效要疊在它上面，而它自己在特效期間是隱形的。
+   靠右的 margin 要掛在這一層：包了一層之後，按鈕身上的 margin-left: auto 只推得動
+   它在殼裡的位置，推不動殼本身。上一張隱藏時（display: none），space-between 只剩
+   一個孩子就把它擺到最左邊——「下一張」會跑到畫面左邊去（Reed 實測截圖）。 */
 .wizard-nav-slot {
   position: relative;
   display: flex;
+  margin-left: auto;
 }
 
 /* 解鎖特效：巫師與爆炸都畫在按鈕中心，往外溢出去。
