@@ -86,13 +86,16 @@ body {
   opacity: 0.55;
 }
 
-/* 鎖頭只在鎖著時佔位置。開鎖動畫期間要留著——那一秒半正是它在演的東西。
-   內容是一支 lottie（見 view.js 的 lockIcon），顏色寫在動畫裡，不再吃 currentColor。 */
-/* 選擇器要用子代（權重 0,2,0）：鎖頭從 <svg> 改成 <span> 之後，上面那條
+/* 鎖頭一直在。它現在是這一段的狀態指示，三態各停在動畫的一格（見 view.js 的
+   LOCK_FRAMES）：鎖著、開了、打勾。原本只有鎖著時才出現，開了就淡掉——那樣
+   「這一段做完了」在分頁上就沒有任何痕跡，學生要自己記得哪幾段驗過了。
+   內容是一支 lottie（見 lockIcon），顏色寫在動畫裡，不再吃 currentColor。
+
+   選擇器要用子代（權重 0,2,0）：鎖頭從 <svg> 改成 <span> 之後，上面那條
    `.section-tab span { display: block }`（0,1,1）會蓋掉單寫 .section-tab-lock 的
-   display:none——沒鎖的分頁也會掛一把鎖。 */
+   宣告。 */
 .section-tab > .section-tab-lock {
-  display: none;
+  display: block;
   width: 1.35em;
   height: 1.35em;
   flex: 0 0 auto;
@@ -104,32 +107,13 @@ body {
   height: 100%;
 }
 
-.section-tab.is-locked .section-tab-lock,
-.section-tab.is-unlocking .section-tab-lock {
-  display: block;
-}
-
-/* 開鎖：鎖頭那支 lottie 自己演（晃 → 開鎖 → 綠色打勾，見 view.js 的 playUnlock），
-   這裡只負責讓整個分頁晃一下，以及打完勾之後把鎖頭淡掉。
-   煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。 */
+/* 換態：鎖頭那支 lottie 自己演（開鎖、打勾，見 view.js 的 playLockTo），
+   這裡只負責讓整個分頁晃一下。
+   煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。
+   鎖頭本身不再淡出——它現在是常駐的狀態指示（鎖著／開了／打勾），不是一次性的
+   慶祝動畫。 */
 .section-tab.is-unlocking {
   animation: tab-unlock-shake 0.5s ease;
-}
-
-/* 1.6 秒要跟 view.js 的 UNLOCK_MS 一致：動畫 1.4 秒演完打勾，最後 0.2 秒才淡出。
-   淡太早的話學生只看到鎖開了，看不到那個綠勾——而那個綠勾才是「這段開了」的訊號。 */
-.section-tab.is-unlocking .section-tab-lock {
-  animation: tab-unlock-fade 1.6s ease forwards;
-}
-
-@keyframes tab-unlock-fade {
-  0%,
-  88% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
 }
 
 @keyframes tab-unlock-shake {
@@ -150,8 +134,7 @@ body {
 
 /* 會動的東西一律尊重系統設定。這一段的動畫是慶祝，不是資訊——關掉不影響理解。 */
 @media (prefers-reduced-motion: reduce) {
-  .section-tab.is-unlocking,
-  .section-tab.is-unlocking .section-tab-lock {
+  .section-tab.is-unlocking {
     animation: none;
   }
 }

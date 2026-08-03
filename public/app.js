@@ -769,7 +769,7 @@ function renderNavigation() {
       ),
     ]),
   );
-  view.renderSectionLocks(lockStates);
+  view.renderSectionLocks(lockStates, done);
   view.renderGateVisibility(tools.split(",").includes("codex"));
   return lockStates;
 }

@@ -784,22 +784,25 @@ export function onSectionSelect(handler) {
 // 鎖頭畫在標題前面。原本鎖住的分頁只是淡一點——淡的東西看起來像「還沒載入」或
 // 「壞掉」，不像「做完前面才會開」。鎖頭一眼就說得清楚。
 //
-// 改用 lottie（Reed 指定的 LOCK WITH GREEN TICK）之後，那支動畫整段是
-// 「組裝 → 上鎖 → 晃一下 → 開鎖 → 打勾」。分頁只需要後半段：
+// 改用 lottie（Reed 指定的 LOCK WITH GREEN TICK）之後，鎖頭變成一個三態的東西，
+// 剛好對上分頁的三種狀態。那支動畫整段是「組裝 → 上鎖 → 晃 → 開鎖 → 打勾」：
 //
-//   0 – 31   組裝（一個點長成一把鎖）——鎖著的時候不該演這段，會一直在動
-//   32       鎖成形、靜止不動        ← 鎖著就停在這一格
-//   32 – 140 晃、開鎖、綠色打勾      ← 解鎖時才播這一段
+//   0 – 31    組裝（一個點長成一把鎖）——沒有任何狀態要演這段，會一直在動
+//   32        鎖成形、靜止              ← 鎖著（前面還沒做完）
+//   60        鎖環開了、鎖身還在        ← 開了，但這一段還沒做完
+//   140       綠色打勾                  ← 這一段最後一張也驗過了
 //
-// 這兩個數字是把每一格畫出來看出來的（沒有 markers 可以照），不是猜的。
+// 三個數字都是把每一格畫出來看出來的（這支沒有 markers 可以照），不是猜的。
+// 60 特別挑過：61 之後鎖身開始傾斜縮小要離場，停在那裡看起來像畫到一半。
 const LOCK_CLOSED_FRAME = 32;
-const LOCK_LAST_FRAME = 140;
-// 原速 30fps 播 108 格要 3.6 秒——一個分頁不該演那麼久。加速到 2.5 倍約 1.4 秒，
-// 底下的淡出（tab-unlock-fade）跟 playUnlock 的計時器都照這個長度配。
-const LOCK_UNLOCK_SPEED = 2.5;
-const UNLOCK_MS = 1600;
+const LOCK_OPEN_FRAME = 60;
+const LOCK_DONE_FRAME = 140;
+// 原速 30fps。開鎖 28 格、打勾 80 格，照原速是 0.9 秒與 2.7 秒——後者對一個分頁
+// 上的小圖示太久，所以各自加速。
+const LOCK_UNLOCK_SPEED = 1.5;
+const LOCK_DONE_SPEED = 2;
 
-// 每個分頁的鎖頭各有一份動畫實例，開鎖時要叫得到它。
+// 每個分頁的鎖頭各有一份動畫實例與目前停在哪一態，狀態變了才播。
 const lockAnimations = new WeakMap();
 
 function lockIcon(button) {
@@ -812,6 +815,41 @@ function lockIcon(button) {
   });
   lockAnimations.set(button, ready);
   return box;
+}
+
+// 三態在動畫上是由早到晚的三格，順序有意義（見底下只往前演的規則）。
+const LOCK_STATES = ["locked", "open", "done"];
+const LOCK_FRAMES = {
+  locked: LOCK_CLOSED_FRAME,
+  open: LOCK_OPEN_FRAME,
+  done: LOCK_DONE_FRAME,
+};
+
+// 從哪一態走到哪一態，就播那一段。三種情況不演，直接跳到該停的那一格：
+//
+//   第一次畫       一開頁四個鎖頭一起演，學生根本不知道那是在演什麼
+//   往回退         例如換了工具選項害某一段又鎖回去。往回不是慶祝，不用演；
+//                  而且 lottie 的 playSegments 只往前播，餵一段反向的區間會停在
+//                  中間某一格不動（實際踩到：兩個鎖頭卡在開到一半的姿勢，
+//                  程式問它在第幾格還是回答對的那一格，對不起來）
+//   減少動態       系統設定要尊重，但狀態還是要看得到
+function playLockTo(button, state, previous) {
+  lockAnimations.get(button)?.then((animation) => {
+    if (animation === null || animation === undefined) return;
+
+    const frame = LOCK_FRAMES[state];
+    const forward =
+      previous !== null &&
+      LOCK_STATES.indexOf(state) > LOCK_STATES.indexOf(previous);
+
+    if (!forward || reducedMotion.matches) {
+      animation.goToAndStop(frame, true);
+      return;
+    }
+
+    animation.setSpeed(state === "done" ? LOCK_DONE_SPEED : LOCK_UNLOCK_SPEED);
+    animation.playSegments([LOCK_FRAMES[previous], frame], true);
+  });
 }
 
 function fireworkAt(percent) {
@@ -827,49 +865,63 @@ function fireworkAt(percent) {
   return firework;
 }
 
-// 上一次每個分頁鎖著沒有。動畫只在「原本鎖著、現在開了」那一刻放——每次重畫都放
-// 的話，光是勾一個項目就會炸一次煙火。
+// 上一次每個分頁停在哪一態。動畫只在「真的換了一態」那一刻放——每次重畫都放的話，
+// 光是勾一個項目就會炸一次煙火。
 let renderedLocks = null;
 
-function playUnlock(button) {
+// 鎖著 → 開了 → 打勾。三態各對應鎖頭動畫的一格（見 LOCK_FRAMES）。
+//
+// 判斷順序有意義：一段可以「開了但還沒做完」，但不可能「做完了還鎖著」——
+// 所以先看鎖，再看做完沒。
+function lockStateOf(lockStates, done, id) {
+  if (lockStates[id]?.locked === true) return "locked";
+  // undefined 是「還不知道」（資料還沒回來），那就當還沒做完，不要先給人打勾。
+  return done?.[id] === true ? "done" : "open";
+}
+
+// 煙火只放在解鎖與完成那兩刻，而且只放一次。
+function celebrate(button) {
   if (reducedMotion.matches) return;
   button.classList.remove("is-unlocking");
   // 讀一次 offsetWidth 逼瀏覽器結算，不然連續兩次解鎖的第二次不會重播動畫。
   void button.offsetWidth;
   button.classList.add("is-unlocking");
-  // 鎖頭從「上鎖靜止」那一格開始播到打勾。動畫還沒載好就跳過——鎖頭沒演到不該
-  // 把煙火跟解鎖狀態一起卡住。
-  lockAnimations.get(button)?.then((animation) => {
-    if (animation === null || animation === undefined) return;
-    animation.setSpeed(LOCK_UNLOCK_SPEED);
-    animation.playSegments([LOCK_CLOSED_FRAME, LOCK_LAST_FRAME], true);
-  });
   const firework = fireworkAt(50);
   button.append(firework);
   window.setTimeout(() => {
     button.classList.remove("is-unlocking");
     firework.remove();
-  }, UNLOCK_MS);
+  }, 900);
 }
 
-export function renderSectionLocks(lockStates) {
+export function renderSectionLocks(lockStates, done = {}) {
   const next = {};
 
   for (const button of elements.sectionButtons) {
     const id = button.dataset.sectionTarget;
-    const locked = lockStates[id]?.locked === true;
-    next[id] = locked;
+    const state = lockStateOf(lockStates, done, id);
+    const previous = renderedLocks?.[id] ?? null;
+    next[id] = state;
 
     if (button.querySelector(".section-tab-lock") === null) {
       button.prepend(lockIcon(button));
     }
 
     // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
-    if (renderedLocks !== null && renderedLocks[id] === true && !locked) {
-      playUnlock(button);
+    playLockTo(button, state, previous);
+
+    // 慶祝只給往前走的那一步。往回退（例如換了工具選項害某一段又鎖回去）不是
+    // 成就，炸煙火只會讓人以為自己做對了什麼。
+    if (
+      previous !== null &&
+      LOCK_STATES.indexOf(state) > LOCK_STATES.indexOf(previous)
+    ) {
+      celebrate(button);
     }
 
+    const locked = state === "locked";
     button.classList.toggle("is-locked", locked);
+    button.classList.toggle("is-section-done", state === "done");
     if (locked) button.setAttribute("aria-disabled", "true");
     else button.removeAttribute("aria-disabled");
   }

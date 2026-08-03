@@ -54,11 +54,21 @@ export function lottieControl({
       animationData: structuredClone(animationData),
     });
 
-    if (startFrame !== null) {
-      animation.goToAndStop(startFrame, true);
-    }
+    // loadAnimation 是同步回來的，但動畫要等 DOMLoaded 才真的準備好。在那之前叫
+    // goToAndStop／playSegments，lottie 會把 currentFrame 記下來卻不重畫——畫面
+    // 停在別的格子上，程式問它「你在第幾格」又回答對的那一格，對不起來。
+    //
+    // 實際踩到：四個分頁的鎖頭都說自己在第 32 格（上鎖），畫面上卻有兩個停在
+    // 開鎖開到一半的姿勢。誰中誰不中看載入的先後，每次重整還不一樣。
+    return new Promise((resolve) => {
+      animation.addEventListener("DOMLoaded", () => {
+        if (startFrame !== null) {
+          animation.goToAndStop(startFrame, true);
+        }
 
-    return animation;
+        resolve(animation);
+      });
+    });
   });
 
   return { box, ready };

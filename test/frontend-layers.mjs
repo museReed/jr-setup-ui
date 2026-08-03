@@ -196,36 +196,46 @@ try {
   // 鎖住的分頁原本只是淡一點——淡的東西看起來像「還沒載入」或「壞掉」，不像
   // 「做完前面才會開」。鎖頭一眼就說得清楚。
   assert(files.view.includes("section-tab-lock"));
-  assert.match(cardStyles, /^\.section-tab\.is-locked \.section-tab-lock,$/m);
   ok("鎖住的分頁在標題前面畫一個鎖頭");
 
-  // 開鎖動畫只在「原本鎖著、現在開了」那一刻放。每次重畫都放的話，光是勾一個
-  // 項目就會炸一次煙火；第一次畫也不放，一開頁就慶祝學生不知道在慶祝什麼。
-  assert(files.view.includes("renderedLocks !== null"));
-  assert.match(files.view, /renderedLocks\[id\] === true && !locked/);
-  assert(files.view.includes("if (reducedMotion.matches) return;"));
-  assert.match(cardStyles, /@keyframes tab-unlock-shake/);
-  // 鎖環開闔改由 lottie 自己演（原本是 @keyframes tab-unlock-shackle）。鎖著的時候
-  // 停在「上鎖成形」那一格，不要從第一格的組裝演起——鎖著的分頁不該一直在動。
+  // 鎖頭是常駐的三態指示，不是一次性的慶祝動畫：鎖著、開了、打勾各停在動畫的
+  // 一格。所以它不能再淡出——淡掉的話「這一段做完了」在分頁上就沒有痕跡了。
+  assert.match(cardStyles, /\.section-tab > \.section-tab-lock \{\s*\n\s*display: block;/);
+  assert(!cardStyles.includes("tab-unlock-fade"));
   assert(files.view.includes("const LOCK_CLOSED_FRAME = 32;"));
+  assert(files.view.includes("const LOCK_OPEN_FRAME = 60;"));
+  assert(files.view.includes("const LOCK_DONE_FRAME = 140;"));
   assert.match(files.view, /startFrame: LOCK_CLOSED_FRAME/);
   assert.match(
     files.view,
-    /playSegments\(\[LOCK_CLOSED_FRAME, LOCK_LAST_FRAME\], true\)/,
+    /playSegments\(\[LOCK_FRAMES\[previous\], frame\], true\)/,
   );
-  // 淡出要等打完勾。CSS 的長度跟 playUnlock 的計時器必須是同一個數字，不然會出現
-  // 「鎖開了但沒看到綠勾」或「勾停在那裡不消失」。
-  assert(files.view.includes("const UNLOCK_MS = 1600;"));
+  // 「開了但還沒做完」跟「做完了」是兩態。先看鎖再看做完沒——一段可以開了還沒
+  // 做完，但不可能做完了還鎖著。done 是 undefined（資料還沒回來）時不給打勾。
+  assert.match(files.view, /if \(lockStates\[id\]\?\.locked === true\) return "locked";/);
+  assert.match(files.view, /done\?\.\[id\] === true \? "done" : "open"/);
+  assert(files.app.includes("view.renderSectionLocks(lockStates, done)"));
+
+  // 動畫只在「真的換了一態」那一刻放。每次重畫都放的話，光是勾一個項目就會炸
+  // 一次煙火；第一次畫（previous 是 null）也不放，一開頁就慶祝學生不知道在慶祝什麼。
+  assert.match(files.view, /const previous = renderedLocks\?\.\[id\] \?\? null;/);
+  // 只往前演、只往前慶祝。往回退（換了工具選項害某一段又鎖回去）不是成就，而且
+  // lottie 的 playSegments 只往前播——餵一段反向的區間會停在中間某一格不動。
   assert.match(
-    cardStyles,
-    /\.section-tab\.is-unlocking \.section-tab-lock \{\s*\n\s*animation: tab-unlock-fade 1\.6s/,
+    files.view,
+    /LOCK_STATES\.indexOf\(state\) > LOCK_STATES\.indexOf\(previous\)/,
   );
-  // 慶祝用的動畫要尊重系統設定：關掉不影響理解。
+  assert(files.view.includes('const LOCK_STATES = ["locked", "open", "done"];'));
+  assert(files.view.includes("if (reducedMotion.matches) return;"));
+  assert.match(cardStyles, /@keyframes tab-unlock-shake/);
+  // 慶祝用的動畫要尊重系統設定：關掉不影響理解。減少動態時鎖頭直接跳到該停的
+  // 那一格，狀態還是看得到——那是資訊，不是慶祝。
+  assert.match(files.view, /if \(!forward \|\| reducedMotion\.matches\) \{/);
   assert.match(
     cardStyles,
     /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.section-tab\.is-unlocking/,
   );
-  ok("開鎖動畫只在真的解鎖那一刻放，且尊重減少動態設定");
+  ok("分頁鎖頭是三態指示，只在真的換態時演，且尊重減少動態設定");
 
   // 鎖狀態要跟著每一次重畫一起算。原本只有勾選、換工具、點分頁才重算，於是最後
   // 一張卡驗過的當下沒有人去看鎖——下一段其實開了，畫面還鎖著，開鎖動畫也就永遠
