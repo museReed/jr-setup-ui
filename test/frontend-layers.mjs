@@ -498,7 +498,16 @@ try {
     styles,
     /\.current-task-card \.ds-check\.is-system\s*\{\s*--color-text-faint: var\(--color-success\);/,
   );
-  ok("系統項青、手動項橘，兩組都只動 token 不覆寫 ds-* selector");
+  // 橘的那幾格連說明文字也要是橘的。設計系統把勾選後的 small 寫死成青色
+  //（rgba(48,206,206,.6)，不吃 --gl-ink），所以人工項勾起來之後標題是橘的、底下那句
+  // 話卻是青的——兩種顏色本來是用來分「誰負責驗」的（Reed 實測截圖）。
+  // 說明文字掛自己的 class 才選得到，不覆寫 ds-* selector。
+  assert(files.view.includes('small.className = "check-detail"'));
+  assert.match(
+    styles,
+    /\.current-task-card \.ds-check\.is-manual \.check-detail \{\s*color: var\(--orange-3\);/,
+  );
+  ok("系統項青、手動項橘（含說明文字），都只動 token 或自己的 class");
 
   // .ds-term-bar / .ds-term-title 在設計系統裡不存在，用了就是沒樣式的裸 div，
   // 標題會貼在圓角外被切掉。終端的頂欄只能用 .ds-term-chrome。
