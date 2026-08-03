@@ -770,13 +770,18 @@ try {
     /state\.runInProgress = running;\s*\n(\s*\/\/[^\n]*\n)*\s*renderControls\(\);\s*\n\s*renderWizard\(\);/,
   );
 
-  for (const selector of ["#section-nav", "#milestone-bar", "#current-card", "#terminal", "#wizard-nav-row"]) {
+  for (const selector of ["#section-nav", "#milestone-bar", "#current-card", "#terminal", "#wizard-next-slot"]) {
     assert(
       index.includes(`id="${selector.slice(1)}"`),
       `版面導覽指的 ${selector} 必須是 index.html 的骨架`,
     );
   }
-  ok("版面導覽只指不會被重畫的骨架");
+  // 最後一步指「下一張」的外殼。三者都試過：那一列橫跨整個螢幕，高亮會變成一條
+  // 貫穿畫面的長帶（Reed 實測截圖）；按鈕本身在導覽開跑那一刻還 hidden，整步會被
+  // 跳過，六步靜靜地變五步；外殼永遠在，而 driver 每翻一步都重新量一次。
+  assert(!tourModel.includes('element: "#wizard-nav-row"'));
+  assert(!tourModel.includes('element: "#wizard-next"'));
+  ok("版面導覽只指不會被重畫的骨架，最後一步指按鈕不指整列");
 
   // 跑到一半跳提示會蓋住終端正在印的字。
   assert(tourModel.includes("if (runInProgress === true || tourRunning === true) return null;"));
