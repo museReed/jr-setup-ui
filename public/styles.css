@@ -668,6 +668,23 @@ body {
   --gl-ink: var(--color-accent);
 }
 
+/* 系統驗的那幾格：還沒通過時也要是青的。
+   青＝系統自己驗、橘＝要你自己看，這是導覽裡講的判準，而顏色要一直成立才有用。
+
+   原本不成立：系統項一律 disabled（學生點不動），而設計系統最尾端那兩條
+   `input:disabled` 規則把方框與文字都刷成 --color-text-faint，把青色蓋掉了。
+   手動項沒有 disabled，所以它的橘從一開始就在——兩組行為不對稱，未通過的系統項
+   看起來像壞掉的灰格子（Reed 在執行原則那張看到的）。
+
+   改的是 token 的值、不是元件的規則：在這個 scope 內把 --color-text-faint 重新
+   指向青色，那兩條 disabled 規則照跑，只是刷出來的顏色變了。契約檔禁止覆寫既有
+   ds-* selector，這樣繞開它。
+
+   「做完了沒」不靠這個顏色分：已通過的那格中間會有實心方塊，細節文字也會發光。 */
+.current-task-card .ds-check.is-system {
+  --color-text-faint: var(--color-success);
+}
+
 /* 已完成的按鈕要看起來按不下去。設計系統的 .ds-btn 沒有 disabled 樣式（查過
    design-system.css，沒有任何 :disabled 規則），而契約檔禁止覆寫既有 ds-* selector，
    所以掛在本 repo 自己的 .is-done 上，只用 token。
