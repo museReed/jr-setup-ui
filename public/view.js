@@ -1,6 +1,6 @@
 // View：只把 app 傳進來的畫面模型畫成 DOM，不做流程判斷或資料請求。
 import { LOADER_MODIFIERS, appendTermLine } from "./viewmodel.js";
-import { lottieBox, lottieControl } from "./lottie-player.js";
+import { lottieControl } from "./lottie-player.js";
 
 const elements = {
   output: document.querySelector("#output"),
@@ -39,7 +39,7 @@ const elements = {
   behaviorQuestion: document.querySelector("#behavior-question"),
   behaviorChecklist: document.querySelector("#behavior-checklist"),
   copyBehaviorQuestion: document.querySelector("#copy-behavior-question"),
-  rowLoaderPool: document.querySelector("#row-loader-pool"),
+  terminalMascot: document.querySelector("#terminal-mascot"),
   verifyModal: document.querySelector("#verify-modal"),
   verifyModalConfirm: document.querySelector("#verify-modal-confirm"),
   verifyModalLater: document.querySelector("#verify-modal-later"),
@@ -1404,27 +1404,73 @@ export function onLanguageSelect(handler) {
   });
 }
 
-// 正在跑的那幾行前面的轉圈圈。
+// 終端頂欄那隻常駐的小人。
 //
-// 原本是設計系統的 .ds-loader-orbs，六種 modifier 各有一種畫法（軌道、緯線、環）。
-// Reed 指定全部換成同一支 lottie（Bad Cat），所以六種長相收斂成一種——差別只剩
-// 讀螢幕唸出來的那句話（loaderLabels），那個仍然照每一種情境不同。
+// 原本轉圈圈是「一次一輪、跟著訊息行走、跑完收回池子」：一件事做完它就消失，
+// 學生看著一個空掉的終端，也分不出「還在跑」與「跑完了」。改成一直在，用三段
+// 動作講現在是什麼狀態（Reed 指定）。
 //
-// class 保留 row-loader 這個自己的名字：不要再掛 .ds-loader-orbs，那是設計系統的
-// component，裡面已經沒有它的東西了，留著只會讓下一個人去 design-system.css 找
-// 為什麼改了沒反應。
-function createLoader(modifier) {
-  const loader = document.createElement("span");
-  loader.className = `row-loader ${modifier}`;
-  loader.setAttribute("role", "status");
-  loader.append(
-    lottieBox({
-      url: "/vendor/loader-claude.json",
-      className: "row-loader-art",
-    }),
-  );
-  return loader;
+// 三段的幀號是拿 tools/loader-frame-inspector.html 逐幀圈出來的（決策與否決的
+// 路線見 docs/loader-frame-inspector.md）：這支動畫沒有 marker、也沒有圖片資產，
+// 只能靠幀號切。改動畫之後這三組數字要重圈。
+const MASCOT_SEGMENTS = {
+  idle: [0, 8],
+  work: [9, 35],
+  outro: [36, 42],
+};
+
+let mascotAnimation = null;
+let mascotState = "idle";
+
+function applyMascotState(state) {
+  if (mascotAnimation === null) return;
+
+  const segment = MASCOT_SEGMENTS[state];
+
+  if (segment === undefined) return;
+
+  // 系統設了「減少動態」就只換姿勢不播——動畫是氣氛，不是資訊。
+  if (reducedMotion.matches) {
+    mascotAnimation.goToAndStop(segment[0], true);
+    return;
+  }
+
+  // 收電腦只演一次，演完自己回到待機；另外兩段是循環的。
+  mascotAnimation.loop = state !== "outro";
+  mascotAnimation.playSegments(segment, true);
 }
+
+// 沒事＝待機、開跑＝打電腦、跑完＝收電腦再回待機。
+//
+// 同一個狀態重複設不重播：renderLoaders 每印一行就會叫一次，重播的話小人會一直
+// 從頭抽電腦。
+export function setMascotState(state) {
+  if (state === mascotState) return;
+
+  mascotState = state;
+  applyMascotState(state);
+}
+
+const mascot = lottieControl({
+  url: "/vendor/loader-claude.json",
+  className: "terminal-mascot-art",
+  loop: true,
+  autoplay: false,
+});
+elements.terminalMascot.append(mascot.box);
+mascot.ready.then((animation) => {
+  if (animation === null) return;
+
+  mascotAnimation = animation;
+  animation.addEventListener("complete", () => {
+    // 收完電腦就回到待機。complete 只有非循環那段（outro）會發。
+    if (mascotState !== "outro") return;
+
+    mascotState = "idle";
+    applyMascotState("idle");
+  });
+  applyMascotState(mascotState);
+});
 
 const loaderLabels = {
   [LOADER_MODIFIERS.working]: "正在安裝，完成後會自動更新。",
@@ -1434,13 +1480,6 @@ const loaderLabels = {
   [LOADER_MODIFIERS.composing]: "正在檢查回覆格式。",
   [LOADER_MODIFIERS.shaping]: "正在產出示範畫面。",
 };
-const loaders = new Map();
-for (const modifier of Object.keys(loaderLabels)) {
-  const loader = createLoader(modifier);
-  loader.hidden = true;
-  elements.rowLoaderPool.append(loader);
-  loaders.set(modifier, loader);
-}
 // 每張卡各有一份終端內容。原本全站共用一份，於是換一張卡就看到上一張的驗證訊息
 // ——那些話講的是別的東西，留在畫面上只會讓學生以為現在這張已經跑過了。翻回上一張
 // 時也要看得到當時那一份，不然「剛才那句錯誤訊息寫什麼」就再也查不到了。
@@ -1589,51 +1628,37 @@ export function unpinTranscript() {
   pinnedTranscriptId = null;
 }
 
+// 事情做完了：小人收電腦，收完自己回到待機。名字留著不改，呼叫端講的仍是同一件事。
 export function hideLoaders() {
-  for (const loader of loaders.values()) {
-    loader.hidden = true;
-    loader.classList.remove("is-paused");
-    elements.rowLoaderPool.append(loader);
-  }
+  setMascotState("outro");
 }
 
 export function renderLoaders({ modifier, paused = false, label = null }) {
-  const loader = loaders.get(modifier);
-  if (loader === undefined) return;
+  if (loaderLabels[modifier] === undefined) return;
+
+  // 轉圈圈不再跟著這一行走——小人常駐在終端頂欄，這裡只負責印字與換小人的狀態。
+  // 停下來的時候也讓它收電腦：畫面上「處理已停止。」跟一隻還在打字的小人是矛盾的。
+  setMascotState(paused ? "outro" : "work");
+
   const spec = {
-    className: "ds-term-line ds-term-line--dim terminal-loader-line",
-    // label 是呼叫端指定的字：同一顆動畫可以用在不只一件事上（驗證借用安裝那顆），
-    // 動畫的預設字只在沒指定時才算數。
+    className: "ds-term-line ds-term-line--dim",
+    // label 是呼叫端指定的字：同一種狀態可以用在不只一件事上（驗證借用安裝那句），
+    // 預設字只在沒指定時才算數。
     text: paused ? "處理已停止。" : (label ?? loaderLabels[modifier]),
   };
-  // 同一句話不重複印，但轉圈圈要重新掛回去。
+
+  // 同一句話不重複印。
   //
-  // 學生在環境卡上按「再 check 一次」，那句「正在檢查目前狀態。」跟上一次一模一樣
-  // ——去重把整個 renderLoaders 擋掉，連轉圈圈都沒出現，看起來就是按了完全沒反應
-  // （VM 實測 Claude Code 那張卡）。檢查確實有跑，只是畫面一個字都沒動。
-  if (!acceptsTerminalLine(spec)) {
-    const last = elements.terminalLines.lastElementChild;
+  // 這裡曾經還要「把轉圈圈重新掛回最後那一行」：學生在環境卡上按「再 check 一次」，
+  // 那句「正在檢查目前狀態。」跟上一次一模一樣，去重把整個 renderLoaders 擋掉，
+  // 連轉圈圈都沒出現，看起來就是按了完全沒反應（VM 實測）。小人常駐之後這個坑
+  // 消失了——它不在那一行上，狀態在上面已經換好了。
+  if (!acceptsTerminalLine(spec)) return;
 
-    if (last?.classList.contains("terminal-loader-line") === true) {
-      hideLoaders();
-      loader.hidden = false;
-      loader.classList.toggle("is-paused", paused);
-      last.append(loader);
-    }
-
-    return;
-  }
-
-  hideLoaders();
   const line = document.createElement("div");
   line.className = spec.className;
-  // 字放在自己的 <span> 裡，轉圈圈掛在它旁邊。這一行也要逐字打，而打字是直接寫
-  // textContent——寫在整行上的話，每打一個字就把轉圈圈清掉一次。
   const text = document.createElement("span");
   line.append(text);
-  loader.hidden = false;
-  loader.classList.toggle("is-paused", paused);
-  line.append(loader);
   elements.terminalLines.append(line);
   typeInto(text, spec.text);
 }
