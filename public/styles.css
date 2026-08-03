@@ -249,13 +249,28 @@ body {
 
 /* 翻頁按鈕自成一列，排在卡片下方：左邊那顆貼齊卡片左緣，右邊那顆貼齊終端右緣。
    只剩一顆時另一顆的位置不能跑掉，所以「下一張」永遠靠右（margin-left: auto）。 */
+/* 翻頁兩顆釘在畫面左右兩側、垂直永遠置中（Reed 指定）。
+   跟著卡片走的話，卡片一長按鈕就被推到很下面，學生每翻一張都要重新找它在哪——
+   而每張卡的高度都不一樣。
+
+   釘住之後這一列脫離文件流，所以不再佔高度、也不再需要 margin。整列橫跨畫面但
+   不吃滑鼠事件（pointer-events: none），不然中間那一大片透明區域會蓋住卡片；
+   兩顆按鈕自己把事件收回來。 */
 .wizard-nav-row {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  right: 0;
+  z-index: 5;
   display: flex;
   justify-content: space-between;
-  /* 兩顆都還沒露臉時也要佔住高度：一來按鈕出現時版面不會往上跳，二來導覽指得到
-     這一列（指一顆 hidden 的按鈕，泡泡會貼到畫面左上角）。 */
-  min-height: 44px;
-  margin-top: var(--space-5);
+  padding: 0 var(--space-5);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.wizard-nav-row > .wizard-nav {
+  pointer-events: auto;
 }
 
 /* 翻頁這兩顆是純圓形，裡面只有一支白色箭頭（Reed 指定）。
