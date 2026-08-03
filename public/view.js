@@ -1451,7 +1451,12 @@ function applyMascotState(state) {
     return;
   }
 
-  mascotAnimation.loop = MASCOT_NEXT[state] === undefined;
+  // 每一段都自己播到底（loop = false），循環那兩段的「再來一次」由 complete 接手
+  // 倒著播回來——正播完直接跳回起點會有一下跳接，來回播就沒有接縫。
+  //
+  // 換段時方向一定要歸零：上一段可能停在倒播，不歸零的話新的一段會從尾巴往回演。
+  mascotAnimation.loop = false;
+  mascotAnimation.setDirection(1);
   mascotAnimation.playSegments(segment, true);
 }
 
@@ -1486,14 +1491,19 @@ mascot.ready.then((animation) => {
 
   mascotAnimation = animation;
   animation.addEventListener("complete", () => {
-    // 只有那兩段過場會發 complete（循環的兩段不會）：抽完電腦接著打字，收完電腦
-    // 回到待機。
+    // 過場演完就走到下一個狀態：抽完電腦接著打字，收完電腦回到待機。
     const next = MASCOT_NEXT[mascotState];
 
-    if (next === undefined) return;
+    if (next !== undefined) {
+      mascotState = next;
+      applyMascotState(next);
+      return;
+    }
 
-    mascotState = next;
-    applyMascotState(next);
+    // 循環那兩段（待機、打字）改成來回播：正播到底就倒著播回來，倒到底再正播。
+    // 直接跳回起點會有一下跳接，來回播沒有接縫。
+    animation.setDirection(animation.playDirection * -1);
+    animation.play();
   });
   applyMascotState(mascotState);
 });
