@@ -1,5 +1,6 @@
 // View：只把 app 傳進來的畫面模型畫成 DOM，不做流程判斷或資料請求。
 import { LOADER_MODIFIERS, appendTermLine } from "./viewmodel.js";
+import { lottieBox, lottieControl } from "./lottie-player.js";
 
 const elements = {
   output: document.querySelector("#output"),
@@ -29,6 +30,7 @@ const elements = {
   milestoneBar: document.querySelector("#milestone-bar"),
   milestoneFill: document.querySelector("#milestone-fill"),
   milestoneDuck: document.querySelector("#milestone-duck"),
+  milestoneCat: document.querySelector("#milestone-cat"),
   sectionLockMessage: document.querySelector("#section-lock-message"),
   wizardPrev: document.querySelector("#wizard-prev"),
   wizardNext: document.querySelector("#wizard-next"),
@@ -136,6 +138,12 @@ function keepPreviewOpen() {
   closePreviewAt = null;
   window.clearTimeout(autoUnpinTimer);
 }
+
+// 進度條上那隻只有一個，開頁時掛一次就好——每次重畫都重掛的話，那隻 261KB 的
+// 逐格動畫會被重新解析一遍，而且動作會從第一格重來（走一半突然重播）。
+elements.milestoneCat.append(
+  lottieBox({ url: "/vendor/milestone-cat.json", className: "milestone-cat-art" }),
+);
 
 function finishArrival(point, station, key) {
   const firework = document.createElement("span");
@@ -775,28 +783,35 @@ export function onSectionSelect(handler) {
 
 // 鎖頭畫在標題前面。原本鎖住的分頁只是淡一點——淡的東西看起來像「還沒載入」或
 // 「壞掉」，不像「做完前面才會開」。鎖頭一眼就說得清楚。
-function lockIcon() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "section-tab-lock");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  // 鎖環另外一個群組：開鎖時只有它會動。
-  const shackle = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  shackle.setAttribute("class", "section-tab-shackle");
-  shackle.setAttribute("d", "M8 10V7a4 4 0 0 1 8 0v3");
-  shackle.setAttribute("fill", "none");
-  shackle.setAttribute("stroke", "currentColor");
-  shackle.setAttribute("stroke-width", "2");
-  shackle.setAttribute("stroke-linecap", "round");
-  const body = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  body.setAttribute("x", "5");
-  body.setAttribute("y", "10");
-  body.setAttribute("width", "14");
-  body.setAttribute("height", "10");
-  body.setAttribute("rx", "2");
-  body.setAttribute("fill", "currentColor");
-  svg.append(shackle, body);
-  return svg;
+//
+// 改用 lottie（Reed 指定的 LOCK WITH GREEN TICK）之後，那支動畫整段是
+// 「組裝 → 上鎖 → 晃一下 → 開鎖 → 打勾」。分頁只需要後半段：
+//
+//   0 – 31   組裝（一個點長成一把鎖）——鎖著的時候不該演這段，會一直在動
+//   32       鎖成形、靜止不動        ← 鎖著就停在這一格
+//   32 – 140 晃、開鎖、綠色打勾      ← 解鎖時才播這一段
+//
+// 這兩個數字是把每一格畫出來看出來的（沒有 markers 可以照），不是猜的。
+const LOCK_CLOSED_FRAME = 32;
+const LOCK_LAST_FRAME = 140;
+// 原速 30fps 播 108 格要 3.6 秒——一個分頁不該演那麼久。加速到 2.5 倍約 1.4 秒，
+// 底下的淡出（tab-unlock-fade）跟 playUnlock 的計時器都照這個長度配。
+const LOCK_UNLOCK_SPEED = 2.5;
+const UNLOCK_MS = 1600;
+
+// 每個分頁的鎖頭各有一份動畫實例，開鎖時要叫得到它。
+const lockAnimations = new WeakMap();
+
+function lockIcon(button) {
+  const { box, ready } = lottieControl({
+    url: "/vendor/lock.json",
+    className: "section-tab-lock",
+    loop: false,
+    autoplay: false,
+    startFrame: LOCK_CLOSED_FRAME,
+  });
+  lockAnimations.set(button, ready);
+  return box;
 }
 
 function fireworkAt(percent) {
@@ -822,12 +837,19 @@ function playUnlock(button) {
   // 讀一次 offsetWidth 逼瀏覽器結算，不然連續兩次解鎖的第二次不會重播動畫。
   void button.offsetWidth;
   button.classList.add("is-unlocking");
+  // 鎖頭從「上鎖靜止」那一格開始播到打勾。動畫還沒載好就跳過——鎖頭沒演到不該
+  // 把煙火跟解鎖狀態一起卡住。
+  lockAnimations.get(button)?.then((animation) => {
+    if (animation === null || animation === undefined) return;
+    animation.setSpeed(LOCK_UNLOCK_SPEED);
+    animation.playSegments([LOCK_CLOSED_FRAME, LOCK_LAST_FRAME], true);
+  });
   const firework = fireworkAt(50);
   button.append(firework);
   window.setTimeout(() => {
     button.classList.remove("is-unlocking");
     firework.remove();
-  }, 900);
+  }, UNLOCK_MS);
 }
 
 export function renderSectionLocks(lockStates) {
@@ -839,7 +861,7 @@ export function renderSectionLocks(lockStates) {
     next[id] = locked;
 
     if (button.querySelector(".section-tab-lock") === null) {
-      button.prepend(lockIcon());
+      button.prepend(lockIcon(button));
     }
 
     // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
@@ -929,49 +951,22 @@ export function onLanguageSelect(handler) {
   });
 }
 
-function appendDots(parent, count) {
-  for (let index = 0; index < count; index += 1) {
-    const dot = document.createElement("i");
-    dot.style.setProperty("--i", index);
-    dot.setAttribute("aria-hidden", "true");
-    parent.append(dot);
-  }
-}
-
+// 正在跑的那幾行前面的轉圈圈。
+//
+// 原本是設計系統的 .ds-loader-orbs，六種 modifier 各有一種畫法（軌道、緯線、環）。
+// Reed 指定全部換成同一支 lottie（Bad Cat），所以六種長相收斂成一種——差別只剩
+// 讀螢幕唸出來的那句話（loaderLabels），那個仍然照每一種情境不同。
+//
+// class 保留 row-loader 這個自己的名字：不要再掛 .ds-loader-orbs，那是設計系統的
+// component，裡面已經沒有它的東西了，留著只會讓下一個人去 design-system.css 找
+// 為什麼改了沒反應。
 function createLoader(modifier) {
   const loader = document.createElement("span");
-  loader.className = `ds-loader-orbs ds-loader-orbs--sm ds-loader-orbs--on-dark ${modifier}`;
+  loader.className = `row-loader ${modifier}`;
   loader.setAttribute("role", "status");
-  if (modifier === LOADER_MODIFIERS.working) {
-    for (const [tilt, duration] of [["-22deg", "2.7s"], ["48deg", "2.2s"]]) {
-      const orbit = document.createElement("span");
-      orbit.className = "ds-loader-orbs__orbit";
-      orbit.style.setProperty("--tilt", tilt);
-      orbit.style.setProperty("--orbit-duration", duration);
-      appendDots(orbit, 6);
-      loader.append(orbit);
-    }
-  } else if (modifier === LOADER_MODIFIERS.searching) {
-    [2, 4, 2].forEach((count, row) => {
-      const latitude = document.createElement("span");
-      latitude.className = "ds-loader-orbs__latitude";
-      latitude.style.setProperty("--row", row);
-      latitude.style.setProperty("--mid", (count - 1) / 2);
-      latitude.style.setProperty("--step", "4.5px");
-      latitude.style.setProperty("--delay-step", `${(-1.6 / count).toFixed(3)}s`);
-      appendDots(latitude, count);
-      loader.append(latitude);
-    });
-  } else if (modifier === LOADER_MODIFIERS.listening) {
-    [3, 7].forEach((radius, ringIndex) => {
-      const ring = document.createElement("span");
-      ring.className = "ds-loader-orbs__ring";
-      ring.style.setProperty("--ring", ringIndex);
-      ring.style.setProperty("--ring-radius", `${radius}px`);
-      appendDots(ring, 6);
-      loader.append(ring);
-    });
-  }
+  loader.append(
+    lottieBox({ url: "/vendor/loader-cat.json", className: "row-loader-cat" }),
+  );
   return loader;
 }
 
@@ -1046,7 +1041,7 @@ function renderCursor() {
   elements.terminal.querySelector(".ds-term-cursor")?.remove();
   const last = elements.terminalLines.lastElementChild;
 
-  if (last === null || last.querySelector(".ds-loader-orbs") !== null) {
+  if (last === null || last.querySelector(".row-loader") !== null) {
     return;
   }
 

@@ -86,12 +86,22 @@ body {
   opacity: 0.55;
 }
 
-/* 鎖頭只在鎖著時佔位置。開鎖動畫期間要留著——那半秒正是它在演的東西。 */
-.section-tab-lock {
+/* 鎖頭只在鎖著時佔位置。開鎖動畫期間要留著——那一秒半正是它在演的東西。
+   內容是一支 lottie（見 view.js 的 lockIcon），顏色寫在動畫裡，不再吃 currentColor。 */
+/* 選擇器要用子代（權重 0,2,0）：鎖頭從 <svg> 改成 <span> 之後，上面那條
+   `.section-tab span { display: block }`（0,1,1）會蓋掉單寫 .section-tab-lock 的
+   display:none——沒鎖的分頁也會掛一把鎖。 */
+.section-tab > .section-tab-lock {
   display: none;
-  width: 0.9em;
-  height: 0.9em;
+  width: 1.35em;
+  height: 1.35em;
   flex: 0 0 auto;
+}
+
+.section-tab-lock svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .section-tab.is-locked .section-tab-lock,
@@ -99,36 +109,22 @@ body {
   display: block;
 }
 
-/* 開鎖：鎖環先彈起來轉開，鎖身跟著淡掉，整個分頁晃一下。
+/* 開鎖：鎖頭那支 lottie 自己演（晃 → 開鎖 → 綠色打勾，見 view.js 的 playUnlock），
+   這裡只負責讓整個分頁晃一下，以及打完勾之後把鎖頭淡掉。
    煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。 */
 .section-tab.is-unlocking {
   animation: tab-unlock-shake 0.5s ease;
 }
 
+/* 1.6 秒要跟 view.js 的 UNLOCK_MS 一致：動畫 1.4 秒演完打勾，最後 0.2 秒才淡出。
+   淡太早的話學生只看到鎖開了，看不到那個綠勾——而那個綠勾才是「這段開了」的訊號。 */
 .section-tab.is-unlocking .section-tab-lock {
-  animation: tab-unlock-fade 0.9s ease forwards;
-}
-
-.section-tab.is-unlocking .section-tab-shackle {
-  transform-origin: 16px 10px;
-  animation: tab-unlock-shackle 0.45s ease forwards;
-}
-
-@keyframes tab-unlock-shackle {
-  0% {
-    transform: translateY(0) rotate(0deg);
-  }
-  45% {
-    transform: translateY(-2px) rotate(0deg);
-  }
-  100% {
-    transform: translateY(-2px) rotate(38deg);
-  }
+  animation: tab-unlock-fade 1.6s ease forwards;
 }
 
 @keyframes tab-unlock-fade {
   0%,
-  55% {
+  88% {
     opacity: 1;
   }
   100% {
@@ -155,8 +151,7 @@ body {
 /* 會動的東西一律尊重系統設定。這一段的動畫是慶祝，不是資訊——關掉不影響理解。 */
 @media (prefers-reduced-motion: reduce) {
   .section-tab.is-unlocking,
-  .section-tab.is-unlocking .section-tab-lock,
-  .section-tab.is-unlocking .section-tab-shackle {
+  .section-tab.is-unlocking .section-tab-lock {
     animation: none;
   }
 }
@@ -282,6 +277,55 @@ body {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+}
+
+/* 走在進度條上的那隻貓（取代設計系統的小鴨）。
+   動畫本身面向左邊，這裡整隻水平翻轉讓牠面向前進方向——翻轉做在容器上，JSON
+   一個字都沒改。往回走時設計系統會對裡面的 <svg> 再翻一次（.ds-duck.left svg），
+   兩次相乘就變回面向左邊，剛好是對的。 */
+/* 設計系統的小鴨格子是 40×40。那隻貓在 40px 下只剩一團黑影（牠是一張畫得很細的
+   圖，不是為了小尺寸畫的），所以整個框放大到 60px——超出來的部分往上長，
+   進度條的位置不動。 */
+.ds-pbar--milestones .ds-duck:has(.milestone-cat) {
+  width: 60px;
+  height: 60px;
+}
+
+.milestone-cat {
+  display: block;
+  width: 60px;
+  height: 60px;
+  transform: scaleX(-1);
+}
+
+/* 設計系統的 .ds-duck svg 把尺寸釘在 40px，這裡要蓋掉，不然 lottie 的 svg
+   還是 40px、只有外框變大。 */
+.ds-pbar--milestones .ds-duck .milestone-cat svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 正在跑的那幾行前面的轉圈圈。設計系統的 .ds-loader-orbs 換掉了（見 view.js 的
+   createLoader），尺寸與對齊改由這裡管。 */
+.row-loader {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+.row-loader-cat {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.row-loader-cat svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* 進度文字與「這頁怎麼用」排同一行：導覽按鈕靠右，跟進度條的右緣對齊。 */

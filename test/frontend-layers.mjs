@@ -204,8 +204,22 @@ try {
   assert(files.view.includes("renderedLocks !== null"));
   assert.match(files.view, /renderedLocks\[id\] === true && !locked/);
   assert(files.view.includes("if (reducedMotion.matches) return;"));
-  assert.match(cardStyles, /@keyframes tab-unlock-shackle/);
   assert.match(cardStyles, /@keyframes tab-unlock-shake/);
+  // 鎖環開闔改由 lottie 自己演（原本是 @keyframes tab-unlock-shackle）。鎖著的時候
+  // 停在「上鎖成形」那一格，不要從第一格的組裝演起——鎖著的分頁不該一直在動。
+  assert(files.view.includes("const LOCK_CLOSED_FRAME = 32;"));
+  assert.match(files.view, /startFrame: LOCK_CLOSED_FRAME/);
+  assert.match(
+    files.view,
+    /playSegments\(\[LOCK_CLOSED_FRAME, LOCK_LAST_FRAME\], true\)/,
+  );
+  // 淡出要等打完勾。CSS 的長度跟 playUnlock 的計時器必須是同一個數字，不然會出現
+  // 「鎖開了但沒看到綠勾」或「勾停在那裡不消失」。
+  assert(files.view.includes("const UNLOCK_MS = 1600;"));
+  assert.match(
+    cardStyles,
+    /\.section-tab\.is-unlocking \.section-tab-lock \{\s*\n\s*animation: tab-unlock-fade 1\.6s/,
+  );
   // 慶祝用的動畫要尊重系統設定：關掉不影響理解。
   assert.match(
     cardStyles,
@@ -324,7 +338,7 @@ try {
   assert.match(index, /class="ds-term ds-term--typing/);
   assert(files.view.includes('cursor.className = "ds-term-cursor"'));
   // 掛著轉圈圈的那一行不放游標——兩個東西同時在動只是雜訊。
-  assert.match(files.view, /last\.querySelector\("\.ds-loader-orbs"\) !== null/);
+  assert.match(files.view, /last\.querySelector\("\.row-loader"\) !== null/);
   ok("會動的終端補上 .ds-term-cursor，轉圈圈那一行讓位");
 
   // 新的一行逐字打出來。三條規矩都是為了「動畫不能拖慢真的進度」：排隊超過三行
