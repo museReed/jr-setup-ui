@@ -100,18 +100,47 @@ try {
   // 兩道「關掉分頁、開新的」都拿掉了：所有驗證都走 verify-in-terminal，它每次自己
   // 開一個全新的終端視窗。段落現在只由「上一段做完了沒」決定，不再有人工關卡。
   assert.equal(
-    sectionGateState("skills", new Set(), "claude", { rules: true }).locked,
+    sectionGateState("skills", new Set(), "claude", { env: true, rules: true })
+      .locked,
     false,
   );
   assert.equal(
-    sectionGateState("demo", new Set(), "claude", { skills: true }).locked,
+    sectionGateState("demo", new Set(), "claude", {
+      env: true,
+      rules: true,
+      skills: true,
+    }).locked,
     false,
   );
   assert.equal(
-    sectionGateState("demo", new Set(), "claude", { skills: false }).locked,
+    sectionGateState("demo", new Set(), "claude", {
+      env: true,
+      rules: true,
+      skills: false,
+    }).locked,
     true,
   );
-  ok("段落只由上一段是否完成決定，沒有人工關卡");
+  ok("段落只由前面幾段是否完成決定，沒有人工關卡");
+
+  // 只看上一段的話會出現「①鎖著②開著③又開了」這種自相矛盾的畫面：第一段沒做完
+  // 鎖住第二段，第二段做完了卻把第三段開了（Reed 實測）。卡片之間有相依性，跳著
+  // 做的話後面那段做了也不會過，所以前面任一段沒完成就一路鎖到底。
+  const skippedFirst = sectionGateState("skills", new Set(), "claude", {
+    env: false,
+    rules: true,
+  });
+  assert.equal(skippedFirst.locked, true);
+  // 點名最早那一段，不是上一段——中間幾段擋人的理由都源自它。
+  assert.match(skippedFirst.reason, /讓 AI 能跑起來/);
+  assert.equal(
+    sectionGateState("demo", new Set(), "claude", {
+      env: false,
+      rules: true,
+      skills: true,
+    }).locked,
+    true,
+  );
+  ok("前面任一段沒做完就一路鎖住後面所有段，訊息點名最早那一段");
 
   // 第一段永遠沒有上一段，所以永遠是開的——學生一進來就有事可做。
   assert.equal(sectionGateState("env", new Set(), "claude").locked, false);
@@ -136,7 +165,7 @@ try {
     "skills",
     new Set(),
     "claude",
-    { rules: false },
+    { env: true, rules: false },
     { rules: [{ label: "Claude 自動命名 hook", index: 5 }] },
   );
   assert.equal(blockedOne.locked, true);
@@ -149,7 +178,7 @@ try {
     "skills",
     new Set(),
     "claude",
-    { rules: false },
+    { env: true, rules: false },
     {
       rules: [
         { label: "A", index: 0 },
@@ -163,6 +192,7 @@ try {
 
   // 拿不到清單時仍要有話講，不能變成空訊息。
   const noBlockers = sectionGateState("skills", new Set(), "claude", {
+    env: true,
     rules: false,
   });
   assert.match(noBlockers.reason, /讓它照你的規矩回話/);
@@ -173,7 +203,7 @@ try {
       "demo",
       new Set(["skills-new-terminal"]),
       "claude",
-      { skills: true },
+      { env: true, rules: true, skills: true },
     ).locked,
     false,
   );
@@ -194,7 +224,7 @@ try {
       "skills",
       new Set(["rules-new-terminal"]),
       "claude",
-      { rules: false },
+      { env: true, rules: false },
     ).locked,
     true,
   );

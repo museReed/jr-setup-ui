@@ -74,6 +74,16 @@ function layoutTour() {
     onDestroyed: () => {
       tourRunning = false;
       store.set(TOUR_SEEN_KEY, "1");
+      // 版面導覽一結束就馬上接卡片導覽，不要等下一次重畫。
+      //
+      // 原本只在 onCardRendered 裡試，而那是「畫完一輪卡片」才會跑的。學生如果
+      // 已經停在一張有清單的卡上（重整之後很常見），版面導覽收掉之後畫面沒有任何
+      // 事情發生，也就沒有人再問一次「該跳卡片導覽了嗎」——那一輪永遠不會出現
+      //（Reed 在 VM 上就是這樣：清掉紀錄重整，卡片導覽還是沒跳）。
+      //
+      // 等一拍再叫：driver 的收尾會把遮罩與泡泡移掉，同一個 tick 裡就開下一輪的話
+      // 兩者會疊在一起。
+      window.setTimeout(() => startCardTour({}), 0);
     },
   });
   return layoutDriver;

@@ -234,17 +234,27 @@ export function sectionGateState(
   const missing = required.filter((gate) => !completedGateIds.has(gate.id));
 
   const index = SECTIONS.findIndex((section) => section.id === sectionId);
-  const previous = SECTIONS[index - 1];
-  // 上一段還沒回報「做完了」就擋著。undefined（資料還沒回來）也算沒做完。
+  // 前面「任何一段」沒回報做完就擋著，不是只看上一段。undefined（資料還沒回來）
+  // 也算沒做完。
   //
   // 原本只擋 false，理由是「寧可放行也不要在載入中把人鎖在外面」。VM 的紀錄器
   // 顯示那個代價是實的：開頁最初 8.4 秒，技能包與 demo 兩段都是解鎖狀態，手快的
   // 學生點得進去，然後才被鎖回來。
   //
-  // 「把人鎖在外面」的疑慮其實不成立：第一段永遠沒有上一段，所以永遠是開的，
+  // 「把人鎖在外面」的疑慮其實不成立：第一段永遠沒有前面的段，所以永遠是開的，
   // 學生一進來就有事可做；其餘幾段等檢查結果回來就會自己開。
-  const previousDone = previous === undefined ? true : sectionDone[previous.id];
-  const previousPending = previousDone === true ? null : previous ?? null;
+  //
+  // 只看上一段不夠：卡片之間有相依性（技能包那支 auto-rename 呼叫的是規則段裝的
+  // 命名 hook），跳著做的話後面那段就算做完也是空的。而且畫面會自相矛盾——第一段
+  // 沒做完鎖住第二段，第二段做完了卻把第三段開了（Reed 實測看到一三開、二鎖）。
+  //
+  // 點名最早那一段：中間幾段擋人的理由都源自它，那才是學生該回去的地方。
+  const previousPending =
+    SECTIONS.slice(0, index).find(
+      (section) => sectionDone[section.id] !== true,
+    ) ?? null;
+  const previousDone =
+    previousPending === null ? true : sectionDone[previousPending.id];
   // 分開記「還不知道」與「確定沒做完」：兩者都擋，但話要講得不一樣——資料還沒
   // 回來時說「先把某某做完」是在講一件我們並不知道的事。
   const stillChecking = previousPending !== null && previousDone === undefined;

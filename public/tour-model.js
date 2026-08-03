@@ -10,9 +10,17 @@
 //   B 單張提示：跟著卡片切換走，一次只高亮一個地方，順序仍然由 model.js 的
 //              卡片順序決定——driver 只負責畫泡泡，不管流程。
 
-export const TOUR_SEEN_KEY = "jr-setup-ui:tour-seen";
-export const CARD_TOUR_SEEN_KEY = "jr-setup-ui:card-tour-seen";
-export const HINT_SEEN_PREFIX = "jr-setup-ui:hint-seen:";
+// 「看過了」的紀錄帶版本號。
+//
+// 不帶版本的話，改過導覽內容之後，看過舊版的人永遠看不到新版——而且「這頁怎麼用」
+// 那顆按鈕在他們身上已經收起來了，連手動重看都沒辦法（Reed 在 VM 上實際卡到）。
+//
+// 改導覽的步驟時把這個號碼加一，看過舊版的人會自動再看一次。
+const TOUR_VERSION = 2;
+
+export const TOUR_SEEN_KEY = `jr-setup-ui:tour-seen:v${TOUR_VERSION}`;
+export const CARD_TOUR_SEEN_KEY = `jr-setup-ui:card-tour-seen:v${TOUR_VERSION}`;
+export const HINT_SEEN_PREFIX = `jr-setup-ui:hint-seen:v${TOUR_VERSION}:`;
 
 // A：版面導覽。element 全是 index.html 裡寫死的骨架，不隨卡片重畫消失。
 export const LAYOUT_TOUR_STEPS = [

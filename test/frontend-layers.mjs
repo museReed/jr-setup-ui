@@ -575,6 +575,16 @@ try {
   assert(files.view.includes("open.dataset.stepAction = step.action;"));
   assert(files.view.includes('retest.dataset.retest = "true";'));
   // 說明講完就把「這頁怎麼用」收起來，重整之後也維持收著。
+  // 版面導覽收掉就馬上接卡片導覽。原本只在 onCardRendered 裡試，而那是「畫完一輪
+  // 卡片」才跑的——學生已經停在一張有清單的卡上時（重整之後很常見），版面導覽
+  // 結束後畫面沒有任何事發生，也就沒有人再問一次，那一輪永遠不會出現（VM 實測）。
+  assert.match(tour, /store\.set\(TOUR_SEEN_KEY, "1"\);\s*\n(\s*\/\/[^\n]*\n)*\s*window\.setTimeout\(\(\) => startCardTour\(\{\}\), 0\);/);
+  // 「看過了」的紀錄要帶版本：不帶的話，改過導覽內容之後看過舊版的人永遠看不到
+  // 新版，而且那顆重看的按鈕在他們身上已經收起來了（VM 實測卡到）。
+  assert(tourModel.includes("const TOUR_VERSION = 2;"));
+  assert.match(tourModel, /jr-setup-ui:tour-seen:v\$\{TOUR_VERSION\}/);
+  assert.match(tourModel, /jr-setup-ui:card-tour-seen:v\$\{TOUR_VERSION\}/);
+
   assert(tour.includes("function hideReplay()"));
   assert.match(tour, /store\.set\(CARD_TOUR_SEEN_KEY, "1"\);\s*\n\s*hideReplay\(\);/);
   assert.match(tour, /if \(store\.get\(CARD_TOUR_SEEN_KEY\) === "1"\) hideReplay\(\);/);
