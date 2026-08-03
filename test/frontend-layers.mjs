@@ -130,16 +130,28 @@ try {
   // 三段的幀號是拿 tools/loader-frame-inspector.html 圈出來的（見
   // docs/loader-frame-inspector.md）。動畫沒有 marker，只能靠幀號切——換動畫之後
   // 這三組數字要重圈，這一條擋的是「換了動畫卻忘了改」。
+  // 四段不是三段：「抽出電腦」是過場，只能演一次。把它包在工作那段裡循環播的話，
+  // 畫面上每 2.25 秒就重演一次抽電腦——看起來像動畫在輪播，不像一直在做同一件事
+  //（Reed 實測指出）。
   assert.match(
     files.view,
-    /const MASCOT_SEGMENTS = \{\s*idle: \[0, 8\],\s*work: \[9, 35\],\s*outro: \[36, 42\],\s*\}/,
+    /const MASCOT_SEGMENTS = \{\s*idle: \[0, 8\],\s*"work-in": \[9, 15\],\s*work: \[16, 35\],\s*outro: \[36, 42\],\s*\}/,
   );
-  // 收電腦只演一次，演完自己回到待機；另外兩段循環。
-  assert(files.view.includes('mascotAnimation.loop = state !== "outro"'));
+  // 兩段過場演完自己走到下一個狀態；循環的兩段不發 complete。
+  assert.match(
+    files.view,
+    /const MASCOT_NEXT = \{\s*"work-in": "work",\s*outro: "idle",\s*\}/,
+  );
+  assert(
+    files.view.includes("mascotAnimation.loop = MASCOT_NEXT[state] === undefined"),
+  );
   assert(files.view.includes('setMascotState("outro")'));
-  // 同一個狀態重複設不重播：renderLoaders 每印一行就叫一次，重播的話小人會一直
-  // 從頭抽電腦。
-  assert(files.view.includes("if (state === mascotState) return;"));
+  // 已經在工作就不重來：renderLoaders 每印一行就叫一次，每次都從頭抽電腦的話，
+  // 小人會卡在過場裡永遠打不到字。
+  assert.match(
+    files.view,
+    /state === "work" && \(mascotState === "work" \|\| mascotState === "work-in"\)/,
+  );
   // 常駐＝掛在頂欄的骨架上，不再跟著訊息行走、也不再收回池子。
   const indexHtml = readFileSync(
     new URL("../public/index.html", import.meta.url),
