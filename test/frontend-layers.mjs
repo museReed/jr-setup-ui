@@ -111,18 +111,44 @@ try {
   assert(files.app.includes('retestText: card.kind === "env"'));
   ok("重驗按鈕的字跟著卡片種類走，不是寫死在 view 裡");
 
-  // 去重只擋文字，不能連轉圈圈一起擋掉。環境卡按「再 check 一次」印的字跟上一次
-  // 一樣，整個 renderLoaders 被擋住，畫面一個字都沒動——學生只會以為按鈕壞了。
+  // 小人常駐在終端頂欄，狀態要在「印字」之前換掉。
+  //
+  // 這一條擋的是同一個坑的新版本：去重只擋文字（環境卡按「再 check 一次」印的字跟
+  // 上一次一樣），如果換狀態寫在去重的 return 之後，學生按下去畫面就完全沒有反應
+  // ——以前是轉圈圈沒出現，現在會是小人不動（VM 實測過前者）。
   const renderLoadersBody =
     files.view.match(/export function renderLoaders\([^)]*\)\s*\{[\s\S]*?\n\}/)?.[0] ??
     "";
   assert(
-    /acceptsTerminalLine\(spec\)\)\s*\{[\s\S]*terminal-loader-line[\s\S]*loader\.hidden = false/.test(
-      renderLoadersBody,
-    ),
-    "renderLoaders 遇到重複的字時仍要把轉圈圈掛回最後那一行",
+    renderLoadersBody.indexOf("setMascotState(") <
+      renderLoadersBody.indexOf("acceptsTerminalLine(spec)"),
+    "小人的狀態要在去重那道關卡之前換掉",
   );
-  ok("重複的進度字不再連轉圈圈一起吞掉");
+  assert(renderLoadersBody.includes('setMascotState(paused ? "outro" : "work")'));
+  ok("重複的進度字不再連小人的狀態一起吞掉");
+
+  // 三段的幀號是拿 tools/loader-frame-inspector.html 圈出來的（見
+  // docs/loader-frame-inspector.md）。動畫沒有 marker，只能靠幀號切——換動畫之後
+  // 這三組數字要重圈，這一條擋的是「換了動畫卻忘了改」。
+  assert.match(
+    files.view,
+    /const MASCOT_SEGMENTS = \{\s*idle: \[0, 8\],\s*work: \[9, 35\],\s*outro: \[36, 42\],\s*\}/,
+  );
+  // 收電腦只演一次，演完自己回到待機；另外兩段循環。
+  assert(files.view.includes('mascotAnimation.loop = state !== "outro"'));
+  assert(files.view.includes('setMascotState("outro")'));
+  // 同一個狀態重複設不重播：renderLoaders 每印一行就叫一次，重播的話小人會一直
+  // 從頭抽電腦。
+  assert(files.view.includes("if (state === mascotState) return;"));
+  // 常駐＝掛在頂欄的骨架上，不再跟著訊息行走、也不再收回池子。
+  const indexHtml = readFileSync(
+    new URL("../public/index.html", import.meta.url),
+    "utf8",
+  );
+  assert(indexHtml.includes('id="terminal-mascot"'));
+  assert(!indexHtml.includes("row-loader-pool"));
+  assert(!files.view.includes("row-loader"));
+  ok("小人常駐在終端頂欄，三段幀號釘住，收電腦只演一次");
 
   // 學生自己按的重掃要在終端留下頭尾兩句話。自動跑的那些（開頁、裝完接著跑）不講，
   // 否則每裝一個東西就多兩行雜訊。

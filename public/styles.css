@@ -402,38 +402,18 @@ body {
   height: 100%;
 }
 
-/* 正在跑的那幾行前面的轉圈圈。設計系統的 .ds-loader-orbs 換掉了（見 view.js 的
-   createLoader），尺寸與對齊改由這裡管。 */
-/* 貓畫成兩倍大（40px），但佔的位置還是 20px。
-   直接把整個框放大到 40px 的話，執行中那幾行的行高會從 24px 變成 40px，終端整段
-   看起來鬆掉——而那幾行是驗證時一次噴好幾行的地方。所以框維持原本大小，讓貓從
-   中心往外溢出去（Reed 指定）。
-   vertical-align 要寫 middle：預設 baseline 會把這個行內方塊的底邊對到文字基線，
-   貓就浮在字的左上角。 */
-.row-loader {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-}
-
-/* 動畫本身是 2750×1850（約 3:2 的橫幅），塞進正方形會上下留白、圖也變小。
-   所以畫成 60×40 的橫幅，一樣從中心往外溢出去——佔位仍然是 20px，執行中那幾行
-   的行高不會被撐開。 */
-.row-loader-art {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+/* 終端頂欄那隻常駐的小人。它不再跟著訊息行走，所以尺寸不用再遷就行高——
+   動畫本身是 2750×1850（約 3:2 的橫幅），照那個比例給位置就好。 */
+.terminal-mascot {
   display: block;
-  width: 60px;
-  height: 40px;
-  transform: translate(-50%, -50%);
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 54px;
+  height: 36px;
 }
 
-.row-loader-art svg {
+.terminal-mascot-art,
+.terminal-mascot-art svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -722,14 +702,10 @@ body {
   font-size: var(--fs-xs);
 }
 
+/* 靠右那一段的順序是「小人、取消」。把空白推給小人（它吃 margin-left: auto），
+   取消只跟它隔一個間距——兩個都吃 auto 的話空白會被平分，取消就跑到中間去。 */
 .terminal-column #cancel {
-  margin-left: auto;
-}
-
-.terminal-loader-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  margin-left: var(--space-3);
 }
 
 .terminal-column details {

@@ -94,6 +94,7 @@
               <span class="ds-term-dot" style="background: var(--amber-4)" aria-hidden="true"></span>
               <span class="ds-term-dot" style="background: var(--teal-4)" aria-hidden="true"></span>
               <span class="terminal-title">現在正在做什麼</span>
+              <span id="terminal-mascot" class="terminal-mascot" aria-hidden="true"></span>
               <button type="button" id="cancel" class="ds-btn-fill is-sm is-on-dark" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>取消</span></button>
             </div>
             <div id="terminal-lines" class="ds-term-body" role="log" aria-live="polite">
@@ -136,7 +137,6 @@
       <button type="button" id="copy-behavior-question">複製</button>
       <ul id="behavior-checklist"></ul>
     </div>
-    <div id="row-loader-pool" hidden></div>
     <textarea id="prompt" hidden></textarea>
     <input type="checkbox" id="allow-write" hidden />
     <script src="/vendor/lottie-light.min.js"></script>
