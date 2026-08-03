@@ -338,6 +338,24 @@ body {
   animation: cat-roll 0.55s linear infinite;
 }
 
+/* 原地踏步時補一個連續的上下微幅起伏。逐格切換只有六格可用（那支動畫裡站姿就
+   這麼多），一格一格跳看得出斷點；疊一個不間斷的位移上去，眼睛會把中間補起來。
+   幅度只有 1.5px：這是「牠還活著」的暗示，不是跳躍。
+   跟 cat-roll 不會同時出現——滾動與踏步是互斥的兩種狀態。 */
+.is-stepping .milestone-cat-art {
+  animation: cat-step 0.55s ease-in-out infinite;
+}
+
+@keyframes cat-step {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1.5px);
+  }
+}
+
 @keyframes cat-roll {
   to {
     transform: rotate(-360deg);
@@ -347,7 +365,8 @@ body {
 /* 滾進滾出是氣氛，不是資訊——關掉之後牠仍然停在正確的那一個點上。
    view.js 的 moveDuck 也會跳過整段進出場，直接把牠放到定位。 */
 @media (prefers-reduced-motion: reduce) {
-  .is-rolling .milestone-cat-art {
+  .is-rolling .milestone-cat-art,
+  .is-stepping .milestone-cat-art {
     animation: none;
   }
 }

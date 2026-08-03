@@ -156,8 +156,15 @@ elements.milestoneCat.append(milestoneCat.box);
 //
 // 用計時器一格一格 goToAndStop，不用 lottie 的反向區間：反向的區間它只往前播，
 // 會停在中間某一格不動（分頁鎖頭那邊已經踩過一次）。
-const CAT_IDLE_FRAMES = [30, 31, 32, 31];
-const CAT_IDLE_STEP_MS = 160;
+// 只有三格來回會一格一格跳（Reed 回報：不流暢）。往前多借三格：27–29 是同一段
+// 站起來的過程（蹲坐 → 撐起 → 站直），跟 30–32 是連續的，湊成六格，來回一輪
+// 十格。步距也縮到 110 毫秒。
+//
+// 六格是這支動畫給得起的上限——33 格裡站姿只有這幾格，其餘都在翻滾。剩下的順暢
+// 感靠 CSS 補：踏步時外面那層做一個連續的上下微幅起伏（見 .is-stepping），
+// 逐格跳的斷點被那個連續運動蓋過去。
+const CAT_IDLE_FRAMES = [27, 28, 29, 30, 31, 32, 31, 30, 29, 28];
+const CAT_IDLE_STEP_MS = 110;
 let catIdleTimer = null;
 // 「現在應該原地踏步嗎」。動畫是非同步載入的，所以要記下意圖：等 promise 回來時
 // 學生可能已經又往下一站走了，這時候不能接手。
@@ -165,6 +172,7 @@ let catIdleWanted = false;
 
 export function stopCatIdle() {
   catIdleWanted = false;
+  elements.milestoneDuck.classList.remove("is-stepping");
 
   if (catIdleTimer === null) return;
 
@@ -186,6 +194,7 @@ export function startCatIdle() {
     if (animation === null || animation === undefined) return;
 
     animation.pause();
+    elements.milestoneDuck.classList.add("is-stepping");
     let index = 0;
     catIdleTimer = window.setInterval(() => {
       animation.goToAndStop(CAT_IDLE_FRAMES[index], true);
