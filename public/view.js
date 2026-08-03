@@ -447,6 +447,33 @@ function iconSvg(name) {
   return svg;
 }
 
+// 會產生副作用的按鈕包一層：這一下還沒做完就不接第二下。
+//
+// 要防的是連點——開視窗那顆連點兩下會真的開兩個終端視窗，安裝那顆會跑兩次同一個
+// 安裝（Reed 指定）。冪等的按鈕（複製、翻頁、切分頁）不包，包了只會讓翻頁點快一點
+// 就沒反應。
+//
+// 不用時間型 debounce：那只擋得住「很快的第二下」，隔 300ms 再點一次照樣出事。
+// 鎖到這一下真的做完才是實的。
+//
+// 鎖的是這個閉包不是 button.disabled：disabled 由每一輪重畫依真正的狀態決定
+//（runInProgress、permanentlyDisabled…），在這裡動它會跟重畫互相蓋來蓋去。
+function guardClick(handler) {
+  let busy = false;
+
+  return async (...args) => {
+    if (busy) return;
+
+    busy = true;
+
+    try {
+      await handler(...args);
+    } finally {
+      busy = false;
+    }
+  };
+}
+
 // .ds-btn-fill：平常空心，滑上去顏色從左邊灌滿。它的結構本來就是 svg + span。
 //
 // 主要動作預先灌滿（is-primary）——這顆按鈕本身沒有主次之分，但「現在該按哪顆」
@@ -462,7 +489,9 @@ function fillButton({ icon, text, primary = false, onClick, small = true }) {
   button.append(iconSvg(icon), label);
 
   if (onClick !== undefined) {
-    button.addEventListener("click", onClick);
+    // 灌色按鈕全是「按下去會發生事情」的那種（安裝、開視窗、重驗、送出、複製），
+    // 統一在這裡防連點。複製那種冪等的包了也沒有壞處——它只是把第二下吃掉。
+    button.addEventListener("click", guardClick(onClick));
   }
 
   return button;
@@ -642,6 +671,9 @@ function checklistElement(
           // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
           icon: step.action === "fullscreen-proof" ? "send" : "terminal",
           text: step.buttonText,
+          // 灌滿的：這一步要學生做的就是按它，空心會讓人以為是次要動作
+          //（Reed 指定，跟同一張卡的「開始登入」一致）。
+          primary: true,
           onClick: () => onOpen(step.action),
         });
         // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。按文字找不行，
@@ -739,10 +771,16 @@ function loginControlsElement(model) {
   const submit = fillButton({ icon: "send", text: "送出", primary: true });
   submit.type = "submit";
   form.append(input, submit);
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    model.onLoginInput(input.value, input);
-  });
+  // 送出那顆是 type=submit，真正的動作掛在 form 上，所以防連點要包在這裡——
+  // 授權碼送兩次，第二次一定是錯的（碼已經被用掉了），學生看到的是一個看不懂的
+  // 失敗。
+  form.addEventListener(
+    "submit",
+    guardClick((event) => {
+      event.preventDefault();
+      return model.onLoginInput(input.value, input);
+    }),
+  );
   hints.append(link, codeRow, form);
   return hints;
 }
@@ -1767,7 +1805,13 @@ export function showLoginHints(model) {
   if (hints === null) return;
   if (model.url !== null) {
     link.href = model.url;
-    link.textContent = model.linkText;
+    // 只換那個 <span>，不要洗掉整顆按鈕的內容。
+    //
+    // 灌色按鈕的結構是 svg + span，而且只有這兩者被拉到灌色層上面（設計系統的
+    // .ds-btn-fill > svg, > span 有 z-index:1）。整顆 textContent 洗掉的話，icon
+    // 沒了、字變成一個裸文字節點沉到灌色底下——畫面上就是一塊空的橘色方塊
+    //（Reed 實測截圖）。setButtonLabel 存在就是為了這件事，這裡漏用了。
+    setButtonLabel(link, model.linkText);
     link.hidden = false;
   }
   if (model.code !== null) {
@@ -1790,7 +1834,9 @@ export function clearLoginHints() {
   link.removeAttribute("href");
   codeRow.hidden = true;
   code.textContent = "";
-  copy.textContent = "複製";
+  // 同上：只換 <span>。整顆洗掉會把 icon 一起清掉，「複製」按下去變「已複製」再
+  // 回來之後就沒有圖示了。
+  setButtonLabel(copy, "複製");
   runInput.hidden = true;
   hints.hidden = true;
 }
@@ -1808,7 +1854,9 @@ export function hideVerifyModal() {
 }
 
 export function onVerifyModal(confirm, later) {
-  elements.verifyModalConfirm.addEventListener("click", confirm);
+  // 「確認」會真的開一個終端跑驗證，連點兩下就跑兩次。「稍後」只是關掉這個框，
+  // 冪等，不需要包。
+  elements.verifyModalConfirm.addEventListener("click", guardClick(confirm));
   elements.verifyModalLater.addEventListener("click", later);
   elements.verifyModal.addEventListener("click", (event) => {
     if (event.target === elements.verifyModal) later();
