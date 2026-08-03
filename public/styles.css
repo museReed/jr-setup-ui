@@ -394,13 +394,17 @@ body {
   height: 100%;
 }
 
-/* 進度文字與「這頁怎麼用」排同一行：導覽按鈕靠右，跟進度條的右緣對齊。 */
+/* 進度文字與右邊那幾顆按鈕排同一行。按鈕要黏在一起靠右，所以把空白全推給進度
+   文字（margin-right: auto）——用 space-between 的話兩顆按鈕會被拆到兩端。 */
 .milestone-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin-bottom: var(--space-3);
+}
+
+.milestone-heading > #section-status {
+  margin-right: auto;
 }
 
 /* driver.js 的泡泡預設是白底藍鈕，跟這頁的暗色卡片不同世界。長相全部拉回

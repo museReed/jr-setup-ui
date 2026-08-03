@@ -1546,6 +1546,21 @@ view.elements.copyBehaviorQuestion.addEventListener("click", async () => {
 
 initTour();
 view.elements.replayTour.addEventListener("click", () => replayTour());
+// 分頁鎖頭演錯時按這顆，整包貼給助教。收集在 view 那邊（那裡才看得到動畫實例與
+// 變化紀錄），這裡只負責把它變成一段文字丟進剪貼簿。
+view.elements.copyDiagnostics.addEventListener("click", async () => {
+  try {
+    const diagnostics = await view.lockDiagnostics();
+    await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+    view.setButtonLabel(view.elements.copyDiagnostics, "已複製");
+    // 字要換回來：留著「已複製」的話，下次真的要按時看起來像已經按過了。
+    window.setTimeout(() => {
+      view.setButtonLabel(view.elements.copyDiagnostics, "複製診斷資料");
+    }, 2000);
+  } catch (error) {
+    view.addLine(`無法複製診斷資料：${error.message}`, "failed");
+  }
+});
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);

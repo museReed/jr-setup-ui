@@ -26,6 +26,7 @@ const elements = {
   sectionPanel: document.querySelector("[data-section-panel]"),
   sectionStatus: document.querySelector("#section-status"),
   replayTour: document.querySelector("#replay-tour"),
+  copyDiagnostics: document.querySelector("#copy-diagnostics"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
   milestoneFill: document.querySelector("#milestone-fill"),
@@ -1002,6 +1003,49 @@ let observedLocks = null;
 //
 // 這沒有修掉「為什麼會短暫算錯」——那要另外查。但一次性的雜訊本來就不該讓畫面
 // 演一段慶祝動畫，這道關卡該有，跟根因是什麼無關。
+// 鎖頭狀態的變化紀錄。
+//
+// 上面那道關卡擋住了症狀（一閃而過的狀態不再讓畫面演動畫），但沒有解釋「為什麼
+// 完成度會短暫算錯」。那個瞬間本機重現不出來——要先做完一整段才走得到——所以把
+// 它記下來，讓 VM 上跑到的人可以按一顆按鈕整包送回來。
+//
+// 只記變化，不記每一次重畫：重畫一秒好幾次，全記下來會把真正的那一筆淹掉。
+const LOCK_LOG_LIMIT = 200;
+const lockLog = [];
+
+function logLock(entry) {
+  lockLog.push({ at: Math.round(window.performance.now()), ...entry });
+
+  if (lockLog.length > LOCK_LOG_LIMIT) {
+    lockLog.shift();
+  }
+}
+
+// 按下「複製診斷資料」時收集的東西：現在每一格長怎樣，加上一路走來的變化紀錄。
+export async function lockDiagnostics() {
+  const tabs = await Promise.all(
+    elements.sectionButtons.map(async (button) => {
+      const animation = await lockAnimations.get(button);
+
+      return {
+        tab: button.dataset.sectionTarget,
+        classes: button.className,
+        lockClasses: button.querySelector(".section-tab-lock")?.className ?? null,
+        frame: animation ? Math.round(animation.currentFrame) : null,
+        paused: animation ? animation.isPaused : null,
+      };
+    }),
+  );
+
+  return {
+    committed: renderedLocks,
+    observed: observedLocks,
+    pendingUnlock: [...pendingUnlock],
+    tabs,
+    log: lockLog,
+  };
+}
+
 function confirmedState(id, raw) {
   const committed = renderedLocks?.[id] ?? null;
 
@@ -1046,6 +1090,19 @@ export function renderSectionLocks(lockStates, done = {}) {
     const previous = renderedLocks?.[id] ?? null;
     observed[id] = raw;
     next[id] = state;
+
+    // 只在「算出來的」或「承認的」真的變了那一刻記一筆。原始輸入（locked / done）
+    // 一起記下來——要找的就是它們哪一個閃了一下。
+    if (raw !== (observedLocks?.[id] ?? null) || state !== previous) {
+      logLock({
+        tab: id,
+        raw,
+        state,
+        was: previous,
+        locked: lockStates[id]?.locked ?? null,
+        done: done?.[id] ?? null,
+      });
+    }
 
     if (button.querySelector(".section-tab-lock") === null) {
       button.prepend(lockIcon(button));

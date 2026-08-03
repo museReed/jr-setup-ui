@@ -42,6 +42,9 @@
         <div class="milestone-heading">
           <small id="section-status" aria-live="polite">正在檢查目前進度…</small>
           <button type="button" id="replay-tour" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v5M12 7.5v.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>這頁怎麼用</span></button>
+          <!-- 分頁鎖頭的狀態變化紀錄。學生看到怪畫面時按一下，整包貼給助教就查得到
+               是哪一個瞬間算錯的（見 view.js 的 lockDiagnostics）。 -->
+          <button type="button" id="copy-diagnostics" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h9v11H9zM6 15H5V4h10v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>複製診斷資料</span></button>
         </div>
         <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
           <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>

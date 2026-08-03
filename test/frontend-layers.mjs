@@ -271,6 +271,15 @@ try {
   assert(files.view.includes("function confirmedState(id, raw)"));
   assert.match(files.view, /const state = confirmedState\(id, raw\);/);
   assert.match(files.view, /observedLocks = observed;/);
+
+  // 擋住症狀不等於查到根因。狀態變化要留紀錄，讓 VM 上跑到的人按一顆按鈕整包
+  // 送回來——只記變化，不記每一次重畫（重畫一秒好幾次，全記會把那一筆淹掉）。
+  assert(files.view.includes("export async function lockDiagnostics()"));
+  assert.match(files.view, /if \(raw !== \(observedLocks\?\.\[id\] \?\? null\) \|\| state !== previous\) \{/);
+  assert(files.view.includes("const LOCK_LOG_LIMIT = 200;"));
+  // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
+  assert.match(files.view, /locked: lockStates\[id\]\?\.locked \?\? null,\s*\n\s*done: done\?\.\[id\] \?\? null,/);
+  assert(files.app.includes("await view.lockDiagnostics()"));
   // 演完一定要回到定格，被打斷也一樣。
   assert.match(files.view, /animation\.removeEventListener\("complete", settle\);\s*\n(\s*[^\n]*\n)*?\s*animation\.goToAndStop\(frame, true\);/);
   assert.match(cardStyles, /\.section-tab-lock\.is-announcing \{\s*\n\s*animation: lock-wave/);
@@ -447,7 +456,7 @@ try {
   assert.match(cardIndex, /id="verify-modal-confirm" class="ds-btn ds-btn-primary"/);
   assert.match(cardIndex, /id="verify-modal-later" class="ds-btn ds-btn-ghost"/);
 
-  for (const id of ["recheck-configs", "recheck-env", "cancel"]) {
+  for (const id of ["recheck-configs", "recheck-env", "cancel", "copy-diagnostics"]) {
     assert.match(
       cardIndex,
       new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),
