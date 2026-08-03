@@ -214,6 +214,10 @@ try {
   );
   // 特效不能塞在按鈕裡面：按鈕在那段期間是隱形的，塞進去會跟著被藏掉。
   assert(indexHtml.includes('id="wizard-unlock"'));
+  // 靠右的 margin 要在殼上，不是在按鈕上：包了一層之後按鈕身上的 margin-left: auto
+  // 只推得動它在殼裡的位置。上一張隱藏時 space-between 只剩一個孩子，整個殼就被擺到
+  // 最左邊——「下一張」會跑到畫面左邊去（Reed 實測截圖）。
+  assert.match(navStyles, /\.wizard-nav-slot \{[^}]*margin-left: auto;/s);
   assert.match(indexHtml, /wizard-nav-slot[\s\S]*?wizard-unlock[\s\S]*?id="wizard-next"/);
   // 兩支動畫要進伺服器的白名單，不然學生那邊是 404（自己的機器有檔案，看不出來）。
   const serverSource = readFileSync(
