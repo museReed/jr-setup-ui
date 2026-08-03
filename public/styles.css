@@ -808,11 +808,12 @@ body {
   font-size: var(--fs-sm);
 }
 
-/* 掛在某一格底下、只有按鈕沒有標題的那一列（「開始登入」）。按鈕上的字本身就是
-   說明，再配一句標題只是把同一件事講兩次。靠右對齊，跟有標題那幾列的按鈕同一條
-   垂直線。 */
-.checklist-step--action-only {
-  justify-content: flex-end;
+/* 修某一格的按鈕（「開始登入」）就放在那一格裡面、靠右推到底。
+   另起一列會把清單撐高一截，而這一列本來就有兩行文字的高度，塞得下一顆小按鈕
+   （Reed 指定）。flex:0 0 auto 讓它不被文字擠扁。 */
+.checklist-inline-action {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 /* 貼上欄位畫在清單裡面時，要跟項目對齊，不要貼著暗底的邊緣。 */

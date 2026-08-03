@@ -597,6 +597,8 @@ try {
   // 修某一格的按鈕（「開始登入」）掛回那一格底下，而且不在按鈕列再畫一次。原本
   // 「未登入」在清單裡、按鈕在清單外，學生要自己把兩者連起來（Reed 實測）。
   assert(files.view.includes("inlineActions.get(item.id)"));
+  // 放在那一格「裡面」而不是另起一列——另起一列會把清單撐高一截。
+  assert(files.view.includes("label.append(inline)"));
   assert(
     files.view.includes('if (inlineActions.has(`system-${spec.checkId}`)) continue;'),
   );
