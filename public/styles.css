@@ -333,22 +333,30 @@ body {
 
 /* 正在跑的那幾行前面的轉圈圈。設計系統的 .ds-loader-orbs 換掉了（見 view.js 的
    createLoader），尺寸與對齊改由這裡管。 */
-/* 放大到 40px（原本 20px，Reed 指定兩倍）。
-   vertical-align 要跟著改：預設 baseline 會把這個 40px 高的行內方塊的底邊對到
-   文字基線上，於是貓浮在左上、字掉到右下，看起來像兩件不相干的東西。 */
+/* 貓畫成兩倍大（40px），但佔的位置還是 20px。
+   直接把整個框放大到 40px 的話，執行中那幾行的行高會從 24px 變成 40px，終端整段
+   看起來鬆掉——而那幾行是驗證時一次噴好幾行的地方。所以框維持原本大小，讓貓從
+   中心往外溢出去（Reed 指定）。
+   vertical-align 要寫 middle：預設 baseline 會把這個行內方塊的底邊對到文字基線，
+   貓就浮在字的左上角。 */
 .row-loader {
+  position: relative;
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: 20px;
+  height: 20px;
 }
 
 .row-loader-cat {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   display: block;
   width: 40px;
   height: 40px;
+  transform: translate(-50%, -50%);
 }
 
 .row-loader-cat svg {
