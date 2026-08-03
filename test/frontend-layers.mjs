@@ -262,10 +262,17 @@ try {
   assert.match(files.view, /animation\.addEventListener\("complete", shrink\)/);
   // 演的那 0.6 秒不要碰它：renderSectionLocks 每次重畫都會跑，這時餵 open 就是
   // goToAndStop 到最後一格，動畫演到一半被切掉。
-  assert.match(
-    files.view,
-    /if \(!lock\?\.classList\.contains\("is-opening"\)\) \{/,
-  );
+  assert.match(files.view, /!lock\?\.classList\.contains\("is-opening"\) &&/);
+  assert.match(files.view, /!lock\?\.classList\.contains\("is-playing"\)/);
+
+  // 只出現一次的狀態不算數：要連續兩次算出同一個答案才承認。
+  // VM 實測——規矩段才做到第一張，鎖頭卻開始播打勾，播到一半被打斷，停在「綠底、
+  // 勾還沒畫完」那一格；事後去問每一格的狀態卻全是對的，代表完成度只錯了一瞬間。
+  assert(files.view.includes("function confirmedState(id, raw)"));
+  assert.match(files.view, /const state = confirmedState\(id, raw\);/);
+  assert.match(files.view, /observedLocks = observed;/);
+  // 演完一定要回到定格，被打斷也一樣。
+  assert.match(files.view, /animation\.removeEventListener\("complete", settle\);\s*\n(\s*[^\n]*\n)*?\s*animation\.goToAndStop\(frame, true\);/);
   assert.match(cardStyles, /\.section-tab-lock\.is-announcing \{\s*\n\s*animation: lock-wave/);
   assert.match(cardStyles, /@keyframes lock-wave \{[\s\S]*?scale\(2\)/);
   assert.match(cardStyles, /\.section-tab-lock\.is-opening \{\s*\n\s*transform: scale\(2\);/);

@@ -941,6 +941,8 @@ function openPendingLock(button) {
 //                  程式問它在第幾格還是回答對的那一格，對不起來）
 //   減少動態       系統設定要尊重，但狀態還是要看得到
 function playLockTo(button, state, previous) {
+  const lock = button.querySelector(".section-tab-lock");
+
   lockAnimations.get(button)?.then((animation) => {
     if (animation === null || animation === undefined) return;
 
@@ -954,6 +956,16 @@ function playLockTo(button, state, previous) {
       return;
     }
 
+    // 演完一定要回到定格。原本只靠 playSegments 自己停，被打斷就停在半路——
+    // VM 上看到打勾那段停在綠底、勾還沒畫出來的那一格（Reed 回報）。
+    const settle = () => {
+      animation.removeEventListener("complete", settle);
+      lock?.classList.remove("is-playing");
+      animation.goToAndStop(frame, true);
+    };
+
+    lock?.classList.add("is-playing");
+    animation.addEventListener("complete", settle);
     animation.setSpeed(state === "done" ? LOCK_DONE_SPEED : LOCK_UNLOCK_SPEED);
     animation.playSegments([LOCK_FRAMES[previous], frame], true);
   });
@@ -975,6 +987,28 @@ function fireworkAt(percent) {
 // 上一次每個分頁停在哪一態。動畫只在「真的換了一態」那一刻放——每次重畫都放的話，
 // 光是勾一個項目就會炸一次煙火。
 let renderedLocks = null;
+// 上一次「算出來」的狀態。跟上面那份的差別是：這份照單全收，上面那份只收連續
+// 兩次算出同一個答案的（見 confirmedState）。
+let observedLocks = null;
+
+// 只出現一次的狀態不算數。
+//
+// VM 實測：規矩段才做到第一張，分頁上的鎖頭卻開始播打勾，播到一半又被打斷，
+// 停在「綠底、勾還沒畫完」那一格。事後去問每一格的狀態，答案全是對的——代表
+// 完成度在某一次重畫時短暫算成了 true，下一次又回到 false。
+//
+// 那種一閃而過的值不該觸發一秒多的動畫。所以要連續兩次算出同一個狀態才承認，
+// 中間那一次不一致就沿用上次承認過的。第一次畫沒有東西可比，直接承認。
+//
+// 這沒有修掉「為什麼會短暫算錯」——那要另外查。但一次性的雜訊本來就不該讓畫面
+// 演一段慶祝動畫，這道關卡該有，跟根因是什麼無關。
+function confirmedState(id, raw) {
+  const committed = renderedLocks?.[id] ?? null;
+
+  if (committed === null) return raw;
+
+  return raw === (observedLocks?.[id] ?? null) ? raw : committed;
+}
 
 // 鎖著 → 開了 → 打勾。三態各對應鎖頭動畫的一格（見 LOCK_FRAMES）。
 //
@@ -1003,11 +1037,14 @@ function celebrate(button) {
 
 export function renderSectionLocks(lockStates, done = {}) {
   const next = {};
+  const observed = {};
 
   for (const button of elements.sectionButtons) {
     const id = button.dataset.sectionTarget;
-    const state = lockStateOf(lockStates, done, id);
+    const raw = lockStateOf(lockStates, done, id);
+    const state = confirmedState(id, raw);
     const previous = renderedLocks?.[id] ?? null;
+    observed[id] = raw;
     next[id] = state;
 
     if (button.querySelector(".section-tab-lock") === null) {
@@ -1037,7 +1074,11 @@ export function renderSectionLocks(lockStates, done = {}) {
     // 開鎖動畫正在演的那 0.6 秒不要碰它。這個函式每次重畫都會跑（勾一個項目、
     // 環境檢查回來都算），這時候餵它 open 就是 goToAndStop 到最後一格——動畫演到
     // 一半被切掉，學生只看到鎖突然變成開的。
-    if (!lock?.classList.contains("is-opening")) {
+    // is-playing 是同一件事的另一半：打勾那 1.35 秒也不能被重畫打斷（見 playLockTo）。
+    if (
+      !lock?.classList.contains("is-opening") &&
+      !lock?.classList.contains("is-playing")
+    ) {
       // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
       playLockTo(button, pending ? "locked" : state, pending ? null : previous);
     }
@@ -1060,6 +1101,7 @@ export function renderSectionLocks(lockStates, done = {}) {
   }
 
   renderedLocks = next;
+  observedLocks = observed;
 }
 
 export function showSectionLockMessage(message) {
