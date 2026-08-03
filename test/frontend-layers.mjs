@@ -593,6 +593,18 @@ try {
   // 重驗那顆兩張卡長得一樣、做的事不一樣（env 重掃狀態／config 真的開終端跑），
   // 導覽要當成兩個元件各講一次，所以身分也要寫在元素上。
   assert(files.view.includes("retest.dataset.retestKind ="));
+
+  // 修某一格的按鈕（「開始登入」）掛回那一格底下，而且不在按鈕列再畫一次。原本
+  // 「未登入」在清單裡、按鈕在清單外，學生要自己把兩者連起來（Reed 實測）。
+  assert(files.view.includes("inlineActions.get(item.id)"));
+  assert(
+    files.view.includes('if (inlineActions.has(`system-${spec.checkId}`)) continue;'),
+  );
+  // 清單沒出現的卡不能把按鈕吃掉——那張卡會完全沒有那顆按鈕。
+  assert.match(
+    files.view,
+    /const inlineSpecs = model\.showChecklist\s*\n\s*\? \(model\.row\?\.buttons \?\? \[\]\)\.filter/,
+  );
   // 版面導覽收掉就馬上接元件導覽。原本只在 onCardRendered 裡試，而那是「畫完一輪
   // 卡片」才跑的——學生已經停在一張有清單的卡上時（重整之後很常見），版面導覽
   // 結束後畫面沒有任何事發生，也就沒有人再問一次，那一輪永遠不會出現（VM 實測）。

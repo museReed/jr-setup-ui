@@ -1198,6 +1198,23 @@ try {
   );
   ok("執行原則是「修正」、登入狀態是「開始登入」");
 
+  // 修某一格的按鈕要說得出它修的是哪一格：畫面上它掛回那一格底下（見 view.js 的
+  // inlineActions）。原本「未登入」在清單裡、按鈕在清單外的按鈕列，學生要自己把
+  // 兩者連起來（Reed 實測）。
+  assert.equal(auth.buttons[0].checkId, "gh-auth");
+  assert.equal(
+    envRowModel({
+      id: "execution-policy",
+      label: "PowerShell 執行原則",
+      status: "warn",
+      detail: "未設定",
+      installAction: null,
+      fixAction: "fix-execution-policy",
+    }).buttons[0].checkId,
+    "execution-policy",
+  );
+  ok("修某一格的按鈕帶著那一格的 id，畫面才擺得回它旁邊");
+
   // 迴歸：逾時曾被歸成 missing，長出安裝按鈕叫人重裝已經裝好的東西。
   const timedOut = envRowModel({
     id: "codex",

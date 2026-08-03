@@ -223,6 +223,9 @@ export function envRowModel(check, installed = false) {
       action: check.fixAction,
       dataName: "fixAction",
       text: check.id === "execution-policy" ? "修正" : "開始登入",
+      // 這顆修的是哪一格。畫面上要把它擺回那一格旁邊——「未登入」在清單裡，按鈕卻
+      // 在清單外的按鈕列，學生得自己把兩者連起來（Reed 實測）。
+      checkId: check.id,
     });
   }
 

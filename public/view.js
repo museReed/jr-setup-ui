@@ -548,6 +548,8 @@ function checklistElement(
     pasteProof = null,
     login = null,
     onOpen = () => {},
+    // 掛在某一格底下的按鈕（目前是登入那顆），key 是那一格的 check id。
+    inlineActions = new Map(),
   } = {},
 ) {
   const items = [...groups.system, ...groups.manual];
@@ -601,8 +603,18 @@ function checklistElement(
       label.append(input, checkMark(), text);
       checklist.append(label);
 
-      // 登入那一塊掛在「登入狀態」那一格底下。原本畫在清單外面、按鈕列的下方，
-      // 學生要自己把「未登入」跟下面那顆授權按鈕連起來（VM 實測）。
+      // 修那一格的按鈕（「開始登入」）就掛在那一格底下。原本擺在清單外的按鈕列，
+      // 「未登入」在清單裡、按鈕在清單外，學生要自己把兩者連起來（Reed 實測）。
+      const inline = inlineActions.get(item.id);
+
+      if (inline !== undefined) {
+        const row = document.createElement("div");
+        row.className = "checklist-step checklist-step--action-only";
+        row.append(inline);
+        checklist.append(row);
+      }
+
+      // 登入那一塊（授權連結與代碼）跟著同一格，接在按鈕後面。
       if (login !== null && item.id === `system-${login.authCheckId}`) {
         checklist.append(loginControlsElement(login));
       }
@@ -770,6 +782,18 @@ function renderCard(model) {
     const loginInChecklist =
       model.showChecklist === true && model.login !== null;
 
+    // 修某一格的按鈕（「開始登入」）掛回那一格底下，不留在下面的按鈕列。清單沒出現
+    // 時才退回按鈕列——不然那張卡會完全沒有那顆按鈕。
+    const inlineSpecs = model.showChecklist
+      ? (model.row?.buttons ?? []).filter((spec) => spec.checkId !== undefined)
+      : [];
+    const inlineActions = new Map(
+      inlineSpecs.map((spec) => [
+        `system-${spec.checkId}`,
+        actionButton(spec, model.onActionClick),
+      ]),
+    );
+
     if (model.showChecklist) {
       body.append(
         checklistElement(model.checklist, model.onManualToggle, {
@@ -783,6 +807,7 @@ function renderCard(model) {
               }
             : null,
           onOpen: model.onOpenStep ?? (() => {}),
+          inlineActions,
         }),
       );
     }
@@ -830,7 +855,11 @@ function renderCard(model) {
     // 純人工的卡（全螢幕模式）沒有 row：沒有安裝也沒有驗證，自然沒有按鈕。
     // 這裡少一個 ?. 會讓整個 render 中止，畫面停在上一張、「下一張」按了沒反應——
     // 而且錯誤只留在 console，學生只看到按鈕壞掉（VM 實測）。
+    //
+    // 已經畫進清單的那幾顆不再重複一次。
     for (const spec of model.row?.buttons ?? []) {
+      if (inlineActions.has(`system-${spec.checkId}`)) continue;
+
       actions.append(actionButton(spec, model.onActionClick));
     }
     if (model.showRetest) {
