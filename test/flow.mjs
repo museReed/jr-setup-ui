@@ -99,13 +99,36 @@ try {
 
   // 兩道「關掉分頁、開新的」都拿掉了：所有驗證都走 verify-in-terminal，它每次自己
   // 開一個全新的終端視窗。段落現在只由「上一段做完了沒」決定，不再有人工關卡。
-  assert.equal(sectionGateState("skills", new Set(), "claude").locked, false);
-  assert.equal(sectionGateState("demo", new Set(), "claude").locked, false);
+  assert.equal(
+    sectionGateState("skills", new Set(), "claude", { rules: true }).locked,
+    false,
+  );
+  assert.equal(
+    sectionGateState("demo", new Set(), "claude", { skills: true }).locked,
+    false,
+  );
   assert.equal(
     sectionGateState("demo", new Set(), "claude", { skills: false }).locked,
     true,
   );
   ok("段落只由上一段是否完成決定，沒有人工關卡");
+
+  // 第一段永遠沒有上一段，所以永遠是開的——學生一進來就有事可做。
+  assert.equal(sectionGateState("env", new Set(), "claude").locked, false);
+  ok("第一段永遠不鎖");
+
+  // 資料還沒回來（undefined）也算沒做完，一樣擋著。
+  //
+  // 原本只擋 false，理由是「寧可放行也不要在載入中把人鎖在外面」。VM 的紀錄器
+  // 顯示那個代價是實的：開頁最初 8.4 秒，技能包與 demo 兩段都是解鎖狀態，手快的
+  // 學生點得進去，然後才被鎖回來。
+  const checking = sectionGateState("skills", new Set(), "claude");
+  assert.equal(checking.locked, true);
+  assert.match(checking.reason, /正在檢查目前進度/);
+  // 話要跟「確定沒做完」分開講：資料還沒回來時說「先把某某做完」是在講一件我們
+  // 並不知道的事。
+  assert.doesNotMatch(checking.reason, /先把/);
+  ok("上一段的資料還沒回來時擋著，而且說的是「正在檢查」不是「先去做完」");
 
   // 擋人的時候要指名是哪一張卡。只說「先把上一段做完」的話，學生站在那一段的最後
   // 一張、畫面顯示已完成，卻被告知這段沒做完——只能一張一張往回翻（VM 實測）。
@@ -150,6 +173,7 @@ try {
       "demo",
       new Set(["skills-new-terminal"]),
       "claude",
+      { skills: true },
     ).locked,
     false,
   );
@@ -174,12 +198,13 @@ try {
     ).locked,
     true,
   );
-  // 資料還沒回來時是 undefined，不該把人鎖在外面。
+  // 資料還沒回來時是 undefined，一樣擋著（見上面「正在檢查目前進度」那一段的
+  // 理由：放行的那幾秒學生真的點得進去）。
   assert.equal(
     sectionGateState("rules", new Set(), "claude", {}).locked,
-    false,
+    true,
   );
-  ok("前一段沒真的完成就鎖住下一段，狀態未知時不擋");
+  ok("前一段沒真的完成就鎖住下一段，狀態未知時也擋");
 
   const behaviorScript = readFileSync(
     new URL("../scripts/verify-behavior.mjs", import.meta.url),
