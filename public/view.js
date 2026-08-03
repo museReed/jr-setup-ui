@@ -142,11 +142,61 @@ function keepPreviewOpen() {
 
 // 進度條上那隻只有一個，開頁時掛一次就好——每次重畫都重掛的話，那隻 261KB 的
 // 逐格動畫會被重新解析一遍，而且動作會從第一格重來（走一半突然重播）。
-elements.milestoneCat.append(
-  lottieBox({ url: "/vendor/milestone-cat.json", className: "milestone-cat-art" }),
-);
+const milestoneCat = lottieControl({
+  url: "/vendor/milestone-cat.json",
+  className: "milestone-cat-art",
+});
+elements.milestoneCat.append(milestoneCat.box);
+
+// 停下來之後的原地小動作。
+//
+// 那支動畫整段 33 格是一次翻滾（蹲下 → 縮成球 → 翻過去 → 站回來）。移動時就播
+// 整段，停下來之後再一直翻就變成「站在原地一直跌倒」——所以改成只在最後那三格
+// 之間來回：30 → 31 → 32 → 31 → …。那三格都是站姿，來回播看起來像原地踏步。
+//
+// 用計時器一格一格 goToAndStop，不用 lottie 的反向區間：反向的區間它只往前播，
+// 會停在中間某一格不動（分頁鎖頭那邊已經踩過一次）。
+const CAT_IDLE_FRAMES = [30, 31, 32, 31];
+const CAT_IDLE_STEP_MS = 160;
+let catIdleTimer = null;
+// 「現在應該原地踏步嗎」。動畫是非同步載入的，所以要記下意圖：等 promise 回來時
+// 學生可能已經又往下一站走了，這時候不能接手。
+let catIdleWanted = false;
+
+export function stopCatIdle() {
+  catIdleWanted = false;
+
+  if (catIdleTimer === null) return;
+
+  window.clearInterval(catIdleTimer);
+  catIdleTimer = null;
+  // 回去播整段翻滾——移動中要的是那個。
+  milestoneCat.ready.then((animation) => {
+    if (catIdleWanted) return;
+    animation?.play();
+  });
+}
+
+export function startCatIdle() {
+  if (reducedMotion.matches || catIdleTimer !== null) return;
+
+  catIdleWanted = true;
+  milestoneCat.ready.then((animation) => {
+    if (!catIdleWanted || catIdleTimer !== null) return;
+    if (animation === null || animation === undefined) return;
+
+    animation.pause();
+    let index = 0;
+    catIdleTimer = window.setInterval(() => {
+      animation.goToAndStop(CAT_IDLE_FRAMES[index], true);
+      index = (index + 1) % CAT_IDLE_FRAMES.length;
+    }, CAT_IDLE_STEP_MS);
+  });
+}
 
 function finishArrival(point, station, key) {
+  // 彈跳（is-arriving）剛演完，接手成原地踏步。
+  startCatIdle();
   const firework = document.createElement("span");
   firework.className = "ds-firework";
   firework.style.setProperty("--firework-at", `${station.percent}%`);
@@ -185,11 +235,15 @@ function placeCatInstantly(percent) {
 }
 
 function rollIn(percent) {
+  stopCatIdle();
   placeCatInstantly(CAT_ENTER_FROM);
   elements.milestoneDuck.classList.add("is-rolling", "is-entering");
   elements.milestoneDuck.style.left = `${percent}%`;
   catTimer = window.setTimeout(() => {
     elements.milestoneDuck.classList.remove("is-rolling", "is-entering");
+    // 滾到定位就站著踏步。這一段沒有 is-arriving 的彈跳（那是站到站之間才有的），
+    // 所以直接接手。
+    startCatIdle();
   }, CAT_ENTER_MS);
 }
 
@@ -228,6 +282,7 @@ function moveDuck(sectionId, station) {
 
     // 換段：先滾出右邊，出去了再從左邊滾回來。中間不能有第三種狀態——
     // 牠一路都在滾，只是位置從畫面外的一邊換到另一邊。
+    stopCatIdle();
     elements.milestoneDuck.classList.add("is-rolling", "is-exiting");
     elements.milestoneDuck.style.left = `${CAT_EXIT_TO}%`;
     catTimer = window.setTimeout(() => {
@@ -245,6 +300,9 @@ function moveDuck(sectionId, station) {
 
   if (!moving) {
     elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    // 站在原地的重畫（勾一個項目、檢查回來）也要維持踏步。startCatIdle 本身
+    // 有擋重入，重複叫沒有副作用。
+    startCatIdle();
 
     // 重畫時把原本釘著的那張還原——連同它原本要收掉的時刻。上面剛清掉計時器，
     // 這裡不重新排的話，這張預覽就再也不會關。
@@ -265,6 +323,8 @@ function moveDuck(sectionId, station) {
     return;
   }
 
+  // 要移動了：把原地踏步收掉，回去播整段翻滾。
+  stopCatIdle();
   elements.milestoneDuck.classList.add("is-running");
   stationTimer = window.setTimeout(() => {
     elements.milestoneDuck.classList.remove("is-running");
