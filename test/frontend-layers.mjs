@@ -246,6 +246,29 @@ try {
     /LOCK_STATES\.indexOf\(state\) > LOCK_STATES\.indexOf\(previous\)/,
   );
   assert(files.view.includes('const LOCK_STATES = ["locked", "open", "done"];'));
+
+  // 剛達成解鎖條件時不放開鎖動畫：學生人在別的分頁上做事，演完他也沒看到——
+  // 而那正是最需要讓他知道的一件事。改成放大兩倍加輕微搖晃，一直招手到他點進來。
+  assert.match(files.view, /previous === "locked" && state === "open"/);
+  assert(files.view.includes("pendingUnlock.add(id);"));
+  // 招手期間要餵 locked 給 playLockTo，餵真的 state 它就直接跳到開鎖那一格，
+  // 學生點進來也沒東西可演。
+  assert.match(
+    files.view,
+    /playLockTo\(button, pending \? "locked" : state, pending \? null : previous\)/,
+  );
+  // 開鎖動畫在點下去那一刻才放，而且演完才縮回原尺寸。
+  assert.match(files.view, /openPendingLock\(button\);\s*\n\s*handler\(/);
+  assert.match(files.view, /animation\.addEventListener\("complete", shrink\)/);
+  // 演的那 0.6 秒不要碰它：renderSectionLocks 每次重畫都會跑，這時餵 open 就是
+  // goToAndStop 到最後一格，動畫演到一半被切掉。
+  assert.match(
+    files.view,
+    /if \(!lock\?\.classList\.contains\("is-opening"\)\) \{/,
+  );
+  assert.match(cardStyles, /\.section-tab-lock\.is-announcing \{\s*\n\s*animation: lock-wave/);
+  assert.match(cardStyles, /@keyframes lock-wave \{[\s\S]*?scale\(2\)/);
+  assert.match(cardStyles, /\.section-tab-lock\.is-opening \{\s*\n\s*transform: scale\(2\);/);
   assert(files.view.includes("if (reducedMotion.matches) return;"));
   assert.match(cardStyles, /@keyframes tab-unlock-shake/);
   // 慶祝用的動畫要尊重系統設定：關掉不影響理解。減少動態時鎖頭直接跳到該停的

@@ -107,6 +107,34 @@ body {
   height: 100%;
 }
 
+/* 剛達成解鎖條件、學生還沒點進來：放大兩倍、輕微左右搖，一直招手到他點進來。
+   縮回去交給 transition，開鎖動畫演完才發生（見 view.js 的 openPendingLock）。 */
+.section-tab > .section-tab-lock {
+  transform-origin: 50% 50%;
+  transition: transform 0.3s ease;
+}
+
+.section-tab-lock.is-announcing {
+  animation: lock-wave 0.9s ease-in-out infinite;
+}
+
+/* 開鎖那 0.6 秒還維持放大，演完才縮——邊開邊縮的話只看得到一個越來越小的東西，
+   看不清楚它在開。 */
+.section-tab-lock.is-opening {
+  transform: scale(2);
+}
+
+/* 搖的幅度刻意小：這是「這裡開了」的提醒，不是警告。搖太大會讓人以為出錯了。 */
+@keyframes lock-wave {
+  0%,
+  100% {
+    transform: scale(2) rotate(-6deg);
+  }
+  50% {
+    transform: scale(2) rotate(6deg);
+  }
+}
+
 /* 換態：鎖頭那支 lottie 自己演（開鎖、打勾，見 view.js 的 playLockTo），
    這裡只負責讓整個分頁晃一下。
    煙火沿用里程碑那顆（.ds-firework），由 view 掛上去再收掉。
@@ -134,7 +162,8 @@ body {
 
 /* 會動的東西一律尊重系統設定。這一段的動畫是慶祝，不是資訊——關掉不影響理解。 */
 @media (prefers-reduced-motion: reduce) {
-  .section-tab.is-unlocking {
+  .section-tab.is-unlocking,
+  .section-tab-lock.is-announcing {
     animation: none;
   }
 }

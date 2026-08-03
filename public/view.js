@@ -835,7 +835,12 @@ export function showSection(sectionId) {
 
 export function onSectionSelect(handler) {
   for (const button of elements.sectionButtons) {
-    button.addEventListener("click", () => handler(button.dataset.sectionTarget));
+    button.addEventListener("click", () => {
+      // 開鎖動畫在這裡放，不在剛達成條件的那一刻放。剛開的時候學生多半人在別的
+      // 分頁上做事，動畫演完他也沒看到——那正是要提醒他的那件事。
+      openPendingLock(button);
+      handler(button.dataset.sectionTarget);
+    });
   }
 }
 
@@ -882,6 +887,50 @@ const LOCK_FRAMES = {
   open: LOCK_OPEN_FRAME,
   done: LOCK_DONE_FRAME,
 };
+
+// 剛達成解鎖條件、但學生還沒點進去的那幾個分頁。
+//
+// 這一刻不放開鎖動畫：學生人在別的分頁上做事，演完他也沒看到——而那正是最需要
+// 讓他知道的一件事。所以鎖頭留在上鎖那一格，改成放大兩倍加輕微左右搖（見
+// styles.css 的 .is-announcing），一直招手到他點進來為止。點進來才放開鎖動畫，
+// 演完定格在開鎖那一格，再縮回原尺寸（Reed 指定的順序）。
+const pendingUnlock = new Set();
+
+function openPendingLock(button) {
+  const id = button.dataset.sectionTarget;
+
+  if (!pendingUnlock.has(id)) return;
+
+  pendingUnlock.delete(id);
+  const lock = button.querySelector(".section-tab-lock");
+
+  // 先收掉搖晃，但尺寸留到動畫演完才縮——邊開鎖邊縮小的話，那 0.6 秒只看得到
+  // 一個越來越小的東西，看不清楚它在開。
+  lock?.classList.remove("is-announcing");
+  lock?.classList.add("is-opening");
+
+  lockAnimations.get(button)?.then((animation) => {
+    if (animation === null || animation === undefined) {
+      lock?.classList.remove("is-opening");
+      return;
+    }
+
+    const shrink = () => {
+      animation.removeEventListener("complete", shrink);
+      lock?.classList.remove("is-opening");
+    };
+
+    if (reducedMotion.matches) {
+      animation.goToAndStop(LOCK_OPEN_FRAME, true);
+      shrink();
+      return;
+    }
+
+    animation.addEventListener("complete", shrink);
+    animation.setSpeed(LOCK_UNLOCK_SPEED);
+    animation.playSegments([LOCK_CLOSED_FRAME, LOCK_OPEN_FRAME], true);
+  });
+}
 
 // 從哪一態走到哪一態，就播那一段。三種情況不演，直接跳到該停的那一格：
 //
@@ -965,8 +1014,34 @@ export function renderSectionLocks(lockStates, done = {}) {
       button.prepend(lockIcon(button));
     }
 
-    // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
-    playLockTo(button, state, previous);
+    // 剛從鎖著變成開了：先不演，改成招手（放大＋搖晃），等學生點進來才開鎖。
+    // 減少動態時不招手，照常直接開——會動的東西是提醒，關掉就得換個方式講，
+    // 而這裡「換個方式」就是分頁本來就變得可以點了。
+    const justOpened =
+      previous === "locked" && state === "open" && !reducedMotion.matches;
+
+    if (justOpened) {
+      pendingUnlock.add(id);
+    }
+
+    // 又鎖回去、或整段已經做完了，就沒有什麼好招手的。
+    if (state !== "open") {
+      pendingUnlock.delete(id);
+    }
+
+    // 招手期間鎖頭留在上鎖那一格。這裡不能餵真正的 state，餵了它就直接跳到開鎖，
+    // 學生點進來也沒東西可演。
+    const pending = pendingUnlock.has(id);
+    const lock = button.querySelector(".section-tab-lock");
+
+    // 開鎖動畫正在演的那 0.6 秒不要碰它。這個函式每次重畫都會跑（勾一個項目、
+    // 環境檢查回來都算），這時候餵它 open 就是 goToAndStop 到最後一格——動畫演到
+    // 一半被切掉，學生只看到鎖突然變成開的。
+    if (!lock?.classList.contains("is-opening")) {
+      // 第一次畫不放動畫：一開頁就炸煙火的話，學生根本不知道那是在慶祝什麼。
+      playLockTo(button, pending ? "locked" : state, pending ? null : previous);
+    }
+    lock?.classList.toggle("is-announcing", pending);
 
     // 慶祝只給往前走的那一步。往回退（例如換了工具選項害某一段又鎖回去）不是
     // 成就，炸煙火只會讓人以為自己做對了什麼。
