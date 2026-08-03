@@ -180,9 +180,10 @@ try {
   );
   // 整列橫跨畫面，中間那一大片透明區域不能蓋住卡片。
   assert.match(navStyles, /\.wizard-nav-row \{[^}]*pointer-events: none;/s);
+  // 下一張那顆多包了一層（解鎖特效的位置錨點），所以兩種父層都要放行事件。
   assert.match(
     navStyles,
-    /\.wizard-nav-row > \.wizard-nav \{\s*pointer-events: auto;/,
+    /\.wizard-nav-row > \.wizard-nav,\s*\n\s*\.wizard-nav-slot > \.wizard-nav \{\s*pointer-events: auto;/,
   );
   // 導覽的「看得到才留下」不能用 offsetParent：fixed 元素它一律回 null，版面導覽
   // 會靜靜地少掉「做完就往下一張」那一步，六步變五步而且沒有人會發現。
@@ -193,6 +194,35 @@ try {
   assert(!tourSource.includes("node.offsetParent"));
   assert(tourSource.includes("node.getClientRects().length > 0"));
   ok("翻頁兩顆釘在畫面垂直中央，導覽仍指得到那一列");
+
+  // 解鎖下一張時的那一段（Reed 指定的順序）：巫師施法演完 → 爆炸開始的同時巫師
+  // 縮到最小消失 → 爆炸演完 → 按鈕淡進來。
+  assert(files.view.includes("function playUnlockSpell(button)"));
+  // 縮小的時間要跟爆炸一樣長，而且是問動畫本人拿的——另外寫一個常數的話，換一版
+  // 動畫長度就對不起來了。
+  assert(files.view.includes("blastAnimation.getDuration(false)"));
+  assert(files.view.includes('wizard.box.style.setProperty("--spell-shrink"'));
+  // 順序要靠 complete 串，不是靠猜時間。
+  assert.match(
+    files.view,
+    /wizardAnimation\.addEventListener\("complete",[\s\S]*?blastAnimation\.addEventListener\("complete", finish\)/,
+  );
+  // 載不到動畫時按鈕不能卡在隱形狀態——少一段特效不該把「下一張」弄不見。
+  assert.match(
+    files.view,
+    /if \(wizardAnimation === null\) \{\s*finish\(\);/,
+  );
+  // 特效不能塞在按鈕裡面：按鈕在那段期間是隱形的，塞進去會跟著被藏掉。
+  assert(indexHtml.includes('id="wizard-unlock"'));
+  assert.match(indexHtml, /wizard-nav-slot[\s\S]*?wizard-unlock[\s\S]*?id="wizard-next"/);
+  // 兩支動畫要進伺服器的白名單，不然學生那邊是 404（自己的機器有檔案，看不出來）。
+  const serverSource = readFileSync(
+    new URL("../src/server.js", import.meta.url),
+    "utf8",
+  );
+  assert(serverSource.includes('["/vendor/wizard.json"'));
+  assert(serverSource.includes('["/vendor/explosion.json"'));
+  ok("解鎖特效照順序串起來，動畫也進了白名單");
 
   // 學生自己按的重掃要在終端留下頭尾兩句話。自動跑的那些（開頁、裝完接著跑）不講，
   // 否則每裝一個東西就多兩行雜訊。
