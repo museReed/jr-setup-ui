@@ -79,6 +79,17 @@ function layoutTour() {
   return layoutDriver;
 }
 
+// 說明講完就把「這頁怎麼用」收起來。前三張卡把該講的講完，之後畫面上不該再留
+// 一顆隨時會打斷人的按鈕（Reed 指定）。
+//
+// 只是 hidden，不是從 DOM 拿掉：replayTour() 仍然叫得動（console 或之後想加回
+// 一個入口都行），而且下一次重整時 initTour 會照紀錄決定要不要藏。
+function hideReplay() {
+  const button = document.querySelector("#replay-tour");
+
+  if (button !== null) button.hidden = true;
+}
+
 function cardTour() {
   cardDriver ??= makeDriver({
     showProgress: true,
@@ -89,6 +100,7 @@ function cardTour() {
     onDestroyed: () => {
       tourRunning = false;
       store.set(CARD_TOUR_SEEN_KEY, "1");
+      hideReplay();
     },
   });
   return cardDriver;
@@ -176,6 +188,10 @@ export function startCardTour({ runInProgress } = {}) {
 }
 
 export function replayTour() {
+  const button = document.querySelector("#replay-tour");
+
+  if (button !== null) button.hidden = false;
+
   store.remove(TOUR_SEEN_KEY);
   store.remove(CARD_TOUR_SEEN_KEY);
   for (const cardId of Object.keys(CARD_HINTS)) {
@@ -228,4 +244,7 @@ export function onCardRendered({ cardId, runInProgress }) {
 
 export function initTour() {
   loadSeenHints();
+
+  // 重整之後也要維持收起來的狀態——說明已經看完了。
+  if (store.get(CARD_TOUR_SEEN_KEY) === "1") hideReplay();
 }

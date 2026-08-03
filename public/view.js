@@ -623,14 +623,16 @@ function checklistElement(
       head.append(title);
 
       if (step.action !== null) {
-        head.append(
-          fillButton({
-            // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
-            icon: step.action === "fullscreen-proof" ? "send" : "terminal",
-            text: step.buttonText,
-            onClick: () => onOpen(step.action),
-          }),
-        );
+        const open = fillButton({
+          // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
+          icon: step.action === "fullscreen-proof" ? "send" : "terminal",
+          text: step.buttonText,
+          onClick: () => onOpen(step.action),
+        });
+        // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。按文字找不行，
+        // 每張卡的字都不一樣。
+        open.dataset.stepAction = step.action;
+        head.append(open);
       }
 
       checklist.append(head);
@@ -834,15 +836,16 @@ function renderCard(model) {
     if (model.showRetest) {
       // 裝好了、只差驗證的那張卡，主要動作就是這一顆——安裝按鈕已經灰掉了，
       // 這裡不預先灌滿的話整張卡會找不到「現在該按哪顆」。
-      actions.append(
-        fillButton({
-          // env 卡按下去是重掃一次狀態，config 卡是真的開終端跑。
-          icon: model.retestText === "再 check 一次" ? "reinstall" : "terminal",
-          text: model.retestText ?? "再 check 一次",
-          primary: model.retestPrimary === true,
-          onClick: model.onRetest,
-        }),
-      );
+      const retest = fillButton({
+        // env 卡按下去是重掃一次狀態，config 卡是真的開終端跑。
+        icon: model.retestText === "再 check 一次" ? "reinstall" : "terminal",
+        text: model.retestText ?? "再 check 一次",
+        primary: model.retestPrimary === true,
+        onClick: model.onRetest,
+      });
+      // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。
+      retest.dataset.retest = "true";
+      actions.append(retest);
     }
     body.append(actions);
     if (!loginInChecklist && model.login !== null) {

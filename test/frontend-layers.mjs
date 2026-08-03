@@ -564,6 +564,17 @@ try {
 
   // 版面導覽指的必須是 index.html 裡寫死的骨架。指到卡片內部生出來的元素，
   // 學生翻到下一張時泡泡就會貼到畫面左上角。
+  // 卡片導覽指的是卡片裡面的東西，那些是每次重畫都會重生的，所以身分要寫在元素
+  // 上（開視窗那顆、重驗那顆）。按文字找不行——每張卡的字都不一樣。
+  assert(files.view.includes("open.dataset.stepAction = step.action;"));
+  assert(files.view.includes('retest.dataset.retest = "true";'));
+  // 說明講完就把「這頁怎麼用」收起來，重整之後也維持收著。
+  assert(tour.includes("function hideReplay()"));
+  assert.match(tour, /store\.set\(CARD_TOUR_SEEN_KEY, "1"\);\s*\n\s*hideReplay\(\);/);
+  assert.match(tour, /if \(store\.get\(CARD_TOUR_SEEN_KEY\) === "1"\) hideReplay\(\);/);
+  // 只是 hidden，不是從 DOM 拿掉——replayTour 仍然要能把它叫回來。
+  assert.match(tour, /if \(button !== null\) button\.hidden = false;/);
+
   for (const selector of ["#section-nav", "#milestone-bar", "#current-card", "#terminal", "#wizard-nav-row"]) {
     assert(
       index.includes(`id="${selector.slice(1)}"`),

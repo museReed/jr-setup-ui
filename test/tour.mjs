@@ -134,14 +134,16 @@ try {
   assert.equal(shouldRunCardTour({ ...base, tourRunning: true }), false);
   ok("卡片導覽只在第一張有清單的卡、版面導覽看完之後跑一次");
 
-  // 四件事一定要講到：系統驗的、你自己勾的、按鈕何時按、原始輸出是什麼。
-  assert.equal(CARD_TOUR_STEPS.length, 4);
+  // 五件事一定要講到：系統驗的、你自己勾的（手動驗證）、把視窗開起來的那顆、
+  // 重驗的那顆、原始輸出是什麼。順序就是學生操作的順序。
+  assert.equal(CARD_TOUR_STEPS.length, 5);
   assert.deepEqual(
     CARD_TOUR_STEPS.map((step) => step.element),
     [
       ".ds-checklist .ds-check.is-system",
       ".ds-checklist .ds-check.is-manual",
-      ".env-actions",
+      ".checklist-step [data-step-action]",
+      ".env-actions [data-retest]",
       "#raw-output-details",
     ],
   );
@@ -149,7 +151,7 @@ try {
     assert(step.title.length > 0);
     assert(step.description.length > 0);
   }
-  ok("卡片導覽講滿四件事：系統驗的、你自己勾的、按鈕何時按、原始輸出");
+  ok("卡片導覽講滿五件事：系統驗的、手動勾的、開視窗、重驗、原始輸出");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);
