@@ -267,18 +267,60 @@ body {
    一個字都沒改。往回走時設計系統會對裡面的 <svg> 再翻一次（.ds-duck.left svg），
    兩次相乘就變回面向左邊，剛好是對的。 */
 /* 設計系統的小鴨格子是 40×40。那隻貓在 40px 下只剩一團黑影（牠是一張畫得很細的
-   圖，不是為了小尺寸畫的），所以整個框放大到 60px——超出來的部分往上長，
-   進度條的位置不動。 */
+   圖，不是為了小尺寸畫的），所以放大過一輪；45px 是那一輪的 75%（Reed 指定）。 */
 .ds-pbar--milestones .ds-duck:has(.milestone-cat) {
-  width: 60px;
-  height: 60px;
+  width: 45px;
+  height: 45px;
 }
 
 .milestone-cat {
   display: block;
-  width: 60px;
-  height: 60px;
+  width: 45px;
+  height: 45px;
   transform: scaleX(-1);
+}
+
+/* 進出場：從進度條左邊外面滾進來，換段時從右邊外面滾出去。
+   進場慢一點（0.9s）是給人看的，退場快一點（0.6s）——那是「這段結束了」的收尾，
+   拖太久會擋著下一段開場。 */
+.ds-pbar--milestones .ds-duck.is-entering {
+  transition: left 0.9s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.ds-pbar--milestones .ds-duck.is-exiting {
+  transition: left 0.6s ease-in;
+}
+
+/* 瞬間搬位置用的：把牠丟到畫面外面時不能有過渡，不然「搬過去」跟「滾回來」
+   會被瀏覽器合併成一次，等於沒搬（見 view.js 的 placeCatInstantly）。 */
+.ds-pbar--milestones .ds-duck.no-transition {
+  transition: none;
+}
+
+/* 滾動本身掛在裡面那層：外面那層 .milestone-cat 已經佔用 transform 做水平翻轉。
+   角度是負的——被鏡射過的東西，正角度看起來會往反方向轉。 */
+.milestone-cat-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.is-rolling .milestone-cat-art {
+  animation: cat-roll 0.55s linear infinite;
+}
+
+@keyframes cat-roll {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+/* 滾進滾出是氣氛，不是資訊——關掉之後牠仍然停在正確的那一個點上。
+   view.js 的 moveDuck 也會跳過整段進出場，直接把牠放到定位。 */
+@media (prefers-reduced-motion: reduce) {
+  .is-rolling .milestone-cat-art {
+    animation: none;
+  }
 }
 
 /* 設計系統的 .ds-duck svg 把尺寸釘在 40px，這裡要蓋掉，不然 lottie 的 svg

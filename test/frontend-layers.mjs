@@ -198,6 +198,26 @@ try {
   assert(files.view.includes("section-tab-lock"));
   ok("鎖住的分頁在標題前面畫一個鎖頭");
 
+  // 進度條上那隻從左邊外面滾進來，換段時從右邊外面滾出去。兩個位置都要超出
+  // 0% / 100%——停在 0% 是「站在第一個點左邊一點」，看起來像被截斷。
+  assert(files.view.includes("const CAT_ENTER_FROM = -8;"));
+  assert(files.view.includes("const CAT_EXIT_TO = 108;"));
+  assert.match(files.view, /firstPaint \|\| sectionChanged/);
+  // 收手的計時器只在真的重開一輪進出場時清掉。無條件清的話，環境檢查期間的每次
+  // 重畫都會把「滾完了要收手」那一刀清掉，牠就一直轉下去（實際踩到）。
+  assert.match(
+    files.view,
+    /firstPaint \|\| sectionChanged\)\) \{\s*\n(\s*\/\/[^\n]*\n)*\s*window\.clearTimeout\(catTimer\);/,
+  );
+  // 搬到畫面外面時不能有過渡，不然「搬過去」跟「滾回來」會被合併成一次。
+  assert(files.view.includes("classList.add(\"no-transition\")"));
+  assert.match(cardStyles, /\.ds-pbar--milestones \.ds-duck\.no-transition \{\s*\n\s*transition: none;/);
+  // 滾動掛在裡面那層：外層已經用 transform 做水平翻轉，兩個 transform 不能疊在
+  // 同一個元素上。
+  assert.match(cardStyles, /\.is-rolling \.milestone-cat-art \{\s*\n\s*animation: cat-roll/);
+  assert.match(cardStyles, /^\.milestone-cat \{[^}]*transform: scaleX\(-1\);/m);
+  ok("進度條上那隻從左邊滾進來、換段時從右邊滾出去");
+
   // 鎖頭是常駐的三態指示，不是一次性的慶祝動畫：鎖著、開了、打勾各停在動畫的
   // 一格。所以它不能再淡出——淡掉的話「這一段做完了」在分頁上就沒有痕跡了。
   assert.match(cardStyles, /\.section-tab > \.section-tab-lock \{\s*\n\s*display: block;/);

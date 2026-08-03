@@ -163,12 +163,44 @@ function finishArrival(point, station, key) {
   }, 800);
 }
 
+// 進出場：牠從進度條左邊外面滾進來，換段時從右邊外面滾出去。
+//
+// 兩個位置都刻意超出 0% / 100%：停在 0% 的話牠是「站在第一個點左邊一點」，
+// 看起來像走到一半被截斷，不像從畫面外面進來。
+const CAT_ENTER_FROM = -8;
+const CAT_EXIT_TO = 108;
+const CAT_EXIT_MS = 600;
+const CAT_ENTER_MS = 900;
+let catTimer = null;
+
+// 換位置但不要有過渡——把牠瞬間搬到畫面外面，準備滾進來。
+function placeCatInstantly(percent) {
+  elements.milestoneDuck.classList.add("no-transition");
+  elements.milestoneDuck.style.left = `${percent}%`;
+  // 讀一次 offsetWidth 逼瀏覽器把這個位置結算掉，不然移掉 no-transition 之後
+  // 瀏覽器會把「搬過去」跟「滾回來」合併成一次過渡，等於沒搬。
+  void elements.milestoneDuck.offsetWidth;
+  elements.milestoneDuck.classList.remove("no-transition");
+}
+
+function rollIn(percent) {
+  placeCatInstantly(CAT_ENTER_FROM);
+  elements.milestoneDuck.classList.add("is-rolling", "is-entering");
+  elements.milestoneDuck.style.left = `${percent}%`;
+  catTimer = window.setTimeout(() => {
+    elements.milestoneDuck.classList.remove("is-rolling", "is-entering");
+  }, CAT_ENTER_MS);
+}
+
 function moveDuck(sectionId, station) {
   const nextKey = `${sectionId}:${station.index}`;
   const previousIndex = renderedStation?.sectionId === sectionId
     ? renderedStation.index
     : station.index;
   const moving = renderedStation !== null && nextKey !== renderedStation.key;
+  const firstPaint = renderedStation === null;
+  const sectionChanged =
+    !firstPaint && renderedStation.sectionId !== sectionId;
   renderedStation = { key: nextKey, sectionId, index: station.index };
   window.clearTimeout(stationTimer);
   window.clearTimeout(arrivalTimer);
@@ -176,9 +208,35 @@ function moveDuck(sectionId, station) {
   window.clearTimeout(autoUnpinTimer);
   elements.milestoneBar.querySelector(".ds-firework")?.remove();
   elements.milestoneDuck.classList.toggle("left", station.index < previousIndex);
-  elements.milestoneDuck.style.left = `${station.percent}%`;
   elements.milestoneFill.style.width = `${station.percent}%`;
   elements.milestoneFill.setAttribute("aria-valuenow", String(station.percent));
+
+  // 進場與退場自己管位置，不要在這裡先把 left 設成目的地——設了就等於直接
+  // 跳到定位，滾進來那一段永遠看不到。
+  if (!reducedMotion.matches && (firstPaint || sectionChanged)) {
+    // 只有真的要重新開一輪進出場時才收掉上一輪的計時器。無條件清掉的話，環境檢查
+    // 期間的每一次重畫都會把「滾完了要收手」那一刀清掉——牠就一直轉下去。
+    window.clearTimeout(catTimer);
+    elements.milestoneDuck.classList.remove("is-running", "is-arriving");
+    unpinAll();
+
+    if (firstPaint) {
+      rollIn(station.percent);
+      return;
+    }
+
+    // 換段：先滾出右邊，出去了再從左邊滾回來。中間不能有第三種狀態——
+    // 牠一路都在滾，只是位置從畫面外的一邊換到另一邊。
+    elements.milestoneDuck.classList.add("is-rolling", "is-exiting");
+    elements.milestoneDuck.style.left = `${CAT_EXIT_TO}%`;
+    catTimer = window.setTimeout(() => {
+      elements.milestoneDuck.classList.remove("is-exiting");
+      rollIn(station.percent);
+    }, CAT_EXIT_MS);
+    return;
+  }
+
+  elements.milestoneDuck.style.left = `${station.percent}%`;
 
   const point = elements.milestoneBar.querySelector(
     `[data-card-index="${station.index}"]`,
