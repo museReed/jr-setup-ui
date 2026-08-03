@@ -621,6 +621,9 @@ function checklistElement(
 
       if (item.failedReason || item.detail) {
         const small = document.createElement("small");
+        // 自己的 class：設計系統對 small 的配色寫死了青色（見 styles.css 那條
+        // .check-detail），橘色那半要靠一個掛得上鉤子的名字才改得動。
+        small.className = "check-detail";
         small.textContent = item.failedReason || item.detail;
         text.append(small);
       }
