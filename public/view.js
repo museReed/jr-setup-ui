@@ -601,20 +601,23 @@ function checklistElement(
       }
 
       label.append(input, checkMark(), text);
-      checklist.append(label);
 
-      // 修那一格的按鈕（「開始登入」）就掛在那一格底下。原本擺在清單外的按鈕列，
-      // 「未登入」在清單裡、按鈕在清單外，學生要自己把兩者連起來（Reed 實測）。
+      // 修那一格的按鈕（「開始登入」）就放在那一格裡面、靠右。原本擺在清單外的
+      // 按鈕列，「未登入」在清單裡、按鈕在清單外，學生要自己把兩者連起來
+      //（Reed 實測）。
+      //
+      // 放在同一列而不是另起一列：另起一列會把清單撐高一截，而這一列本來就有
+      // 兩行文字的高度，塞得下一顆小按鈕（Reed 指定）。
       const inline = inlineActions.get(item.id);
 
       if (inline !== undefined) {
-        const row = document.createElement("div");
-        row.className = "checklist-step checklist-step--action-only";
-        row.append(inline);
-        checklist.append(row);
+        inline.classList.add("checklist-inline-action");
+        label.append(inline);
       }
 
-      // 登入那一塊（授權連結與代碼）跟著同一格，接在按鈕後面。
+      checklist.append(label);
+
+      // 登入那一塊（授權連結與代碼）跟著同一格，接在它下面。
       if (login !== null && item.id === `system-${login.authCheckId}`) {
         checklist.append(loginControlsElement(login));
       }
