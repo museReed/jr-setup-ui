@@ -142,8 +142,14 @@ try {
     files.view,
     /const MASCOT_NEXT = \{\s*"work-in": "work",\s*outro: "idle",\s*\}/,
   );
-  assert(
-    files.view.includes("mascotAnimation.loop = MASCOT_NEXT[state] === undefined"),
+  // 循環那兩段來回播：正播到底就倒著播回來。直接跳回起點會有一下跳接。
+  // 過場那兩段不能倒放——把「抽出電腦」倒著演就是把電腦收回去，跟它要表達的事相反，
+  // 所以 complete 先處理過場、return，倒播只留給循環的兩段。
+  assert(files.view.includes("mascotAnimation.loop = false"));
+  assert(files.view.includes("mascotAnimation.setDirection(1)"));
+  assert.match(
+    files.view,
+    /if \(next !== undefined\) \{[\s\S]*?return;\s*\}\s*\n(\s*\/\/[^\n]*\n)*\s*animation\.setDirection\(animation\.playDirection \* -1\);/,
   );
   assert(files.view.includes('setMascotState("outro")'));
   // 已經在工作就不重來：renderLoaders 每印一行就叫一次，每次都從頭抽電腦的話，
