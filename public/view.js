@@ -642,6 +642,9 @@ function checklistElement(
           // 第二步是「開視窗並自動送出一句話」，所以是紙飛機不是視窗。
           icon: step.action === "fullscreen-proof" ? "send" : "terminal",
           text: step.buttonText,
+          // 灌滿的：這一步要學生做的就是按它，空心會讓人以為是次要動作
+          //（Reed 指定，跟同一張卡的「開始登入」一致）。
+          primary: true,
           onClick: () => onOpen(step.action),
         });
         // 導覽要指得到這顆（見 tour-model.js 的 CARD_TOUR_STEPS）。按文字找不行，
@@ -1767,7 +1770,13 @@ export function showLoginHints(model) {
   if (hints === null) return;
   if (model.url !== null) {
     link.href = model.url;
-    link.textContent = model.linkText;
+    // 只換那個 <span>，不要洗掉整顆按鈕的內容。
+    //
+    // 灌色按鈕的結構是 svg + span，而且只有這兩者被拉到灌色層上面（設計系統的
+    // .ds-btn-fill > svg, > span 有 z-index:1）。整顆 textContent 洗掉的話，icon
+    // 沒了、字變成一個裸文字節點沉到灌色底下——畫面上就是一塊空的橘色方塊
+    //（Reed 實測截圖）。setButtonLabel 存在就是為了這件事，這裡漏用了。
+    setButtonLabel(link, model.linkText);
     link.hidden = false;
   }
   if (model.code !== null) {
@@ -1790,7 +1799,9 @@ export function clearLoginHints() {
   link.removeAttribute("href");
   codeRow.hidden = true;
   code.textContent = "";
-  copy.textContent = "複製";
+  // 同上：只換 <span>。整顆洗掉會把 icon 一起清掉，「複製」按下去變「已複製」再
+  // 回來之後就沒有圖示了。
+  setButtonLabel(copy, "複製");
   runInput.hidden = true;
   hints.hidden = true;
 }
