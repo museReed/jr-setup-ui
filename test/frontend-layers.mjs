@@ -265,11 +265,11 @@ try {
   assert.match(files.view, /!lock\?\.classList\.contains\("is-opening"\) &&/);
   assert.match(files.view, /!lock\?\.classList\.contains\("is-playing"\)/);
 
-  // 只出現一次的狀態不算數：要連續兩次算出同一個答案才承認。
-  // VM 實測——規矩段才做到第一張，鎖頭卻開始播打勾，播到一半被打斷，停在「綠底、
-  // 勾還沒畫完」那一格；事後去問每一格的狀態卻全是對的，代表完成度只錯了一瞬間。
-  assert(files.view.includes("function confirmedState(id, raw)"));
-  assert.match(files.view, /const state = confirmedState\(id, raw\);/);
+  // 狀態一算出來就照做，不再等第二次確認。那道關卡（confirmedState）曾經存在，
+  // 用來擋疑似一閃而過的完成度；紀錄器裝上去之後 VM 的 log 推翻了那個假設——
+  // 每一筆變化都是持久的，而它讓每一次真實的變化都慢一整輪重畫（實測 8.7 秒與
+  // 11 秒，因為重畫是事件驅動的）。
+  assert(!files.view.includes("function confirmedState"));
   assert.match(files.view, /observedLocks = observed;/);
 
   // 擋住症狀不等於查到根因。狀態變化要留紀錄，讓 VM 上跑到的人按一顆按鈕整包
@@ -280,8 +280,17 @@ try {
   // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
   assert.match(files.view, /locked: lockStates\[id\]\?\.locked \?\? null,\s*\n\s*done: done\?\.\[id\] \?\? null,/);
   assert(files.app.includes("await view.lockDiagnostics()"));
-  // 演完一定要回到定格，被打斷也一樣。
-  assert.match(files.view, /animation\.removeEventListener\("complete", settle\);\s*\n(\s*[^\n]*\n)*?\s*animation\.goToAndStop\(frame, true\);/);
+  // 演完一定要回到定格，被打斷也一樣。resetSegments 要排在 goToAndStop 前面：
+  // 播過區間之後 lottie 的 currentFrame 是「從區間起點算起」的相對值——播完
+  // [32, 60] 它回報 27（32 + 27 = 59），診斷資料看起來像停在還沒成形的那一格。
+  assert.match(
+    files.view,
+    /animation\.resetSegments\(true\);\s*\n\s*animation\.goToAndStop\(frame, true\);/,
+  );
+  assert.match(
+    files.view,
+    /animation\.resetSegments\(true\);\s*\n\s*animation\.goToAndStop\(LOCK_OPEN_FRAME, true\);/,
+  );
   assert.match(cardStyles, /\.section-tab-lock\.is-announcing \{\s*\n\s*animation: lock-wave/);
   assert.match(cardStyles, /@keyframes lock-wave \{[\s\S]*?scale\(2\)/);
   assert.match(cardStyles, /\.section-tab-lock\.is-opening \{\s*\n\s*transform: scale\(2\);/);

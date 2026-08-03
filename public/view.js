@@ -919,6 +919,9 @@ function openPendingLock(button) {
     const shrink = () => {
       animation.removeEventListener("complete", shrink);
       lock?.classList.remove("is-opening");
+      // 同 playLockTo：播過區間之後 currentFrame 變成相對值，要收回來才對得上。
+      animation.resetSegments(true);
+      animation.goToAndStop(LOCK_OPEN_FRAME, true);
     };
 
     if (reducedMotion.matches) {
@@ -962,6 +965,10 @@ function playLockTo(button, state, previous) {
     const settle = () => {
       animation.removeEventListener("complete", settle);
       lock?.classList.remove("is-playing");
+      // resetSegments 一定要在 goToAndStop 之前。播過區間之後，lottie 的
+      // currentFrame 是「從區間起點算起」的相對值——播完 [32, 60] 它會回報 27
+      // （32 + 27 = 59），診斷資料上看起來像停在還沒成形的那一格。
+      animation.resetSegments(true);
       animation.goToAndStop(frame, true);
     };
 
@@ -1046,13 +1053,15 @@ export async function lockDiagnostics() {
   };
 }
 
-function confirmedState(id, raw) {
-  const committed = renderedLocks?.[id] ?? null;
-
-  if (committed === null) return raw;
-
-  return raw === (observedLocks?.[id] ?? null) ? raw : committed;
-}
+// 這裡曾經有一道「要連續兩次算出同一個狀態才承認」的關卡（confirmedState），
+// 用來擋掉疑似一閃而過的完成度。紀錄器裝上去之後，VM 的實際 log 推翻了那個假設：
+//
+//   8387   skills / demo 算出 locked，畫面上到 17131 才變 locked（慢了 8.7 秒）
+//   19920  env 算出 done，打勾到 30938 才演（慢了 11 秒）
+//
+// 每一筆狀態變化都是持久的，沒有任何一筆閃一下就回去。那道關卡沒擋到雜訊，只是
+// 讓每一次真實的變化都慢一整輪重畫——而重畫是事件驅動的，兩輪之間可能隔十幾秒。
+// 已經拿掉。紀錄器留著：綠圈圈那個畫面如果再出現，這次會有完整的軌跡可以看。
 
 // 鎖著 → 開了 → 打勾。三態各對應鎖頭動畫的一格（見 LOCK_FRAMES）。
 //
@@ -1085,8 +1094,8 @@ export function renderSectionLocks(lockStates, done = {}) {
 
   for (const button of elements.sectionButtons) {
     const id = button.dataset.sectionTarget;
-    const raw = lockStateOf(lockStates, done, id);
-    const state = confirmedState(id, raw);
+    const state = lockStateOf(lockStates, done, id);
+    const raw = state;
     const previous = renderedLocks?.[id] ?? null;
     observed[id] = raw;
     next[id] = state;
