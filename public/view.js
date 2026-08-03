@@ -1341,7 +1341,10 @@ function createLoader(modifier) {
   loader.className = `row-loader ${modifier}`;
   loader.setAttribute("role", "status");
   loader.append(
-    lottieBox({ url: "/vendor/loader-cat.json", className: "row-loader-cat" }),
+    lottieBox({
+      url: "/vendor/loader-claude.json",
+      className: "row-loader-art",
+    }),
   );
   return loader;
 }
@@ -1407,25 +1410,11 @@ function acceptsTerminalLine(spec) {
   return id === activeTranscriptId;
 }
 
-// 閃爍游標永遠待在最後一行的字尾。那是 .ds-term--typing 這個 component 唯一看得出來
-// 的地方——我們一直掛著那個 class，卻從來沒把游標畫出來，所以右邊那個終端看起來
-// 像一張截圖，不像一個活著的視窗。
+// 這裡曾經有一個永遠待在最後一行字尾的閃爍游標。拿掉了（Reed 指定）：終端裡本來
+// 就有逐字打字與轉圈圈兩種東西在動，再多一個一直閃的方塊只是把視線扯走。
 //
-// 掛著轉圈圈的那一行不放：那一行已經在講「正在跑」，再加一個游標只是兩個東西同時
-// 在動。
-function renderCursor() {
-  elements.terminal.querySelector(".ds-term-cursor")?.remove();
-  const last = elements.terminalLines.lastElementChild;
+// 保留這個空函式的位置沒有意義，呼叫端也一併清掉了。
 
-  if (last === null || last.querySelector(".row-loader") !== null) {
-    return;
-  }
-
-  const cursor = document.createElement("span");
-  cursor.className = "ds-term-cursor";
-  cursor.setAttribute("aria-hidden", "true");
-  last.append(cursor);
-}
 
 // 新的一行逐字打出來，像真的終端在跑。
 //
@@ -1453,7 +1442,6 @@ function flushTyping() {
 
   typingQueue.length = 0;
   stopTyping();
-  renderCursor();
 }
 
 function startTyping() {
@@ -1469,7 +1457,6 @@ function startTyping() {
 
     if (job === undefined) {
       stopTyping();
-      renderCursor();
       return;
     }
 
@@ -1478,7 +1465,6 @@ function startTyping() {
 
     if (job.at >= job.text.length) {
       typingQueue.shift();
-      renderCursor();
     }
   }, TYPING_STEP_MS);
 }
@@ -1486,7 +1472,6 @@ function startTyping() {
 function typeInto(line, text) {
   if (reducedMotion.matches) {
     line.textContent = text;
-    renderCursor();
     return;
   }
 
@@ -1508,7 +1493,6 @@ function paintTranscript(id) {
   }
 
   // 還原的是歷史，不是正在發生的事：直接印，也不留轉圈圈。
-  renderCursor();
   elements.output.textContent = rawOutputs.get(id) ?? "";
 }
 

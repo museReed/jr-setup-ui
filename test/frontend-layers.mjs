@@ -421,13 +421,13 @@ try {
   assert.match(index, /class="ds-term-chrome"/);
   ok("終端頂欄用設計系統真的有的 .ds-term-chrome");
 
-  // .ds-term--typing 這個 component 唯一看得出來的地方就是那顆閃爍游標。我們一直
-  // 掛著那個 class 卻從來沒把游標畫出來，右邊那個終端看起來像截圖不像活的視窗。
+  // 閃爍游標拿掉了（Reed 指定）：終端裡本來就有逐字打字與轉圈圈兩種東西在動，
+  // 再多一個一直閃的方塊只是把視線扯走。這條擋的是「哪天又順手加回來」。
   assert.match(index, /class="ds-term ds-term--typing/);
-  assert(files.view.includes('cursor.className = "ds-term-cursor"'));
-  // 掛著轉圈圈的那一行不放游標——兩個東西同時在動只是雜訊。
-  assert.match(files.view, /last\.querySelector\("\.row-loader"\) !== null/);
-  ok("會動的終端補上 .ds-term-cursor，轉圈圈那一行讓位");
+  assert(!files.view.includes("ds-term-cursor"));
+  assert(!files.view.includes("renderCursor"));
+  assert(!cardStyles.includes("ds-term-cursor"));
+  ok("終端不放閃爍游標");
 
   // 新的一行逐字打出來。三條規矩都是為了「動畫不能拖慢真的進度」：排隊超過三行
   // 就整批印完（驗證一次會噴很多行）、系統設了減少動態就不演、翻回舊卡片的紀錄
@@ -482,11 +482,17 @@ try {
       `${id} 要是灌色按鈕而且帶 icon`,
     );
   }
-  // 翻頁那兩顆也是灌色按鈕，長相交給 .ds-btn-fill，styles.css 只管它們站在哪。
-  // 兩顆都預先灌滿：空心那顆並排時看起來像停用的（Reed 指定統一）。
+  // 翻頁那兩顆也是灌色按鈕，兩顆都預先灌滿：空心那顆並排時看起來像停用的
+  // （Reed 指定統一）。
   assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill is-primary wizard-nav/);
   assert.match(cardIndex, /id="wizard-next" class="ds-btn-fill is-primary wizard-nav/);
-  assert.doesNotMatch(cardStyles, /^\.wizard-nav \{/m);
+  // 形狀改成純圓形、裡面只有一支箭頭（Reed 指定），所以尺寸與圓角由本 repo 決定，
+  // 不再只是「管它們站在哪」。
+  assert.match(cardStyles, /^\.wizard-nav \{[^}]*border-radius: 50%;/m);
+  // 字仍然畫在 DOM 裡但只給讀螢幕用：那串字會跟著卡片變（「下一段：⋯」），
+  // 拿掉的話按鍵盤操作的人不知道自己要去哪。
+  assert.match(cardIndex, /<span class="wizard-nav-label">/);
+  assert.match(cardStyles, /^\.wizard-nav-label \{[^}]*clip-path: inset\(50%\);/m);
   ok("會按的按鈕都是灌色按鈕，每顆前面都有 icon");
 
   // 灌滿之後字是白的。設計系統預設把字轉成深色，在橘色底上像沒對比的髒色；而且

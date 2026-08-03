@@ -63,7 +63,7 @@ const ASSETS = [
   ["/lottie-player.js", "text/javascript; charset=utf-8"],
   ["/vendor/lottie-light.min.js", "text/javascript; charset=utf-8"],
   ["/vendor/milestone-cat.json", "application/json; charset=utf-8"],
-  ["/vendor/loader-cat.json", "application/json; charset=utf-8"],
+  ["/vendor/loader-claude.json", "application/json; charset=utf-8"],
   ["/vendor/lock.json", "application/json; charset=utf-8"],
 ];
 
