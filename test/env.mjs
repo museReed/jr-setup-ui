@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  checksForTools,
   normalizeNotFound,
   parseClaudeAuth,
   parseCodexAuth,
@@ -27,6 +28,36 @@ assert.deepEqual(parseClaudeAuth('{"loggedIn": false}'), {
   detail: "未登入",
 });
 ok("Claude 未登入狀態可解析");
+
+// 第一張卡的工具選擇要管到環境段：選了誰才出現誰的安裝與登入。
+const allChecks = [
+  { id: "claude" },
+  { id: "claude-auth" },
+  { id: "codex" },
+  { id: "codex-auth" },
+  { id: "git" },
+  { id: "node" },
+];
+
+assert.deepEqual(
+  checksForTools(allChecks, ["codex"]).map((check) => check.id),
+  ["codex", "codex-auth", "git", "node"],
+);
+assert.deepEqual(
+  checksForTools(allChecks, ["claude"]).map((check) => check.id),
+  ["claude", "claude-auth", "git", "node"],
+);
+assert.deepEqual(
+  checksForTools(allChecks, ["claude", "codex"]).map((check) => check.id),
+  allChecks.map((check) => check.id),
+);
+ok("工具選擇只砍掉沒選到的那個 CLI，共用前置照留");
+
+// 空的／沒帶就照舊全查——/env 在選擇載入之前也會被呼叫到，砍掉的話開頁瞬間
+// 會少一半卡片再突然長回來。
+assert.deepEqual(checksForTools(allChecks, []), allChecks);
+assert.deepEqual(checksForTools(allChecks, undefined), allChecks);
+ok("沒指定工具時維持全查");
 
 assert.deepEqual(parseClaudeAuth("這不是 JSON"), {
   loggedIn: false,

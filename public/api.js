@@ -27,8 +27,11 @@ async function postJson(path, body) {
   return response;
 }
 
-export async function fetchEnv() {
-  const response = await fetch(withToken("/env"));
+// tools 決定要不要查 Claude Code / Codex 那幾列——第一張卡選了什麼，環境段就只
+// 出現什麼。省略時後端照舊全查。
+export async function fetchEnv(tools = "") {
+  const query = tools.length > 0 ? `?tools=${encodeURIComponent(tools)}` : "";
+  const response = await fetch(withToken(`/env${query}`));
 
   if (!response.ok) {
     throw new Error(await response.text());

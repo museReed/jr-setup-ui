@@ -511,8 +511,18 @@ export async function startServer({
     }
 
     if (request.method === "GET" && url.pathname === "/env") {
+      const tools = (url.searchParams.get("tools") ?? "")
+        .split(",")
+        .filter((tool) => tool.length > 0);
+
+      if (tools.some((tool) => !TOOLS.includes(tool))) {
+        sendText(response, 400, "tools 不合法");
+        return;
+      }
+
       response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, await runEnvCheck());
+      // 沒帶 tools 就照舊全查——/env 在選擇載入之前也會被呼叫到。
+      sendJson(response, 200, await runEnvCheck(tools));
       return;
     }
 

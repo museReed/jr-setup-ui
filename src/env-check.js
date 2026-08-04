@@ -25,6 +25,30 @@ function timedOut(id, label) {
   return { id, label, status: "warn", detail: "檢查逾時，請再按一次重新檢查" };
 }
 
+// 哪幾列只屬於某一個工具。第一張卡選「只要 Codex」時，Claude Code 的安裝與登入
+// 就不該再出現——原本這個選擇只送到 /configs（規則檔那一段），環境段完全不知道
+// 有這回事，於是學生選了只要 Codex，還是被要求裝 Claude Code。
+//
+// 沒列在這裡的（git / gh / node / python / 終端機那些）是兩邊共用的前置，永遠都要查。
+const TOOL_ONLY_CHECKS = {
+  claude: ["claude", "claude-auth"],
+  codex: ["codex", "codex-auth"],
+};
+
+export function checksForTools(checks, tools) {
+  // 空陣列＝沒指定，照舊全查。/env 在選擇載入之前也會被呼叫到。
+  if (!Array.isArray(tools) || tools.length === 0) {
+    return checks;
+  }
+
+  const dropped = new Set(
+    Object.entries(TOOL_ONLY_CHECKS)
+      .filter(([tool]) => !tools.includes(tool))
+      .flatMap(([, ids]) => ids),
+  );
+  return checks.filter((check) => !dropped.has(check.id));
+}
+
 const CHECKS = [
   { id: "claude", label: "Claude Code CLI" },
   { id: "claude-auth", label: "Claude Code 登入狀態" },
@@ -611,30 +635,30 @@ async function checkGhAuth(installed) {
   }
 }
 
-export async function runEnvCheck() {
+export async function runEnvCheck(tools = []) {
+  // 沒被選到的工具連查都不查，不只是畫面上藏起來——每一項都是一次 spawn。
+  const wanted = new Set(checksForTools(CHECKS, tools).map((check) => check.id));
+
   try {
-    const claude = checkVersion(
-      "claude",
-      "Claude Code CLI",
-      "claude",
-      ["--version"],
-    );
-    const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
     const python = checkPython();
-    const checksToRun = [
-      claude,
-      checkClaudeAuth(claude),
-      codex,
-      checkCodexAuth(codex),
-      git,
-      gh,
-      checkGhAuth(gh),
-      node,
-      python,
-    ];
+    const checksToRun = [];
+
+    if (wanted.has("claude")) {
+      const claude = checkVersion("claude", "Claude Code CLI", "claude", [
+        "--version",
+      ]);
+      checksToRun.push(claude, checkClaudeAuth(claude));
+    }
+
+    if (wanted.has("codex")) {
+      const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
+      checksToRun.push(codex, checkCodexAuth(codex));
+    }
+
+    checksToRun.push(git, gh, checkGhAuth(gh), node, python);
 
     if (process.platform === "win32") {
       checksToRun.unshift(checkExecutionPolicy());
@@ -658,7 +682,7 @@ export async function runEnvCheck() {
   } catch {
     return {
       os: { platform: process.platform, arch: process.arch },
-      checks: CHECKS.map(({ id, label }) => ({
+      checks: checksForTools(CHECKS, tools).map(({ id, label }) => ({
         id,
         label,
         status: "missing",

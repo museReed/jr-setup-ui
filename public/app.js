@@ -907,7 +907,9 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   }
 
   try {
-    const { os, checks } = await api.fetchEnv();
+    const { os, checks } = await api.fetchEnv(
+      toolSelectionValue(state.selectedTools),
+    );
     state.envChecks = checks;
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
@@ -1588,6 +1590,9 @@ view.onToolSelect((tool) => {
   state.viewingCardIndex = {};
   renderNavigation();
   view.hideSectionLockMessage();
+  // 環境段的卡片也跟著選擇走，所以改選之後要重查——只重查規則檔的話，取消勾選的
+  // 那個工具的安裝與登入卡會留在畫面上。
+  checkEnvironment();
   checkConfigs();
 });
 view.onLanguageSelect((language) => {
