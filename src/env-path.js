@@ -101,19 +101,25 @@ function readRegistryPath() {
 // 「明明裝好了卻說沒裝」——最容易讓人重按第二次的畫面。
 //
 // 只補這一個目錄就夠：兩支 CLI 都在裡面。
-const DARWIN_USER_BIN = ".local/bin";
+// ~/.local/bin  claude / codex 的原生安裝器落點
+// /opt/homebrew/bin  Apple Silicon 的 Homebrew（git / gh / python / ghostty 靠它）
+//
+// 兩者都是「安裝當下才被寫進 shell 設定檔」的目錄，而 PATH 是每個 shell 各自一份：
+// 已經開著的終端機不會重讀 .zprofile／.zshrc，從它啟動的嚮導自然也拿不到。
+// 實測就撞了兩次——裝完 claude 卡片仍顯示未安裝、brew 裝好了按 gh 仍說「找不到
+// brew 指令」。安裝鍵不開新視窗（沒有任何 action 設 launchesWindow），子程序繼承的
+// 就是嚮導這份 PATH，所以只能在這裡補。
+const DARWIN_EXTRA_BINS = ["~/.local/bin", "/opt/homebrew/bin"];
 
 export function withUserBin(currentPath, home) {
   const entries = (typeof currentPath === "string" ? currentPath : "")
     .split(":")
     .filter((entry) => entry.trim().length > 0);
-  const addition = `${home}/${DARWIN_USER_BIN}`;
+  const additions = DARWIN_EXTRA_BINS.map((dir) =>
+    dir.startsWith("~/") ? `${home}/${dir.slice(2)}` : dir,
+  ).filter((dir) => !entries.includes(dir));
 
-  if (entries.includes(addition)) {
-    return entries.join(":");
-  }
-
-  return [...entries, addition].join(":");
+  return [...entries, ...additions].join(":");
 }
 
 // 回傳給子程序用的環境變數。

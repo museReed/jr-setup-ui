@@ -23,24 +23,33 @@ try {
   assert.equal(mergePath(undefined, null, "C:\\x"), "C:\\x");
   ok("來源缺漏不會拋錯");
 
-  // 迴歸（乾淨 VM 實測）：原生安裝器把 claude / codex 裝進 ~/.local/bin，而那個目錄
-  // 是安裝當下才寫進 .zshrc 的。不補的話按完安裝、卡片還是「未安裝」，畫面卻寫著
-  // 「狀態已更新」。
+  // 迴歸（乾淨 VM 實測，兩次）：
+  //   ~/.local/bin      裝完 claude，卡片仍顯示「未安裝」，畫面卻寫著「狀態已更新」
+  //   /opt/homebrew/bin brew 明明裝好了，按 gh 仍說「找不到 brew 指令」
+  // 兩個都是「安裝當下才被寫進 shell 設定檔」的目錄，而已經開著的終端機不會重讀
+  // 設定檔。VM 上診斷出來的更精確：brew 的設定寫在 .zprofile，那只有 login shell 讀，
+  // .zshrc 裡沒有——非 login shell 開的嚮導就看不到。
   assert.equal(
     withUserBin("/usr/bin:/bin", "/Users/x"),
-    "/usr/bin:/bin:/Users/x/.local/bin",
+    "/usr/bin:/bin:/Users/x/.local/bin:/opt/homebrew/bin",
   );
-  ok("macOS 會把 ~/.local/bin 補進子程序的 PATH");
+  ok("macOS 會把 ~/.local/bin 與 /opt/homebrew/bin 補進子程序的 PATH");
 
   // 已經在裡面就不重複追加，也不改變原本的順序。
   assert.equal(
-    withUserBin("/Users/x/.local/bin:/usr/bin", "/Users/x"),
-    "/Users/x/.local/bin:/usr/bin",
+    withUserBin("/opt/homebrew/bin:/Users/x/.local/bin:/usr/bin", "/Users/x"),
+    "/opt/homebrew/bin:/Users/x/.local/bin:/usr/bin",
   );
   ok("已存在時不重複追加、不動順序");
 
-  assert.equal(withUserBin(undefined, "/Users/x"), "/Users/x/.local/bin");
-  assert.equal(withUserBin("/usr/bin::  :/bin", "/Users/x"), "/usr/bin:/bin:/Users/x/.local/bin");
+  assert.equal(
+    withUserBin(undefined, "/Users/x"),
+    "/Users/x/.local/bin:/opt/homebrew/bin",
+  );
+  assert.equal(
+    withUserBin("/usr/bin::  :/bin", "/Users/x"),
+    "/usr/bin:/bin:/Users/x/.local/bin:/opt/homebrew/bin",
+  );
   ok("PATH 缺漏或有空項目時不拋錯");
 
   const env = await spawnEnv();
@@ -48,7 +57,8 @@ try {
 
   if (process.platform === "darwin") {
     assert(env.PATH.includes("/.local/bin"));
-    ok("darwin 的子程序環境含 ~/.local/bin");
+    assert(env.PATH.includes("/opt/homebrew/bin"));
+    ok("darwin 的子程序環境含 ~/.local/bin 與 /opt/homebrew/bin");
   } else if (process.platform !== "win32") {
     assert.equal(env, process.env);
     ok("其餘非 Windows 平台直接沿用 process.env");
