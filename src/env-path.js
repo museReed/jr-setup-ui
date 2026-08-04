@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
 
 // Windows 的 PATH 存在登錄檔，winget 裝東西時會新增目錄進去。但正在跑的程序
 // 拿的是啟動當下那份快照，看不到新項目——同學按完安裝再按重新檢查會以為沒裝成功。
@@ -91,8 +92,36 @@ function readRegistryPath() {
   });
 }
 
-// 回傳給子程序用的環境變數。非 Windows 直接沿用目前的環境。
+// macOS 這邊是同一個病、不同的藥。claude 與 codex 的原生安裝器都裝進 ~/.local/bin，
+// 而那個目錄是安裝當下才被寫進 .zshrc 的——正在跑的嚮導拿的是啟動時那份 PATH，
+// 看不到它。
+//
+// 實測（乾淨 VM）：按完安裝，輸出是 exit code 0 加「Installation complete!」，
+// 卡片卻仍然顯示「未安裝」，而畫面上還寫著「狀態已更新」。學生看到的是
+// 「明明裝好了卻說沒裝」——最容易讓人重按第二次的畫面。
+//
+// 只補這一個目錄就夠：兩支 CLI 都在裡面。
+const DARWIN_USER_BIN = ".local/bin";
+
+export function withUserBin(currentPath, home) {
+  const entries = (typeof currentPath === "string" ? currentPath : "")
+    .split(":")
+    .filter((entry) => entry.trim().length > 0);
+  const addition = `${home}/${DARWIN_USER_BIN}`;
+
+  if (entries.includes(addition)) {
+    return entries.join(":");
+  }
+
+  return [...entries, addition].join(":");
+}
+
+// 回傳給子程序用的環境變數。
 export async function spawnEnv(now = Date.now()) {
+  if (process.platform === "darwin") {
+    return { ...process.env, PATH: withUserBin(process.env.PATH, homedir()) };
+  }
+
   if (process.platform !== "win32") {
     return process.env;
   }
