@@ -320,10 +320,13 @@ try {
   assert.deepEqual([...completedCardIds(attemptedOnly, new Set(), new Set())], []);
   ok("裝好但沒驗過的卡不算完成，就算學生已經按過驗證");
 
+  const seen = (...ids) => new Set(ids);
+
   const milestones = milestoneModels(
     cards,
     new Set(["one"]),
     1,
+    seen("one", "two"),
   );
   assert.equal(milestones[1].unlocked, true);
   assert.equal(milestones[2].unlocked, false);
@@ -336,7 +339,7 @@ try {
   const allIds = new Set(["one", "two", "three"]);
 
   // 本機環境全綠（三張卡的檢查都通過）但小鴨還在第一站：後面兩顆不能亮。
-  const atFirst = milestoneModels(cards, allIds, 0);
+  const atFirst = milestoneModels(cards, allIds, 0, seen("one"));
   assert.deepEqual(
     atFirst.map(({ reached }) => reached),
     [true, false, false],
@@ -345,17 +348,61 @@ try {
   ok("小鴨沒走到的圓點不算走過，就算那些檢查本來就通過");
 
   // 走到第 2 站、第 2 張的檢查沒過：那一顆不能亮。
-  const secondNotDone = milestoneModels(cards, new Set(["one"]), 1);
+  const secondNotDone = milestoneModels(
+    cards,
+    new Set(["one"]),
+    1,
+    seen("one", "two"),
+  );
   assert.deepEqual(
     secondNotDone.map(({ reached }) => reached),
     [true, false, false],
   );
   ok("走過但沒通過的圓點不算走過");
 
+  // 迴歸（VM 實測）：只選 codex 做完所有卡，回第一頁加選 claude——加選會把停留位置
+  // 重置、而 claude 的卡排在前面，於是位置被拉回開頭，已完成的 codex 卡通通變灰。
+  // 走過就是走過，往回站不該讓它們熄掉。
+  const walkedBackToFirst = milestoneModels(
+    cards,
+    allIds,
+    0,
+    seen("one", "two", "three"),
+  );
+  assert.deepEqual(
+    walkedBackToFirst.map(({ reached }) => reached),
+    [true, true, true],
+  );
+  ok("往回看不會讓已經走過且完成的圓點變灰");
+
+  // 同一個迴歸的另一半：記索引就會壞在這裡。完成到第 3 張之後，加選工具在中間插入
+  // 兩張新卡，原本的第 2、3 張被推到第 4、5 位——記索引的話它們會超過高水位而重新
+  // 變灰，記 ID 則不受位移影響。
+  const afterInsert = [
+    cards[0],
+    { checkId: "new-a" },
+    { checkId: "new-b" },
+    cards[1],
+    cards[2],
+  ];
+  const inserted = milestoneModels(
+    afterInsert,
+    allIds,
+    1,
+    seen("one", "two", "three"),
+  );
+  assert.deepEqual(
+    inserted.map(({ reached }) => reached),
+    [true, false, false, true, true],
+  );
+  ok("中間插入新卡後，已完成的舊卡不會因為位移而變灰");
+
   // 卡片往哪邊展開要看落在條上的哪半邊。用「第幾顆」判的話，只有一站時那顆
   // （percent 100、貼最右）會被判成往右開，直接溢出畫面。
   assert.deepEqual(
-    milestoneModels(cards, new Set(), 0).map(({ edgeClass }) => edgeClass),
+    milestoneModels(cards, new Set(), 0, seen()).map(
+      ({ edgeClass }) => edgeClass,
+    ),
     [
       "ds-milestone--edge-start",
       "ds-milestone--edge-end",
@@ -363,14 +410,20 @@ try {
     ],
   );
   assert.equal(
-    milestoneModels([cards[0]], new Set(), 0)[0].edgeClass,
+    milestoneModels([cards[0]], new Set(), 0, seen())[0].edgeClass,
     "ds-milestone--edge-end",
   );
   ok("里程碑卡片往內側展開，只有一站時也不會往右溢出");
 
-  assert.equal(sectionStatus(cards, allIds, 2), "這一段已完成。");
-  assert.equal(sectionStatus(cards, allIds, 0), "還有 2 張要做。");
-  assert.equal(sectionStatus(cards, new Set(["one"]), 1), "還有 2 張要做。");
+  assert.equal(
+    sectionStatus(cards, allIds, seen("one", "two", "three")),
+    "這一段已完成。",
+  );
+  assert.equal(sectionStatus(cards, allIds, seen("one")), "還有 2 張要做。");
+  assert.equal(
+    sectionStatus(cards, new Set(["one"]), seen("one", "two")),
+    "還有 2 張要做。",
+  );
   ok("段落狀態依未完成卡片數顯示完成或剩餘張數");
 
   const checkingLine = {

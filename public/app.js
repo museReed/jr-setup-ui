@@ -109,6 +109,9 @@ const state = {
   envChecks: [],
   activeSectionId: "env",
   viewingCardIndex: {},
+  // 曾經被顯示過的卡片 ID，只增不減。記 ID 不記索引：加選工具會在中間插入新卡，
+  // 索引會位移，已完成的卡會被推到高水位之後而重新變灰。
+  seenCardIds: new Set(),
   setupCompleted: false,
   installedSteps: new Set(),
   verificationAttempted: new Set(),
@@ -306,6 +309,13 @@ function renderWizard() {
   }
   const card = cardSection.cards[currentIndex];
 
+  // 走到這裡（含）為止的卡都算「顯示過」。里程碑要亮，除了完成還得走到過——
+  // 這一行同時做兩件事：進來時把落點以前的卡一次補齊（重整後畫面跟原本一樣），
+  // 之後按「下一張」再逐張累加。只增不減，所以往回看或加選工具都不會讓點變灰。
+  for (const passed of cardSection.cards.slice(0, currentIndex + 1)) {
+    state.seenCardIds.add(passed.checkId);
+  }
+
   // 換卡也要留一句。renderWizard 每次環境檢查、每次勾選都會跑，所以只在真的換了
   // 那張卡的時候講——不然同一句話會洗滿整個終端。
   if (state.announcedCardId !== card.checkId) {
@@ -426,6 +436,7 @@ function renderWizard() {
     cardSection.cards,
     completedIds,
     currentIndex,
+    state.seenCardIds,
   );
   // 合併的卡有兩份設定。按鈕要對著「還沒好的那一份」——兩份都好了才回到主 check，
   // 因為驗證掛在它身上。
@@ -614,7 +625,7 @@ function renderWizard() {
     sectionStatus: sectionStatus(
       cardSection.cards,
       completedIds,
-      currentIndex,
+      state.seenCardIds,
     ),
     milestones,
     cardModel,

@@ -655,16 +655,33 @@ export function currentCardIndex(
 // 少了後面那半，本機環境全綠時整條進度條會在小鴨還停在第一站時就全部亮起來，
 // 段落也會在第 2/10 站就宣告「已完成」。
 //
+// 「走到那裡」原本用 index <= currentIndex 表示，也就是拿「現在站在哪」代表
+// 「走到哪」。往前走時兩者一致，一往回走就開始說謊：
+//
+//   VM 實測——只選 codex、做完所有 codex 卡，再回第一頁加選 claude。加選會把
+//   停留位置重置，而 claude 的卡排在 codex 前面，於是位置被拉回開頭，已經做完的
+//   codex 卡通通變灰。資料完全沒變，變的只是顯示。
+//
+// 改成記「曾經被顯示過的卡片 ID」。用 ID 不用索引是必要的：加選工具會在中間插入
+// 新卡，索引會位移——記索引的話，完成到第 7 張、中間插 3 張，原本的第 5~7 張會被
+// 推到第 8~10 位而重新變灰，等於沒修。
+//
 // 小鴨當前那一張算不算，交給 completedCardIds 決定：呼叫端只有在該卡真的做完
 // （裝好 + 該驗的驗過 + 手動項勾完）時才會把它放進去。
-function cardsDone(cards, completedCardIds, currentIndex) {
+function cardsDone(cards, completedCardIds, seenCardIds) {
   return cards.map(
-    (card, index) => completedCardIds.has(card.checkId) && index <= currentIndex,
+    (card) =>
+      completedCardIds.has(card.checkId) && seenCardIds.has(card.checkId),
   );
 }
 
-export function milestoneModels(cards, completedCardIds, currentIndex) {
-  const done = cardsDone(cards, completedCardIds, currentIndex);
+export function milestoneModels(
+  cards,
+  completedCardIds,
+  currentIndex,
+  seenCardIds = new Set(),
+) {
+  const done = cardsDone(cards, completedCardIds, seenCardIds);
 
   return cards.map((card, index) => {
     const completed = done[index];
@@ -688,8 +705,8 @@ export function milestoneModels(cards, completedCardIds, currentIndex) {
   });
 }
 
-export function sectionStatus(cards, completedCardIds, currentIndex) {
-  const remaining = cardsDone(cards, completedCardIds, currentIndex).filter(
+export function sectionStatus(cards, completedCardIds, seenCardIds = new Set()) {
+  const remaining = cardsDone(cards, completedCardIds, seenCardIds).filter(
     (done) => !done,
   ).length;
 
