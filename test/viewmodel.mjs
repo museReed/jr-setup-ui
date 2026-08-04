@@ -37,6 +37,7 @@ import {
   nextCardUnlocked,
   rowRunOptions,
   runControlsState,
+  failureReason,
   runOutcome,
   sectionManualItems,
   systemRowChecked,
@@ -1350,6 +1351,44 @@ try {
     "已停止：SIGKILL",
   );
   ok("成功判定含 benign 退出碼，被中止時顯示訊號");
+
+  // 迴歸（乾淨 macOS VM 實測的真實輸出）：最有用的 EACCES 在整段的第 5 行，
+  // 結尾則是 npm notice 與 log 檔路徑。抓最後一行等於給學生一句廢話。
+  const npmEacces = [
+    "npm error code EACCES",
+    "npm error syscall mkdir",
+    "npm error path /usr/local/lib/node_modules/@anthropic-ai",
+    "npm error errno -13",
+    "npm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@anthropic-ai'",
+    "npm error     at async mkdir (node:internal/fs/promises:859:10)",
+    "npm error The operation was rejected by your operating system.",
+    "npm notice",
+    "npm error A complete log of this run can be found in: /Users/reed/.npm/_logs/x.log",
+  ];
+  assert.equal(
+    failureReason(npmEacces),
+    "npm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@anthropic-ai'",
+  );
+  ok("npm 權限失敗時挑出 EACCES 那一行，不是 log 路徑");
+
+  // 只有錯誤代碼、沒有敘述句時退而求其次。
+  assert.equal(
+    failureReason([
+      "npm error code E404",
+      "npm error A complete log of this run can be found in: x",
+    ]),
+    "npm error code E404",
+  );
+  ok("沒有敘述句時退回錯誤代碼那一行");
+
+  // winget 的繁中輸出沒有 error 字樣——不能因此吐空的，要維持原本「最後一行」的行為。
+  assert.equal(
+    failureReason(["找到 Claude Code [Anthropic.ClaudeCode]", "安裝程式雜湊不符合"]),
+    "安裝程式雜湊不符合",
+  );
+  assert.equal(failureReason([]), undefined);
+  assert.equal(failureReason(undefined), undefined);
+  ok("沒有錯誤特徵時退回最後一行，空輸入不拋錯");
 
   assert.deepEqual(
     behaviorFallbackState({ exitCode: 0, signal: null }),

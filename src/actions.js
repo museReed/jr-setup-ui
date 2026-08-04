@@ -162,6 +162,8 @@ for (const id of Object.keys(INSTALLERS)) {
       cmd: installer.cmd,
       args: installer.args,
       description: `安裝 ${name}。完成後需重新開啟嚮導。`,
+      // 有些安裝器要靠環境變數才不會停下來問問題（見 installers.js 的 codex）。
+      ...(installer.env === undefined ? {} : { env: installer.env }),
     };
   }
 }

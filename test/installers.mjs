@@ -14,21 +14,49 @@ function ok(description) {
 
 // 迴歸：Windows 上沒有 npm.exe，spawn 不開 shell 時找不到裸的 "npm"。
 // 實測 PowerShell 會去找 npm.ps1 並被執行原則擋掉，spawn 則直接 ENOENT。
-const EXPECTED_NPM = { win32: "npm.cmd", darwin: "npm" };
-
-for (const platform of ["win32", "darwin"]) {
-  const installer = resolveInstaller("claude", platform);
-  assert.equal(installer.cmd, EXPECTED_NPM[platform]);
-  assert(installer.args.includes("@anthropic-ai/claude-code"));
+for (const [id, pkg] of [
+  ["claude", "@anthropic-ai/claude-code"],
+  ["codex", "@openai/codex"],
+]) {
+  const installer = resolveInstaller(id, "win32");
+  assert.equal(installer.cmd, "npm.cmd");
+  assert(installer.args.includes(pkg));
 }
-ok("Claude Code 在 win32 用 npm.cmd、darwin 用 npm");
+ok("Claude Code 與 Codex 在 win32 用 npm.cmd");
 
-for (const platform of ["win32", "darwin"]) {
-  const installer = resolveInstaller("codex", platform);
-  assert.equal(installer.cmd, EXPECTED_NPM[platform]);
-  assert(installer.args.includes("@openai/codex"));
+// 迴歸（乾淨 macOS VM 實測）：官方 .pkg 裝的 Node 把 /usr/local/lib/node_modules
+// 留給 root，學生帳號跑 npm install -g 直接 EACCES。macOS 這兩項都不能再碰全域目錄。
+const claudeDarwin = resolveInstaller("claude", "darwin");
+assert.equal(claudeDarwin.cmd, "bash");
+assert(claudeDarwin.args[1].includes("https://claude.ai/install.sh"));
+assert(!claudeDarwin.args[1].includes("npm install -g"));
+
+const codexDarwin = resolveInstaller("codex", "darwin");
+assert.equal(codexDarwin.cmd, "bash");
+assert(codexDarwin.args[1].includes("https://chatgpt.com/codex/install.sh"));
+assert(!codexDarwin.args[1].includes("npm install -g"));
+ok("macOS 兩項都改走官方原生安裝器，不經過 npm 全域目錄");
+
+// curl 失敗時右邊的直譯器讀到空輸入會正常結束，整條管線變 exit 0——
+// 沒裝成功卻回報成功。pipefail 是唯一擋得住的東西。
+for (const installer of [claudeDarwin, codexDarwin]) {
+  assert(installer.args[1].startsWith("set -eo pipefail"));
 }
-ok("Codex 在 win32 用 npm.cmd、darwin 用 npm");
+ok("macOS 的安裝腳本都開 pipefail，curl 失敗不會假裝成功");
+
+// 兩支安裝器對 PATH 的處理不一樣，實測過的差異要鎖住：
+// claude 完全不碰 shell rc（只印提醒），codex 自己寫 ~/.zprofile。
+assert(claudeDarwin.args[1].includes(".zshrc"));
+assert(claudeDarwin.args[1].includes("grep -qF"));
+assert(!codexDarwin.args[1].includes(".zshrc"));
+ok("claude 由嚮導冪等補 .zshrc，codex 的 PATH 交給它自己處理");
+
+// 沒有這個變數，安裝器會問「Start Codex now?」——問句寫到 /dev/tty，也就是學生
+// 沒在看的那個終端機，然後停在那裡等永遠不會來的輸入。網頁輸入框寫的是 stdin，
+// 救不了。
+assert.equal(codexDarwin.env.CODEX_NON_INTERACTIVE, "1");
+assert.equal(claudeDarwin.env, undefined);
+ok("codex 的安裝帶 CODEX_NON_INTERACTIVE，不會停在看不見的提問");
 
 // 迴歸：winget 裝一個已存在的套件會回 2316632107（0x8A15002B），那不是失敗。
 assert.equal(isBenignExit("winget", 2316632107), true);
@@ -97,9 +125,30 @@ ok("不存在的項目安全回傳 null");
 assert.equal(installActionId("git"), "install-git");
 ok("installActionId 產生前後端共用的 action id");
 
+// macOS 那兩項的參數本身就是一段 shell script，管線與 || 是寫給直譯器看的，
+// 不是被夾帶進來的——所以「不准出現 shell 字元」這條守不住它們。
+// 換成守真正要守的東西：形狀必須是 `bash -c <字串>`，而且腳本只能連到這兩個
+// 官方網域。沒有任何一段字串來自使用者輸入。
+const ALLOWED_HOSTS = ["https://claude.ai/", "https://chatgpt.com/"];
 const unsafeFragments = ["--dangerously", "&&", "|", ";"];
+
 for (const installersByPlatform of Object.values(INSTALLERS)) {
   for (const installer of Object.values(installersByPlatform)) {
+    if (installer.cmd === "bash") {
+      assert.deepEqual(installer.args.length, 2);
+      assert.equal(installer.args[0], "-c");
+
+      const urls = installer.args[1].match(/https?:\/\/\S+/g) ?? [];
+      assert(urls.length > 0, "安裝腳本應該有下載來源");
+      for (const url of urls) {
+        assert(
+          ALLOWED_HOSTS.some((host) => url.startsWith(host)),
+          `安裝腳本連到未預期的網域：${url}`,
+        );
+      }
+      continue;
+    }
+
     for (const arg of installer.args) {
       assert(
         unsafeFragments.every((fragment) => !arg.includes(fragment)),
@@ -108,7 +157,7 @@ for (const installersByPlatform of Object.values(INSTALLERS)) {
     }
   }
 }
-ok("所有安裝參數都不含危險字串");
+ok("安裝參數不含危險字串；bash 腳本只連得到官方網域");
 
 // 用 actions.js 那一份，不再自己抄一份。
 //
@@ -128,9 +177,12 @@ for (const id of Object.keys(INSTALLERS)) {
     assert.equal(actions[actionId].cmd, installer.cmd);
     assert.deepEqual(actions[actionId].args, installer.args);
     assert.equal(typeof actions[actionId].description, "string");
+    // 安裝器要求的環境變數必須真的傳到 action 上，否則 server 那層拿不到——
+    // codex 少了它就會停在看不見的提問，而且畫面上只會顯示成逾時。
+    assert.deepEqual(actions[actionId].env, installer.env);
   }
 }
-ok("目前平台只有受支援的安裝器會進入 fixed action 白名單");
+ok("目前平台只有受支援的安裝器會進入 fixed action 白名單，且環境變數有傳到");
 
 const expectedLoginActions = {
   "login-claude": { cmd: "claude", args: ["auth", "login"] },

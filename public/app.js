@@ -42,6 +42,7 @@ import {
   envCardRowModel,
   eyeVerifiedSteps,
   extractLoginHints,
+  failureReason,
   guidanceModel,
   impliedVerifiedSteps,
   installVerificationFollowUp,
@@ -1083,7 +1084,7 @@ async function handleDone(
     }
     if (step !== null && step !== undefined) {
       state.failedSteps.add(step);
-      const reason = runContext.rawOutput.findLast((line) => line.trim() !== "");
+      const reason = failureReason(runContext.rawOutput);
       state.resultTexts.set(
         step,
         `${check?.label ?? "這個項目"}：${reason ?? outcome.summary}`,

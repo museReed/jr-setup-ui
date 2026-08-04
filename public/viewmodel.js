@@ -1148,6 +1148,48 @@ export function runControlsState({
   };
 }
 
+// 卡片上那一行「為什麼失敗」要從整段輸出裡挑一行出來。挑最後一行是錯的：
+// npm 失敗時結尾固定是 npm notice 與 "A complete log of this run can be found in: …"，
+// 而真正的 "EACCES: permission denied" 在整段的第 5 行——最有用的資訊在最前面，
+// 程式卻去撈最後面，學生看到的等於一句廢話（VM 實測）。
+//
+// 也不能只認 npm 的格式：winget / brew / curl 都會走到這裡。所以改成分級挑：
+// 帶錯誤內容的那種最好，其次是錯誤代碼，都沒有才退回原本的最後一行。
+const NOISE_PATTERNS = [
+  /complete log of this run/i,
+  // npm 會把整段 async 堆疊當成 error 印出來，那是給維護者看的，不是給學生看的。
+  /^\s*(npm error\s+)?at\s/i,
+  /^\s*(npm )?(notice|warn|debug)\b/i,
+];
+
+const REASON_TIERS = [
+  // "Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/…'"
+  /error:\s*\S/i,
+  // "npm error code EACCES"
+  /\berr(or)?\s+code\b/i,
+  /\berror\b/i,
+];
+
+export function failureReason(rawOutput) {
+  const lines = (Array.isArray(rawOutput) ? rawOutput : [])
+    .map((line) => (typeof line === "string" ? line : ""))
+    .filter((line) => line.trim() !== "");
+  const usable = lines.filter(
+    (line) => !NOISE_PATTERNS.some((pattern) => pattern.test(line)),
+  );
+
+  for (const tier of REASON_TIERS) {
+    const hit = usable.find((line) => tier.test(line));
+
+    if (hit !== undefined) {
+      return hit;
+    }
+  }
+
+  // 沒有任何一行看起來像錯誤時，最後一行仍然是最好的猜測。
+  return usable.at(-1) ?? lines.at(-1);
+}
+
 // benign：安裝器回報「已經裝好了／沒有可用更新」，那不是失敗。
 export function runOutcome(result) {
   const succeeded =
