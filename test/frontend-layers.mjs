@@ -111,6 +111,17 @@ try {
   assert(files.app.includes('retestText: card.kind === "env"'));
   ok("重驗按鈕的字跟著卡片種類走，不是寫死在 view 裡");
 
+  // 迴歸（VM 實測，gh 那張卡）：brew 沒裝時伺服器產生的是一句人話——「找不到 brew
+  // 指令，請先安裝並確認它在 PATH 裡」——但它走 agent 事件、不走 line。不把它收進
+  // rawOutput 的話，最常見的那類失敗（指令根本不存在）在卡片上只會顯示
+  // 「exit code: null」。
+  assert(
+    files.app.includes('agentEvent.kind === "error"') &&
+      files.app.includes("runContext.rawOutput.push(agentEvent.text)"),
+    "agent 的 error 事件要收進 rawOutput，卡片摘要才有東西可挑",
+  );
+  ok("指令不存在的人話訊息會進 rawOutput，不會只剩 exit code");
+
   // 小人常駐在終端頂欄，狀態要在「印字」之前換掉。
   //
   // 這一條擋的是同一個坑的新版本：去重只擋文字（環境卡按「再 check 一次」印的字跟

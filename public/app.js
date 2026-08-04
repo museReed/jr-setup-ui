@@ -1359,7 +1359,16 @@ async function run(action, promptText, button = null, options) {
     });
 
     events.addEventListener("agent", (event) => {
-      view.addAgentEvent(JSON.parse(event.data), state.agentName);
+      const agentEvent = JSON.parse(event.data);
+
+      // 指令根本不存在時，伺服器產生的是一句完整的人話（「找不到 brew 指令，請先
+      // 安裝並確認它在 PATH 裡」），但它走 agent 事件、不走 line——rawOutput 是空的，
+      // 卡片上只好退回「exit code: null」。最常見的一類失敗，摘要卻最沒有資訊。
+      if (agentEvent.kind === "error" && typeof agentEvent.text === "string") {
+        runContext.rawOutput.push(agentEvent.text);
+      }
+
+      view.addAgentEvent(agentEvent, state.agentName);
     });
 
     events.addEventListener("jr", (event) => {
