@@ -59,6 +59,42 @@ assert.deepEqual(checksForTools(allChecks, []), allChecks);
 assert.deepEqual(checksForTools(allChecks, undefined), allChecks);
 ok("沒指定工具時維持全查");
 
+// Windows 的清單多四列平台專屬檢查，macOS 多一列 Ghostty。過濾工具不能誤傷它們。
+// 這一段刻意用寫死的清單而不是真的 CHECKS：CHECKS 依 process.platform 組出來，
+// 在 macOS 上跑的測試永遠看不到 Windows 那四列——那正是這次要防的盲點。
+const bothPlatforms = [
+  { id: "execution-policy" },
+  { id: "claude" },
+  { id: "claude-auth" },
+  { id: "codex" },
+  { id: "codex-auth" },
+  { id: "git" },
+  { id: "gh" },
+  { id: "gh-auth" },
+  { id: "node" },
+  { id: "python" },
+  { id: "windows-terminal" },
+  { id: "powershell-version" },
+  { id: "powershell-encoding" },
+  { id: "ghostty" },
+];
+const platformOnly = [
+  "execution-policy",
+  "windows-terminal",
+  "powershell-version",
+  "powershell-encoding",
+  "ghostty",
+];
+
+for (const tools of [["codex"], ["claude"]]) {
+  const kept = checksForTools(bothPlatforms, tools).map((check) => check.id);
+
+  for (const id of platformOnly) {
+    assert(kept.includes(id), `${id} 是平台專屬前置，不該被工具選擇砍掉`);
+  }
+}
+ok("Windows 與 macOS 的平台專屬檢查不受工具選擇影響");
+
 assert.deepEqual(parseClaudeAuth("這不是 JSON"), {
   loggedIn: false,
   detail: "無法判讀登入狀態",
