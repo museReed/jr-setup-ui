@@ -8,12 +8,16 @@ import path from "node:path";
 
 import {
   applySubstitutions,
+  CLAUDE_DEFAULT_MODE,
+  CODEX_MODE_EXPECTATIONS,
   countInstalledRules,
   describeStep,
   expandAllowRules,
   findHookRegistration,
   hasAgentHookRegistrations,
   hasMarkedBlock,
+  readCodexModes,
+  readDefaultMode,
   stepsForTools,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
@@ -112,7 +116,66 @@ async function staleTargets(materials, files) {
   return stale;
 }
 
+// 檔案對了不代表模式對了。
+//
+// config.toml 是 protectExisting 的：學生已經有檔案時我們只補缺的 key，已經有值的
+// 一律不動（那是他的選擇）。於是「檔案已併入工作坊設定」可以是綠的，而 Codex 實際
+// 跑的是他原本那個值——卡片全綠、行為卻不是我們教的那樣（VM 實測就是這條：三個
+// 模式 key 從來沒有人回頭確認過）。
+//
+// 「沒設」與「設成別的值」分開講：前者是安裝沒生效，後者是他自己調過，兩種要做的
+// 事不一樣。
+async function codexModeIssues(step) {
+  const content = await readFile(step.target, "utf8");
+  const found = readCodexModes(content);
+  const missing = [];
+  const differs = [];
+
+  for (const [key, expected] of Object.entries(CODEX_MODE_EXPECTATIONS)) {
+    if (found[key] === null) {
+      missing.push(key);
+    } else if (found[key] !== expected) {
+      differs.push(`${key} = "${found[key]}"`);
+    }
+  }
+
+  return { missing, differs };
+}
+
+// 模式檢查只降級、不搶話：檔案層先講完（沒裝、需要合併、內容是舊版），都通過了才
+// 輪到它。反過來的話，一個「只有學生自己內容」的檔案會被講成「少了三個 key」，
+// 而他真正該做的是按「用 AI 合併」。
 export async function checkCopyStep(materials, step) {
+  const result = await copyStepResult(materials, step);
+
+  if (step.mergeModes !== true || result.status !== "ok") {
+    return result;
+  }
+
+  const { missing, differs } = await codexModeIssues(step);
+
+  if (missing.length > 0) {
+    return {
+      ...result,
+      status: "warn",
+      detail: `${result.detail}，但少了 ${missing.join("、")}，重跑安裝就會補上`,
+    };
+  }
+
+  if (differs.length > 0) {
+    return {
+      ...result,
+      status: "warn",
+      // 不叫他重裝：重裝也不會覆蓋他自己設過的值（安裝那條刻意尊重他的選擇），
+      // 叫了只是白按一次。
+      detail: `${result.detail}，但你自己設過 ${differs.join("、")}`,
+    };
+  }
+
+  return result;
+}
+
+async function copyStepResult(materials, step) {
   if (!existsSync(step.target)) {
     return {
       id: step.id,
@@ -503,12 +566,30 @@ async function checkAllowlist(materials, step) {
   const settings = await readJsonOrNull(step.settingsTarget);
   const installed = countInstalledRules(settings ?? {}, expected);
 
-  if (installed === expected.length) {
+  // 這一列裝的是兩件事：白名單管「指令要不要問」，defaultMode 管「改檔案要不要問」。
+  // 只數規則條數的話，模式那半靜默失效也是綠的——而學生的體感全在那半上。
+  const mode = readDefaultMode(settings);
+
+  if (installed === expected.length && mode === CLAUDE_DEFAULT_MODE) {
     return {
       id: step.id,
       label: step.label,
       status: "ok",
-      detail: `${installed} 條規則`,
+      detail: `${installed} 條規則，改檔案不再逐次詢問`,
+    };
+  }
+
+  // 規則齊了但模式不對：分開講，因為要做的事不一樣。沒寫進去重跑安裝就好；
+  // 學生自己設過的話重跑也不會覆蓋（安裝那條刻意尊重他的選擇），叫他重裝是白按。
+  if (installed === expected.length) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail:
+        mode === null
+          ? `${installed} 條規則，但預設模式沒設成 ${CLAUDE_DEFAULT_MODE}，重跑安裝就會補上`
+          : `${installed} 條規則，但你自己把預設模式設成了 ${mode}`,
     };
   }
 

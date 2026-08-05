@@ -21,8 +21,18 @@
 #                   "never"              never asks, not even outside the
 #                                        workspace; do not use
 #                   "granular"           per-category switches; not needed here
+#
+# approvals_reviewer: the line above decides *when* approval is needed; this one
+# decides *who* approves. They are independent knobs — setting only
+# approval_policy still leaves the prompts coming to you.
+#   "user"        default; prompts you
+#   "auto_review" hands the decision to a reviewer agent (use this)
+# It only swaps the reviewer, not the sandbox boundary: writes outside the
+# workspace are still blocked by workspace-write. So this means "asks less",
+# not "allowed more" — and the thing deciding is a model, not a rule list.
 
 personality = "pragmatic"
 instructions = "Strictly follow the Output Style rules in AGENTS.md: conclusion first (bold), 3-5 bullets, comparisons in tables, no emoji/celebratory tone, medium length, plain language principle. Self-check before every response."
 sandbox_mode = "workspace-write"
 approval_policy = "on-request"
+approvals_reviewer = "auto_review"

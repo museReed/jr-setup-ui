@@ -20,8 +20,16 @@
 #                   "on-request"         需要時才問（課堂用這個）
 #                   "never"              什麼都不問，連工作區外也不問，不要用
 #                   "granular"           分類逐項設定，課堂用不到
+#
+# approvals_reviewer：上面那行決定「什麼時候需要批准」，這行決定「誰來批准」。
+# 兩個是獨立的旋鈕——只設 approval_policy 的話，該問的還是會跳出來問你。
+#   "user"        預設，跳出來問你
+#   "auto_review" 交給一個審核 agent 判斷（課堂用這個）
+# 它只換審核者，不動沙盒邊界：工作區外的寫入照樣被 workspace-write 擋著。
+# 也就是說這是「少問」不是「放行」——而且做判斷的是一個模型，不是規則式的白名單。
 
 personality = "pragmatic"
 instructions = "回覆必須嚴格遵守 AGENTS.md 的 Output Style 規則：結論先行（粗體）、3-5 bullet、比較用表格、不用 emoji/慶祝語氣、中等長度不灌水、白話原則。每次回覆前自檢。"
 sandbox_mode = "workspace-write"
 approval_policy = "on-request"
+approvals_reviewer = "auto_review"
