@@ -9,11 +9,11 @@ const CACHE_TTL_MS = 2000;
 
 let cache = null;
 
-export function mergePath(machinePath, userPath, currentPath) {
+export function mergePath(machinePath, userPath, currentPath, ...extra) {
   const seen = new Set();
   const merged = [];
 
-  for (const source of [machinePath, userPath, currentPath]) {
+  for (const source of [machinePath, userPath, currentPath, ...extra]) {
     if (typeof source !== "string") {
       continue;
     }
@@ -144,7 +144,20 @@ export async function spawnEnv(now = Date.now()) {
 
   const env = {
     ...process.env,
-    PATH: mergePath(registry.machinePath, registry.userPath, process.env.PATH),
+    PATH: mergePath(
+      registry.machinePath,
+      registry.userPath,
+      process.env.PATH,
+      // claude 的 Windows 安裝器把執行檔放在 %USERPROFILE%\.local\bin，然後跑
+      // `claude.exe install` 做 shell 整合——它有沒有把那個目錄寫進登錄檔，
+      // 從安裝腳本裡看不出來。codex 那支明確會寫（SetEnvironmentVariable 到 User），
+      // claude 沒有對應的段落。
+      //
+      // 補一份保險：重讀登錄檔本來就是為了「剛裝好的東西要叫得動」，這個目錄是
+      // 已知落點，加進去不會有壞處；真沒寫登錄檔時它就是唯一救得回來的東西。
+      // macOS 那邊同一個理由補 ~/.local/bin（實測不補就是裝完仍顯示未安裝）。
+      `${homedir()}\\.local\\bin`,
+    ),
   };
   cache = { at: now, env };
   return env;

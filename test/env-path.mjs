@@ -23,6 +23,20 @@ try {
   assert.equal(mergePath(undefined, null, "C:\\x"), "C:\\x");
   ok("來源缺漏不會拋錯");
 
+  // claude 的 Windows 安裝器把執行檔放在 %USERPROFILE%\.local\bin，但它有沒有把那個
+  // 目錄寫進登錄檔，從安裝腳本裡看不出來（codex 那支明確會寫）。所以多帶一份已知
+  // 落點進來當保險——重讀登錄檔本來就是為了「剛裝好的東西要叫得動」。
+  assert.equal(
+    mergePath("C:\\a", "C:\\b", "C:\\c", "C:\\Users\\x\\.local\\bin"),
+    "C:\\a;C:\\b;C:\\c;C:\\Users\\x\\.local\\bin",
+  );
+  // 登錄檔裡已經有了就不重複——大小寫不同也算同一個。
+  assert.equal(
+    mergePath("C:\\a", "C:\\Users\\X\\.local\\bin", "", "C:\\Users\\x\\.local\\bin"),
+    "C:\\a;C:\\Users\\X\\.local\\bin",
+  );
+  ok("額外補進來的已知落點會併入，且不重複");
+
   // 迴歸（乾淨 VM 實測，兩次）：
   //   ~/.local/bin      裝完 claude，卡片仍顯示「未安裝」，畫面卻寫著「狀態已更新」
   //   /opt/homebrew/bin brew 明明裝好了，按 gh 仍說「找不到 brew 指令」

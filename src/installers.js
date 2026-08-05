@@ -30,13 +30,27 @@ const CODEX_DARWIN_SCRIPT = [
   "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 ].join("\n");
 
+// Windows 走兩家官方的 PowerShell 安裝器。npm 那條在 Windows 上本來就能跑（全域
+// 目錄在 %APPDATA%，沒有 macOS 的權限問題），換掉是為了三件事：不再要求學生機器上
+// 的 Node 裝得對、兩個平台同一套安裝來源、以及 npm 那層轉手本身會壞的地方（關掉
+// optional deps、平台包缺失）就不存在了。
+//
+// ⚠️ 讀過兩支 .ps1 之後才敢寫的差異，不要照著 macOS 那半類推：
+//   claude  下載 claude.exe 再跑 `claude.exe install`，落點 %USERPROFILE%\.local\bin。
+//           它有沒有把那個目錄寫進登錄檔，腳本裡看不出來 → env-path.js 補一份保險。
+//   codex   自己把目錄寫進登錄檔的 User Path（SetEnvironmentVariable(..., "User")），
+//           嚮導既有的「重讀登錄檔」機制就抓得到，不用插手。
+//
+// -NoProfile：學生的 PowerShell profile 可能印東西或改 PATH，安裝不該受它影響。
+// 指令內容照兩家官方文件寫的形狀，包含 codex 那個 -ExecutionPolicy Bypass。
+const CLAUDE_WIN32_COMMAND = "irm https://claude.ai/install.ps1 | iex";
+const CODEX_WIN32_COMMAND = "irm https://chatgpt.com/codex/install.ps1 | iex";
+
 export const INSTALLERS = {
   claude: {
-    // Windows 上的 npm 是 npm.cmd / npm.ps1，沒有 npm.exe。
-    // spawn 不開 shell 時找不到裸的 "npm"，必須寫完整檔名。
     win32: {
-      cmd: "npm.cmd",
-      args: ["install", "-g", "@anthropic-ai/claude-code"],
+      cmd: "powershell.exe",
+      args: ["-NoProfile", "-Command", CLAUDE_WIN32_COMMAND],
     },
     darwin: {
       cmd: "bash",
@@ -44,11 +58,19 @@ export const INSTALLERS = {
     },
   },
   codex: {
-    // Windows 上的 npm 是 npm.cmd / npm.ps1，沒有 npm.exe。
-    // spawn 不開 shell 時找不到裸的 "npm"，必須寫完整檔名。
     win32: {
-      cmd: "npm.cmd",
-      args: ["install", "-g", "@openai/codex"],
+      cmd: "powershell.exe",
+      args: [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        CODEX_WIN32_COMMAND,
+      ],
+      // 跟 macOS 同一個環境變數（.ps1 第 14 行讀它）。Windows 這邊其實有第二道
+      // 保險——Prompt-YesNo 在 stdio 被導向時直接回 false，而嚮導的 spawn 就是
+      // 導向的——但不靠那個副作用：意圖寫出來，兩個平台也才一致。
+      env: { CODEX_NON_INTERACTIVE: "1" },
     },
     darwin: {
       cmd: "bash",
