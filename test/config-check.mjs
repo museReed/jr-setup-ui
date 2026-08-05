@@ -146,6 +146,56 @@ process.stdin.on("end", () => {
   assert.match(mergedRow.detail, /你自己的內容也還在/);
   ok("併過工作坊設定、又有自己的區塊時算完成，不再要求重複合併");
 
+  // 「用 AI 合併」那條路最容易壞的地方：整段內容都併進去了（所以檔案層算完成），
+  // 但被放在某個 [section] 後面——TOML 的最上層到第一個 [section] 為止，於是那三個
+  // key 變成那個 section 底下的設定，Codex 讀不到，行為完全沒變。
+  //
+  // 這正是模式檢查存在的理由：檔案層看得到「工作坊那段在裡面」，看不到「它有沒有
+  // 站在對的位置」。
+  writeFileSync(
+    codexStep.target,
+    `[mcp_servers.foo]\ncommand = "x"\n\n${template}`,
+  );
+  const nested = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(nested.status, "warn");
+  assert.match(nested.detail, /approvals_reviewer/);
+  ok("工作坊那段被塞進 [section] 底下時不給綠燈——模式其實沒生效");
+
+  // 三個 key 都在最上層、其中一個是學生自己的值（工作坊那段被 AI 併到後面的
+  // section 裡）。這時不能叫他重裝——安裝那條刻意不覆蓋他設過的值，按了不會有事
+  // 發生。話要講成「你自己設過 X」，跟上一條的「少了 X，重跑安裝就會補上」分開。
+  writeFileSync(
+    codexStep.target,
+    [
+      'default_permissions = ":workspace"',
+      'approval_policy = "untrusted"',
+      'approvals_reviewer = "auto_review"',
+      "",
+      "[mcp_servers.foo]",
+      'command = "x"',
+      "",
+      template,
+    ].join("\n"),
+  );
+  const studentChanged = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(studentChanged.status, "warn");
+  assert.match(studentChanged.detail, /你自己設過/);
+  assert.match(studentChanged.detail, /untrusted/);
+  ok("學生自己改過模式時說得出他設的是什麼，不會被講成沒裝");
+
+  // 迴歸（Windows VM 實測）：已經裝過的機器上舊的 sandbox_mode 還留著，它跟
+  // default_permissions 不能並存——新的那個就算值是對的也沒生效，權限選單停在
+  // Read Only。三個新 key 全對也不能給綠燈。
+  writeFileSync(
+    codexStep.target,
+    `sandbox_mode = "workspace-write"\n${template}`,
+  );
+  const staleKey = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(staleKey.status, "warn");
+  assert.match(staleKey.detail, /sandbox_mode/);
+  assert.match(staleKey.detail, /重跑安裝/);
+  ok("舊的 sandbox_mode 還在時不給綠燈——它會讓新設定失效");
+
   // 少了其中一行就不算——併一半跟沒併一樣會壞。
   writeFileSync(
     codexStep.target,

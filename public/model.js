@@ -513,8 +513,11 @@ const AGENT_ORDER = ["claude", "codex", "shared", "other"];
 export const CARD_DESCRIPTIONS = {
   "claude-md": "每次開新對話它都會先讀這份規矩，你不用每次重講一遍",
   "output-style": "它會先給答案再解釋，比較用表格，不寫長篇大論",
+  // hook 與 allowlist 合併成一張卡之後，這一行由 MERGED_CARDS.hook 提供，這裡不再
+  // 是它的來源。留著是因為 checkCard 的 fallback 仍會查這張表——合併若哪天拆回去，
+  // 沒有這兩行就會退回那句「設定 X，讓這項功能能在接下來的課程中正常使用」。
   hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
-  allowlist: "查檔案、看狀態這類安全的指令直接跑，不再一直跳確認",
+  allowlist: "安全的指令與工作區內的改檔案不再逐次問你",
   "codex-config": "Codex 這邊也照同一套規矩回話",
   "codex-agents": "同上，這一份是 Codex 會讀的規矩",
   "tab-sync": "開十個終端視窗也認得出哪個在做什麼",
@@ -608,6 +611,14 @@ function envOrder(card) {
 //
 // key 是「最後裝的那一份」，也就是身上掛著行為驗證的那一份。
 const MERGED_CARDS = {
+  hook: {
+    label: "它什麼時候該停下來問你",
+    detail:
+      "兩件事一起設：危險的指令一定擋下來（把好幾個指令串成一串跑會被攔），" +
+      "安全的指令與工作區內的改檔案不再逐次問你。看起來方向相反，其實是同一套" +
+      "規矩的兩半——該擋的擋、不該問的不問。裝好之後會開一個真的終端，" +
+      "當場試給你看串接指令有沒有被攔下來。",
+  },
   "output-style": {
     label: "Claude Code CLI 做事的規矩與回話風格",
     detail:
@@ -628,6 +639,14 @@ const MERGED_CARDS = {
 const MERGE_ORDER = {
   "output-style": ["claude-md", "output-style"],
   "codex-config": ["codex-agents", "codex-config"],
+  // 白名單與擋串接寫的是同一個檔案（~/.claude/settings.json），講的也是同一件事：
+  // 它什麼時候該停下來問你。分兩張卡的話學生會以為是兩個無關的設定，而其中一張
+  // （白名單）的實際效果——連改檔案都不再問——根本沒出現在標題上（Reed 拍板合併）。
+  //
+  // hook 排在後面不是隨便挑的：合併卡的驗證掛在最後那一份身上，而只有 hook 那列有
+  // 驗證（開一個真終端跑 `echo a && echo b` 看有沒有被攔）。反過來排的話那道驗證
+  // 會靜靜消失，卡片變成純結構檢查。
+  hook: ["allowlist", "hook"],
 };
 
 export function mergeCardChecks(checks) {

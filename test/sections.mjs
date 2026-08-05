@@ -307,6 +307,7 @@ try {
       check("claude-md"),
       check("output-style"),
       check("hook"),
+      check("allowlist"),
       check("codex-agents"),
       check("codex-config"),
     ]),
@@ -321,10 +322,17 @@ try {
     [
       // 主 check 是最後那個：驗證掛在它身上，而驗證要等兩份都裝好。
       ["output-style", "claude-md+output-style"],
-      ["hook", "hook"],
+      // 擋串接與白名單寫的是同一個 settings.json，講的也是同一件事。hook 排後面是
+      // 因為只有它有驗證（開真終端跑 `echo a && echo b`）——反過來排那道驗證會靜靜
+      // 消失，卡片變成純結構檢查。
+      ["hook", "allowlist+hook"],
       ["codex-config", "codex-agents+codex-config"],
     ],
   );
+  const permissionCard = mergedRules[1];
+  assert.match(permissionCard.label, /什麼時候該停下來問你/);
+  assert.match(permissionCard.detail, /改檔案不再逐次問你/);
+  ok("擋串接與白名單合成一張權限卡，驗證仍掛在 hook 上");
   assert.match(
     mergedRules[0].label,
     /規矩與回話風格/,

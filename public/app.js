@@ -1327,7 +1327,7 @@ async function run(action, promptText, button = null, options) {
     view.hideInstallStatus();
   }
 
-  state.agentName = agentNameFor(action);
+  state.agentName = agentNameFor(action, toolSelectionValue(state.selectedTools));
   state.currentRunAction = action;
   state.runId = null;
   state.acceptsInput = false;

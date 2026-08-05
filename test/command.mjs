@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { buildAgentCommand } from "../src/actions.js";
+import { actions, buildAgentCommand, resolveEngine } from "../src/actions.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -17,6 +17,23 @@ try {
   assert(claudeReadOnly.args.includes("--allowedTools"));
   assert(!claudeReadOnly.args.join(" ").includes("Write"));
   ok("claude read-only 只帶唯讀工具");
+
+  // 迴歸：合併那顆原本寫死 engine: "claude"。選「只要 Codex」的學生機器上沒有
+  // claude——那組檢查整組被拿掉、CLI 也不會安裝——但 config.toml 是 protectExisting，
+  // 仍然會要求合併，按下去拿到的是「找不到 claude 指令」。
+  const merge = actions["merge-config-step"];
+  assert.equal(resolveEngine(merge, { tools: "codex" }), "codex");
+  assert.equal(resolveEngine(merge, { tools: "claude" }), "claude");
+  // 兩個都選時優先 claude：課堂主線，而且它那邊裝好的 acceptEdits 讓合併不會停下
+  // 來問（Reed 指定）。
+  assert.equal(resolveEngine(merge, { tools: "claude,codex" }), "claude");
+  // tools 是這顆 action 宣告的選項之一，沒宣告的話伺服器會把前端送的值丟掉，
+  // engine 永遠拿到 undefined 而退回 claude——形同沒改。
+  assert(merge.options.tools.includes("codex"));
+  // 固定字串的 engine 照舊，不要為了新形狀把舊的那幾顆一起改掉。
+  assert.equal(resolveEngine(actions["codex-hello"]), "codex");
+  assert.equal(resolveEngine(actions["claude-hello"], { tools: "codex" }), "claude");
+  ok("合併用哪個 agent 跟著工具選擇走，固定 engine 的 action 不受影響");
 
   const claudeWrite = buildAgentCommand("claude", prompt, "write");
   assert(claudeWrite.args.join(" ").includes("Write"));

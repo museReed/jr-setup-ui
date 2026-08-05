@@ -10,18 +10,30 @@
 #   這行讓 Codex 被提醒遵守 AGENTS.md 的回覆規則。
 #   沒有這行的話，Codex 可能幾輪對話後就退回預設語氣。
 #
-# sandbox_mode / approval_policy：Codex 的 Auto 模式，等同 Claude Code 的
+# default_permissions / approval_policy：Codex 的 Auto 模式，等同 Claude Code 的
 # acceptEdits——工作區內的檔案修改自動套用，不必逐次接受；超出工作區、動網路或
 # 高風險操作才會停下來問你。
-#   sandbox_mode    "read-only"          唯讀，什麼都不能改
-#                   "workspace-write"    工作區內可寫（課堂用這個）
-#                   "danger-full-access" 整台機器與網路都不設限，不要用
+#   default_permissions ":read-only"          唯讀，什麼都不能改（不設時的預設）
+#                       ":workspace"          工作區內可寫（課堂用這個）
+#                       ":danger-full-access" 整台機器與網路都不設限，不要用
+#
+# ⚠️ 不要再用舊的 sandbox_mode：官方文件明說兩者不能並存，而且舊 key 設了之後
+# Codex 的權限選單仍然停在「Read Only」——新的 default_permissions 沒設就走它自己的
+# 預設，舊的那個等於白設（Windows VM 實測）。
 #   approval_policy "untrusted"          有風險的操作才問
 #                   "on-request"         需要時才問（課堂用這個）
 #                   "never"              什麼都不問，連工作區外也不問，不要用
 #                   "granular"           分類逐項設定，課堂用不到
+#
+# approvals_reviewer：上面那行決定「什麼時候需要批准」，這行決定「誰來批准」。
+# 兩個是獨立的旋鈕——只設 approval_policy 的話，該問的還是會跳出來問你。
+#   "user"        預設，跳出來問你
+#   "auto_review" 交給一個審核 agent 判斷（課堂用這個）
+# 它只換審核者，不動沙盒邊界：工作區外的寫入照樣被 workspace-write 擋著。
+# 也就是說這是「少問」不是「放行」——而且做判斷的是一個模型，不是規則式的白名單。
 
 personality = "pragmatic"
 instructions = "回覆必須嚴格遵守 AGENTS.md 的 Output Style 規則：結論先行（粗體）、3-5 bullet、比較用表格、不用 emoji/慶祝語氣、中等長度不灌水、白話原則。每次回覆前自檢。"
-sandbox_mode = "workspace-write"
+default_permissions = ":workspace"
 approval_policy = "on-request"
+approvals_reviewer = "auto_review"

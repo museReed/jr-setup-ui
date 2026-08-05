@@ -9,6 +9,9 @@ import {
   hookFileName,
   mergeAllowRules,
   mergeCodexModes,
+  readCodexModes,
+  readDefaultMode,
+  readRetiredCodexKeys,
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
@@ -306,13 +309,32 @@ try {
   assert.equal(kept.modeAdded, false);
   ok("使用者自己設過的預設模式不會被覆蓋");
 
+  // 驗證那半：沒設回 null，設了就回實際的值。checkAllowlist 靠這個分辨「安裝沒
+  // 生效」與「學生自己調過」——兩者要做的事不一樣，不能都講成「沒裝」。
+  assert.equal(readDefaultMode(allow.settings), "acceptEdits");
+  assert.equal(readDefaultMode(kept.settings), "plan");
+  assert.equal(readDefaultMode({}), null);
+  assert.equal(readDefaultMode({ permissions: {} }), null);
+  assert.equal(readDefaultMode(null), null);
+  ok("readDefaultMode 分得出沒設與設成別的值");
+
   // Codex 的 config.toml 是 protectExisting，學生已經有檔案時「安裝」不覆蓋——
-  // 但預設模式那兩個 key 不能交給 AI 合併（結果不保證也不可重現），要程式補上。
+  // 但預設模式那幾個 key 不能交給 AI 合併（結果不保證也不可重現），要程式補上。
   const codexFresh = mergeCodexModes("");
-  assert.deepEqual(codexFresh.added, ["sandbox_mode", "approval_policy"]);
-  assert.match(codexFresh.content, /sandbox_mode = "workspace-write"/);
+  assert.deepEqual(codexFresh.added, [
+    "default_permissions",
+    "approval_policy",
+    "approvals_reviewer",
+  ]);
+  // 舊的 sandbox_mode 不再用：兩者不能並存，而且只設舊 key 的話 Codex 的權限選單
+  // 仍然停在 Read Only（Windows VM 實測）。
+  assert.match(codexFresh.content, /default_permissions = ":workspace"/);
   assert.match(codexFresh.content, /approval_policy = "on-request"/);
-  ok("空的 config.toml 會補上兩個預設模式 key");
+  // 迴歸（VM 實測）：三個 key 都在、值也對，Codex 仍然一直問——因為 approval_policy
+  // 只決定「什麼時候需要批准」，approvals_reviewer 才決定「誰來批准」。少了這一個
+  // 就是預設的 "user"，也就是跳出來問學生。
+  assert.match(codexFresh.content, /approvals_reviewer = "auto_review"/);
+  ok("空的 config.toml 會補上三個預設模式 key");
 
   // 只補這兩行，其餘一個字都不動——學生原本的設定與註解要原樣留著。
   const existing = '# 我自己的設定\npersonality = "friendly"\n\n[mcp_servers.foo]\ncommand = "x"\n';
@@ -328,15 +350,54 @@ try {
   ok("既有內容原樣保留，新 key 插在第一個 [section] 之前");
 
   // 已經設過就不動，重跑安裝不該把學生調過的值蓋回去。
-  const kept2 = mergeCodexModes('sandbox_mode = "read-only"\n');
-  assert.deepEqual(kept2.added, ["approval_policy"]);
-  assert.match(kept2.content, /sandbox_mode = "read-only"/);
-  ok("學生自己設過的 sandbox_mode 不會被覆蓋");
+  const kept2 = mergeCodexModes('default_permissions = ":read-only"\n');
+  assert.deepEqual(kept2.added, ["approval_policy", "approvals_reviewer"]);
+  assert.match(kept2.content, /default_permissions = ":read-only"/);
+  ok("學生自己設過的 default_permissions 不會被覆蓋");
 
-  // section 底下的同名 key 不算最上層——那是別的設定，不能拿來當「已經設過」。
-  const nested = mergeCodexModes('[profiles.foo]\nsandbox_mode = "read-only"\n');
-  assert.deepEqual(nested.added, ["sandbox_mode", "approval_policy"]);
-  ok("section 底下的同名 key 不會被誤認為最上層已設定");
+  // 已經裝過的機器上舊 key 還在，而它跟 default_permissions 不能並存——留著的話
+  // 新的那個不會生效（VM 實測：選單停在 Read Only）。所以要主動退掉。
+  // 註解掉而不是刪掉：那是學生檔案裡的一行，留著看得出發生過什麼、也還原得回去。
+  const upgraded = mergeCodexModes(
+    'personality = "pragmatic"\nsandbox_mode = "workspace-write"\napproval_policy = "on-request"\n',
+  );
+  assert.deepEqual(upgraded.retired, ["sandbox_mode"]);
+  assert.match(upgraded.content, /^# sandbox_mode = "workspace-write"$/m);
+  assert.match(upgraded.content, /由嚮導停用/);
+  assert.match(upgraded.content, /default_permissions = ":workspace"/);
+  // 只退舊 key，其餘一個字都不動。
+  assert.match(upgraded.content, /personality = "pragmatic"/);
+  assert.deepEqual(upgraded.added, [
+    "default_permissions",
+    "approvals_reviewer",
+  ]);
+  assert.deepEqual(readRetiredCodexKeys(upgraded.content), []);
+  ok("舊的 sandbox_mode 會被註解停用，並補上 default_permissions");
+
+  // section 底下的同名 key 不算最上層——那是別的設定，不能拿來當「已經設過」，
+  // 也不該被當成要退掉的舊 key。
+  const nested = mergeCodexModes(
+    '[profiles.foo]\ndefault_permissions = ":read-only"\nsandbox_mode = "read-only"\n',
+  );
+  assert.deepEqual(nested.added, [
+    "default_permissions",
+    "approval_policy",
+    "approvals_reviewer",
+  ]);
+  assert.deepEqual(nested.retired, []);
+  assert.match(nested.content, /^sandbox_mode = "read-only"$/m);
+  ok("section 底下的同名 key 不會被誤認為最上層已設定，也不會被誤停用");
+
+  // 驗證那半讀的是「現在的值」，不是「有沒有這一行」：學生自己設成別的值時，
+  // 卡片要說得出他設的是什麼，而不是只講「沒裝」。
+  const read = readCodexModes(
+    'default_permissions = ":read-only"\napproval_policy = "on-request"\n[profiles.foo]\napprovals_reviewer = "auto_review"\n',
+  );
+  assert.equal(read.default_permissions, ":read-only");
+  assert.equal(read.approval_policy, "on-request");
+  // section 底下那個不算——跟 merge 那半同一條規則，兩邊要一致。
+  assert.equal(read.approvals_reviewer, null);
+  ok("readCodexModes 讀得出最上層的實際值，section 底下的不算");
 
   // 驗證的關鍵：檔案複製成功但沒註冊進 settings.json，hook 一樣不會擋，
   // 而且不會有任何錯誤訊息——所以驗證必須看註冊，不能只看檔案在不在。

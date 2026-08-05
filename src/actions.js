@@ -290,9 +290,21 @@ Object.assign(actions, {
   "merge-config-step": {
     kind: "agent",
     label: "用 AI 幫我合併",
-    engine: "claude",
+    // 用哪個 agent 跟著第一張卡的工具選擇走，不寫死（Reed 指定）。
+    //
+    // 原本一律用 claude。選「只要 Codex」的學生機器上根本沒有 claude——那組檢查
+    // 整組被拿掉、CLI 也不會安裝——但 config.toml 是 protectExisting，仍然會要求
+    // 合併。按下去跑的是一個不存在的指令，拿到「找不到 claude 指令」。
+    //
+    // 兩個都選時優先 claude：它是課堂的主線，而且合併要改檔案，Claude 這邊裝好的
+    // acceptEdits 讓它不會停下來問。
+    engine: ({ tools }) => (tools === "codex" ? "codex" : "claude"),
     permission: "write",
-    options: { step: STEP_IDS, lang: LANGUAGES },
+    options: {
+      step: STEP_IDS,
+      lang: LANGUAGES,
+      tools: ["claude", "codex", "claude,codex"],
+    },
     buildPrompt: ({ step, lang }) =>
       [
         `我要把工作坊的設定合併進我已經有的檔案，語言版本是 ${lang}，這一步是 ${step}。`,
@@ -355,6 +367,18 @@ Object.assign(actions, {
     description: "登入 GitHub CLI。",
   },
 });
+
+// engine 可以是固定字串，也可以是一個吃 options 的函式（merge-config-step 就是後者
+// ——它要跟著學生選的工具走）。呼叫端只想知道「這一次要跑哪個 agent」，兩種形狀都
+// 在這裡收斂掉，免得每個用到 action.engine 的地方各判斷一次。
+//
+// 目前有兩處：組指令、以及挑輸出的 parser（claude 與 codex 的串流格式不同）。少改
+// 一處的話畫面上的名字或解析會跟實際跑的那個對不上。
+export function resolveEngine(action, options = null) {
+  return typeof action.engine === "function"
+    ? action.engine(options ?? {})
+    : action.engine;
+}
 
 export function buildAgentCommand(engine, prompt, permission) {
   if (permission !== "read-only" && permission !== "write") {
