@@ -844,6 +844,12 @@ export function checklistGroups({
       continue;
     }
 
+    // 沒有自動驗證的列（合併卡的前半份、環境卡那些）：這一格講的就是「這件事成了
+    // 沒」，而它唯一的達成方式就是安裝。所以剛裝完也要當場打勾，不等下一次伺服器
+    // 檢查回來——不然會出現「終端印安裝成功、這一列還寫尚未安裝」（VM 實測，
+    // 合併卡的第一列）。
+    const settled = checked || installedCheckIds.has(candidate.id);
+
     system.push({
       id: `system-${candidate.id}`,
       // 前綴講清楚這一格在問什麼。原本第一格寫「自動命名 hook／hook 檔案與 3 筆註冊
@@ -867,7 +873,7 @@ export function checklistGroups({
         ),
         checked && changedCheckIds.has(candidate.id) ? CHANGED_HINT : null,
       ),
-      checked,
+      checked: settled,
       automatic: true,
       disabled: true,
       failedReason:

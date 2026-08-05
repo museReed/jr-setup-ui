@@ -855,6 +855,25 @@ try {
   assert.equal(systemOnly.system[0].id, "system-node");
   ok("沒有自動驗證的檢查維持單格");
 
+  // 迴歸（VM 實測，合併卡的第一列）：合併卡的驗證掛在最後那一份身上，前半份沒有
+  // verifyAction、不會被拆——但它那一格講的就是「這件事成了沒」，而唯一的達成方式
+  // 就是安裝。剛裝完也要當場打勾，不然畫面是「終端印安裝成功、這一列寫尚未安裝」。
+  const mergedFirstHalf = checklistGroups({
+    checks: [
+      {
+        id: "claude-md",
+        label: "Claude Code CLI 做事的規矩",
+        status: "missing",
+        detail: "尚未安裝",
+      },
+    ],
+    verifiedCheckIds: new Set(),
+    installedCheckIds: new Set(["claude-md"]),
+  });
+  assert.equal(mergedFirstHalf.system.length, 1);
+  assert.equal(mergedFirstHalf.system[0].checked, true);
+  ok("沒有自動驗證的列，剛裝完也當場打勾");
+
   // 驗過之後檔案被動過：勾留著，補一句提醒。改的可能是學生自己那半（合併過的
   // CLAUDE.md，工作坊那段還在所以檢查照樣說 ok），程式看不出來會不會影響驗過的
   // 行為——這種情況值得提醒，不值得直接作廢。
