@@ -27,6 +27,7 @@ const elements = {
   sectionStatus: document.querySelector("#section-status"),
   replayTour: document.querySelector("#replay-tour"),
   copyDiagnostics: document.querySelector("#copy-diagnostics"),
+  copyRawOutput: document.querySelector("#copy-raw-output"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
   milestoneFill: document.querySelector("#milestone-fill"),
@@ -1783,6 +1784,12 @@ export function clearRawOutput() {
   if (id === activeTranscriptId) {
     elements.output.textContent = "";
   }
+}
+
+// 目前這張卡的原始輸出。讀 rawOutputs 而不是 DOM 的 textContent：那兩份平常一致，
+// 但切卡片的空檔會差一拍，而學生按複製鍵的時機正好就在那種時候。
+export function rawOutputText() {
+  return rawOutputs.get(activeTranscriptId) ?? "";
 }
 
 export function addRawLine(text) {

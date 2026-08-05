@@ -659,7 +659,13 @@ try {
   assert.match(cardIndex, /id="verify-modal-confirm" class="ds-btn ds-btn-primary"/);
   assert.match(cardIndex, /id="verify-modal-later" class="ds-btn ds-btn-ghost"/);
 
-  for (const id of ["recheck-configs", "recheck-env", "cancel", "copy-diagnostics"]) {
+  for (const id of [
+    "recheck-configs",
+    "recheck-env",
+    "cancel",
+    "copy-diagnostics",
+    "copy-raw-output",
+  ]) {
     assert.match(
       cardIndex,
       new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),

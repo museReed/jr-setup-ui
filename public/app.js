@@ -1625,6 +1625,28 @@ view.elements.copyDiagnostics.addEventListener("click", async () => {
     view.addLine(`無法複製診斷資料：${error.message}`, "failed");
   }
 });
+// 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
+// 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。
+view.elements.copyRawOutput.addEventListener("click", async () => {
+  const text = view.rawOutputText();
+
+  // 空的時候不要靜靜地複製一個空字串：學生會以為複製好了，貼出去才發現什麼都沒有。
+  if (text.trim() === "") {
+    view.addLine("目前沒有原始輸出可以複製。", "agent-status");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    view.setButtonLabel(view.elements.copyRawOutput, "已複製");
+    // 字要換回來，理由跟「複製診斷資料」那顆一樣：留著會看起來像已經按過了。
+    window.setTimeout(() => {
+      view.setButtonLabel(view.elements.copyRawOutput, "複製原始輸出");
+    }, 2000);
+  } catch (error) {
+    view.addLine(`無法複製原始輸出：${error.message}`, "failed");
+  }
+});
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
 view.renderConfigChoices(CONFIG_TOOL_CHOICES, CONFIG_LANGUAGES);
 view.elements.recheckConfigs.addEventListener("click", checkConfigs);
