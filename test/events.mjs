@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 
-import { parseJrEventLine, startServer } from "../src/server.js";
+import { startServer } from "../src/server.js";
+import { parseJrEventLine } from "../src/sse.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);

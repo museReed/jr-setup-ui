@@ -36,13 +36,18 @@ import {
   saveSelection,
 } from "./progress-state.js";
 import { resolveLaunch } from "./spawn-command.js";
+import {
+  parseJrEventLine,
+  streamLines,
+  writeEvent,
+  writeOutputLine,
+} from "./sse.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
 const explainOutputScript = moduleFile(
   "../scripts/explain-output.mjs",
   import.meta.url,
 );
-const JR_EVENT_PREFIX = "@@JR ";
 const EXPLAIN_FALLBACK = "（無法翻譯，請看下方原始輸出）";
 
 // 前端拆成 View / ViewModel / Model 之後要當成靜態檔送出去。
@@ -157,66 +162,6 @@ async function readJson(request) {
   }
 
   return JSON.parse(body);
-}
-
-function writeEvent(response, event, data) {
-  if (response.destroyed || response.writableEnded) {
-    return;
-  }
-
-  response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-}
-
-export function parseJrEventLine(line) {
-  if (!line.startsWith(JR_EVENT_PREFIX)) {
-    return null;
-  }
-
-  try {
-    const event = JSON.parse(line.slice(JR_EVENT_PREFIX.length));
-
-    return event !== null &&
-      typeof event === "object" &&
-      !Array.isArray(event) &&
-      typeof event.kind === "string"
-      ? event
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeOutputLine(response, stream, line) {
-  const event = parseJrEventLine(line);
-
-  if (event !== null) {
-    writeEvent(response, "jr", event);
-    return;
-  }
-
-  writeEvent(response, "line", { stream, text: line });
-}
-
-function streamLines(readable, onLine) {
-  let buffered = "";
-  readable.setEncoding("utf8");
-
-  readable.on("data", (chunk) => {
-    buffered += chunk;
-    const lines = buffered.split("\n");
-    buffered = lines.pop();
-
-    for (const line of lines) {
-      onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
-    }
-  });
-
-  return () => {
-    if (buffered.length > 0) {
-      onLine(buffered);
-      buffered = "";
-    }
-  };
 }
 
 function childIsRunning(child) {
