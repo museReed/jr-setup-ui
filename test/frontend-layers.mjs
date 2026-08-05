@@ -672,6 +672,13 @@ try {
       `${id} 要是灌色按鈕而且帶 icon`,
     );
   }
+  // 複製原始輸出那顆跟「看原始輸出」同一列靠右站，靠絕對定位疊上去——不能搬進
+  // <summary>：summary 裡的點擊會把面板收起來，學生按「複製」看到的是內容消失。
+  assert(
+    !/<summary>[^]*?copy-raw-output[^]*?<\/summary>/.test(cardIndex),
+    "複製原始輸出不能放進 <summary>，點下去會把面板收起來",
+  );
+  assert.match(cardStyles, /^#copy-raw-output \{[^}]*position: absolute;/m);
   // 翻頁那兩顆也是灌色按鈕，兩顆都預先灌滿：空心那顆並排時看起來像停用的
   // （Reed 指定統一）。
   assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill is-primary wizard-nav/);

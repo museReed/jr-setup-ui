@@ -829,6 +829,7 @@ body {
 }
 
 .terminal-column details {
+  position: relative;
   border-top: 1px solid var(--term-bg-2);
 }
 
@@ -836,6 +837,17 @@ body {
   padding: var(--space-3) var(--space-4);
   color: var(--term-ink-dim);
   cursor: pointer;
+}
+
+/* 複製鍵跟「看原始輸出」同一列、靠右站。
+   用絕對定位而不是把它放進 <summary>：summary 裡的點擊會把面板收起來，學生按下
+   「複製」看到的是內容消失。而 <summary> 必須是 <details> 的第一個子元素，沒辦法
+   把兩者包進同一個 flex 列——所以讓它脫離文件流，疊回那一列的右邊。
+   面板收合時它跟著消失（收合的 details 只渲染 summary），不看內容時不需要它。 */
+#copy-raw-output {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-4);
 }
 
 #output {

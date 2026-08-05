@@ -1638,10 +1638,12 @@ view.elements.copyRawOutput.addEventListener("click", async () => {
 
   try {
     await navigator.clipboard.writeText(text);
-    view.setButtonLabel(view.elements.copyRawOutput, "已複製");
+    // 這顆的字用 copy / copied，不跟其他按鈕的中文一致（Reed 指定）：它站在原始輸出
+    // 那一列上，旁邊全是英文的終端內容。
+    view.setButtonLabel(view.elements.copyRawOutput, "copied");
     // 字要換回來，理由跟「複製診斷資料」那顆一樣：留著會看起來像已經按過了。
     window.setTimeout(() => {
-      view.setButtonLabel(view.elements.copyRawOutput, "複製原始輸出");
+      view.setButtonLabel(view.elements.copyRawOutput, "copy");
     }, 2000);
   } catch (error) {
     view.addLine(`無法複製原始輸出：${error.message}`, "failed");
