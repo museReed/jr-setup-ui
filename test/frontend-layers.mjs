@@ -518,10 +518,32 @@ try {
     files.app,
     /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n\s*if \(followUp === "auto"\)/,
   );
-  // 安裝按鈕對著還沒好的那一份，驗證仍然掛在主 check 上。
-  assert(files.app.includes("runConfigCheckAction(rowCheck, action, button, extra)"));
+  // 安裝按鈕對著還沒好的那一份。
   assert.match(files.app, /configRowModel\(rowCheck,/);
-  ok("合併卡先把兩份都裝完才驗證，按鈕對著還沒好的那一份");
+  // 驗證按鈕對著它自己那一格。合併卡有兩個驗證之後，全部丟給 rowCheck 的話第二格會
+  // 拿隔壁那格的參數去跑（VM 實測：白名單那格按下去，開的是「Shell 不串接」的終端）。
+  assert.match(
+    files.app,
+    /isVerifyAction\(action\) \? target : rowCheck/,
+    "驗證要跑被按的那一格，安裝才對著 rowCheck",
+  );
+  ok("合併卡先把兩份都裝完才驗證，安裝對著沒好的那份、驗證對著被按的那格");
+
+  // 每一格「驗證：…」都要有自己那顆按鈕。底下那顆「重跑驗證」跑的永遠是 card.check
+  // （見 onRetest），所以合併卡的第二個驗證原本完全沒有入口——那一列還寫著「按重跑
+  // 驗證」，把學生指向一顆會開錯終端的按鈕（VM 實測）。
+  //
+  // 帶 checkId 的按鈕會被 view 畫進 `system-<id>` 那一格，跟安裝鍵當初搬進清單是同
+  // 一條規矩：按鈕要待在它負責的那一格。
+  assert.match(
+    files.app,
+    /dataName: "verifyAction",[\s\S]{0,200}checkId: check\.id,/,
+    "每一格驗證都要有自己那顆按鈕，而且要帶 checkId 才畫得進那一格",
+  );
+  // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個參數讀的是
+  // spec.options，寫錯的話按鈕跑得動但少了 case/agent，開出來是別題的終端。
+  assert.match(files.app, /options: check\.verifyOptions,/);
+  ok("每一格驗證都有自己的按鈕，參數帶得對");
 
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(

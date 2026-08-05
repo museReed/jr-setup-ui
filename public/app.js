@@ -465,6 +465,33 @@ function renderWizard() {
       ...row,
       detail: cardResultText(card, state.resultTexts),
       results: cardResultItems(card, state.resultTexts),
+      // 每一格「驗證：…」都要有自己那顆按鈕。
+      //
+      // 底下那顆「重跑驗證」跑的永遠是 card.check（見 onRetest）。合併卡有兩個驗證
+      // 之後，第二格就完全沒有入口了——VM 實測：白名單那格寫著「按『重跑驗證』」，
+      // 按下去開的卻是隔壁那題的終端（原始輸出寫著「正在跑『Shell 不串接』驗證」）。
+      // 文案還把學生指向那顆錯的按鈕。
+      //
+      // 帶 checkId 的按鈕會被 view 畫進 `system-<id>` 那一格（清單裡的「驗證：…」
+      // 就是那個 id），跟安裝鍵當初搬進清單是同一條規矩：按鈕要待在它負責的那一格。
+      buttons: [
+        ...(row.buttons ?? []),
+        ...cardChecks
+          .filter(
+            (check) =>
+              check.verifyAction != null && !verified.has(check.id),
+          )
+          .map((check) => ({
+            action: check.verifyAction,
+            dataName: "verifyAction",
+            text: "驗證",
+            checkId: check.id,
+            step: check.id,
+            // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個
+            // 參數讀的是 spec.options（view.js 的 actionButton）。
+            options: check.verifyOptions,
+          })),
+      ],
     };
   }
   const activeCheckId =
@@ -553,9 +580,22 @@ function renderWizard() {
     retestPrimary: card.kind !== "env" && !cardDone,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
-      if (card.kind === "env") run(action, undefined, button);
-      // 安裝按鈕對著還沒好的那一份（rowCheck），驗證仍然掛在主 check 上。
-      else runConfigCheckAction(rowCheck, action, button, extra);
+      if (card.kind === "env") {
+        run(action, undefined, button);
+        return;
+      }
+
+      // 安裝按鈕對著還沒好的那一份（rowCheck）。驗證按鈕對著它自己那一格——合併卡
+      // 有兩個驗證，全部丟給 rowCheck 的話第二格會拿隔壁那格的參數去跑。
+      const target =
+        cardChecks.find((candidate) => candidate.id === step) ?? rowCheck;
+
+      runConfigCheckAction(
+        isVerifyAction(action) ? target : rowCheck,
+        action,
+        button,
+        extra,
+      );
     },
     onRetest: () => {
       if (card.kind === "env") {
