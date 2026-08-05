@@ -1246,25 +1246,18 @@ let observedLocks = null;
 //
 // 這沒有修掉「為什麼會短暫算錯」——那要另外查。但一次性的雜訊本來就不該讓畫面
 // 演一段慶祝動畫，這道關卡該有，跟根因是什麼無關。
-// 鎖頭狀態的變化紀錄。
+// 這裡曾經有一份鎖頭狀態的逐筆變化紀錄（lockLog，上限 200 筆），為了查「完成度
+// 會短暫算錯、於是畫面演一段不該演的動畫」那個 bug——那個瞬間本機重現不出來，只能
+// 記下來請 VM 上的人整包送回來。
 //
-// 上面那道關卡擋住了症狀（一閃而過的狀態不再讓畫面演動畫），但沒有解釋「為什麼
-// 完成度會短暫算錯」。那個瞬間本機重現不出來——要先做完一整段才走得到——所以把
-// 它記下來，讓 VM 上跑到的人可以按一顆按鈕整包送回來。
+// 那個 bug 查完也修好了（見上面 confirmedState 那段的說明），而診斷資料現在帶的是
+// 原始輸出——真正判斷得了問題的東西。逐幀的動畫紀錄留著只會把它淹掉：學生貼回來
+// 幾百筆幀號，我們要找的那幾行反而難挑（Reed 指定移除）。
 //
-// 只記變化，不記每一次重畫：重畫一秒好幾次，全記下來會把真正的那一筆淹掉。
-const LOCK_LOG_LIMIT = 200;
-const lockLog = [];
+// 現在的狀態（哪一格鎖著、停在第幾幀）仍然留著，那是四筆，不吵。真的又需要逐筆
+// 紀錄時，回到這一顆的前一版把 logLock 撿回來就好。
 
-function logLock(entry) {
-  lockLog.push({ at: Math.round(window.performance.now()), ...entry });
-
-  if (lockLog.length > LOCK_LOG_LIMIT) {
-    lockLog.shift();
-  }
-}
-
-// 按下「複製診斷資料」時收集的東西：現在每一格長怎樣，加上一路走來的變化紀錄。
+// 按下「複製診斷資料」時收集的東西：現在每一格長怎樣。
 export async function lockDiagnostics() {
   const tabs = await Promise.all(
     elements.sectionButtons.map(async (button) => {
@@ -1285,7 +1278,6 @@ export async function lockDiagnostics() {
     observed: observedLocks,
     pendingUnlock: [...pendingUnlock],
     tabs,
-    log: lockLog,
   };
 }
 
@@ -1331,23 +1323,11 @@ export function renderSectionLocks(lockStates, done = {}) {
   for (const button of elements.sectionButtons) {
     const id = button.dataset.sectionTarget;
     const state = lockStateOf(lockStates, done, id);
-    const raw = state;
     const previous = renderedLocks?.[id] ?? null;
-    observed[id] = raw;
+    // observed 記的是「這一輪算出來的原始狀態」，跟 next（承認的）分開存——
+    // confirmedState 那段的關卡就是靠兩者的差別在判斷。
+    observed[id] = state;
     next[id] = state;
-
-    // 只在「算出來的」或「承認的」真的變了那一刻記一筆。原始輸入（locked / done）
-    // 一起記下來——要找的就是它們哪一個閃了一下。
-    if (raw !== (observedLocks?.[id] ?? null) || state !== previous) {
-      logLock({
-        tab: id,
-        raw,
-        state,
-        was: previous,
-        locked: lockStates[id]?.locked ?? null,
-        done: done?.[id] ?? null,
-      });
-    }
 
     if (button.querySelector(".section-tab-lock") === null) {
       button.prepend(lockIcon(button));

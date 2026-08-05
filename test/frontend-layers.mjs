@@ -455,10 +455,7 @@ try {
   // 擋住症狀不等於查到根因。狀態變化要留紀錄，讓 VM 上跑到的人按一顆按鈕整包
   // 送回來——只記變化，不記每一次重畫（重畫一秒好幾次，全記會把那一筆淹掉）。
   assert(files.view.includes("export async function lockDiagnostics()"));
-  assert.match(files.view, /if \(raw !== \(observedLocks\?\.\[id\] \?\? null\) \|\| state !== previous\) \{/);
-  assert(files.view.includes("const LOCK_LOG_LIMIT = 200;"));
   // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
-  assert.match(files.view, /locked: lockStates\[id\]\?\.locked \?\? null,\s*\n\s*done: done\?\.\[id\] \?\? null,/);
   assert(files.app.includes("await view.lockDiagnostics()"));
 
   // 診斷資料要含每張卡最近幾次執行的原始輸出。少了它，那顆按鈕收的只有鎖頭與導覽
