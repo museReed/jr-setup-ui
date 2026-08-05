@@ -107,6 +107,8 @@ const state = {
   lastChecks: [],
   availableActions: new Set(["diagnose-naming-block"]),
   envChecks: [],
+  // 撞上「還在跑」而被擋下來的那次重查，等當前那次收尾再補跑。null 代表沒有排隊。
+  envCheckQueued: null,
   activeSectionId: "env",
   viewingCardIndex: {},
   // 曾經被顯示過的卡片 ID，只增不減。記 ID 不記索引：加選工具會在中間插入新卡，
@@ -900,6 +902,19 @@ function finishLoginWait(step) {
 
 async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   if (state.envCheckInProgress) {
+    // 這一次不能直接丟掉。安裝完成後的重查若撞上還在跑的那次，畫面就永遠停在
+    // 安裝前的快照——卡片寫「未安裝」、清單不打勾，而且不會自己好（Windows VM
+    // 實測：gh 裝好了、新終端叫得到、runEnvCheck 也回 ok，畫面就是不動）。
+    //
+    // 也不能改成共用那次的結果：它是安裝開始前就出發的，答案本來就過期。
+    // 所以排隊，等當前那次收尾再補跑一次。
+    //
+    // 撞上的機會不小：runEnvCheck 在 Windows 實測要 8.3 秒（十三項併行 spawn）。
+    state.envCheckQueued = {
+      showLoading,
+      // 排隊期間只要有一次是學生手動按的，補跑那次就算手動——手動才會先退勾。
+      manual: state.envCheckQueued?.manual === true || manual,
+    };
     return null;
   }
 
@@ -974,6 +989,14 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     view.renderEnvBusy(false);
     view.elements.recheckEnv.disabled = state.runInProgress;
     renderCheckingLoader();
+
+    // 排在後面那次補跑。一次只留一筆，所以不會無限接力。
+    const queued = state.envCheckQueued;
+
+    if (queued !== null) {
+      state.envCheckQueued = null;
+      void checkEnvironment(queued.showLoading, { manual: queued.manual });
+    }
   }
 }
 

@@ -153,6 +153,19 @@ try {
   );
   ok("登入等待結束後「停止等待」按鈕會消失");
 
+  // 迴歸（Windows VM 實測）：安裝完成後的重查撞上還在跑的那次就被丟掉，畫面永遠停在
+  // 安裝前的快照——卡片寫「未安裝」、清單不打勾，而且不會自己好。runEnvCheck 在
+  // Windows 要 8.3 秒，撞上的機會不小。被擋下來的那次要排隊補跑。
+  assert(
+    files.app.includes("state.envCheckQueued = {"),
+    "撞上執行中的環境檢查時要排隊，不能直接丟掉",
+  );
+  assert(
+    /state\.envCheckQueued = null;\s*void checkEnvironment\(/.test(files.app),
+    "當前那次收尾後要把排隊的那次補跑起來",
+  );
+  ok("被擋下來的環境重查會補跑，畫面不會停在安裝前的快照");
+
   // 小人常駐在終端頂欄，狀態要在「印字」之前換掉。
   //
   // 這一條擋的是同一個坑的新版本：去重只擋文字（環境卡按「再 check 一次」印的字跟
