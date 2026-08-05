@@ -46,6 +46,16 @@ const CODEX_DARWIN_SCRIPT = [
 const CLAUDE_WIN32_COMMAND = "irm https://claude.ai/install.ps1 | iex";
 const CODEX_WIN32_COMMAND = "irm https://chatgpt.com/codex/install.ps1 | iex";
 
+// 每一條 winget 都帶 --disable-interactivity：不准它停下來等人回答。
+//
+// 嚮導 spawn 出來的 winget 沒有人在看著，跳出任何一個要人選的提示就是永久卡住——
+// 畫面停在安裝中，學生只能按取消。--accept-*-agreements 只擋掉條款那兩題，其餘的
+// （來源要選哪個、要不要換套件）擋不到，這個旗標才是整批的。
+//
+// ⚠️ 它**不會**讓輸出變乾淨。winget 的轉圈符號與進度條靠 \r 一格一格重畫，在真的
+// 終端機裡是一行動畫，透過管子接出來就是幾百行 `- \ | /`——加了這個旗標之後照樣有
+// （Windows VM 實測，加旗標前後的原始輸出都是滿滿的轉圈符號）。winget 沒有關進度的
+// 旗標，要乾淨只能在我們這邊過濾。那是另一件事，還沒做。
 export const INSTALLERS = {
   claude: {
     win32: {
@@ -107,6 +117,7 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
         "--silent",
       ],
     },
@@ -130,6 +141,7 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
         "--silent",
       ],
     },
@@ -150,6 +162,7 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
         "--silent",
       ],
     },
@@ -176,6 +189,7 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
       ],
     },
   },
