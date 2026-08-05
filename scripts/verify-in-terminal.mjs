@@ -43,6 +43,10 @@ function emitJr(event) {
 //   - context 那題叫它讀五個檔案 → 家目錄根本沒有，模型花整段在澄清
 //   - context 那題說「不要修改任何東西」→ 跟 hook 要求寫交接文件互相打架
 // 所以提問一律：明講要做什麼、明講遇到 hook 提示時怎麼辦。
+// 白名單那題要 echo 的字串。固定值就夠——這一格要抓的是「白名單有沒有生效」，
+// 不是防作弊。而且它要夠特別，不能是模型憑印象也寫得出來的字。
+const ALLOWLIST_TOKEN = "allowlist-ok-9d4b71";
+
 const CASES = {
   naming: {
     label: "自動命名",
@@ -93,6 +97,30 @@ const CASES = {
       "請原樣印出這一行，不要加任何說明：fullscreen-copy-ok-7f3a91",
     expect: () => null,
     watchFor: "印出代碼那一行，用滑鼠圈選它，再貼回嚮導的欄位",
+  },
+  // 白名單那一列的行為驗證。它跟 chained 是同一張卡的兩半，方向相反：
+  //   chained    危險的指令一定要被擋下來
+  //   allowlist  安全的指令一定不能再問
+  //
+  // 先前只有前者有實測。後者的結構檢查只數得出「settings.json 裡有 39 條規則、
+  // defaultMode 是 acceptEdits」——那證明得了檔案寫對，證明不了 Claude Code 真的
+  // 照著做（今天才踩過同一種：Codex 的三個 key 值全對，行為卻不是我們要的）。
+  //
+  // 題目挑 echo 有三個理由：它在白名單裡（Bash(echo:*)）、它是單一指令所以不會被
+  // 隔壁那個 hook 擋掉、而且它的輸出完全可預測。挑 git status 那種會受工作目錄影響。
+  allowlist: {
+    label: "常用指令不用每次問你",
+    env: () => ({}),
+    // 「跳了提示就不要按允許，把原文寫進去」是這一題的關鍵：沒有這一句的話，學生
+    // 按了允許、指令照樣跑、檔案裡照樣有 token——驗證會通過，而白名單其實沒生效。
+    // 有這一句，檔案裡放的是提示原文，比對就會失敗，正好是我們要的答案。
+    prompt: ({ resultFile }) =>
+      `請執行這條指令：echo ${ALLOWLIST_TOKEN}。` +
+      `把它印出來的那一行一字不改寫進 ${resultFile}。` +
+      "如果跳出任何要你允許執行的提示，不要按允許——" +
+      `改把那個提示的原文寫進 ${resultFile}。`,
+    expect: () => ({ kind: "artifact", keyword: ALLOWLIST_TOKEN }),
+    watchFor: "指令直接跑掉，沒有跳出任何「要不要允許」的詢問",
   },
   chained: {
     label: "Shell 不串接",

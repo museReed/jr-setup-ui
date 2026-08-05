@@ -103,6 +103,23 @@ for (const [step, spec] of Object.entries(VERIFICATION)) {
 }
 console.log("ok - 每一列的終端驗證情境，腳本與白名單兩邊都認得");
 
+// 白名單那題的關鍵在「跳了提示就不要按允許」那一句。
+//
+// 少了它，這一題會變成假驗證：學生按了允許 → 指令照樣跑 → 檔案裡照樣有 token →
+// 驗證通過，而白名單其實沒生效。有那一句，檔案裡放的是提示原文，比對就會失敗
+// ——那才是我們要的答案。
+assert.match(source, /allowlist-ok-9d4b71/);
+assert(
+  /allowlist: \{[\s\S]*?不要按允許[\s\S]*?\},/.test(source),
+  "白名單那題要明講「跳了提示不要按允許」，否則按了允許也會過",
+);
+// 題目要用單一指令。串接的話會先被隔壁那個 hook 擋下來，驗到的是 hook 不是白名單。
+assert(
+  /allowlist: \{[\s\S]*?echo \$\{ALLOWLIST_TOKEN\}[\s\S]*?\},/.test(source),
+  "白名單那題要用單一的 echo——串接指令會先被 hook 擋掉",
+);
+console.log("ok - 白名單那題按了允許也不會過，而且不會被 hook 先擋掉");
+
 // 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
 //（Reed 實測就是這樣問的）。當初誤判的兩個原因（測試開關名字、比對關鍵字）都由上面
