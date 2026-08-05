@@ -787,6 +787,9 @@ export function checklistGroups({
   checkedManualIds = new Set(),
   resultTexts = new Map(),
   changedCheckIds = new Set(),
+  // 這一輪按過安裝的樂觀記憶。權威還是伺服器的 status === "ok"，這份只是讓
+  // 「剛裝完、還沒重查」那幾秒的畫面別停在「尚未安裝」。
+  installedCheckIds = new Set(),
 }) {
   const system = [];
   // 前綴只在同一張清單裡兩種項目並存時才加。整張都是程式檢查的卡（環境那幾張）
@@ -798,6 +801,49 @@ export function checklistGroups({
   for (const candidate of checks) {
     const checked =
       verifiedCheckIds === null ? verified : verifiedCheckIds.has(candidate.id);
+
+    // 「裝好了」與「驗過了」是兩件事，各自一格（Reed 指定）。原本共用一個勾，於是
+    // 安裝成功之後那一格仍是空的、旁邊還寫著上一次檢查留下的「尚未安裝」——學生看到
+    // 的是「我明明裝好了，它說沒裝」（VM 實測）。
+    //
+    // 只有「有自動驗證」的檢查才拆：沒有 verifyAction 的（CLI 在不在、登入了沒、
+    // Node 的版本）本來就只有一件事要講，硬拆會長出一格永遠不知道該不該打勾的東西。
+    //
+    // 「裝好了沒」的判定沿用 configRowModel 那一條，不另開一條路——這個 repo 有過
+    // 「多個完成判定各自為政」的稽核紀錄（見 completedCardIds 上面的說明）。
+    if (candidate.verifyAction != null) {
+      const installedThis =
+        candidate.status === "ok" ||
+        checked ||
+        installedCheckIds.has(candidate.id);
+      system.push({
+        id: `install-${candidate.id}`,
+        text: `安裝：${candidate.label}`,
+        detail: resultTexts.get(candidate.id) ?? candidate.detail ?? "",
+        checked: installedThis,
+        automatic: true,
+        disabled: true,
+        failedReason: "",
+      });
+      system.push({
+        id: `system-${candidate.id}`,
+        text: `驗證：${candidate.label}`,
+        // 這一格的說明只講驗證：還沒驗就說在等什麼，驗過但檔案被動過就補一句提醒。
+        detail: appendHint(
+          appendPendingRunHint("", !checked && installedThis),
+          checked && changedCheckIds.has(candidate.id) ? CHANGED_HINT : null,
+        ),
+        checked,
+        automatic: true,
+        disabled: true,
+        failedReason:
+          verificationAttempted && verificationFailed
+            ? "自動驗證沒有通過，修正後可以重新測試。"
+            : "",
+      });
+      continue;
+    }
+
     system.push({
       id: `system-${candidate.id}`,
       // 前綴講清楚這一格在問什麼。原本第一格寫「自動命名 hook／hook 檔案與 3 筆註冊

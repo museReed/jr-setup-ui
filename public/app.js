@@ -377,6 +377,8 @@ function renderWizard() {
     resultTexts: state.resultTexts,
     // 驗過之後被動過的那幾步：勾留著，多一句提醒。
     changedCheckIds: state.changedSteps,
+    // 「安裝」那一格要在按完安裝的當下就打勾，不等下一次伺服器檢查回來。
+    installedCheckIds: state.installedSteps,
   });
   const installChecks = cardChecks.filter(
     (check) => !check.id.endsWith("-auth"),

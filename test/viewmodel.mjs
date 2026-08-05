@@ -805,7 +805,17 @@ try {
     ],
     verifiedCheckIds: new Set(),
   });
-  assert.match(notRunYet.system[0].detail, /還沒實際跑跑看/);
+  // 有自動驗證的檢查拆成兩格：第一格「安裝」、第二格「驗證」。
+  assert.deepEqual(
+    notRunYet.system.map(({ id, text, checked }) => ({ id, text, checked })),
+    [
+      { id: "install-x", text: "安裝：自動命名 hook", checked: true },
+      { id: "system-x", text: "驗證：自動命名 hook", checked: false },
+    ],
+  );
+  // 安裝那一格講安裝的事，驗證那一格講它在等什麼——兩句話不再擠在同一格。
+  assert.equal(notRunYet.system[0].detail, "hook 檔案與 3 筆註冊都已生效");
+  assert.match(notRunYet.system[1].detail, /還沒實際跑跑看/);
   const ranAlready = checklistGroups({
     checks: [
       {
@@ -817,8 +827,33 @@ try {
     ],
     verifiedCheckIds: new Set(["x"]),
   });
-  assert.doesNotMatch(ranAlready.system[0].detail, /還沒實際跑跑看/);
-  ok("還沒跑過驗證的那一格會說自己在等什麼");
+  assert.doesNotMatch(ranAlready.system[1].detail, /還沒實際跑跑看/);
+  ok("安裝與驗證各自一格，驗證那格會說自己在等什麼");
+
+  // 迴歸（VM 實測）：安裝成功了，「安裝」那一格要當場打勾，不等驗證跑完、也不等
+  // 下一次伺服器檢查回來。原本兩件事共用一個勾，畫面停在空格 + 上一次留下的
+  // 「尚未安裝」，學生看到的是「我明明裝好了，它說沒裝」。
+  const justInstalled = checklistGroups({
+    checks: [
+      {
+        ...eyeRow,
+        label: "自動命名 hook",
+        status: "missing",
+        detail: "尚未安裝",
+        verifyAction: "verify-in-terminal",
+      },
+    ],
+    verifiedCheckIds: new Set(),
+    installedCheckIds: new Set(["x"]),
+  });
+  assert.equal(justInstalled.system[0].checked, true);
+  assert.equal(justInstalled.system[1].checked, false);
+  ok("剛按完安裝：安裝那格當場打勾，驗證那格還空著");
+
+  // 沒有自動驗證的檢查不拆——硬拆會長出一格永遠不知道該不該打勾的東西。
+  assert.equal(systemOnly.system.length, 1);
+  assert.equal(systemOnly.system[0].id, "system-node");
+  ok("沒有自動驗證的檢查維持單格");
 
   // 驗過之後檔案被動過：勾留著，補一句提醒。改的可能是學生自己那半（合併過的
   // CLAUDE.md，工作坊那段還在所以檢查照樣說 ok），程式看不出來會不會影響驗過的
