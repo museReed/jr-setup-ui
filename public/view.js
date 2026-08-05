@@ -1919,19 +1919,40 @@ export function showInstallStatus(message) {
 
 export function hideInstallStatus() {}
 
+// 「停止等待」那顆的參照。等待一結束就要把它拿掉——留著的話學生看到一顆按下去
+// 什麼都不會發生的按鈕（VM 實測：登入成功之後它還留在終端裡）。
+//
+// 只收按鈕、不收那一行字：那句「正在確認登入狀態…」是紀錄，留著讀得出經過。
+let loginWaitingButton = null;
+
 export function showLoginWaiting(onStop) {
+  // 上一輪沒收乾淨就先收，不然畫面會出現兩顆。
+  hideLoginWaiting();
   const line = document.createElement("div");
   line.className = "ds-term-line ds-term-line--dim";
   line.textContent = "正在確認登入狀態，完成後這裡會自動更新。";
-  line.append(fillButton({ icon: "stop", text: "停止等待", onClick: onStop }));
+  loginWaitingButton = fillButton({
+    icon: "stop",
+    text: "停止等待",
+    onClick: onStop,
+  });
+  // 跟頂欄那顆取消鍵同一套：兩顆都站在深色的終端上（Reed 指定）。
+  loginWaitingButton.classList.add("is-on-dark");
+  line.append(loginWaitingButton);
   elements.terminalLines.append(line);
 }
 
 export function finishLoginWaiting(text, failed) {
+  hideLoginWaiting();
   addLine(text, failed ? "failed" : "succeeded");
 }
 
-export function hideLoginWaiting() {}
+export function hideLoginWaiting() {
+  // 換卡時終端內容會整份換掉，這顆可能已經不在畫面上——remove() 對脫離的節點
+  // 也是安全的，不用先判斷。
+  loginWaitingButton?.remove();
+  loginWaitingButton = null;
+}
 
 export function showLoginHints(model) {
   if (model === null) return;

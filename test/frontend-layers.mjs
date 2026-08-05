@@ -135,6 +135,24 @@ try {
   );
   ok("切換工具不會把學生丟回別張卡");
 
+  // 迴歸（VM 實測）：登入成功之後「停止等待」那顆還留在終端裡，按下去什麼都不會
+  // 發生。原因是 hideLoginWaiting 是個空函式，而 finishLoginWaiting 只是再印一行。
+  assert(
+    !/export function hideLoginWaiting\(\) \{\}/.test(files.view),
+    "hideLoginWaiting 不可以是空函式，它要真的把按鈕收掉",
+  );
+  assert(
+    files.view.includes("loginWaitingButton?.remove()"),
+    "等待結束時要移除「停止等待」按鈕",
+  );
+  assert(
+    /export function finishLoginWaiting[\s\S]{0,120}hideLoginWaiting\(\)/.test(
+      files.view,
+    ),
+    "登入等待正常結束時也要收掉按鈕，不能只有手動停止那條路",
+  );
+  ok("登入等待結束後「停止等待」按鈕會消失");
+
   // 小人常駐在終端頂欄，狀態要在「印字」之前換掉。
   //
   // 這一條擋的是同一個坑的新版本：去重只擋文字（環境卡按「再 check 一次」印的字跟
