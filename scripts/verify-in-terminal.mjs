@@ -498,7 +498,24 @@ function collectEvidence() {
   return null;
 }
 
-const launcher = writeLauncher(testCase.prompt({ agent, resultFile }));
+// 每一題只要提到結果檔，就一定要附上這句。
+//
+// 少了它，模型會防禦性地先跑一次「建立那個資料夾」——而那一步在 Windows 上撞權限牆
+//（New-Item 不在白名單裡，白名單那 39 條全是 Bash(...) 的名字），跳出「要不要允許」。
+// 學生按了拒絕，整條驗證就斷在那裡，結果檔永遠不會出現（Windows VM 實測：跑串接那題
+// 時，模型的第一個動作是 New-Item -ItemType Directory，被擋之後就沒有下文了）。
+//
+// 而那一步本來就是多的：上面第 353 行已經 mkdirSync 過了。
+const RESULT_DIR_NOTE =
+  "（那個檔案的資料夾已經存在，直接寫檔就好，不要先建立目錄。）";
+
+function buildPrompt(spec) {
+  const text = spec.prompt({ agent, resultFile });
+
+  return text.includes(resultFile) ? `${text}${RESULT_DIR_NOTE}` : text;
+}
+
+const launcher = writeLauncher(buildPrompt(testCase));
 const { cmd, args: openArgs } = openTerminal(launcher);
 const child = spawn(cmd, openArgs, { stdio: "ignore", detached: true });
 child.unref();
