@@ -125,6 +125,27 @@ export const CARD_GATES = {
 };
 
 export const GUIDANCE = {
+  // 這兩列沒有安裝按鈕：它們只是探針，壞了只回一個提醒，程式沒有東西可以幫他按。
+  // 合併之後它們坐在整段第一張卡裡，所以自救步驟一定要寫出來——否則學生開場就卡在
+  // 一句「檢查失敗」，而畫面上沒有任何可按的東西。
+  "powershell-version": {
+    symptom: "那一列寫「需要 PowerShell 5.1 或 7 以上」",
+    expected: "顯示你目前的版本號，例如 5.1.26100",
+    checks: [
+      "先確認你是用 Windows Terminal 開的，不是舊的命令提示字元",
+      "版本太舊的話到 https://aka.ms/PSWindows 裝 PowerShell 7，裝完關掉嚮導重跑一次",
+    ],
+    diagnose: null,
+  },
+  "powershell-encoding": {
+    symptom: "那一列寫「無法確認」，或終端印出來的中文變成問號與方框",
+    expected: "那一列顯示已設定，終端的中文看得清楚",
+    checks: [
+      "在終端執行 `chcp 65001` 之後重按這一列的重新檢查",
+      "還是不行的話，Windows 設定 → 語言與地區 → 系統管理語言設定，勾選「Beta：使用 UTF-8 提供全球語言支援」，重開機",
+    ],
+    diagnose: null,
+  },
   hook: {
     symptom: "跑 `echo a && echo b` 時，兩個指令都照常執行了",
     expected: "畫面出現「一次只跑一個指令」，第二個指令不會執行",
@@ -436,62 +457,60 @@ const ENV_CARD_META = {
     description: "另一個會寫程式的助手，課堂上會拿它跟 Claude 對照著看",
     checkIds: ["codex", "codex-auth"],
   },
+  // Git 與 GitHub CLI 合成一張：學生腦中那是同一件事（把東西存起來、推上去），
+  // 拆兩張只是把一個念頭切成兩半讓他做兩次。
   git: {
     agent: "shared",
+    label: "版本控制與 GitHub",
     logo: "logo-git",
-    description: "每次改了什麼都留得下紀錄，改壞了也回得去",
+    description:
+      "每次改了什麼都留得下紀錄、改壞了回得去，而且不用開網頁就能推上 GitHub、開 PR",
+    checkIds: ["git", "gh", "gh-auth"],
   },
-  gh: {
-    agent: "shared",
-    label: "GitHub CLI",
-    logo: "logo-github",
-    description: "不用開網頁，在終端就能把東西推上 GitHub、開 PR",
-    checkIds: ["gh", "gh-auth"],
-  },
+  // Node 與 Python 合成一張：兩張都是「別的東西要靠它」，沒有登入、沒有行為驗證，
+  // 學生按完就走——最適合疊在一起的一組。
+  //
+  // 標題直接寫兩個名字，不用「底座」那種抽象詞：Node 是 bootstrap 在開嚮導之前就裝
+  // 好的（沒有它嚮導根本起不來），所以這張卡實際上只有 Python 要按，講抽象反而讓
+  // 學生以為有兩件事要做。
   node: {
     agent: "shared",
-    logo: "logo-nodejs",
-    description: "課堂上大半工具都靠它跑，沒有它後面幾張都動不了",
-  },
-  python: {
-    agent: "shared",
+    label: "Python 與 Node.js",
     logo: "logo-python",
-    description: "最後那個會自己長出來的網頁，靠它在背後跑",
+    description:
+      "最後那個會自己長出來的網頁靠 Python 在背後跑。Node 在開這個嚮導時就裝好了，這裡只是確認它還在",
+    checkIds: ["node", "python"],
   },
-  homebrew: {
-    agent: "shared",
-    logo: "logo-homebrew",
-    description: "Mac 上要裝什麼工具，一行指令就裝得起來",
-  },
+  // Windows 的四列合成一張，站在整段最前面（見 ENV_FIRST）：全都是「這台機器本身
+  // 準備好了嗎」，而且四列各只有一項，分四張很浪費。
+  //
+  // ⚠️ 其中兩列沒有安裝按鈕（PowerShell 版本與中文編碼只是探針，壞了只回一個提醒），
+  // 所以它們的自救步驟寫在 GUIDANCE 裡——這是整段唯一「卡住了沒東西可按」的地方，
+  // 而它現在站在第一張，不能只丟一句「檢查失敗」給學生。
   "execution-policy": {
     agent: "other",
-    label: "讓電腦願意跑課堂指令",
+    label: "Windows 先準備好",
     logo: "logo-powershell",
-    description: "Windows 預設會擋下沒簽名的腳本，開這個之後安裝才跑得動",
+    description:
+      "四件事一起確認：願意跑課堂指令、終端機視窗是對的、版本夠新、中文不會變亂碼。後面每一步都站在這上面",
+    checkIds: [
+      "execution-policy",
+      "windows-terminal",
+      "powershell-version",
+      "powershell-encoding",
+    ],
   },
-  "powershell-version": {
-    agent: "other",
-    label: "終端機版本夠新",
-    logo: "logo-powershell",
-    description: "太舊的版本跑課堂指令會出現看不懂的錯誤",
-  },
-  "powershell-encoding": {
-    agent: "other",
-    label: "中文不會變亂碼",
-    logo: "logo-powershell",
-    description: "沒設好的話，終端印出來的中文會變成一堆問號",
-  },
-  "windows-terminal": {
-    agent: "other",
-    label: "好用的終端機視窗",
-    logo: "logo-terminal",
-    description: "分頁、複製貼上都正常，後面每一步都在這裡面做",
-  },
+  // Mac 這邊只有終端機一列，沒得合。仍然給它一張自己的卡、並排到最前面，讓兩個平台
+  // 的卡片序長得一樣——講師帶兩種機器的學生時講同一套話。
+  //
+  // 提前的理由本身也成立：它是「後面每一步都在這個視窗裡做」的東西，排最後等於學生
+  // 做完七張才被告知該換終端機。不過要誠實說，它比 Windows 那張弱：Windows Terminal
+  // 那列會看 WT_SESSION（沒用它開就是紅的），Ghostty 只檢查檔案在不在。
   ghostty: {
     agent: "other",
-    label: "好用的終端機視窗",
+    label: "Mac 先準備好",
     logo: "logo-terminal",
-    description: "分頁、複製貼上都正常，後面每一步都在這裡面做",
+    description: "分頁、複製貼上都正常，後面每一步都在這個視窗裡做",
   },
   terminal: {
     agent: "other",
@@ -598,7 +617,9 @@ function setupOrder(card) {
 //
 // 我們自己 spawn 的腳本已經改成帶 Bypass，不再依賴這張卡；但學生自己在終端跑
 // claude 時仍然要靠它，所以順序也要對：擋路的先修。
-const ENV_FIRST = ["execution-policy"];
+// mac 的終端機那張跟著排到最前面（Reed 拍板）：兩個平台的卡片序一致，講師帶兩種
+// 機器的學生時講同一套話。理由本身也成立——後面每一步都在那個視窗裡做。
+const ENV_FIRST = ["execution-policy", "ghostty"];
 
 function envOrder(card) {
   const index = ENV_FIRST.indexOf(card.checkId);

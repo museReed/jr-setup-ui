@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   FULLSCREEN_PROMPT,
   FULLSCREEN_PROOF,
+  GUIDANCE,
   SECTIONS,
   flattenCheckCards,
   groupChecks,
@@ -65,15 +66,76 @@ try {
         "gh",
         "gh-auth",
         "node",
+        "python",
         "ghostty",
       ].map(check),
     ),
     "env",
   );
+  // mac 的順序：終端機那張排到最前面（跟 Windows 的「先準備好」同一格），Git 與
+  // GitHub 合成一張，Node 與 Python 合成一張。
   assert.deepEqual(
     envSequence.cards.map(({ checkId }) => checkId),
-    ["env-config", "claude", "codex", "git", "gh", "node", "ghostty"],
+    ["env-config", "ghostty", "claude", "codex", "git", "node"],
   );
+  const gitCard = envSequence.cards.find(({ checkId }) => checkId === "git");
+  assert.deepEqual(
+    gitCard.checks.map(({ id }) => id),
+    ["git", "gh", "gh-auth"],
+  );
+  assert.match(gitCard.label, /版本控制與 GitHub/);
+  const runtimeCard = envSequence.cards.find(({ checkId }) => checkId === "node");
+  assert.deepEqual(
+    runtimeCard.checks.map(({ id }) => id),
+    ["node", "python"],
+  );
+
+  // Windows：四列終端／PowerShell 相關的合成一張，而且站在整段最前面——擋路的先修。
+  const windowsSequence = section(
+    flattenCheckCards(
+      groupChecks([]),
+      [
+        "execution-policy",
+        "claude",
+        "claude-auth",
+        "git",
+        "gh",
+        "gh-auth",
+        "node",
+        "python",
+        "windows-terminal",
+        "powershell-version",
+        "powershell-encoding",
+      ].map(check),
+    ),
+    "env",
+  );
+  assert.deepEqual(
+    windowsSequence.cards.map(({ checkId }) => checkId),
+    ["env-config", "execution-policy", "claude", "git", "node"],
+  );
+  const windowsCard = windowsSequence.cards.find(
+    ({ checkId }) => checkId === "execution-policy",
+  );
+  assert.deepEqual(
+    windowsCard.checks.map(({ id }) => id),
+    [
+      "execution-policy",
+      "windows-terminal",
+      "powershell-version",
+      "powershell-encoding",
+    ],
+  );
+  assert.match(windowsCard.label, /Windows 先準備好/);
+  ok("環境段合併：兩平台的卡片序一致，終端／PowerShell 那組排在最前面");
+
+  // 那兩列沒有安裝按鈕（只是探針），合併後坐在第一張卡裡——沒有自救說明的話學生
+  // 開場就卡在一句「檢查失敗」，而畫面上沒有任何可按的東西。
+  for (const id of ["powershell-version", "powershell-encoding"]) {
+    assert(GUIDANCE[id] !== undefined, `${id} 沒有安裝按鈕，一定要有自救說明`);
+    assert(GUIDANCE[id].checks.length > 0);
+  }
+  ok("沒有安裝按鈕的兩列都有自救步驟");
 
   const rules = section(
     groupChecks([
