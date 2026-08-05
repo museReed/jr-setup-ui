@@ -142,34 +142,11 @@ assert(
   !allowlistCase.includes("WebSearch"),
   "白名單那題不可以碰 WebSearch——它在部分地區用不了，會變成永遠紅的假燈",
 );
-// 陰性對照：一條**不在**白名單裡的指令，而且判定要求它「有跳提示」。
-//
-// 少了它，這一題只證明得了「有東西被放行」，證明不了「白名單是有選擇性的」。哪天有人
-// 把 defaultMode 設成 bypassPermissions、或在 allow 裡加一條裸的 Bash，前四步照樣全過
-// ——而實際上是全部放行，那比沒設還危險。
 assert(
-  allowlistCase.includes("uname"),
-  "白名單那題少了陰性對照——沒有它就分不出「有選擇性」與「全部放行」",
-);
-assert(
-  /第 5 步有跳提示的話/.test(allowlistCase),
-  "陰性對照要進判定條件：它必須「有跳提示」才算通過",
-);
-// 陰性對照不能印出個人資料：那份逐字稿是要貼給我們看的。whoami 與 git config --list
-// 都因此被否決，uname 印的是 MINGW64_NT-10.0 / Darwin。
-for (const leaky of ["whoami", "git config", "printenv", "env "]) {
-  assert(
-    !allowlistCase.includes(leaky),
-    `陰性對照不可以用 ${leaky}——它會把個人資料印進要交出去的逐字稿`,
-  );
-}
-assert(
-  /前四步都沒有跳提示/.test(allowlistCase),
+  /四步全部都沒有跳提示的話/.test(allowlistCase),
   "判定條件的步數要跟提問裡列的一致",
 );
-console.log(
-  "ok - 白名單那題覆蓋四種形狀、有陰性對照、不碰 WebSearch、不印個人資料",
-);
+console.log("ok - 白名單那題覆蓋四種規則形狀，按了允許不會過，不碰 WebSearch");
 
 // 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」

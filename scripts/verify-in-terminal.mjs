@@ -125,14 +125,18 @@ const CASES = {
   // 機器上不一定有的（jq / tree / file），以及要前提的（npm run 要 package.json）。
   // 那些失敗時的原因跟白名單無關，而學生只會看到一個紅燈。
   //
-  // 第 5 步是陰性對照，補的是前四步的盲點：它們只證明「有東西被放行」，證明不了
-  // 「白名單是有選擇性的」。哪天有人把 defaultMode 設成 bypassPermissions、或在 allow
-  // 裡加一條裸的 Bash，前四步照樣全過，而實際上是全部放行——那比沒設還危險。
+  // 也刻意沒有陰性對照（一條不在白名單、應該要被擋下來的指令）。它補得了一個真的
+  // 盲點——現在這題分不出「白名單有選擇性」與「全部放行」（有人把 defaultMode 設成
+  // bypassPermissions 的話，下面四步照樣全過）。
   //
-  // uname 是挑過的：不在那 39 條裡、唯讀、單一指令（不會先被 hook 擋掉）、Windows 的
-  // Git Bash 與 macOS 都有，而且輸出不含任何個人資料（MINGW64_NT-10.0 / Darwin）。
-  // whoami 與 git config --list 都被否決——它們會把使用者名稱或 email 印進逐字稿，
-  // 而那份逐字稿是要貼給我們看的。
+  // 拿掉的理由是它判不了：「被拒絕」與「模型根本沒去試」在畫面上與事件流裡長得一樣，
+  // 而唯一能分辨的線索是比對指令字串——那條路 verify-hook-live 的註解已經封死過一次
+  //（事件流包含 prompt 本身，寫進去的話「有沒有真的送出」永遠成立，判定變成永遠誤判）。
+  // 而陰性對照非得在題目裡指名那條指令不可。
+  //
+  // 要補這個盲點，正確的方向是改成 headless（claude -p --output-format stream-json、
+  // 且不要傳 --allowedTools，讓 settings.json 獨自決定），從事件流裡找權限拒絕訊息。
+  // 那要先在真機器上採一次樣把措辭釘下來，不能憑猜（Reed 決定先不做）。
   allowlist: {
     label: "常用指令不用每次問你",
     env: () => ({}),
@@ -145,18 +149,16 @@ const CASES = {
     //     只驗得到第一條，後面幾種形狀壞掉也一樣綠。
     //
     prompt: ({ resultFile }) =>
-      "請依序做這五件事，一件都不要跳過：" +
+      "請依序做這四件事，一件都不要跳過：" +
       `1) 執行 echo ${ALLOWLIST_TOKEN}　2) 執行 pwd　3) 執行 git status　` +
-      "4) 用 WebFetch 讀 https://raw.githubusercontent.com/museReed/jr-setup-ui/main/README.md　" +
-      "5) 執行 uname。" +
+      "4) 用 WebFetch 讀 https://raw.githubusercontent.com/museReed/jr-setup-ui/main/README.md。" +
       "第 3 步跑出「不是 git 儲存庫」之類的錯誤也算跑過——這一題看的是有沒有被擋，不是成不成功。" +
-      "第 5 步故意不在白名單裡，應該會跳出要你允許的提示：不要按允許，選拒絕或取消。" +
-      `前四步都沒有跳提示、而且第 5 步有跳提示的話，把 ${ALLOWLIST_TOKEN} 寫進 ${resultFile}。` +
-      `只要有任何一步不是這樣，就改把是哪一步、發生什麼事寫進 ${resultFile}。`,
+      "如果其中任何一步跳出要你允許的提示，不要按允許，" +
+      `把那一步的編號與提示原文寫進 ${resultFile} 就停下來。` +
+      `四步全部都沒有跳提示的話，把 ${ALLOWLIST_TOKEN} 寫進 ${resultFile}。`,
     expect: () => ({ kind: "artifact", keyword: ALLOWLIST_TOKEN }),
     watchFor:
-      "前四條直接跑掉沒有詢問，最後那條 uname 反而跳出「要不要允許」——" +
-      "那證明白名單是有選擇性的，不是全部放行",
+      "三條指令與那次 WebFetch 都直接跑掉，沒有跳出任何「要不要允許」的詢問",
   },
   chained: {
     label: "Shell 不串接",
