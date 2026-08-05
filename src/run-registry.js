@@ -17,6 +17,7 @@ import { resolveEngine, shouldExplainOutput } from "./actions.js";
 import { spawnEnv } from "./env-path.js";
 import { isBenignExit } from "./installers.js";
 import { isProgressNoise } from "./output-noise.js";
+import { loadSelection } from "./progress-state.js";
 import { ensureWorkDir, moduleFile } from "./paths.js";
 import { resolveLaunch } from "./spawn-command.js";
 import { streamLines, writeEvent, writeOutputLine } from "./sse.js";
@@ -40,14 +41,22 @@ export function readSourceMarker(readFile = readFileSync) {
 }
 
 // 每次執行開頭的環境摘要。這幾行是給我們看的，不是給學生看的——該塞的就塞。
-export function runHeader(run, engine = null, platform = process) {
+//
+// selection 是存下來的那份「學生選了哪些工具、哪個語言」，不是這次 action 的 options
+// ——後者只留得住 action 自己宣告的欄位。裝設定那幾顆宣告的是 {step, lang}，於是
+// 摘要上的 tools 永遠是「-」（VM 實測貼回來的診斷資料就是這樣）。
+//
+// 摘要是診斷資料，不該依賴每顆 action 記得宣告 tools。
+export function runHeader(run, engine = null, selection = null, platform = process) {
   const options = run.options ?? {};
+  const tools = selection?.tools?.join(",") ?? options.tools ?? "-";
+  const lang = options.lang ?? selection?.lang ?? "-";
 
   return [
     `--- ${run.actionName ?? "?"}${engine === null ? "" : `（${engine}）`} ---`,
     `平台：${platform.platform} ${platform.arch}　Node：${platform.version}`,
     `嚮導來源：${readSourceMarker()}`,
-    `選擇：tools=${options.tools ?? "-"} lang=${options.lang ?? "-"} step=${options.step ?? "-"}`,
+    `選擇：tools=${tools} lang=${lang} step=${options.step ?? "-"}`,
   ];
 }
 
@@ -198,7 +207,10 @@ export async function runAction(
   // 開頭先寫一段環境摘要。學生貼回來的往往只有這一段輸出，沒有這幾行的話，
   // 連「他是哪個平台、跑哪個版本」都得靠猜——今天是從輸出裡那句
   // python-3.13.14-arm64.exe 才意外看出那是一台 ARM 的 VM。
-  for (const line of runHeader(run, engine)) {
+  // 讀存下來的選擇會碰磁碟，失敗不該讓整次執行收攤——摘要少一格，比按鈕按不動好。
+  const selection = await loadSelection().catch(() => null);
+
+  for (const line of runHeader(run, engine, selection)) {
     writeOutputLine(response, "stdout", line, 0);
   }
   const command =
@@ -318,6 +330,10 @@ export async function runAction(
     runs.delete(runId);
     writeEvent(response, "done", {
       ...result,
+      // 收尾這一行也要標時間，而且它是最該標的一行——前面停在幾秒不代表整件事跑了
+      // 幾秒。今天那個 winget 案子如果只有 exit code、沒有「跑了三分鐘」，我們一樣
+      // 看不出它是被拖垮的。
+      at: elapsed(),
       explanationPending,
     });
 

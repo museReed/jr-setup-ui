@@ -104,14 +104,17 @@ try {
   // 環境摘要：學生貼回來的往往只有這一段輸出，平台與來源分支必須在裡面。今天是從
   // 輸出裡那句 python-3.13.14-arm64.exe 才意外看出那是一台 ARM 的 VM。
   const header = runHeader(
-    { actionName: "install-python", options: { tools: "codex", lang: "zh-TW" } },
+    { actionName: "install-python", options: { lang: "zh-TW" } },
     null,
+    // 存下來的選擇，不是這次 action 的 options：裝設定那幾顆宣告的是 {step, lang}，
+    // 伺服器會把前端送的 tools 丟掉，摘要上就永遠是「-」（VM 實測貼回來就是這樣）。
+    { tools: ["claude", "codex"] },
     { platform: "win32", arch: "arm64", version: "v24.19.0" },
   ).join("\n");
   assert.match(header, /install-python/);
   assert.match(header, /win32 arm64/);
   assert.match(header, /v24\.19\.0/);
-  assert.match(header, /tools=codex/);
+  assert.match(header, /tools=claude,codex/);
   // 來源分支：抓不到時要說 unknown，不能整個爆掉——.jr-source 是 bootstrap 寫的，
   // 用 git clone 跑的開發機上根本沒有那個檔案。
   assert.match(header, /嚮導來源：/);

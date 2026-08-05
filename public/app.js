@@ -1088,7 +1088,7 @@ async function handleDone(
   runContext,
 ) {
   const outcome = runOutcome(result);
-  view.addRawLine(outcome.summary);
+  view.addRawLine(outcome.summary, result.at);
   const step = options?.step ?? runContext.step;
   const check =
     state.lastChecks.find((candidate) => candidate.id === step) ??
@@ -1617,7 +1617,9 @@ view.elements.copyDiagnostics.addEventListener("click", async () => {
       //
       // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
       output: view.rawOutputDiagnostics(),
-      locks: await view.lockDiagnostics(),
+      // 哪一段做完了、哪一段還鎖著。「為什麼我進不去下一段」是真的會問的問題，
+      // 而那個答案在畫面上只表現成一個鎖頭圖示。
+      sections: view.sectionLockStates(),
       // 導覽跑了什麼、為什麼沒跑。Reed 在 VM 上看到版面導覽沒出現就直接跳了元件
       // 導覽，而同一份 code 在 Mac 上重現不出來——沒有紀錄只能一路猜。
       tour: tourDiagnostics(),

@@ -454,9 +454,15 @@ try {
 
   // 擋住症狀不等於查到根因。狀態變化要留紀錄，讓 VM 上跑到的人按一顆按鈕整包
   // 送回來——只記變化，不記每一次重畫（重畫一秒好幾次，全記會把那一筆淹掉）。
-  assert(files.view.includes("export async function lockDiagnostics()"));
+  // 段落狀態只送「哪一段做完了、哪一段還鎖著」。曾經一起送的幀號、class 與 200 筆
+  // 逐筆紀錄都拿掉了——它們是為了查一個已經修好的動畫 bug，留著只會把原始輸出淹掉。
+  assert(files.view.includes("export function sectionLockStates()"));
+  assert(
+    !files.view.includes("lockDiagnostics"),
+    "動畫細節不再進診斷資料",
+  );
   // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
-  assert(files.app.includes("await view.lockDiagnostics()"));
+  assert(files.app.includes("sections: view.sectionLockStates()"));
 
   // 診斷資料要含每張卡最近幾次執行的原始輸出。少了它，那顆按鈕收的只有鎖頭與導覽
   // 的狀態——名字叫「診斷資料」，學生按了貼回來，我們拿到的是動畫幀號。

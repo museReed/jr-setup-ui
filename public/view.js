@@ -1246,39 +1246,18 @@ let observedLocks = null;
 //
 // 這沒有修掉「為什麼會短暫算錯」——那要另外查。但一次性的雜訊本來就不該讓畫面
 // 演一段慶祝動畫，這道關卡該有，跟根因是什麼無關。
-// 這裡曾經有一份鎖頭狀態的逐筆變化紀錄（lockLog，上限 200 筆），為了查「完成度
-// 會短暫算錯、於是畫面演一段不該演的動畫」那個 bug——那個瞬間本機重現不出來，只能
-// 記下來請 VM 上的人整包送回來。
+// 「複製診斷資料」帶走的段落狀態：哪一段做完了、哪一段還鎖著。
 //
-// 那個 bug 查完也修好了（見上面 confirmedState 那段的說明），而診斷資料現在帶的是
-// 原始輸出——真正判斷得了問題的東西。逐幀的動畫紀錄留著只會把它淹掉：學生貼回來
-// 幾百筆幀號，我們要找的那幾行反而難挑（Reed 指定移除）。
+// 這裡曾經有兩樣東西也一起送：一份 200 筆的鎖頭逐筆變化紀錄，以及每個分頁的 lottie
+// 幀號與 class。兩樣都是為了查「完成度會短暫算錯、於是畫面演一段不該演的動畫」那個
+// bug——那個瞬間本機重現不出來，只能請 VM 上的人整包送回來。
 //
-// 現在的狀態（哪一格鎖著、停在第幾幀）仍然留著，那是四筆，不吵。真的又需要逐筆
-// 紀錄時，回到這一顆的前一版把 logLock 撿回來就好。
-
-// 按下「複製診斷資料」時收集的東西：現在每一格長怎樣。
-export async function lockDiagnostics() {
-  const tabs = await Promise.all(
-    elements.sectionButtons.map(async (button) => {
-      const animation = await lockAnimations.get(button);
-
-      return {
-        tab: button.dataset.sectionTarget,
-        classes: button.className,
-        lockClasses: button.querySelector(".section-tab-lock")?.className ?? null,
-        frame: animation ? Math.round(animation.currentFrame) : null,
-        paused: animation ? animation.isPaused : null,
-      };
-    }),
-  );
-
-  return {
-    committed: renderedLocks,
-    observed: observedLocks,
-    pendingUnlock: [...pendingUnlock],
-    tabs,
-  };
+// 那個 bug 查完也修好了，而診斷資料現在帶的是原始輸出，真正判斷得了問題的東西。
+// 幀號留著只會把它淹掉，而且它講的事下面這一行已經直說了（Reed 指定移除）。
+//
+// 真的又需要那些細節時，git log 找得回來——它們的價值在當時，不在常駐。
+export function sectionLockStates() {
+  return { ...renderedLocks };
 }
 
 // 這裡曾經有一道「要連續兩次算出同一個狀態才承認」的關卡（confirmedState），
