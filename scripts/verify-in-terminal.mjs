@@ -106,21 +106,47 @@ const CASES = {
   // defaultMode 是 acceptEdits」——那證明得了檔案寫對，證明不了 Claude Code 真的
   // 照著做（今天才踩過同一種：Codex 的三個 key 值全對，行為卻不是我們要的）。
   //
-  // 題目挑 echo 有三個理由：它在白名單裡（Bash(echo:*)）、它是單一指令所以不會被
-  // 隔壁那個 hook 擋掉、而且它的輸出完全可預測。挑 git status 那種會受工作目錄影響。
+  // 題目不是「把 39 條都跑一遍」——那會驗到錯的東西。規則字串對不對是結構問題，
+  // checkAllowlist 已經逐條比對過了；這裡要證明的是「Claude Code 真的讀了那個檔案
+  // 並照著做」，而那是一個開關。
+  //
+  // 該覆蓋的是幾種**形狀不同**的規則，那些才可能各自壞掉：
+  //
+  //   Bash(echo:*)            單字前綴
+  //   Bash(pwd)               完全精確、沒有萬用字元 ← 最可能跟前綴走不同路的一種
+  //   Bash(git status:*)      兩字前綴
+  //   WebFetch(domain:...)    非 Bash 工具、帶 specifier
+  //   WebSearch               非 Bash 工具、裸工具名
+  //
+  // 刻意不跑的：會改東西的（mkdir / cp / git commit…，在學生家目錄亂跑很糟）、
+  // 機器上不一定有的（jq / tree / file），以及要前提的（npm run 要 package.json）。
+  // 那些失敗時的原因跟白名單無關，而學生只會看到一個紅燈。
   allowlist: {
     label: "常用指令不用每次問你",
     env: () => ({}),
-    // 「跳了提示就不要按允許，把原文寫進去」是這一題的關鍵：沒有這一句的話，學生
-    // 按了允許、指令照樣跑、檔案裡照樣有 token——驗證會通過，而白名單其實沒生效。
-    // 有這一句，檔案裡放的是提示原文，比對就會失敗，正好是我們要的答案。
+    // 兩個設計上的關鍵，改題目時不要順手拿掉：
+    //
+    // 一、「跳了提示就不要按允許」。少了它這題會變成假驗證：學生按了允許 → 指令
+    //     照樣跑 → 檔案裡照樣有 token → 通過，而白名單其實沒生效。
+    //
+    // 二、token 是「全部都沒被問」的結論，不是「echo 跑過了」的副產物。寫成後者的話
+    //     只驗得到第一條，後面幾種形狀壞掉也一樣綠。
+    //
+    // WebSearch 刻意不列進條件：它在部分地區用不了，列進去會變成「失敗的原因錯了」
+    // 那類假紅燈——學生看到紅的去重裝白名單，裝一百次也不會好。它只留在提問裡讓
+    // 學生自己看一眼（watchFor 那句）。
     prompt: ({ resultFile }) =>
-      `請執行這條指令：echo ${ALLOWLIST_TOKEN}。` +
-      `把它印出來的那一行一字不改寫進 ${resultFile}。` +
-      "如果跳出任何要你允許執行的提示，不要按允許——" +
-      `改把那個提示的原文寫進 ${resultFile}。`,
+      "請依序做這四件事，一件都不要跳過：" +
+      `1) 執行 echo ${ALLOWLIST_TOKEN}　2) 執行 pwd　3) 執行 git status　` +
+      "4) 用 WebFetch 讀 https://raw.githubusercontent.com/museReed/jr-setup-ui/main/README.md。" +
+      "第 3 步跑出「不是 git 儲存庫」之類的錯誤也算跑過——這一題看的是有沒有被擋，不是成不成功。" +
+      "如果其中任何一步跳出要你允許的提示，不要按允許，" +
+      `把那一步的編號與提示原文寫進 ${resultFile} 就停下來。` +
+      `四步全部都沒有跳提示的話，把 ${ALLOWLIST_TOKEN} 寫進 ${resultFile}。` +
+      "最後再用 WebSearch 隨便查一個詞，告訴我有沒有跳提示就好，那一步不影響上面那行字。",
     expect: () => ({ kind: "artifact", keyword: ALLOWLIST_TOKEN }),
-    watchFor: "指令直接跑掉，沒有跳出任何「要不要允許」的詢問",
+    watchFor:
+      "四條指令與 WebFetch、WebSearch 都直接跑掉，沒有跳出任何「要不要允許」的詢問",
   },
   chained: {
     label: "Shell 不串接",

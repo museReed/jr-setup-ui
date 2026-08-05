@@ -118,7 +118,33 @@ assert(
   /allowlist: \{[\s\S]*?echo \$\{ALLOWLIST_TOKEN\}[\s\S]*?\},/.test(source),
   "白名單那題要用單一的 echo——串接指令會先被 hook 擋掉",
 );
-console.log("ok - 白名單那題按了允許也不會過，而且不會被 hook 先擋掉");
+
+// 覆蓋的是幾種形狀不同的規則，不是 39 條指令。少一種形狀，那種壞掉時卡片還是綠的。
+const allowlistCase = source.slice(
+  source.indexOf("  allowlist: {"),
+  source.indexOf("  chained: {"),
+);
+for (const [shape, needle] of [
+  ["完全精確、沒有萬用字元", "pwd"],
+  ["兩字前綴", "git status"],
+  ["非 Bash 工具、帶 specifier", "WebFetch"],
+  ["非 Bash 工具、裸工具名", "WebSearch"],
+]) {
+  assert(
+    allowlistCase.includes(needle),
+    `白名單那題少了「${shape}」這種規則（${needle}）`,
+  );
+}
+
+// ⚠️ WebSearch 不可以進判定條件：它在部分地區用不了，列進去會變成假紅燈——學生看到
+// 紅的去重裝白名單，裝一百次也不會好。它只留在提問裡讓學生自己看一眼。
+assert(
+  /四步全部都沒有跳提示的話/.test(allowlistCase),
+  "判定條件要寫成「四步」——把 WebSearch 算進去會在用不了的地區永遠紅",
+);
+console.log(
+  "ok - 白名單那題覆蓋五種規則形狀，按了允許不會過，WebSearch 不進判定",
+);
 
 // 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
