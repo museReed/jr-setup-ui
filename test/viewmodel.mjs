@@ -37,6 +37,7 @@ import {
   nextCardUnlocked,
   rowRunOptions,
   runControlsState,
+  failureReason,
   runOutcome,
   sectionManualItems,
   systemRowChecked,
@@ -319,10 +320,13 @@ try {
   assert.deepEqual([...completedCardIds(attemptedOnly, new Set(), new Set())], []);
   ok("裝好但沒驗過的卡不算完成，就算學生已經按過驗證");
 
+  const seen = (...ids) => new Set(ids);
+
   const milestones = milestoneModels(
     cards,
     new Set(["one"]),
     1,
+    seen("one", "two"),
   );
   assert.equal(milestones[1].unlocked, true);
   assert.equal(milestones[2].unlocked, false);
@@ -335,7 +339,7 @@ try {
   const allIds = new Set(["one", "two", "three"]);
 
   // 本機環境全綠（三張卡的檢查都通過）但小鴨還在第一站：後面兩顆不能亮。
-  const atFirst = milestoneModels(cards, allIds, 0);
+  const atFirst = milestoneModels(cards, allIds, 0, seen("one"));
   assert.deepEqual(
     atFirst.map(({ reached }) => reached),
     [true, false, false],
@@ -344,17 +348,61 @@ try {
   ok("小鴨沒走到的圓點不算走過，就算那些檢查本來就通過");
 
   // 走到第 2 站、第 2 張的檢查沒過：那一顆不能亮。
-  const secondNotDone = milestoneModels(cards, new Set(["one"]), 1);
+  const secondNotDone = milestoneModels(
+    cards,
+    new Set(["one"]),
+    1,
+    seen("one", "two"),
+  );
   assert.deepEqual(
     secondNotDone.map(({ reached }) => reached),
     [true, false, false],
   );
   ok("走過但沒通過的圓點不算走過");
 
+  // 迴歸（VM 實測）：只選 codex 做完所有卡，回第一頁加選 claude——加選會把停留位置
+  // 重置、而 claude 的卡排在前面，於是位置被拉回開頭，已完成的 codex 卡通通變灰。
+  // 走過就是走過，往回站不該讓它們熄掉。
+  const walkedBackToFirst = milestoneModels(
+    cards,
+    allIds,
+    0,
+    seen("one", "two", "three"),
+  );
+  assert.deepEqual(
+    walkedBackToFirst.map(({ reached }) => reached),
+    [true, true, true],
+  );
+  ok("往回看不會讓已經走過且完成的圓點變灰");
+
+  // 同一個迴歸的另一半：記索引就會壞在這裡。完成到第 3 張之後，加選工具在中間插入
+  // 兩張新卡，原本的第 2、3 張被推到第 4、5 位——記索引的話它們會超過高水位而重新
+  // 變灰，記 ID 則不受位移影響。
+  const afterInsert = [
+    cards[0],
+    { checkId: "new-a" },
+    { checkId: "new-b" },
+    cards[1],
+    cards[2],
+  ];
+  const inserted = milestoneModels(
+    afterInsert,
+    allIds,
+    1,
+    seen("one", "two", "three"),
+  );
+  assert.deepEqual(
+    inserted.map(({ reached }) => reached),
+    [true, false, false, true, true],
+  );
+  ok("中間插入新卡後，已完成的舊卡不會因為位移而變灰");
+
   // 卡片往哪邊展開要看落在條上的哪半邊。用「第幾顆」判的話，只有一站時那顆
   // （percent 100、貼最右）會被判成往右開，直接溢出畫面。
   assert.deepEqual(
-    milestoneModels(cards, new Set(), 0).map(({ edgeClass }) => edgeClass),
+    milestoneModels(cards, new Set(), 0, seen()).map(
+      ({ edgeClass }) => edgeClass,
+    ),
     [
       "ds-milestone--edge-start",
       "ds-milestone--edge-end",
@@ -362,14 +410,20 @@ try {
     ],
   );
   assert.equal(
-    milestoneModels([cards[0]], new Set(), 0)[0].edgeClass,
+    milestoneModels([cards[0]], new Set(), 0, seen())[0].edgeClass,
     "ds-milestone--edge-end",
   );
   ok("里程碑卡片往內側展開，只有一站時也不會往右溢出");
 
-  assert.equal(sectionStatus(cards, allIds, 2), "這一段已完成。");
-  assert.equal(sectionStatus(cards, allIds, 0), "還有 2 張要做。");
-  assert.equal(sectionStatus(cards, new Set(["one"]), 1), "還有 2 張要做。");
+  assert.equal(
+    sectionStatus(cards, allIds, seen("one", "two", "three")),
+    "這一段已完成。",
+  );
+  assert.equal(sectionStatus(cards, allIds, seen("one")), "還有 2 張要做。");
+  assert.equal(
+    sectionStatus(cards, new Set(["one"]), seen("one", "two")),
+    "還有 2 張要做。",
+  );
   ok("段落狀態依未完成卡片數顯示完成或剩餘張數");
 
   const checkingLine = {
@@ -518,11 +572,38 @@ try {
       new Set(["gh"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
     [
-      { text: "✅ 已安裝", disabled: true },
+      { text: "已安裝", disabled: true },
       { text: "開始登入", disabled: false },
     ],
   );
   ok("按過安裝但伺服器仍回 missing 時，安裝按鈕不置灰，學生能重試");
+
+  // 安裝鍵要掛回清單裡它負責的那一格（靠 checkId），不留在卡片底部的按鈕列——
+  // 「CLI 未安裝」在清單裡、按鈕在清單外，學生得自己把兩者連起來（Reed 指定）。
+  // 「開始登入」當初就是為了同一個理由搬進去的，兩顆現在一致。
+  for (const buttons of [
+    envCardRowModel(
+      { kind: "env", checkId: "gh", checks: [ghMissing, ghAuthBlocked] },
+      new Set(["gh"]),
+    ).buttons,
+    envCardRowModel(
+      {
+        kind: "env",
+        checkId: "gh",
+        checks: [
+          { ...ghMissing, status: "ok", detail: "gh 2.87.2" },
+          { ...ghAuthBlocked, status: "warn", fixAction: "login-gh" },
+        ],
+      },
+      new Set(["gh"]),
+    ).buttons,
+  ]) {
+    const install = buttons.find(
+      (button) => button.dataName === "installAction",
+    );
+    assert.equal(install.checkId, "gh");
+  }
+  ok("安裝按鈕帶著 checkId，畫在清單裡對應的那一格");
 
   // 設定類項目（execution-policy）沒有 installer，它要的是「修正」。
   // 補一顆永遠按不下去的「安裝」只會讓學生問「安裝什麼？」（Reed 實測提問）。
@@ -555,7 +636,7 @@ try {
     ).buttons.map(({ text }) => text),
     ["修正"],
   );
-  // 對照組：真的有 installer 的項目，裝好之後還是要留下已完成的 ✅ 安裝。
+  // 對照組：真的有 installer 的項目，裝好之後還是要留下已完成的「已安裝」。
   assert.deepEqual(
     envCardRowModel(
       {
@@ -575,7 +656,7 @@ try {
       },
       new Set(["node"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
-    [{ text: "✅ 已安裝", disabled: true }],
+    [{ text: "已安裝", disabled: true }],
   );
   ok("沒有 installer 的設定類項目不放安裝按鈕，只放修正");
 
@@ -1350,6 +1431,44 @@ try {
     "已停止：SIGKILL",
   );
   ok("成功判定含 benign 退出碼，被中止時顯示訊號");
+
+  // 迴歸（乾淨 macOS VM 實測的真實輸出）：最有用的 EACCES 在整段的第 5 行，
+  // 結尾則是 npm notice 與 log 檔路徑。抓最後一行等於給學生一句廢話。
+  const npmEacces = [
+    "npm error code EACCES",
+    "npm error syscall mkdir",
+    "npm error path /usr/local/lib/node_modules/@anthropic-ai",
+    "npm error errno -13",
+    "npm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@anthropic-ai'",
+    "npm error     at async mkdir (node:internal/fs/promises:859:10)",
+    "npm error The operation was rejected by your operating system.",
+    "npm notice",
+    "npm error A complete log of this run can be found in: /Users/reed/.npm/_logs/x.log",
+  ];
+  assert.equal(
+    failureReason(npmEacces),
+    "npm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@anthropic-ai'",
+  );
+  ok("npm 權限失敗時挑出 EACCES 那一行，不是 log 路徑");
+
+  // 只有錯誤代碼、沒有敘述句時退而求其次。
+  assert.equal(
+    failureReason([
+      "npm error code E404",
+      "npm error A complete log of this run can be found in: x",
+    ]),
+    "npm error code E404",
+  );
+  ok("沒有敘述句時退回錯誤代碼那一行");
+
+  // winget 的繁中輸出沒有 error 字樣——不能因此吐空的，要維持原本「最後一行」的行為。
+  assert.equal(
+    failureReason(["找到 Claude Code [Anthropic.ClaudeCode]", "安裝程式雜湊不符合"]),
+    "安裝程式雜湊不符合",
+  );
+  assert.equal(failureReason([]), undefined);
+  assert.equal(failureReason(undefined), undefined);
+  ok("沒有錯誤特徵時退回最後一行，空輸入不拋錯");
 
   assert.deepEqual(
     behaviorFallbackState({ exitCode: 0, signal: null }),

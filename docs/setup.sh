@@ -40,6 +40,21 @@ install_node() {
 install_homebrew() {
   say "安裝 Homebrew（嚮導裡 git / gh 的安裝按鈕需要它）"
   echo "這一步會下載 Xcode 命令列工具，可能要好幾分鐘，中途會要你的 Mac 密碼。"
+
+  # NONINTERACTIVE 模式的 brew 安裝不會自己問密碼，它只做 sudo -v；沒有有效授權就
+  # 直接死在 "Need sudo access on macOS"。
+  #
+  # 這個坑只在「Node 已經裝好」時才現形：Node 那一步的 sudo installer 會問密碼，
+  # 系統把授權快取幾分鐘，brew 就沿用它。Node 被跳過時沒有人先問過，就當場失敗
+  # （VM 實測）。所以這裡先明確要一次，不靠上一步的副作用。
+  if ! sudo -v; then
+    echo "沒有拿到管理員密碼，跳過 Homebrew。"
+    echo "嚮導仍然可以用，只是 git / gh / ghostty 那幾顆安裝按鈕會失敗。"
+    echo "之後想補裝，在終端機執行："
+    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    return
+  fi
+
   NONINTERACTIVE=1 /bin/bash -c \
     "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
@@ -59,6 +74,18 @@ if command -v node >/dev/null 2>&1; then
   echo "Node.js 已安裝：$(node --version)"
 else
   install_node
+fi
+
+# 已經裝好的 brew 要先認出來，不然下面會誤判成沒裝而重跑一次安裝。
+#
+# curl | bash 開出來的是「非登入、非互動」的 bash：macOS 把 /etc/paths.d 交給
+# path_helper 展開，而 path_helper 只在登入 shell 的 /etc/profile 裡跑；使用者的
+# .zprofile / .zshrc 是 zsh 的檔案，bash 更不會讀。於是 /opt/homebrew/bin 不在 PATH，
+# command -v brew 找不到它——即使 /etc/paths.d/homebrew 明明存在（VM 實測）。
+#
+# 順帶讓後面 exec 出去的嚮導也繼承得到 brew：它的安裝按鈕要叫得動 brew。
+if ! command -v brew >/dev/null 2>&1 && [ -x /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
 if command -v brew >/dev/null 2>&1; then

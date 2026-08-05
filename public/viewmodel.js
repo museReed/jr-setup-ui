@@ -198,21 +198,26 @@ export function envRowModel(check, installed = false) {
   const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
   const buttons = [];
 
+  // checkId 決定這顆按鈕畫在哪：帶了它就掛回清單裡它負責的那一格，沒帶就落到卡片
+  // 底部的按鈕列。安裝鍵原本沒帶，於是「Claude Code CLI 未安裝」在清單裡、按鈕在
+  // 清單外，學生得自己把兩者連起來——跟「開始登入」當初的問題一模一樣（Reed 指定）。
   if (check.installAction !== null && check.installAction !== undefined) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: installed ? "✅ 已安裝" : "安裝",
+      text: installed ? "已安裝" : "安裝",
+      checkId: check.id,
       ...(installed ? { disabled: true, done: true } : {}),
     });
   } else if (installed && check.hasInstaller !== false) {
-    // installAction 裝好之後會變 null，所以「已裝好」這一態要靠這裡補出 ✅ 安裝。
+    // installAction 裝好之後會變 null，所以「已裝好」這一態要靠這裡補出來。
     // 但設定類項目（execution-policy）根本沒有 installer，補了就是一顆意義不明的
     // 灰按鈕——hasInstaller 由伺服器標記，false 就什麼都不放。
     buttons.push({
       action: "",
       dataName: "installAction",
-      text: "✅ 已安裝",
+      text: "已安裝",
+      checkId: check.id,
       disabled: true,
       done: true,
     });
@@ -282,6 +287,7 @@ export function envCardRowModel(card, installedSteps = new Set()) {
         action: "",
         dataName: "installAction",
         text: "安裝",
+        checkId: primary.id,
         disabled: true,
       });
     }
@@ -655,16 +661,33 @@ export function currentCardIndex(
 // 少了後面那半，本機環境全綠時整條進度條會在小鴨還停在第一站時就全部亮起來，
 // 段落也會在第 2/10 站就宣告「已完成」。
 //
+// 「走到那裡」原本用 index <= currentIndex 表示，也就是拿「現在站在哪」代表
+// 「走到哪」。往前走時兩者一致，一往回走就開始說謊：
+//
+//   VM 實測——只選 codex、做完所有 codex 卡，再回第一頁加選 claude。加選會把
+//   停留位置重置，而 claude 的卡排在 codex 前面，於是位置被拉回開頭，已經做完的
+//   codex 卡通通變灰。資料完全沒變，變的只是顯示。
+//
+// 改成記「曾經被顯示過的卡片 ID」。用 ID 不用索引是必要的：加選工具會在中間插入
+// 新卡，索引會位移——記索引的話，完成到第 7 張、中間插 3 張，原本的第 5~7 張會被
+// 推到第 8~10 位而重新變灰，等於沒修。
+//
 // 小鴨當前那一張算不算，交給 completedCardIds 決定：呼叫端只有在該卡真的做完
 // （裝好 + 該驗的驗過 + 手動項勾完）時才會把它放進去。
-function cardsDone(cards, completedCardIds, currentIndex) {
+function cardsDone(cards, completedCardIds, seenCardIds) {
   return cards.map(
-    (card, index) => completedCardIds.has(card.checkId) && index <= currentIndex,
+    (card) =>
+      completedCardIds.has(card.checkId) && seenCardIds.has(card.checkId),
   );
 }
 
-export function milestoneModels(cards, completedCardIds, currentIndex) {
-  const done = cardsDone(cards, completedCardIds, currentIndex);
+export function milestoneModels(
+  cards,
+  completedCardIds,
+  currentIndex,
+  seenCardIds = new Set(),
+) {
+  const done = cardsDone(cards, completedCardIds, seenCardIds);
 
   return cards.map((card, index) => {
     const completed = done[index];
@@ -688,8 +711,8 @@ export function milestoneModels(cards, completedCardIds, currentIndex) {
   });
 }
 
-export function sectionStatus(cards, completedCardIds, currentIndex) {
-  const remaining = cardsDone(cards, completedCardIds, currentIndex).filter(
+export function sectionStatus(cards, completedCardIds, seenCardIds = new Set()) {
+  const remaining = cardsDone(cards, completedCardIds, seenCardIds).filter(
     (done) => !done,
   ).length;
 
@@ -1146,6 +1169,48 @@ export function runControlsState({
     // 只有「會等輸入」的動作才給那格貼代碼的輸入列。
     inputHidden: !runInProgress || !hasRun || !acceptsInput,
   };
+}
+
+// 卡片上那一行「為什麼失敗」要從整段輸出裡挑一行出來。挑最後一行是錯的：
+// npm 失敗時結尾固定是 npm notice 與 "A complete log of this run can be found in: …"，
+// 而真正的 "EACCES: permission denied" 在整段的第 5 行——最有用的資訊在最前面，
+// 程式卻去撈最後面，學生看到的等於一句廢話（VM 實測）。
+//
+// 也不能只認 npm 的格式：winget / brew / curl 都會走到這裡。所以改成分級挑：
+// 帶錯誤內容的那種最好，其次是錯誤代碼，都沒有才退回原本的最後一行。
+const NOISE_PATTERNS = [
+  /complete log of this run/i,
+  // npm 會把整段 async 堆疊當成 error 印出來，那是給維護者看的，不是給學生看的。
+  /^\s*(npm error\s+)?at\s/i,
+  /^\s*(npm )?(notice|warn|debug)\b/i,
+];
+
+const REASON_TIERS = [
+  // "Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/…'"
+  /error:\s*\S/i,
+  // "npm error code EACCES"
+  /\berr(or)?\s+code\b/i,
+  /\berror\b/i,
+];
+
+export function failureReason(rawOutput) {
+  const lines = (Array.isArray(rawOutput) ? rawOutput : [])
+    .map((line) => (typeof line === "string" ? line : ""))
+    .filter((line) => line.trim() !== "");
+  const usable = lines.filter(
+    (line) => !NOISE_PATTERNS.some((pattern) => pattern.test(line)),
+  );
+
+  for (const tier of REASON_TIERS) {
+    const hit = usable.find((line) => tier.test(line));
+
+    if (hit !== undefined) {
+      return hit;
+    }
+  }
+
+  // 沒有任何一行看起來像錯誤時，最後一行仍然是最好的猜測。
+  return usable.at(-1) ?? lines.at(-1);
 }
 
 // benign：安裝器回報「已經裝好了／沒有可用更新」，那不是失敗。

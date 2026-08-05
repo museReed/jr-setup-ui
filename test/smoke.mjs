@@ -187,6 +187,30 @@ try {
   assert(env.checks.every((check) => Object.hasOwn(check, "fixAction")));
   ok("GET /env 的每筆 check 都包含 fixAction");
 
+  // 迴歸：第一張卡選「只要 Codex」，環境段卻照樣要學生裝 Claude Code——
+  // 那個選擇原本只送到 /configs，/env 完全不知道有這回事。
+  const codexOnlyResponse = await fetch(
+    `${baseUrl}/env?tools=codex&t=${encodeURIComponent(token)}`,
+  );
+  assert.equal(codexOnlyResponse.status, 200);
+  const codexOnly = await codexOnlyResponse.json();
+  const codexOnlyIds = codexOnly.checks.map((check) => check.id);
+  assert(!codexOnlyIds.includes("claude"));
+  assert(!codexOnlyIds.includes("claude-auth"));
+  assert(codexOnlyIds.includes("codex"));
+  assert(codexOnlyIds.includes("codex-auth"));
+  // 共用的前置不能跟著消失。
+  for (const id of ["git", "gh", "node", "python"]) {
+    assert(codexOnlyIds.includes(id), `${id} 是共用前置，不該被過濾掉`);
+  }
+  ok("GET /env?tools=codex 不回 Claude Code 那兩列，共用前置照留");
+
+  const badToolsResponse = await fetch(
+    `${baseUrl}/env?tools=vim&t=${encodeURIComponent(token)}`,
+  );
+  assert.equal(badToolsResponse.status, 400);
+  ok("GET /env 的 tools 不在白名單時回 400");
+
   const configsResponse = await fetch(
     `${baseUrl}/configs?tools=claude&lang=zh-TW&t=${encodeURIComponent(token)}`,
   );
