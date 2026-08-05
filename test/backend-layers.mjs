@@ -4,8 +4,12 @@
 // 後端不是 MVC——它不產生畫面，硬套只會得到一個空的 View 層。實際的形狀是
 // 「薄轉接頭 + 純領域」（ports and adapters）：
 //
-//   轉接頭  server.js   HTTP 路由、把請求翻成一次執行
-//           sse.js      事件協定：怎麼把一行輸出送到瀏覽器
+//   轉接頭  server.js        HTTP 路由、把請求翻成一次執行
+//           run-registry.js  子行程的一生：spawn、接輸出、被中止時怎麼收尾
+//           sse.js           事件協定：怎麼把一行輸出送到瀏覽器
+//
+// run-registry 算轉接頭不算領域：它一手收 http response、一手 spawn，站在兩個外部
+// 世界中間，本來就不會是純的。但它只做這件事——路由不在裡面，領域規則也不在。
 //   白名單  actions.js  哪些指令允許被跑、參數長什麼樣——這是安全邊界
 //   領域    config-install / config-check / env-check / installers / …
 //           裝什麼、驗什麼。不知道 HTTP 存在，所以在 Node 裡直接測得動
@@ -29,7 +33,7 @@ function importsOf(source) {
   return [...source.matchAll(/from\s+"\.\/([\w-]+)\.js"/g)].map((m) => m[1]);
 }
 
-const ADAPTERS = ["server", "sse"];
+const ADAPTERS = ["server", "run-registry", "sse"];
 
 // 領域＝src 底下扣掉轉接頭的其餘模組。用「列出目錄再扣掉」而不是寫死一張清單：
 // 新增一個檔案時它自動被納管，不會因為沒人記得加而漏掉。
@@ -74,7 +78,9 @@ try {
   //
   // 例外寫死在這裡，就是為了讓「多一個檔案開始 spawn」這件事必須先改測試——改測試
   // 會逼人想一次：這條指令是誰決定的？
-  const SPAWNERS = ["server", "env-check", "config-check", "env-path"];
+  // server.js 不在這張清單裡了：抽出 run-registry 之後它不再自己開子行程，
+  // 那是這次重構要換到的東西之一。
+  const SPAWNERS = ["run-registry", "env-check", "config-check", "env-path"];
 
   for (const name of [...DOMAIN, ...ADAPTERS]) {
     if (SPAWNERS.includes(name)) continue;
@@ -96,9 +102,13 @@ try {
     importsOf(server).includes("actions"),
     "server.js 要從 actions.js 取得可執行的指令表",
   );
+  // 真正組指令的地方在 run-registry：它只准從 action 物件上取 cmd/args，
+  // 不准直接把請求內容拼進去。
   assert(
-    /const command =[\s\S]{0,400}action\.(cmd|buildArgs|args)/.test(server),
-    "server.js 組指令時要從 action 上取，不可以直接吃請求內容",
+    /const command =[\s\S]{0,400}action\.(cmd|buildArgs|args)/.test(
+      read("run-registry.js"),
+    ),
+    "run-registry.js 組指令時要從 action 上取，不可以直接吃請求內容",
   );
   ok("可執行的指令只能來自 actions.js 的白名單");
 
