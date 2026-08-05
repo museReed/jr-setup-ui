@@ -201,25 +201,19 @@ export function envRowModel(check, installed = false) {
   // checkId 決定這顆按鈕畫在哪：帶了它就掛回清單裡它負責的那一格，沒帶就落到卡片
   // 底部的按鈕列。安裝鍵原本沒帶，於是「Claude Code CLI 未安裝」在清單裡、按鈕在
   // 清單外，學生得自己把兩者連起來——跟「開始登入」當初的問題一模一樣（Reed 指定）。
-  if (check.installAction !== null && check.installAction !== undefined) {
+  //
+  // 裝好之後整顆收掉，不留灰色的「已安裝」：那一列的打勾已經說完同一件事，一顆按不動
+  // 的按鈕只是佔著位置又不能用（Reed 指定）。
+  if (
+    !installed &&
+    check.installAction !== null &&
+    check.installAction !== undefined
+  ) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: installed ? "已安裝" : "安裝",
+      text: "安裝",
       checkId: check.id,
-      ...(installed ? { disabled: true, done: true } : {}),
-    });
-  } else if (installed && check.hasInstaller !== false) {
-    // installAction 裝好之後會變 null，所以「已裝好」這一態要靠這裡補出來。
-    // 但設定類項目（execution-policy）根本沒有 installer，補了就是一顆意義不明的
-    // 灰按鈕——hasInstaller 由伺服器標記，false 就什麼都不放。
-    buttons.push({
-      action: "",
-      dataName: "installAction",
-      text: "已安裝",
-      checkId: check.id,
-      disabled: true,
-      done: true,
     });
   }
 
@@ -280,9 +274,13 @@ export function envCardRowModel(card, installedSteps = new Set()) {
     );
     // 沒有 installer 的項目（execution-policy 這種設定類）不放安裝按鈕。
     // 它要的是「修正」，補一顆永遠按不下去的「安裝」只會讓學生問安裝什麼。
+    //
+    // installed 也要擋在佔位那一支之前：裝好之後 envRowModel 不再給按鈕，
+    // 少了這個判斷就會掉進下面的佔位分支，反而長出一顆灰色的「安裝」——
+    // 比原本的「已安裝」更難解讀。
     if (install !== undefined) {
       buttons.push(install);
-    } else if (primary.hasInstaller !== false) {
+    } else if (!installed && primary.hasInstaller !== false) {
       buttons.push({
         action: "",
         dataName: "installAction",
@@ -381,37 +379,49 @@ export function configRowModel(
     // 安裝按鈕只管安裝：
     //
     //   還沒裝                「安裝」      主要動作，橘色
-    //   裝好了                「✅ 已安裝」  灰掉——沒事可做，要驗證請按「重跑驗證」
+    //   裝好了                （整顆收掉）   沒事可做，要驗證請按「重跑驗證」
     //   裝好了但驗證失敗過      「重裝」      按得動但不是主角
     //
     // 中間那態原本一律是可按的「重裝」，於是「裝好、只差看一眼」的列也長出一顆安裝
     // 按鈕，學生按下去畫面說「正在安裝」——他要的只是再驗一次（Reed 實測 claude-namer）。
+    // 後來改成灰色的「✅ 已安裝」，現在再進一步整顆收掉：那一列的狀態已經說完同一件
+    // 事，一顆按不動的按鈕只是佔著位置又不能用（Reed 指定）。
     //
     // 但驗證失敗時那顆要活過來：裝歪了（舊版、裝一半）而 check 仍是 ok 的情況存在，
     // 那時重跑安裝是唯一的自救手段，拿掉就沒路走了。
     const rescueReinstall = installationDone && verificationFailed;
-    const done = installationDone && !rescueReinstall;
-    buttons.push({
-      action: installAction,
-      dataName: "installAction",
-      text: done ? "✅ 已安裝" : installationDone ? "重裝" : "安裝",
-      step: check.id,
-      ...(done ? { disabled: true, done: true } : {}),
-      ...(rescueReinstall ? { secondary: true } : {}),
-    });
-  } else if (check.noInstall !== true) {
+
+    if (rescueReinstall) {
+      buttons.push({
+        action: installAction,
+        dataName: "installAction",
+        text: "重裝",
+        step: check.id,
+        secondary: true,
+      });
+    } else if (!installationDone) {
+      buttons.push({
+        action: installAction,
+        dataName: "installAction",
+        text: "安裝",
+        step: check.id,
+      });
+    }
+  } else if (check.noInstall !== true && !installationDone) {
     // 沒有安裝動作時補一顆停用的佔位，讓每一列的按鈕位置對齊。
     //
     // 但 demo 那種 noInstall 的列不補：它從頭到尾就沒有「安裝」這個概念，補一顆
     // 按不動的按鈕只會讓學生盯著它想「是不是要先按這個」（VM 實測）。那一列的動作
     // 是「開終端跑」，那顆自己會在。
+    //
+    // 裝好之後同樣不補：佔位是為了跟「還有安裝鍵的列」對齊，而那些列裝好之後也
+    // 沒有按鈕了，繼續佔位反而變成唯一凸出來的東西。
     buttons.push({
       action: "",
       dataName: "installAction",
-      text: installationDone ? "✅ 已安裝" : "安裝",
+      text: "安裝",
       step: check.id,
       disabled: true,
-      ...(installationDone ? { done: true } : {}),
     });
   }
 
