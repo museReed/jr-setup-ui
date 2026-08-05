@@ -265,34 +265,49 @@ export function cardResultText(card, resultTexts = new Map()) {
 
 export function envCardRowModel(card, installedSteps = new Set()) {
   const checks = card.checks ?? [card.check];
-  const primary = checks.find((check) => !check.id.endsWith("-auth"));
   const buttons = [];
 
-  if (primary !== undefined) {
+  // 每一個「可以安裝的列」都要有自己的安裝按鈕。
+  //
+  // 這裡原本只取第一個非登入的列當 primary，其餘列的安裝按鈕在下面被過濾掉。在
+  // 合併之前那是對的——一張環境卡最多就是「一個可安裝的東西 + 一個登入列」。
+  //
+  // 環境卡合併之後三張卡都有兩個以上可安裝的列，於是 GitHub CLI、Python、終端機
+  // 視窗全都拿不到安裝按鈕，畫面上寫著「未安裝」卻沒有任何可按的東西（VM 實測）。
+  // Python 那張最糟：primary 是 Node，而 Node 永遠已安裝，所以那張卡的安裝按鈕
+  // 永遠指向一個不需要安裝的東西。
+  //
+  // 登入那種列不在此列：它不是「裝起來」而是「登進去」，按鈕由下面那一輪產生。
+  for (const check of checks) {
+    if (check.id.endsWith("-auth")) {
+      continue;
+    }
+
     // installedSteps 只是「這一輪按過安裝」的樂觀記憶，不能凌駕伺服器的權威狀態。
     // 擺成單純的 OR 會讓按過一次安裝的項目永久置灰，就算安裝其實失敗、伺服器回的
     // 還是 missing——學生看到灰掉的「✅ 安裝」和裝不起來的項目，連重試都沒得按
     // （VM 實測：gh 的 status 是 missing，按鈕卻是灰的）。
     const installed =
-      primary.status === "ok" ||
-      (installedSteps.has(primary.id) && primary.status !== "missing");
-    const install = envRowModel(primary, installed).buttons.find(
+      check.status === "ok" ||
+      (installedSteps.has(check.id) && check.status !== "missing");
+    const install = envRowModel(check, installed).buttons.find(
       (button) => button.dataName === "installAction",
     );
-    // 沒有 installer 的項目（execution-policy 這種設定類）不放安裝按鈕。
-    // 它要的是「修正」，補一顆永遠按不下去的「安裝」只會讓學生問安裝什麼。
+    // 沒有 installer 的項目（執行原則那種設定類、PowerShell 版本那種純探針）不放
+    // 安裝按鈕。它們要的是「修正」或「自己去改」，補一顆永遠按不下去的「安裝」
+    // 只會讓學生問安裝什麼。
     //
     // installed 也要擋在佔位那一支之前：裝好之後 envRowModel 不再給按鈕，
     // 少了這個判斷就會掉進下面的佔位分支，反而長出一顆灰色的「安裝」——
     // 比原本的「已安裝」更難解讀。
     if (install !== undefined) {
       buttons.push(install);
-    } else if (!installed && primary.hasInstaller !== false) {
+    } else if (!installed && check.hasInstaller !== false) {
       buttons.push({
         action: "",
         dataName: "installAction",
         text: "安裝",
-        checkId: primary.id,
+        checkId: check.id,
         disabled: true,
       });
     }

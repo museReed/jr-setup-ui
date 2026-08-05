@@ -606,6 +606,51 @@ try {
   assert.equal(stillMissing.checkId, "gh");
   ok("安裝按鈕帶著 checkId，畫在清單裡對應的那一格");
 
+  // 迴歸（Windows VM 實測）：合併卡裡每一個可安裝的列都要有自己的安裝按鈕。
+  //
+  // 這裡原本只取第一個非登入的列當 primary，其餘列的安裝按鈕被過濾掉。環境卡合併
+  // 之後三張卡都有兩個以上可安裝的列，於是 GitHub CLI、Python、終端機視窗全都拿不到
+  // 按鈕——畫面上寫著「未安裝」卻沒有任何可按的東西。
+  const installTargets = (card) =>
+    envCardRowModel(card)
+      .buttons.filter((button) => button.dataName === "installAction")
+      .map((button) => button.checkId);
+
+  // 版本控制與 GitHub：Git 已裝、gh 沒裝。gh 那列一定要有按鈕。
+  assert.deepEqual(
+    installTargets({
+      kind: "env",
+      checkId: "git",
+      checks: [
+        { id: "git", label: "Git", status: "ok", detail: "2.55.0" },
+        ghMissing,
+        ghAuthBlocked,
+      ],
+    }),
+    ["gh"],
+  );
+
+  // Python 與 Node.js 是最糟的一個：Node 永遠已安裝，所以舊寫法的 primary 永遠指向
+  // 一個不需要安裝的東西，Python 從頭到尾按不到。
+  assert.deepEqual(
+    installTargets({
+      kind: "env",
+      checkId: "node",
+      checks: [
+        { id: "node", label: "Node.js", status: "ok", detail: "v24" },
+        {
+          id: "python",
+          label: "Python 3",
+          status: "missing",
+          detail: "未安裝",
+          installAction: "install-python",
+        },
+      ],
+    }),
+    ["python"],
+  );
+  ok("合併卡裡每個可安裝的列都有自己的安裝按鈕");
+
   // 設定類項目（execution-policy）沒有 installer，它要的是「修正」。
   // 補一顆永遠按不下去的「安裝」只會讓學生問「安裝什麼？」（Reed 實測提問）。
   const policyCheck = {
