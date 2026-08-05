@@ -101,13 +101,23 @@ async function copyStep(step) {
     // 字都不動。
     if (step.mergeModes === true) {
       const current = await readFile(step.target, "utf8");
-      const { content, added } = mergeCodexModes(current);
+      const { content, added, retired } = mergeCodexModes(current);
 
-      if (added.length > 0) {
+      if (added.length > 0 || retired.length > 0) {
         await backup(step.target);
         await writeFile(step.target, content);
+      }
+
+      if (retired.length > 0) {
+        // 講出來：我們動了他檔案裡本來就有的一行。備份在旁邊，還原得回去。
+        logProgress(
+          `已停用舊的 ${retired.join("、")}（跟 default_permissions 不能並存，留成註解）`,
+        );
+      }
+
+      if (added.length > 0) {
         logProgress(`已補上預設模式：${added.join("、")}`);
-      } else {
+      } else if (retired.length === 0) {
         logProgress("預設模式你已經設過了，沒有更動");
       }
     }

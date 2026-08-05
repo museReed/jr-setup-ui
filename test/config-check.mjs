@@ -167,7 +167,7 @@ process.stdin.on("end", () => {
   writeFileSync(
     codexStep.target,
     [
-      'sandbox_mode = "workspace-write"',
+      'default_permissions = ":workspace"',
       'approval_policy = "untrusted"',
       'approvals_reviewer = "auto_review"',
       "",
@@ -182,6 +182,19 @@ process.stdin.on("end", () => {
   assert.match(studentChanged.detail, /你自己設過/);
   assert.match(studentChanged.detail, /untrusted/);
   ok("學生自己改過模式時說得出他設的是什麼，不會被講成沒裝");
+
+  // 迴歸（Windows VM 實測）：已經裝過的機器上舊的 sandbox_mode 還留著，它跟
+  // default_permissions 不能並存——新的那個就算值是對的也沒生效，權限選單停在
+  // Read Only。三個新 key 全對也不能給綠燈。
+  writeFileSync(
+    codexStep.target,
+    `sandbox_mode = "workspace-write"\n${template}`,
+  );
+  const staleKey = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(staleKey.status, "warn");
+  assert.match(staleKey.detail, /sandbox_mode/);
+  assert.match(staleKey.detail, /重跑安裝/);
+  ok("舊的 sandbox_mode 還在時不給綠燈——它會讓新設定失效");
 
   // 少了其中一行就不算——併一半跟沒併一樣會壞。
   writeFileSync(

@@ -10,12 +10,18 @@
 #   This reminds Codex to follow AGENTS.md response rules.
 #   Without it, Codex may revert to default tone after a few turns.
 #
-# sandbox_mode / approval_policy: Codex's Auto mode, the counterpart to Claude
-# Code's acceptEdits. File edits inside the workspace apply without asking;
-# going outside it, touching the network, or anything risky still prompts.
-#   sandbox_mode    "read-only"          read-only; nothing can be changed
-#                   "workspace-write"    writable inside the workspace (use this)
-#                   "danger-full-access" no limits on files or network; do not use
+# default_permissions / approval_policy: Codex's Auto mode, the counterpart to
+# Claude Code's acceptEdits. File edits inside the workspace apply without
+# asking; going outside it, touching the network, or anything risky still
+# prompts.
+#   default_permissions ":read-only"          nothing can be changed (the default)
+#                       ":workspace"          writable in the workspace (use this)
+#                       ":danger-full-access" no limits at all; do not use
+#
+# WARNING: do not use the older sandbox_mode. The docs say the two must not be
+# combined, and with only the old key set Codex's permission selector still
+# reads "Read Only" — default_permissions falls back to its own default and the
+# old key does nothing (verified on a Windows VM).
 #   approval_policy "untrusted"          asks only for risky operations
 #                   "on-request"         asks only when needed (use this)
 #                   "never"              never asks, not even outside the
@@ -33,6 +39,6 @@
 
 personality = "pragmatic"
 instructions = "Strictly follow the Output Style rules in AGENTS.md: conclusion first (bold), 3-5 bullets, comparisons in tables, no emoji/celebratory tone, medium length, plain language principle. Self-check before every response."
-sandbox_mode = "workspace-write"
+default_permissions = ":workspace"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"

@@ -773,10 +773,27 @@ export function readDefaultMode(settings) {
 // 命名有個坑：官方文件叫它 Auto-review，Codex app 的選單卻顯示「Approve for me」，
 // 同一件事兩個名字（openai/codex#29452）。卡片文案兩個都不用，直接寫它做什麼。
 const CODEX_MODES = {
-  sandbox_mode: '"workspace-write"',
+  default_permissions: '":workspace"',
   approval_policy: '"on-request"',
   approvals_reviewer: '"auto_review"',
 };
+
+// Codex 有新舊兩套設定沙盒的方式，官方文件明說不能並存：
+// 「Don't combine with sandbox_mode or [sandbox_workspace_write]」。
+//
+// 我們原本用舊的 sandbox_mode = "workspace-write"。VM 實測：權限選單顯示的是
+// 「1. Read Only (current)」——因為那個選單看的是新的 default_permissions，而它沒設
+// 時的預設就是 :read-only。舊 key 設了等於白設。
+//
+// 功能上當時還是通的，但是靠 approvals_reviewer = "auto_review" 在補：每次改檔案都
+// 走「需要批准 → 自動批准」，多燒一輪審核，而且模式標籤是錯的。換成
+// default_permissions = ":workspace" 之後選單才是「3. Approve for me」（Reed 在
+// Windows VM 上手改實測確認，行為也一致：工作區內不再逐次批准，工作區外照樣被擋）。
+//
+// 已經裝過的機器上舊 key 還在，而 mergeCodexModes 只補不刪——所以要主動退掉它。
+// 註解掉而不是刪掉：那是學生檔案裡的一行，留著看得出發生過什麼、也還原得回去。
+const RETIRED_CODEX_KEYS = ["sandbox_mode"];
+const RETIRED_NOTE = "# 由嚮導停用：與 default_permissions 不能並存（Codex 官方限制）";
 
 // 驗證用：這三個 key 的期望值。安裝寫進去之後沒有人回頭確認過，而學生的檔案可能
 // 本來就有同名 key（我們刻意不覆蓋），那時卡片會全綠、設定卻是他原本那個值。
@@ -802,9 +819,33 @@ export function readCodexModes(content) {
 }
 
 export function mergeCodexModes(content) {
-  const lines = (content ?? "").split("\n");
+  let lines = (content ?? "").split("\n");
   // 第一個 [section] 之後的同名 key 屬於那個 section，不是最上層，不能算數。
-  const topLevelEnd = lines.findIndex((line) => /^\s*\[/.test(line));
+  const endOf = (all) => all.findIndex((line) => /^\s*\[/.test(line));
+  const retired = [];
+
+  // 先退掉舊 key，再算要補什麼：兩件事都只看最上層，而註解掉不會改變行數，
+  // 所以下面重算一次就好。
+  lines = lines.map((line, index) => {
+    const beyondTopLevel = endOf(lines) !== -1 && index > endOf(lines);
+
+    if (beyondTopLevel) {
+      return line;
+    }
+
+    const key = RETIRED_CODEX_KEYS.find((name) =>
+      new RegExp(`^\\s*${name}\\s*=`).test(line),
+    );
+
+    if (key === undefined) {
+      return line;
+    }
+
+    retired.push(key);
+    return `${RETIRED_NOTE}\n# ${line.trim()}`;
+  });
+
+  const topLevelEnd = endOf(lines);
   const topLevel = topLevelEnd === -1 ? lines : lines.slice(0, topLevelEnd);
   const added = [];
 
@@ -815,7 +856,7 @@ export function mergeCodexModes(content) {
   }
 
   if (added.length === 0) {
-    return { content: content ?? "", added };
+    return { content: lines.join("\n"), added, retired };
   }
 
   const insertAt = topLevelEnd === -1 ? lines.length : topLevelEnd;
@@ -826,7 +867,20 @@ export function mergeCodexModes(content) {
   return {
     content: after === "" ? `${before}\n${block}\n` : `${before}\n${block}\n\n${after}`,
     added,
+    retired,
   };
+}
+
+// 驗證用：最上層還有沒有留著已停用的舊 key。兩者並存時 Codex 的行為沒有定義，
+// 而畫面上看不出來——舊 key 靜靜地讓新的那個失效，就是這次踩到的坑。
+export function readRetiredCodexKeys(content) {
+  const lines = (content ?? "").split("\n");
+  const topLevelEnd = lines.findIndex((line) => /^\s*\[/.test(line));
+  const topLevel = topLevelEnd === -1 ? lines : lines.slice(0, topLevelEnd);
+
+  return RETIRED_CODEX_KEYS.filter((key) =>
+    topLevel.some((line) => new RegExp(`^\\s*${key}\\s*=`).test(line)),
+  );
 }
 
 export function mergeAllowRules(settings, { allowRules }) {

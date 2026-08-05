@@ -18,6 +18,7 @@ import {
   hasMarkedBlock,
   readCodexModes,
   readDefaultMode,
+  readRetiredCodexKeys,
   stepsForTools,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
@@ -128,6 +129,9 @@ async function staleTargets(materials, files) {
 async function codexModeIssues(step) {
   const content = await readFile(step.target, "utf8");
   const found = readCodexModes(content);
+  // 舊 key 跟 default_permissions 並存時 Codex 的行為沒有定義，而畫面上看不出來
+  // ——舊的靜靜讓新的失效，VM 實測就是這樣：權限選單停在 Read Only。
+  const stale = readRetiredCodexKeys(content);
   const missing = [];
   const differs = [];
 
@@ -139,7 +143,7 @@ async function codexModeIssues(step) {
     }
   }
 
-  return { missing, differs };
+  return { missing, differs, stale };
 }
 
 // 模式檢查只降級、不搶話：檔案層先講完（沒裝、需要合併、內容是舊版），都通過了才
@@ -152,7 +156,17 @@ export async function checkCopyStep(materials, step) {
     return result;
   }
 
-  const { missing, differs } = await codexModeIssues(step);
+  const { missing, differs, stale } = await codexModeIssues(step);
+
+  // 舊 key 排在最前面：它在的時候，底下那兩種判斷得到的結論都不算數——新的那個
+  // key 就算值是對的也沒生效。
+  if (stale.length > 0) {
+    return {
+      ...result,
+      status: "warn",
+      detail: `${result.detail}，但舊的 ${stale.join("、")} 還在，會讓新設定失效——重跑安裝會把它停用`,
+    };
+  }
 
   if (missing.length > 0) {
     return {
