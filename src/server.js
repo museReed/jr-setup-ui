@@ -14,6 +14,7 @@ import { isBenignExit } from "./installers.js";
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
+import { isProgressNoise } from "./output-noise.js";
 import {
   ensureWorkDir,
   moduleFile,
@@ -400,6 +401,12 @@ async function runAction(
   const rawOutput = [];
 
   const flushStdout = streamLines(child.stdout, (line) => {
+    // 進度動畫連 rawOutput 都不收：那一份餵三個地方（原始輸出面板、挑失敗原因、
+    // 丟給 LLM 翻譯），三個都不需要幾百行轉圈符號。
+    if (isProgressNoise(line)) {
+      return;
+    }
+
     rawOutput.push(line);
 
     if (action.kind === "fixed") {
@@ -414,6 +421,11 @@ async function runAction(
     }
   });
   const flushStderr = streamLines(child.stderr, (line) => {
+    // stderr 也要過一次：brew 的下載進度就是寫在這邊。
+    if (isProgressNoise(line)) {
+      return;
+    }
+
     rawOutput.push(line);
     writeOutputLine(response, "stderr", line);
   });
