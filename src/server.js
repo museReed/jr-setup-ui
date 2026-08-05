@@ -7,6 +7,7 @@ import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import {
   actions,
   buildAgentCommand,
+  resolveEngine,
   shouldExplainOutput,
 } from "./actions.js";
 import { spawnEnv } from "./env-path.js";
@@ -338,9 +339,12 @@ async function runAction(
   response.flushHeaders();
 
   const { action } = run;
+  // 這一次實際要跑的 agent。merge-config-step 的 engine 是個函式（跟著學生選的
+  // 工具走），底下組指令與挑 parser 都要用同一個答案。
+  const engine = action.kind === "agent" ? resolveEngine(action, run.options) : null;
   const command =
     action.kind === "agent"
-      ? commandBuilder(action.engine, run.prompt, run.permission)
+      ? commandBuilder(engine, run.prompt, run.permission)
       : {
           cmd: action.cmd,
           // 帶選項的 action 由自己組參數；選項的值已經比對過白名單。
@@ -372,8 +376,7 @@ async function runAction(
     action.kind === "agent"
       ? { ...baseOptions, cwd: ensureWorkDir() }
       : baseOptions;
-  const parser =
-    action.engine === "claude" ? parseClaudeLine : parseCodexLine;
+  const parser = engine === "claude" ? parseClaudeLine : parseCodexLine;
   // Windows 的 .cmd 包裝檔不能直接 spawn（Node 會丟 EINVAL），要繞 cmd.exe；
   // 裸指令（claude / codex / gh）在 Windows 也要先查出實際檔名才叫得動。
   const spawnable = resolveLaunch(command.cmd, command.args, { env });

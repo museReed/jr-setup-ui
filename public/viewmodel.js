@@ -153,12 +153,19 @@ export function isLoginAction(action) {
   return typeof action === "string" && action.startsWith("login-");
 }
 
-export function agentNameFor(action) {
+// 終端上那個「誰在講話」的前綴。合併那顆的 agent 跟著第一張卡的工具選擇走，所以
+// 它的名字也要——寫死「Claude」的話，選了只要 Codex 的學生會看到 Codex 的輸出掛著
+// Claude 的名字。
+export function agentNameFor(action, tools = null) {
   if (typeof action !== "string") {
     return "";
   }
 
-  if (action.startsWith("claude") || action === "merge-config-step") {
+  if (action === "merge-config-step") {
+    return tools === "codex" ? "Codex" : "Claude";
+  }
+
+  if (action.startsWith("claude")) {
     return "Claude";
   }
 

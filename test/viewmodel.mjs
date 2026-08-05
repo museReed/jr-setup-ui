@@ -1270,6 +1270,12 @@ try {
   assert.equal(isLoginAction("install-claude"), false);
   assert.equal(agentNameFor("claude-free"), "Claude");
   assert.equal(agentNameFor("codex-hello"), "Codex");
+  // 合併那顆跟著第一張卡的工具選擇走：只要 Codex 的學生機器上沒有 claude。
+  assert.equal(agentNameFor("merge-config-step", "codex"), "Codex");
+  assert.equal(agentNameFor("merge-config-step", "claude"), "Claude");
+  // 兩個都選時優先 Claude——它是課堂主線，而且它那邊裝好的 acceptEdits 讓合併
+  // 不會停下來問。
+  assert.equal(agentNameFor("merge-config-step", "claude,codex"), "Claude");
   assert.equal(agentNameFor("merge-config-step"), "Claude");
   assert.equal(agentNameFor("hello"), "");
   ok("能從 action 名稱判斷類型與代理名稱");
