@@ -89,6 +89,17 @@ for (const id of ["git", "gh"]) {
 }
 ok("winget 安裝指定 --source winget 並自動接受來源條款");
 
+// 迴歸：嚮導 spawn 出來的 winget 沒有人在看著，跳出任何一個要人選的提示就是永久卡住。
+// 一條漏掉就是一顆會卡死的安裝鍵，所以整批一起釘。
+//
+// 這個旗標管的是「不准問問題」，不是「輸出變乾淨」——進度動畫加了照樣有（VM 實測）。
+for (const id of ["python", "git", "gh", "windows-terminal"]) {
+  const installer = resolveInstaller(id, "win32");
+  assert.equal(installer.cmd, "winget");
+  assert(installer.args.includes("--disable-interactivity"), id);
+}
+ok("每一條 win32 的 winget 都關掉互動式進度輸出");
+
 const gitWindows = resolveInstaller("git", "win32");
 assert.equal(gitWindows.cmd, "winget");
 assert(gitWindows.args.includes("Git.Git"));
