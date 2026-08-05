@@ -1,6 +1,6 @@
 # 交接：後端分層重構、log 強化、白名單行為驗證
 
-- **Branch**：`refactor/backend-layers`（14 顆，全部已推，480 項測試綠）
+- **Branch**：`refactor/backend-layers`（16 顆，全部已推，481 項測試綠）
 - **類型**：continuation——分支還沒 VM 驗收完，而且卡在一個沒答案的問題上
 - **今天已合併進 main 的**：PR #40 #41 #42 #43
 
@@ -10,7 +10,7 @@
 
 1. **後端重構**（零行為改動）：抽出 `src/sse.js`、`src/run-registry.js`，十條路由改成一張表，`server.js` 909 → 552 行；新增 `test/backend-layers.mjs` 把「領域不依賴轉接頭」「能 spawn 的是一份寫死清單」「路由就這十條」寫成測試。
 2. **log 強化**：原始輸出每行標相對時間、開頭寫環境摘要（平台/Node/來源分支/選擇）、中止紀錄進得了學生貼得回來的地方、每張卡保留最近三次執行、「複製診斷資料」改帶原始輸出並拿掉全部動畫紀錄。
-3. **白名單行為驗證**：`verify-in-terminal` 新增 `allowlist` 情境，四步覆蓋四種規則形狀。
+3. **白名單行為驗證**：`verify-in-terminal` 新增 `allowlist` 情境，四步覆蓋四種規則形狀；並修掉兩個 VM 上才看得到的坑——題目沒說結果檔的資料夾已存在（模型會先去建目錄然後撞權限，整條斷掉），以及合併卡的第二個驗證沒有按鈕可以按。
 
 ## 必讀檔案
 
@@ -24,44 +24,33 @@
 
 ## 下一步
 
-### 1. 先解這個未解問題（最高優先）
+### 1. 決定要不要補 Windows 的 PowerShell 落差
 
-Windows VM 上 Claude Code 走 **PowerShell**，而：
+**已確認（`chained-claude.txt` 裡是 hook 的原文）：hook 在 Windows 上有生效，`echo a && echo b` 走 Bash 被擋下來了。那張卡教的規矩沒破。**
 
-- hook 的 `matcher` 是 `"Bash"`，腳本也 `tool_name !== "Bash"` 就 return → **走 PowerShell 時那道規矩等於不存在**
-- 白名單 39 條全是 `Bash(...)` → `New-Item` / `Test-Path` 一條都對不上
+但 Windows 上 Claude Code 有兩條路，模型自己選：
 
-證據：VM 上跑串接驗證時，模型第一個動作是 `New-Item -ItemType Directory ... ; Test-Path ...`（**帶分號卻沒被 hook 擋**），畫面回 `This command requires approval`。
+| 路徑 | hook | 白名單 |
+|---|---|---|
+| Bash（Git Bash） | 會擋 | 39 條命中 |
+| PowerShell | **完全不經過**（`matcher: "Bash"`，腳本也 `tool_name !== "Bash"` 就 return） | **一條都對不上**（39 條全是 `Bash(...)`） |
 
-`ae394ce` 已修掉「模型為什麼會去建目錄」（題目沒說資料夾已存在），所以現在驗證跑得完了。**重跑一次串接那格**，然後：
+實測看到的：模型用 `New-Item -ItemType Directory ... ; Test-Path ...` 建目錄，**帶著分號沒被擋**，還跳出 `This command requires approval`。
 
-```powershell
-Get-Content -Encoding UTF8 $HOME\.jr-setup\verify\chained-claude.txt
-```
+要補的話兩件事，但**都需要先知道那個工具的實際名字**（畫面標頭寫「PowerShell command」，不等於 `tool_name`）：
 
-| 內容 | 結論 |
-|---|---|
-| 「一次只跑一個指令」 | hook 有生效，走 Bash——問題縮小成「白名單要不要分平台」 |
-| `a` 和 `b` 兩行 | **hook 在 Windows 沒生效**，那張卡教的規矩是空的，要重做 |
+1. hook 的 `matcher` 加上那個名字，腳本的 early return 也跟著改
+2. 白名單補一份 PowerShell 版（`New-Item` / `Test-Path` / `Get-Content` / `Get-ChildItem`…），可能要拆成 `starter-allowlist.win32.json`
 
-在拿到答案之前**不要動** hook 的 matcher、白名單、或那張卡的文案——三件事的做法全取決於它。
+取得工具名字的方法：在 Windows 上讓 Claude 跑一次 PowerShell 指令，看 `~/.claude` 底下的 session log，或請它自己回報 tool name。
 
-### 2. 修「合併卡的第二個驗證沒有按鈕可以重跑」
+**這件事不緊急**——規矩沒破，只是學生偶爾會遇到「這條為什麼要問我」。
 
-VM 實測發現：「它什麼時候該停下來問你」那張卡有兩個驗證（`hook` 與 `allowlist`），但
-
-- `public/viewmodel.js` 的 `configRowModel` 只產生**安裝**按鈕，驗證那一列沒有自己的按鈕
-- `public/app.js:571` 的 `onRetest` 寫死 `card.check`，而合併卡的主 check 是 `hook`
-
-結果：**白名單那格驗證失敗後，學生沒有任何辦法重跑它**。
-
-建議照這個 repo 既有的判準修（commit `0e40c18`「安裝按鈕搬進清單裡它負責的那一格」）：驗證按鈕也掛回它負責的那一格。
-
-### 3. VM 驗收
+### 2. VM 驗收
 
 清單見下面「驗收要點」。驗完開 PR 合併。
 
-### 4. 乾淨 VM 的債
+### 3. 乾淨 VM 的債
 
 今天合併的四個 PR 全部是在同一台跑過很多輪的機器上驗的。`docs/fresh-vm-acceptance.md` 第一段就寫著那樣不算數。這條分支合併後開一台全新的，從 bootstrap 走到分頁標題變成命名——順便驗 `.jr-source` 那一行變成真的分支名（現在顯示 `unknown` 是正確的，bootstrap 腳本永遠從 main 抓）。
 
