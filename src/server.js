@@ -451,6 +451,355 @@ export async function startServer({
   const assets = await loadAssets();
   const runs = new Map();
 
+  // 路由表。原本是十條 if 排在同一個 callback 裡——多一條 route 要先讀完
+  // 三百多行才知道有沒有撞名，而路由是攻擊面，看得完很重要。
+  //
+  // 表在 startServer 裡面而不是模組層：每個 handler 都要用到 runs、token、
+  // actionTable 這些每次啟動才決定的東西。搬到外面就得把它們一個個當參數傳。
+  const routes = {
+  "GET /": async (request, response, url) => {
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+  });
+  response.end(indexHtml);
+  return;
+  },
+  "GET /env": async (request, response, url) => {
+  const tools = (url.searchParams.get("tools") ?? "")
+    .split(",")
+    .filter((tool) => tool.length > 0);
+
+  if (tools.some((tool) => !TOOLS.includes(tool))) {
+    sendText(response, 400, "tools 不合法");
+    return;
+  }
+
+  response.setHeader("Cache-Control", "no-store");
+  // 沒帶 tools 就照舊全查——/env 在選擇載入之前也會被呼叫到。
+  sendJson(response, 200, await runEnvCheck(tools));
+  return;
+  },
+  "GET /configs": async (request, response, url) => {
+  const lang = url.searchParams.get("lang") ?? "zh-TW";
+  const tools = (url.searchParams.get("tools") ?? "")
+    .split(",")
+    .filter((tool) => tool.length > 0);
+
+  if (!LANGUAGES.includes(lang) || tools.some((t) => !TOOLS.includes(t))) {
+    sendText(response, 400, "lang 或 tools 不合法");
+    return;
+  }
+
+  if (tools.length === 0) {
+    sendJson(response, 200, { lang, tools, checks: [] });
+    return;
+  }
+
+  response.setHeader("Cache-Control", "no-store");
+  sendJson(response, 200, {
+    ...(await runConfigCheck({ tools, lang })),
+    platform: process.platform,
+  });
+  return;
+  },
+  "GET /verify-shot": async (request, response, url) => {
+  const agent = url.searchParams.get("agent") ?? "claude";
+
+  if (!VERIFY_SHOT_AGENTS.includes(agent)) {
+    sendText(response, 400, "agent 不在允許的值裡");
+    return;
+  }
+
+  try {
+    const png = await readFile(verifyShotPath(agent));
+    response.writeHead(200, {
+      "Content-Type": "image/png",
+      "Cache-Control": "no-store",
+    });
+    response.end(png);
+  } catch {
+    sendText(response, 404, "還沒有截圖");
+  }
+  return;
+  },
+  "GET /state": async (request, response, url) => {
+  response.setHeader("Cache-Control", "no-store");
+  sendJson(response, 200, {
+    verified: await loadVerifiedSteps(),
+    behavior: await loadBehaviorVerifiedSteps(),
+    // 驗過之後被動過的那幾步。不影響勾，只在卡片上多一句提醒。
+    changed: await loadChangedSteps(),
+    manual: await loadManualChecked(),
+    selection: await loadSelection(),
+  });
+  return;
+  },
+  "POST /state": async (request, response, url) => {
+  let body;
+
+  try {
+    body = await readJson(request);
+  } catch {
+    sendText(response, 400, "JSON 格式不正確");
+    return;
+  }
+
+  const payload = body !== null && typeof body === "object" ? body : {};
+
+  // 工具／語言的選擇也走這支，存在 state.json 才撐得過重開伺服器（port 會變，
+  // localStorage 綁 origin 等於存不住）。
+  if (payload.selection !== undefined) {
+    const { tools, lang } = payload.selection ?? {};
+    const validTools =
+      Array.isArray(tools) &&
+      tools.length > 0 &&
+      tools.every((tool) => tool === "claude" || tool === "codex");
+
+    if (!validTools || typeof lang !== "string") {
+      sendText(response, 400, "selection 需要 tools 陣列與 lang 字串");
+      return;
+    }
+
+    await saveSelection({ tools, lang });
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  // 整份覆蓋：取消勾選也要存得回去。
+  if (payload.manual !== undefined) {
+    if (
+      !Array.isArray(payload.manual) ||
+      payload.manual.some((id) => typeof id !== "string")
+    ) {
+      sendText(response, 400, "manual 需要字串陣列");
+      return;
+    }
+
+    await saveManualChecked(payload.manual);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  const step = payload.step;
+
+  if (typeof step !== "string") {
+    sendText(response, 400, "step 必須是字串");
+    return;
+  }
+
+  // kind=behavior 記的是「程式那半驗過了」，不代表整列綠。有眼睛勾選框的列
+  // 會先送這一筆，等學生勾完才再送一筆預設的 verified。
+  const kind = payload.kind ?? "verified";
+
+  if (kind !== "verified" && kind !== "behavior") {
+    sendText(response, 400, "kind 只能是 verified 或 behavior");
+    return;
+  }
+
+  // clear=true 是重驗之前的「先忘掉上一輪」。只清瀏覽器記憶體不夠：驗證失敗
+  // 時那一格會留在畫面上沒勾，重新整理之後上一輪的勾又回來了。
+  const clear = payload.clear === true;
+
+  try {
+    if (clear) {
+      await (kind === "behavior"
+        ? clearBehaviorVerified(step)
+        : clearStepVerified(step));
+    } else {
+      await (kind === "behavior"
+        ? markBehaviorVerified(step)
+        : markStepVerified(step));
+    }
+  } catch (error) {
+    sendText(response, 400, error.message);
+    return;
+  }
+
+  sendJson(response, 200, { step, kind, verified: !clear });
+  return;
+  },
+  "POST /run": async (request, response, url) => {
+  let body;
+
+  try {
+    body = await readJson(request);
+  } catch {
+    sendText(response, 400, "JSON 格式不正確");
+    return;
+  }
+
+  const actionName =
+    body !== null && typeof body === "object" ? body.action : undefined;
+
+  if (!Object.hasOwn(actionTable, actionName)) {
+    sendText(response, 400, "Action 不在白名單");
+    return;
+  }
+
+  const action = actionTable[actionName];
+  const hasPrompt = Object.hasOwn(body, "prompt");
+  const hasAllowWrite = Object.hasOwn(body, "allowWrite");
+
+  if (hasAllowWrite && typeof body.allowWrite !== "boolean") {
+    sendText(response, 400, "allowWrite 必須是 boolean");
+    return;
+  }
+
+  if (body.allowWrite === true && !action.allowsWriteToggle) {
+    sendText(response, 400, "這個 Action 不允許寫檔");
+    return;
+  }
+
+  if (!action.acceptsPrompt && hasPrompt) {
+    sendText(response, 400, "這個 Action 不接受 prompt");
+    return;
+  }
+
+  if (
+    action.acceptsPrompt &&
+    (!hasPrompt ||
+      typeof body.prompt !== "string" ||
+      body.prompt.trim().length === 0)
+  ) {
+    sendText(response, 400, "prompt 必須是非空白字串");
+    return;
+  }
+
+  if (action.acceptsPrompt && body.prompt.length > 4000) {
+    sendText(response, 400, "prompt 不可超過 4000 字元");
+    return;
+  }
+
+  // 有些 action 要帶選項（裝哪一步、哪個語言）。值一律比對白名單，
+  // 不讓自由字串進到指令參數裡。
+  let options;
+
+  try {
+    options = resolveOptions(action, body.options);
+  } catch (error) {
+    sendText(response, 400, error.message);
+    return;
+  }
+
+  const runId = randomBytes(16).toString("hex");
+  runs.set(runId, {
+    action,
+    actionName,
+    options,
+    child: null,
+    finished: false,
+    killTimer: null,
+    permission: body.allowWrite === true ? "write" : action.permission,
+    prompt: action.acceptsPrompt
+      ? body.prompt
+      : typeof action.buildPrompt === "function"
+        ? action.buildPrompt(options)
+        : action.prompt,
+    used: false,
+  });
+  sendJson(response, 200, {
+    runId,
+    acceptsInput: action.acceptsInput === true,
+  });
+  return;
+  },
+  "POST /input": async (request, response, url) => {
+  let body;
+
+  try {
+    body = await readJson(request);
+  } catch {
+    sendText(response, 400, "JSON 格式不正確");
+    return;
+  }
+
+  const runId =
+    body !== null && typeof body === "object" ? body.runId : undefined;
+  const text =
+    body !== null && typeof body === "object" ? body.text : undefined;
+  const run = runs.get(runId);
+
+  if (!run || run.action.acceptsInput !== true) {
+    sendText(response, 400, "Run 不存在或不接受輸入");
+    return;
+  }
+
+  if (typeof text !== "string") {
+    sendText(response, 400, "text 必須是字串");
+    return;
+  }
+
+  if (text.length > 500) {
+    sendText(response, 400, "text 不可超過 500 字元");
+    return;
+  }
+
+  if (
+    !childIsRunning(run.child) ||
+    !run.child.stdin.writable ||
+    run.child.stdin.destroyed ||
+    run.child.stdin.writableEnded
+  ) {
+    sendText(response, 400, "子程序已結束或無法接收輸入");
+    return;
+  }
+
+  try {
+    await new Promise((resolve, reject) => {
+      run.child.stdin.write(`${text}\n`, "utf8", (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  } catch (error) {
+    sendText(response, 400, `無法送出輸入：${error.message}`);
+    return;
+  }
+
+  sendJson(response, 200, { sent: true });
+  return;
+  },
+  "POST /cancel": async (request, response, url) => {
+  let body;
+
+  try {
+    body = await readJson(request);
+  } catch {
+    sendText(response, 400, "JSON 格式不正確");
+    return;
+  }
+
+  const runId =
+    body !== null && typeof body === "object" ? body.runId : undefined;
+  const run = runs.get(runId);
+
+  if (!run) {
+    sendText(response, 404, "Run 不存在");
+    return;
+  }
+
+  terminateRun(run, "cancel-endpoint");
+  sendJson(response, 200, { canceled: true });
+  return;
+  },
+  "GET /stream": async (request, response, url) => {
+  const runId = url.searchParams.get("runId");
+  const run = runs.get(runId);
+
+  if (!run || run.used) {
+    sendText(response, 404, "Run 不存在或已使用");
+    return;
+  }
+
+  run.used = true;
+  await runAction(run, runId, runs, response, commandBuilder);
+  return;
+  },
+  };
+
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
 
@@ -470,363 +819,15 @@ export async function startServer({
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/") {
-      response.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-      });
-      response.end(indexHtml);
+
+    const handler = routes[`${request.method} ${url.pathname}`];
+
+    if (handler === undefined) {
+      sendText(response, 404, "找不到路由");
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/env") {
-      const tools = (url.searchParams.get("tools") ?? "")
-        .split(",")
-        .filter((tool) => tool.length > 0);
-
-      if (tools.some((tool) => !TOOLS.includes(tool))) {
-        sendText(response, 400, "tools 不合法");
-        return;
-      }
-
-      response.setHeader("Cache-Control", "no-store");
-      // 沒帶 tools 就照舊全查——/env 在選擇載入之前也會被呼叫到。
-      sendJson(response, 200, await runEnvCheck(tools));
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/configs") {
-      const lang = url.searchParams.get("lang") ?? "zh-TW";
-      const tools = (url.searchParams.get("tools") ?? "")
-        .split(",")
-        .filter((tool) => tool.length > 0);
-
-      if (!LANGUAGES.includes(lang) || tools.some((t) => !TOOLS.includes(t))) {
-        sendText(response, 400, "lang 或 tools 不合法");
-        return;
-      }
-
-      if (tools.length === 0) {
-        sendJson(response, 200, { lang, tools, checks: [] });
-        return;
-      }
-
-      response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, {
-        ...(await runConfigCheck({ tools, lang })),
-        platform: process.platform,
-      });
-      return;
-    }
-
-    // 驗證留下的截圖。學生看得到那張圖，才知道「真的有一顆瀏覽器被開起來」不是
-    // 一句空話——這一格的證據本來就是那個檔案，那就把它端出來。
-    //
-    // agent 只認白名單裡那兩個值，其餘一律 400：接受檔名或路徑片段等於開一個讀
-    // 任意檔案的洞。檔名由 verifyShotPath 組，外面傳不進任何字元。
-    if (request.method === "GET" && url.pathname === "/verify-shot") {
-      const agent = url.searchParams.get("agent") ?? "claude";
-
-      if (!VERIFY_SHOT_AGENTS.includes(agent)) {
-        sendText(response, 400, "agent 不在允許的值裡");
-        return;
-      }
-
-      try {
-        const png = await readFile(verifyShotPath(agent));
-        response.writeHead(200, {
-          "Content-Type": "image/png",
-          "Cache-Control": "no-store",
-        });
-        response.end(png);
-      } catch {
-        sendText(response, 404, "還沒有截圖");
-      }
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/state") {
-      response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, {
-        verified: await loadVerifiedSteps(),
-        behavior: await loadBehaviorVerifiedSteps(),
-        // 驗過之後被動過的那幾步。不影響勾，只在卡片上多一句提醒。
-        changed: await loadChangedSteps(),
-        manual: await loadManualChecked(),
-        selection: await loadSelection(),
-      });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/state") {
-      let body;
-
-      try {
-        body = await readJson(request);
-      } catch {
-        sendText(response, 400, "JSON 格式不正確");
-        return;
-      }
-
-      const payload = body !== null && typeof body === "object" ? body : {};
-
-      // 工具／語言的選擇也走這支，存在 state.json 才撐得過重開伺服器（port 會變，
-      // localStorage 綁 origin 等於存不住）。
-      if (payload.selection !== undefined) {
-        const { tools, lang } = payload.selection ?? {};
-        const validTools =
-          Array.isArray(tools) &&
-          tools.length > 0 &&
-          tools.every((tool) => tool === "claude" || tool === "codex");
-
-        if (!validTools || typeof lang !== "string") {
-          sendText(response, 400, "selection 需要 tools 陣列與 lang 字串");
-          return;
-        }
-
-        await saveSelection({ tools, lang });
-        sendJson(response, 200, { ok: true });
-        return;
-      }
-
-      // 整份覆蓋：取消勾選也要存得回去。
-      if (payload.manual !== undefined) {
-        if (
-          !Array.isArray(payload.manual) ||
-          payload.manual.some((id) => typeof id !== "string")
-        ) {
-          sendText(response, 400, "manual 需要字串陣列");
-          return;
-        }
-
-        await saveManualChecked(payload.manual);
-        sendJson(response, 200, { ok: true });
-        return;
-      }
-
-      const step = payload.step;
-
-      if (typeof step !== "string") {
-        sendText(response, 400, "step 必須是字串");
-        return;
-      }
-
-      // kind=behavior 記的是「程式那半驗過了」，不代表整列綠。有眼睛勾選框的列
-      // 會先送這一筆，等學生勾完才再送一筆預設的 verified。
-      const kind = payload.kind ?? "verified";
-
-      if (kind !== "verified" && kind !== "behavior") {
-        sendText(response, 400, "kind 只能是 verified 或 behavior");
-        return;
-      }
-
-      // clear=true 是重驗之前的「先忘掉上一輪」。只清瀏覽器記憶體不夠：驗證失敗
-      // 時那一格會留在畫面上沒勾，重新整理之後上一輪的勾又回來了。
-      const clear = payload.clear === true;
-
-      try {
-        if (clear) {
-          await (kind === "behavior"
-            ? clearBehaviorVerified(step)
-            : clearStepVerified(step));
-        } else {
-          await (kind === "behavior"
-            ? markBehaviorVerified(step)
-            : markStepVerified(step));
-        }
-      } catch (error) {
-        sendText(response, 400, error.message);
-        return;
-      }
-
-      sendJson(response, 200, { step, kind, verified: !clear });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/run") {
-      let body;
-
-      try {
-        body = await readJson(request);
-      } catch {
-        sendText(response, 400, "JSON 格式不正確");
-        return;
-      }
-
-      const actionName =
-        body !== null && typeof body === "object" ? body.action : undefined;
-
-      if (!Object.hasOwn(actionTable, actionName)) {
-        sendText(response, 400, "Action 不在白名單");
-        return;
-      }
-
-      const action = actionTable[actionName];
-      const hasPrompt = Object.hasOwn(body, "prompt");
-      const hasAllowWrite = Object.hasOwn(body, "allowWrite");
-
-      if (hasAllowWrite && typeof body.allowWrite !== "boolean") {
-        sendText(response, 400, "allowWrite 必須是 boolean");
-        return;
-      }
-
-      if (body.allowWrite === true && !action.allowsWriteToggle) {
-        sendText(response, 400, "這個 Action 不允許寫檔");
-        return;
-      }
-
-      if (!action.acceptsPrompt && hasPrompt) {
-        sendText(response, 400, "這個 Action 不接受 prompt");
-        return;
-      }
-
-      if (
-        action.acceptsPrompt &&
-        (!hasPrompt ||
-          typeof body.prompt !== "string" ||
-          body.prompt.trim().length === 0)
-      ) {
-        sendText(response, 400, "prompt 必須是非空白字串");
-        return;
-      }
-
-      if (action.acceptsPrompt && body.prompt.length > 4000) {
-        sendText(response, 400, "prompt 不可超過 4000 字元");
-        return;
-      }
-
-      // 有些 action 要帶選項（裝哪一步、哪個語言）。值一律比對白名單，
-      // 不讓自由字串進到指令參數裡。
-      let options;
-
-      try {
-        options = resolveOptions(action, body.options);
-      } catch (error) {
-        sendText(response, 400, error.message);
-        return;
-      }
-
-      const runId = randomBytes(16).toString("hex");
-      runs.set(runId, {
-        action,
-        actionName,
-        options,
-        child: null,
-        finished: false,
-        killTimer: null,
-        permission: body.allowWrite === true ? "write" : action.permission,
-        prompt: action.acceptsPrompt
-          ? body.prompt
-          : typeof action.buildPrompt === "function"
-            ? action.buildPrompt(options)
-            : action.prompt,
-        used: false,
-      });
-      sendJson(response, 200, {
-        runId,
-        acceptsInput: action.acceptsInput === true,
-      });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/input") {
-      let body;
-
-      try {
-        body = await readJson(request);
-      } catch {
-        sendText(response, 400, "JSON 格式不正確");
-        return;
-      }
-
-      const runId =
-        body !== null && typeof body === "object" ? body.runId : undefined;
-      const text =
-        body !== null && typeof body === "object" ? body.text : undefined;
-      const run = runs.get(runId);
-
-      if (!run || run.action.acceptsInput !== true) {
-        sendText(response, 400, "Run 不存在或不接受輸入");
-        return;
-      }
-
-      if (typeof text !== "string") {
-        sendText(response, 400, "text 必須是字串");
-        return;
-      }
-
-      if (text.length > 500) {
-        sendText(response, 400, "text 不可超過 500 字元");
-        return;
-      }
-
-      if (
-        !childIsRunning(run.child) ||
-        !run.child.stdin.writable ||
-        run.child.stdin.destroyed ||
-        run.child.stdin.writableEnded
-      ) {
-        sendText(response, 400, "子程序已結束或無法接收輸入");
-        return;
-      }
-
-      try {
-        await new Promise((resolve, reject) => {
-          run.child.stdin.write(`${text}\n`, "utf8", (error) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve();
-            }
-          });
-        });
-      } catch (error) {
-        sendText(response, 400, `無法送出輸入：${error.message}`);
-        return;
-      }
-
-      sendJson(response, 200, { sent: true });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/cancel") {
-      let body;
-
-      try {
-        body = await readJson(request);
-      } catch {
-        sendText(response, 400, "JSON 格式不正確");
-        return;
-      }
-
-      const runId =
-        body !== null && typeof body === "object" ? body.runId : undefined;
-      const run = runs.get(runId);
-
-      if (!run) {
-        sendText(response, 404, "Run 不存在");
-        return;
-      }
-
-      terminateRun(run, "cancel-endpoint");
-      sendJson(response, 200, { canceled: true });
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/stream") {
-      const runId = url.searchParams.get("runId");
-      const run = runs.get(runId);
-
-      if (!run || run.used) {
-        sendText(response, 404, "Run 不存在或已使用");
-        return;
-      }
-
-      run.used = true;
-      await runAction(run, runId, runs, response, commandBuilder);
-      return;
-    }
-
-    sendText(response, 404, "找不到路由");
+    await handler(request, response, url);
   });
 
   await new Promise((resolve, reject) => {

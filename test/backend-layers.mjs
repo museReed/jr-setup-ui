@@ -102,6 +102,37 @@ try {
   );
   ok("可執行的指令只能來自 actions.js 的白名單");
 
+  // 路由是攻擊面，所以整份要看得完、而且要有人數過。改成表之後這件事斷言得出來
+  // ——原本十條 if 散在三百多行裡，沒有任何一處看得到「全部就是這些」。
+  //
+  // 這張清單變動時要停下來想一次：新的那條驗 token 了嗎？它接不接受請求內容？
+  const declared = [
+    ...read("server.js").matchAll(/^ {2}"([A-Z]+ \/[\w-]*)": async \(/gm),
+  ].map((m) => m[1]);
+
+  assert.deepEqual(declared, [
+    "GET /",
+    "GET /env",
+    "GET /configs",
+    "GET /verify-shot",
+    "GET /state",
+    "POST /state",
+    "POST /run",
+    "POST /input",
+    "POST /cancel",
+    "GET /stream",
+  ]);
+  ok("路由表就是這十條，多一條會被抓到");
+
+  // token 檢查要在路由表之前，不是每個 handler 自己記得做。靜態檔是刻意的例外
+  // （<link> 與 import 由瀏覽器自己發請求，補不上查詢字串），它排在更前面。
+  const dispatchAt = server.indexOf("const handler = routes[");
+  assert(
+    server.indexOf("tokenMatches(") < dispatchAt,
+    "token 驗證要在派發之前，不能交給各個 handler 自己記得",
+  );
+  ok("token 驗證擋在路由表前面");
+
   // sse.js 是最底下那層：它只認識 response 與一行文字。它一旦 import 別人，
   // 就會變成第二個什麼都知道的地方。
   assert.deepEqual(
