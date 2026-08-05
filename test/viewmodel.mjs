@@ -572,11 +572,38 @@ try {
       new Set(["gh"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
     [
-      { text: "✅ 已安裝", disabled: true },
+      { text: "已安裝", disabled: true },
       { text: "開始登入", disabled: false },
     ],
   );
   ok("按過安裝但伺服器仍回 missing 時，安裝按鈕不置灰，學生能重試");
+
+  // 安裝鍵要掛回清單裡它負責的那一格（靠 checkId），不留在卡片底部的按鈕列——
+  // 「CLI 未安裝」在清單裡、按鈕在清單外，學生得自己把兩者連起來（Reed 指定）。
+  // 「開始登入」當初就是為了同一個理由搬進去的，兩顆現在一致。
+  for (const buttons of [
+    envCardRowModel(
+      { kind: "env", checkId: "gh", checks: [ghMissing, ghAuthBlocked] },
+      new Set(["gh"]),
+    ).buttons,
+    envCardRowModel(
+      {
+        kind: "env",
+        checkId: "gh",
+        checks: [
+          { ...ghMissing, status: "ok", detail: "gh 2.87.2" },
+          { ...ghAuthBlocked, status: "warn", fixAction: "login-gh" },
+        ],
+      },
+      new Set(["gh"]),
+    ).buttons,
+  ]) {
+    const install = buttons.find(
+      (button) => button.dataName === "installAction",
+    );
+    assert.equal(install.checkId, "gh");
+  }
+  ok("安裝按鈕帶著 checkId，畫在清單裡對應的那一格");
 
   // 設定類項目（execution-policy）沒有 installer，它要的是「修正」。
   // 補一顆永遠按不下去的「安裝」只會讓學生問「安裝什麼？」（Reed 實測提問）。
@@ -609,7 +636,7 @@ try {
     ).buttons.map(({ text }) => text),
     ["修正"],
   );
-  // 對照組：真的有 installer 的項目，裝好之後還是要留下已完成的 ✅ 安裝。
+  // 對照組：真的有 installer 的項目，裝好之後還是要留下已完成的「已安裝」。
   assert.deepEqual(
     envCardRowModel(
       {
@@ -629,7 +656,7 @@ try {
       },
       new Set(["node"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
-    [{ text: "✅ 已安裝", disabled: true }],
+    [{ text: "已安裝", disabled: true }],
   );
   ok("沒有 installer 的設定類項目不放安裝按鈕，只放修正");
 

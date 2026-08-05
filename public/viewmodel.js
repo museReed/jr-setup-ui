@@ -198,21 +198,26 @@ export function envRowModel(check, installed = false) {
   const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
   const buttons = [];
 
+  // checkId 決定這顆按鈕畫在哪：帶了它就掛回清單裡它負責的那一格，沒帶就落到卡片
+  // 底部的按鈕列。安裝鍵原本沒帶，於是「Claude Code CLI 未安裝」在清單裡、按鈕在
+  // 清單外，學生得自己把兩者連起來——跟「開始登入」當初的問題一模一樣（Reed 指定）。
   if (check.installAction !== null && check.installAction !== undefined) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: installed ? "✅ 已安裝" : "安裝",
+      text: installed ? "已安裝" : "安裝",
+      checkId: check.id,
       ...(installed ? { disabled: true, done: true } : {}),
     });
   } else if (installed && check.hasInstaller !== false) {
-    // installAction 裝好之後會變 null，所以「已裝好」這一態要靠這裡補出 ✅ 安裝。
+    // installAction 裝好之後會變 null，所以「已裝好」這一態要靠這裡補出來。
     // 但設定類項目（execution-policy）根本沒有 installer，補了就是一顆意義不明的
     // 灰按鈕——hasInstaller 由伺服器標記，false 就什麼都不放。
     buttons.push({
       action: "",
       dataName: "installAction",
-      text: "✅ 已安裝",
+      text: "已安裝",
+      checkId: check.id,
       disabled: true,
       done: true,
     });
@@ -282,6 +287,7 @@ export function envCardRowModel(card, installedSteps = new Set()) {
         action: "",
         dataName: "installAction",
         text: "安裝",
+        checkId: primary.id,
         disabled: true,
       });
     }
