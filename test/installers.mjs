@@ -110,6 +110,16 @@ const ghWindows = resolveInstaller("gh", "win32");
 assert(ghWindows.args.includes("GitHub.cli"));
 ok("GitHub CLI 在 win32 使用 winget 的精確套件 id");
 
+// 迴歸：嚮導 spawn 出來的 brew 沒有人在看著，跳出任何一句要人回答的話就是永久卡住
+// ——畫面停在安裝中，學生只能按取消。同一個檔案裡 codex 的 darwin 安裝已經為了一模
+// 一樣的理由帶著 CODEX_NON_INTERACTIVE，brew 這幾條是補上同一道防線。
+for (const id of ["python", "git", "gh", "ghostty"]) {
+  const installer = resolveInstaller(id, "darwin");
+  assert.equal(installer.cmd, "brew");
+  assert.equal(installer.env.NONINTERACTIVE, "1", id);
+}
+ok("每一條 darwin 的 brew 都帶 NONINTERACTIVE，不會停在看不見的提問");
+
 const gitDarwin = resolveInstaller("git", "darwin");
 assert.equal(gitDarwin.cmd, "brew");
 ok("Git 在 darwin 使用 brew");
@@ -123,6 +133,7 @@ const ghosttyDarwin = resolveInstaller("ghostty", "darwin");
 assert.deepEqual(ghosttyDarwin, {
   cmd: "brew",
   args: ["install", "--cask", "ghostty"],
+  env: { NONINTERACTIVE: "1" },
 });
 assert.equal(resolveInstaller("ghostty", "win32"), null);
 ok("Ghostty 只在 darwin 提供 brew cask 安裝器");

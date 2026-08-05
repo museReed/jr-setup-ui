@@ -55,7 +55,22 @@ const CODEX_WIN32_COMMAND = "irm https://chatgpt.com/codex/install.ps1 | iex";
 // ⚠️ 它**不會**讓輸出變乾淨。winget 的轉圈符號與進度條靠 \r 一格一格重畫，在真的
 // 終端機裡是一行動畫，透過管子接出來就是幾百行 `- \ | /`——加了這個旗標之後照樣有
 // （Windows VM 實測，加旗標前後的原始輸出都是滿滿的轉圈符號）。winget 沒有關進度的
-// 旗標，要乾淨只能在我們這邊過濾。那是另一件事，還沒做。
+// 旗標，要乾淨只能在我們這邊過濾（見 output-noise.js）。
+//
+// macOS 那幾條 brew 是同一件事、換一個開關：Homebrew 官方的 NONINTERACTIVE=1。
+//
+// 這條路已經踩過一次——同一個檔案裡 codex 的 darwin 安裝帶 CODEX_NON_INTERACTIVE，
+// 理由寫在它自己的註解裡：問句直接寫 /dev/tty，印在學生沒在看的那個終端機，然後停在
+// 那裡等一個永遠不會來的輸入。brew 是同一個形狀，只是還沒補上同一道防線。
+//
+// 目的是「讓它失敗，不要讓它卡住」。卡住的話學生看到「安裝中」永遠不動，只能按取消
+// 且不知道為什麼；失敗的話至少有一行原因、可以重按、可以貼給助教。
+//
+// ⚠️ 預防，不是修已知的 bug：沒有實測證據說 brew 一定會問。最可疑的是 ghostty 那條
+// ——cask 要動 /Applications，某些情況會要密碼。真的需要密碼時，加了這個變數會從
+// 「卡住」變成「明確失敗」，那時再照 docs/setup.sh 的做法先明確要一次 sudo。
+const BREW_ENV = { NONINTERACTIVE: "1" };
+
 export const INSTALLERS = {
   claude: {
     win32: {
@@ -125,6 +140,7 @@ export const INSTALLERS = {
     darwin: {
       cmd: "brew",
       args: ["install", "python"],
+      env: BREW_ENV,
     },
   },
   git: {
@@ -148,6 +164,7 @@ export const INSTALLERS = {
     darwin: {
       cmd: "brew",
       args: ["install", "git"],
+      env: BREW_ENV,
     },
   },
   gh: {
@@ -169,12 +186,14 @@ export const INSTALLERS = {
     darwin: {
       cmd: "brew",
       args: ["install", "gh"],
+      env: BREW_ENV,
     },
   },
   ghostty: {
     darwin: {
       cmd: "brew",
       args: ["install", "--cask", "ghostty"],
+      env: BREW_ENV,
     },
   },
   "windows-terminal": {
