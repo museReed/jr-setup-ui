@@ -1612,6 +1612,11 @@ view.elements.replayTour.addEventListener("click", () => replayTour());
 view.elements.copyDiagnostics.addEventListener("click", async () => {
   try {
     const diagnostics = {
+      // 每張卡最近幾次執行的原始輸出。這一份才是真正判斷得了問題的東西——這顆按鈕
+      // 原本只收鎖頭與導覽的狀態，學生按了貼回來，我們拿到的是動畫幀號。
+      //
+      // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
+      output: view.rawOutputDiagnostics(),
       locks: await view.lockDiagnostics(),
       // 導覽跑了什麼、為什麼沒跑。Reed 在 VM 上看到版面導覽沒出現就直接跳了元件
       // 導覽，而同一份 code 在 Mac 上重現不出來——沒有紀錄只能一路猜。

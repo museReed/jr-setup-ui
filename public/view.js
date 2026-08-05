@@ -1775,14 +1775,38 @@ export function renderLoaders({ modifier, paused = false, label = null }) {
   typeInto(text, spec.text);
 }
 
-// 每跑一輪就把原始輸出換掉——它是這一次執行的逐字稿，留著上一次的只會分不清哪段
-// 是剛才那次。白話那幾行不清：那是這張卡的紀錄，學生翻回來要看得到當時發生什麼事。
+// 一張卡保留最近幾次執行。
+//
+// 這裡原本每跑一輪就把上一輪整個清掉，理由是「留著會分不清哪段是剛才那次」。分段
+// 的問題用一條分隔線就解決了，而清掉的代價要大得多：學生遇到失敗的第一個動作就是
+// 再按一次，那時失敗那次的輸出已經沒了——而我們要判斷的正是失敗那次。
+//
+// 三次是拿捏過的：夠涵蓋「失敗 → 重試 → 再失敗」這條最常見的求助情境，又不會讓
+// 一直重按的卡片把剪貼簿塞爆。
+const MAX_KEPT_RUNS = 3;
+const RUN_SEPARATOR = "──────────────── 上一次執行到此 ────────────────";
+
+// 每張卡存一個陣列，一格一次執行。存字串再靠分隔線切回來也做得到，但那樣「保留幾
+// 次」就變成字串處理，而分隔線本身也可能出現在子行程的輸出裡。
+const rawRuns = new Map();
+
+function runsOf(id) {
+  return rawRuns.get(id) ?? [];
+}
+
+function renderRawOutput(id) {
+  return runsOf(id).join(`\n${RUN_SEPARATOR}\n\n`);
+}
+
+// 開始新的一輪：推一格新的，並把太舊的丟掉。
 export function clearRawOutput() {
   const id = writeTargetId();
-  rawOutputs.set(id, "");
+  const runs = [...runsOf(id), ""].slice(-MAX_KEPT_RUNS);
+  rawRuns.set(id, runs);
+  rawOutputs.set(id, renderRawOutput(id));
 
   if (id === activeTranscriptId) {
-    elements.output.textContent = "";
+    elements.output.textContent = rawOutputs.get(id);
   }
 }
 
@@ -1790,6 +1814,19 @@ export function clearRawOutput() {
 // 但切卡片的空檔會差一拍，而學生按複製鍵的時機正好就在那種時候。
 export function rawOutputText() {
   return rawOutputs.get(activeTranscriptId) ?? "";
+}
+
+// 按「複製診斷資料」時一起帶走的東西：每張卡最近幾次執行的原始輸出。
+//
+// 那顆按鈕原本只收鎖頭與導覽的狀態——名字叫「診斷資料」，學生按了貼回來，我們拿到
+// 的是動畫幀號。真正判斷得了問題的是這一份，而且它跨卡片：學生只複製得到當下那張，
+// 但問題常常是前一張留下來的（環境重查拖累了規則卡的安裝）。
+export function rawOutputDiagnostics() {
+  return Object.fromEntries(
+    [...rawRuns.keys()]
+      .map((id) => [id, renderRawOutput(id)])
+      .filter(([, text]) => text.trim() !== ""),
+  );
 }
 
 // at 是「距這次執行開始幾毫秒」。標在原始輸出上，判斷問題時才看得出哪一步卡住
@@ -1804,7 +1841,12 @@ function stamp(at) {
 export function addRawLine(text, at = null) {
   const id = writeTargetId();
   const line = `${stamp(at)}${text}\n`;
-  rawOutputs.set(id, `${rawOutputs.get(id) ?? ""}${line}`);
+  // 沒有人叫過 clearRawOutput 就先開一格：環境檢查那幾列是直接寫進來的，不走
+  // 「開始一次執行」那條路。
+  const runs = runsOf(id).length === 0 ? [""] : [...runsOf(id)];
+  runs[runs.length - 1] += line;
+  rawRuns.set(id, runs);
+  rawOutputs.set(id, renderRawOutput(id));
 
   if (id === activeTranscriptId) {
     elements.output.textContent += line;

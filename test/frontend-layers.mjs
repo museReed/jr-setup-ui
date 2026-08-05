@@ -460,6 +460,21 @@ try {
   // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
   assert.match(files.view, /locked: lockStates\[id\]\?\.locked \?\? null,\s*\n\s*done: done\?\.\[id\] \?\? null,/);
   assert(files.app.includes("await view.lockDiagnostics()"));
+
+  // 診斷資料要含每張卡最近幾次執行的原始輸出。少了它，那顆按鈕收的只有鎖頭與導覽
+  // 的狀態——名字叫「診斷資料」，學生按了貼回來，我們拿到的是動畫幀號。
+  //
+  // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
+  assert(files.view.includes("export function rawOutputDiagnostics()"));
+  assert(files.app.includes("output: view.rawOutputDiagnostics()"));
+
+  // 每跑一輪不再把上一輪清掉：學生遇到失敗的第一個動作就是再按一次，那時失敗那次
+  // 的輸出已經沒了——而我們要判斷的正是失敗那次。改成保留最近幾次、用分隔線隔開。
+  assert(files.view.includes("const MAX_KEPT_RUNS = 3;"));
+  assert(
+    !/rawOutputs\.set\(id, ""\)/.test(files.view),
+    "clearRawOutput 不可以再把整份輸出清空",
+  );
   // 演完一定要回到定格，被打斷也一樣。resetSegments 要排在 goToAndStop 前面：
   // 播過區間之後 lottie 的 currentFrame 是「從區間起點算起」的相對值——播完
   // [32, 60] 它回報 27（32 + 27 = 59），診斷資料看起來像停在還沒成形的那一格。
