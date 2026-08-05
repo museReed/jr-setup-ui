@@ -350,6 +350,17 @@ try {
   );
   // 環境檢查是一支 HTTP 請求，沒有逐字稿。把每一列的結果寫進原始輸出，那塊才不是空的。
   assert(files.app.includes("view.addRawLine("));
+
+  // 時間戳只走原始輸出那條，不進 runContext.rawOutput——那一份要餵給「挑失敗原因
+  // 那一行」與 LLM 翻譯，前綴會干擾它們的比對。
+  assert(
+    files.app.includes("view.addRawLine(line.text, line.at)"),
+    "line 事件帶的 at 要傳給原始輸出，判斷問題時才看得出哪一步卡住",
+  );
+  assert(
+    files.app.includes("runContext.rawOutput.push(line.text)"),
+    "餵給挑原因與翻譯的那一份要維持沒有前綴的原文",
+  );
   ok("環境重掃畫完才關掉退勾狀態，原始輸出也留得下結果");
 
   // 鎖住的分頁原本只是淡一點——淡的東西看起來像「還沒載入」或「壞掉」，不像

@@ -1792,12 +1792,22 @@ export function rawOutputText() {
   return rawOutputs.get(activeTranscriptId) ?? "";
 }
 
-export function addRawLine(text) {
+// at 是「距這次執行開始幾毫秒」。標在原始輸出上，判斷問題時才看得出哪一步卡住
+// ——今天查 winget 被中止那次，最硬的線索是「27 MB 下載跑了三分鐘」，而那件事完全
+// 不在 log 裡。相對不是絕對：學生 VM 的時鐘常常是歪的，而我們要的是「花了多久」。
+//
+// 只標有帶 at 的行。環境檢查那幾列是一支 HTTP 請求的結果、不是逐字稿，標了沒有意義。
+function stamp(at) {
+  return typeof at === "number" ? `[+${(at / 1000).toFixed(1)}s] ` : "";
+}
+
+export function addRawLine(text, at = null) {
   const id = writeTargetId();
-  rawOutputs.set(id, `${rawOutputs.get(id) ?? ""}${text}\n`);
+  const line = `${stamp(at)}${text}\n`;
+  rawOutputs.set(id, `${rawOutputs.get(id) ?? ""}${line}`);
 
   if (id === activeTranscriptId) {
-    elements.output.textContent += `${text}\n`;
+    elements.output.textContent += line;
   }
 }
 

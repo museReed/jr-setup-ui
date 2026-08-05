@@ -7,7 +7,7 @@
 // 抽成 run-registry.js 之後，它要的只是「一個看起來像 child process 的東西」。
 import assert from "node:assert/strict";
 
-import { terminateRun } from "../src/run-registry.js";
+import { runHeader, terminateRun } from "../src/run-registry.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -82,6 +82,40 @@ try {
     "計時器要是 Node 的 Timeout（才 unref 得了）",
   );
   ok("補刀計時器不會拖住行程結束");
+
+  // 迴歸：中止那件事要進得了學生貼得回來的原始輸出。
+  //
+  // 只印到伺服器的 stderr 是不夠的——那要看跑嚮導的那個終端機視窗，學生不會知道要
+  // 看那裡。今天查 winget 被中止時就是卡在這裡：要判斷「是我們開的槍還是它自己
+  // 放棄」，得請人去盯另一個視窗。
+  const noted = [];
+  const withNote = fakeRun({ note: (text) => noted.push(text) });
+  terminateRun(withNote, "sse-close");
+  assert.equal(noted.length, 1);
+  assert.match(noted[0], /terminateRun/);
+  assert.match(noted[0], /sse-close/);
+  ok("中止會寫進這次執行的原始輸出，不是只印到伺服器終端");
+
+  // note 是後來才掛上的，而 terminateRun 也可能在它掛上之前被呼叫（子行程還沒
+  // spawn 起來就被取消）。少了那個 ?. 會在收尾路徑上丟例外。
+  assert.doesNotThrow(() => terminateRun(fakeRun(), "server-close"));
+  ok("還沒掛上 note 的 run 也中止得了");
+
+  // 環境摘要：學生貼回來的往往只有這一段輸出，平台與來源分支必須在裡面。今天是從
+  // 輸出裡那句 python-3.13.14-arm64.exe 才意外看出那是一台 ARM 的 VM。
+  const header = runHeader(
+    { actionName: "install-python", options: { tools: "codex", lang: "zh-TW" } },
+    null,
+    { platform: "win32", arch: "arm64", version: "v24.19.0" },
+  ).join("\n");
+  assert.match(header, /install-python/);
+  assert.match(header, /win32 arm64/);
+  assert.match(header, /v24\.19\.0/);
+  assert.match(header, /tools=codex/);
+  // 來源分支：抓不到時要說 unknown，不能整個爆掉——.jr-source 是 bootstrap 寫的，
+  // 用 git clone 跑的開發機上根本沒有那個檔案。
+  assert.match(header, /嚮導來源：/);
+  ok("每次執行的開頭有平台、Node、來源分支與這次的選擇");
 } catch (error) {
   console.log(`not ok - ${error.message}`);
   process.exitCode = 1;

@@ -1391,7 +1391,9 @@ async function run(action, promptText, button = null, options) {
         );
       }
 
-      view.addRawLine(line.text);
+      // 時間戳只進原始輸出，不進 runContext.rawOutput——那一份要餵給挑失敗原因
+      // 那條與 LLM 翻譯，前綴會干擾它們的比對。
+      view.addRawLine(line.text, line.at);
     });
 
     events.addEventListener("agent", (event) => {

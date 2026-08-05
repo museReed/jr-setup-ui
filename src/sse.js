@@ -40,7 +40,12 @@ export function parseJrEventLine(line) {
   }
 }
 
-export function writeOutputLine(response, stream, line) {
+// at 是「距這次執行開始幾毫秒」，給原始輸出面板標時間用。
+//
+// 為什麼是另一個欄位而不是直接接在 text 前面：text 有好幾個地方在解析——挑 loader
+// 動畫、撈登入網址與代碼、挑失敗原因那一行——前綴一加，那些比對全都要跟著改。
+// 時間戳是呈現層的事，讓畫面自己去接。
+export function writeOutputLine(response, stream, line, at = null) {
   const event = parseJrEventLine(line);
 
   if (event !== null) {
@@ -48,7 +53,7 @@ export function writeOutputLine(response, stream, line) {
     return;
   }
 
-  writeEvent(response, "line", { stream, text: line });
+  writeEvent(response, "line", { stream, text: line, at });
 }
 
 // 把一條 stream 切成一行一行。

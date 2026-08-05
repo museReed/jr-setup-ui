@@ -84,6 +84,11 @@ if (Test-Path $appDir) {
 
 New-Item -ItemType Directory -Force -Path (Split-Path $appDir) | Out-Null
 Move-Item (Join-Path $extractDir $extractedName) $appDir
+
+# 留一張紙條說這份是從哪抓的。嚮導每次執行都會把它印進原始輸出——學生貼回來的
+# log 裡才看得出他跑的是 main 還是我們請他驗的那條分支（畫面上完全看不出來，
+# package.json 的 version 是 0.0.0 也幫不上忙）。
+Set-Content -LiteralPath (Join-Path $appDir ".jr-source") -Value $branch -Encoding utf8
 Remove-Item -Recurse -Force $extractDir
 Remove-Item -Force $zipPath
 

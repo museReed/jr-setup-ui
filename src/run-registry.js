@@ -10,6 +10,7 @@
 // 領域模組不准 import 它，跟不准 import server.js 是同一條規則（見
 // test/backend-layers.mjs）。
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { resolveEngine, shouldExplainOutput } from "./actions.js";
@@ -25,6 +26,30 @@ const explainOutputScript = moduleFile(
   import.meta.url,
 );
 const EXPLAIN_FALLBACK = "（無法翻譯，請看下方原始輸出）";
+
+// bootstrap 把「這份嚮導是從哪個分支抓的」寫在這裡。
+//
+// 版本問題比想像中常見：學生跑的是幾天前抓的那份、或是我們請他驗某條分支卻抓成
+// main，而畫面上完全看不出來。package.json 的 version 是 0.0.0，幫不上忙。
+export function readSourceMarker(readFile = readFileSync) {
+  try {
+    return readFile(new URL("../.jr-source", import.meta.url), "utf8").trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+// 每次執行開頭的環境摘要。這幾行是給我們看的，不是給學生看的——該塞的就塞。
+export function runHeader(run, engine = null, platform = process) {
+  const options = run.options ?? {};
+
+  return [
+    `--- ${run.actionName ?? "?"}${engine === null ? "" : `（${engine}）`} ---`,
+    `平台：${platform.platform} ${platform.arch}　Node：${platform.version}`,
+    `嚮導來源：${readSourceMarker()}`,
+    `選擇：tools=${options.tools ?? "-"} lang=${options.lang ?? "-"} step=${options.step ?? "-"}`,
+  ];
+}
 
 // server.js 的 POST /input 也要問這件事：子行程還活著才餵得進去。
 export function childIsRunning(child) {
@@ -43,7 +68,12 @@ export function terminateRun(run, reason = "unknown") {
     return;
   }
 
-  console.error(`[terminateRun] 中止子行程，來源：${reason}`);
+  const note = `[terminateRun] 中止子行程，來源：${reason}`;
+  console.error(note);
+  // 也寫進這一次的原始輸出。只印到伺服器的 stderr 是不夠的——那要看跑嚮導的那個
+  // 終端機視窗，學生不會知道要看那裡，也貼不回來。今天查 winget 被中止時就是卡在
+  // 這裡：要判斷「是我們開的槍還是它自己放棄」，得請人去盯另一個視窗。
+  run.note?.(note);
   run.child.kill("SIGTERM");
 
   if (run.killTimer === null) {
@@ -146,10 +176,31 @@ export async function runAction(
   });
   response.flushHeaders();
 
+  // 這一次執行的時間原點。原始輸出的每一行都標「距這裡幾秒」。
+  //
+  // 為什麼是相對不是絕對：學生 VM 的時鐘常常是歪的，而我們判斷問題時要的從來不是
+  // 「幾點幾分」，是「這一步花了多久」。今天查 winget 被中止時，最硬的線索是
+  // 「27 MB 下載跑了三分鐘」——而那件事完全不在 log 裡，是 Reed 口頭講的。
+  const startedAt = Date.now();
+  const elapsed = () => Date.now() - startedAt;
+
+  // 收尾用的旁白：進原始輸出、也送到畫面上那個面板，但不進白話終端。
+  // 掛在 run 上是為了讓 terminateRun 用得到——它只拿得到 run。
+  run.note = (text) => {
+    writeOutputLine(response, "stderr", text, elapsed());
+  };
+
   const { action } = run;
   // 這一次實際要跑的 agent。merge-config-step 的 engine 是個函式（跟著學生選的
   // 工具走），底下組指令與挑 parser 都要用同一個答案。
   const engine = action.kind === "agent" ? resolveEngine(action, run.options) : null;
+
+  // 開頭先寫一段環境摘要。學生貼回來的往往只有這一段輸出，沒有這幾行的話，
+  // 連「他是哪個平台、跑哪個版本」都得靠猜——今天是從輸出裡那句
+  // python-3.13.14-arm64.exe 才意外看出那是一台 ARM 的 VM。
+  for (const line of runHeader(run, engine)) {
+    writeOutputLine(response, "stdout", line, 0);
+  }
   const command =
     action.kind === "agent"
       ? commandBuilder(engine, run.prompt, run.permission)
@@ -221,7 +272,7 @@ export async function runAction(
     rawOutput.push(line);
 
     if (action.kind === "fixed") {
-      writeOutputLine(response, "stdout", line);
+      writeOutputLine(response, "stdout", line, elapsed());
       return;
     }
 
@@ -238,7 +289,7 @@ export async function runAction(
     }
 
     rawOutput.push(line);
-    writeOutputLine(response, "stderr", line);
+    writeOutputLine(response, "stderr", line, elapsed());
   });
 
   const finish = async (exitCode, signal) => {
