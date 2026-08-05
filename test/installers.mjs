@@ -12,17 +12,29 @@ function ok(description) {
   console.log(`ok - ${description}`);
 }
 
-// 迴歸：Windows 上沒有 npm.exe，spawn 不開 shell 時找不到裸的 "npm"。
-// 實測 PowerShell 會去找 npm.ps1 並被執行原則擋掉，spawn 則直接 ENOENT。
-for (const [id, pkg] of [
-  ["claude", "@anthropic-ai/claude-code"],
-  ["codex", "@openai/codex"],
-]) {
-  const installer = resolveInstaller(id, "win32");
-  assert.equal(installer.cmd, "npm.cmd");
-  assert(installer.args.includes(pkg));
-}
-ok("Claude Code 與 Codex 在 win32 用 npm.cmd");
+// Windows 也改走兩家官方的 PowerShell 安裝器，跟 macOS 同一套來源。
+// -NoProfile：學生的 PowerShell profile 可能印東西或改 PATH，安裝不該受它影響。
+const claudeWindows = resolveInstaller("claude", "win32");
+assert.equal(claudeWindows.cmd, "powershell.exe");
+assert(claudeWindows.args.includes("-NoProfile"));
+assert(claudeWindows.args.at(-1).includes("https://claude.ai/install.ps1"));
+assert(!claudeWindows.args.at(-1).includes("npm install -g"));
+
+const codexWindows = resolveInstaller("codex", "win32");
+assert.equal(codexWindows.cmd, "powershell.exe");
+assert(codexWindows.args.includes("-NoProfile"));
+assert(codexWindows.args.at(-1).includes("https://chatgpt.com/codex/install.ps1"));
+assert(!codexWindows.args.at(-1).includes("npm install -g"));
+// codex 官方的 Windows 指令帶這個旗標，照抄不自己判斷要不要。
+assert(codexWindows.args.includes("-ExecutionPolicy"));
+assert(codexWindows.args.includes("Bypass"));
+ok("Windows 兩項都改走官方原生安裝器，不經過 npm");
+
+// 跟 macOS 同一個環境變數（.ps1 第 14 行讀它）。Windows 還有第二道保險——
+// Prompt-YesNo 在 stdio 被導向時直接回 false——但意圖要寫出來，不靠副作用。
+assert.equal(codexWindows.env.CODEX_NON_INTERACTIVE, "1");
+assert.equal(claudeWindows.env, undefined);
+ok("Windows 的 codex 安裝同樣帶 CODEX_NON_INTERACTIVE");
 
 // 迴歸（乾淨 macOS VM 實測）：官方 .pkg 裝的 Node 把 /usr/local/lib/node_modules
 // 留給 root，學生帳號跑 npm install -g 直接 EACCES。macOS 這兩項都不能再碰全域目錄。
@@ -77,6 +89,17 @@ for (const id of ["git", "gh"]) {
 }
 ok("winget 安裝指定 --source winget 並自動接受來源條款");
 
+// 迴歸：嚮導 spawn 出來的 winget 沒有人在看著，跳出任何一個要人選的提示就是永久卡住。
+// 一條漏掉就是一顆會卡死的安裝鍵，所以整批一起釘。
+//
+// 這個旗標管的是「不准問問題」，不是「輸出變乾淨」——進度動畫加了照樣有（VM 實測）。
+for (const id of ["python", "git", "gh", "windows-terminal"]) {
+  const installer = resolveInstaller(id, "win32");
+  assert.equal(installer.cmd, "winget");
+  assert(installer.args.includes("--disable-interactivity"), id);
+}
+ok("每一條 win32 的 winget 都關掉互動式進度輸出");
+
 const gitWindows = resolveInstaller("git", "win32");
 assert.equal(gitWindows.cmd, "winget");
 assert(gitWindows.args.includes("Git.Git"));
@@ -86,6 +109,16 @@ ok("Git 在 win32 使用 winget 的精確套件 id");
 const ghWindows = resolveInstaller("gh", "win32");
 assert(ghWindows.args.includes("GitHub.cli"));
 ok("GitHub CLI 在 win32 使用 winget 的精確套件 id");
+
+// 迴歸：嚮導 spawn 出來的 brew 沒有人在看著，跳出任何一句要人回答的話就是永久卡住
+// ——畫面停在安裝中，學生只能按取消。同一個檔案裡 codex 的 darwin 安裝已經為了一模
+// 一樣的理由帶著 CODEX_NON_INTERACTIVE，brew 這幾條是補上同一道防線。
+for (const id of ["python", "git", "gh", "ghostty"]) {
+  const installer = resolveInstaller(id, "darwin");
+  assert.equal(installer.cmd, "brew");
+  assert.equal(installer.env.NONINTERACTIVE, "1", id);
+}
+ok("每一條 darwin 的 brew 都帶 NONINTERACTIVE，不會停在看不見的提問");
 
 const gitDarwin = resolveInstaller("git", "darwin");
 assert.equal(gitDarwin.cmd, "brew");
@@ -100,6 +133,7 @@ const ghosttyDarwin = resolveInstaller("ghostty", "darwin");
 assert.deepEqual(ghosttyDarwin, {
   cmd: "brew",
   args: ["install", "--cask", "ghostty"],
+  env: { NONINTERACTIVE: "1" },
 });
 assert.equal(resolveInstaller("ghostty", "win32"), null);
 ok("Ghostty 只在 darwin 提供 brew cask 安裝器");
@@ -132,18 +166,33 @@ ok("installActionId 產生前後端共用的 action id");
 const ALLOWED_HOSTS = ["https://claude.ai/", "https://chatgpt.com/"];
 const unsafeFragments = ["--dangerously", "&&", "|", ";"];
 
+// bash -c / powershell -Command 的最後一個參數就是一段腳本，管線是寫給直譯器看的。
+const SCRIPT_RUNNERS = { bash: "-c", "powershell.exe": "-Command" };
+
 for (const installersByPlatform of Object.values(INSTALLERS)) {
   for (const installer of Object.values(installersByPlatform)) {
-    if (installer.cmd === "bash") {
-      assert.deepEqual(installer.args.length, 2);
-      assert.equal(installer.args[0], "-c");
+    const scriptFlag = SCRIPT_RUNNERS[installer.cmd];
 
-      const urls = installer.args[1].match(/https?:\/\/\S+/g) ?? [];
+    if (scriptFlag !== undefined) {
+      // 腳本必須是最後一個參數，而且緊跟在它自己的旗標後面——形狀固定，才不會有
+      // 「某個中間參數其實也被當成腳本執行」的空間。
+      assert.equal(installer.args.at(-2), scriptFlag);
+      const script = installer.args.at(-1);
+
+      const urls = script.match(/https?:\/\/\S+/g) ?? [];
       assert(urls.length > 0, "安裝腳本應該有下載來源");
       for (const url of urls) {
         assert(
           ALLOWED_HOSTS.some((host) => url.startsWith(host)),
           `安裝腳本連到未預期的網域：${url}`,
+        );
+      }
+
+      // 腳本以外的參數照舊禁止 shell 字元。
+      for (const arg of installer.args.slice(0, -1)) {
+        assert(
+          unsafeFragments.every((fragment) => !arg.includes(fragment)),
+          `不安全的安裝參數：${arg}`,
         );
       }
       continue;

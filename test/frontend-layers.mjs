@@ -135,6 +135,37 @@ try {
   );
   ok("切換工具不會把學生丟回別張卡");
 
+  // 迴歸（VM 實測）：登入成功之後「停止等待」那顆還留在終端裡，按下去什麼都不會
+  // 發生。原因是 hideLoginWaiting 是個空函式，而 finishLoginWaiting 只是再印一行。
+  assert(
+    !/export function hideLoginWaiting\(\) \{\}/.test(files.view),
+    "hideLoginWaiting 不可以是空函式，它要真的把按鈕收掉",
+  );
+  assert(
+    files.view.includes("loginWaitingButton?.remove()"),
+    "等待結束時要移除「停止等待」按鈕",
+  );
+  assert(
+    /export function finishLoginWaiting[\s\S]{0,120}hideLoginWaiting\(\)/.test(
+      files.view,
+    ),
+    "登入等待正常結束時也要收掉按鈕，不能只有手動停止那條路",
+  );
+  ok("登入等待結束後「停止等待」按鈕會消失");
+
+  // 迴歸（Windows VM 實測）：安裝完成後的重查撞上還在跑的那次就被丟掉，畫面永遠停在
+  // 安裝前的快照——卡片寫「未安裝」、清單不打勾，而且不會自己好。runEnvCheck 在
+  // Windows 要 8.3 秒，撞上的機會不小。被擋下來的那次要排隊補跑。
+  assert(
+    files.app.includes("state.envCheckQueued = {"),
+    "撞上執行中的環境檢查時要排隊，不能直接丟掉",
+  );
+  assert(
+    /state\.envCheckQueued = null;\s*void checkEnvironment\(/.test(files.app),
+    "當前那次收尾後要把排隊的那次補跑起來",
+  );
+  ok("被擋下來的環境重查會補跑，畫面不會停在安裝前的快照");
+
   // 小人常駐在終端頂欄，狀態要在「印字」之前換掉。
   //
   // 這一條擋的是同一個坑的新版本：去重只擋文字（環境卡按「再 check 一次」印的字跟
@@ -628,13 +659,26 @@ try {
   assert.match(cardIndex, /id="verify-modal-confirm" class="ds-btn ds-btn-primary"/);
   assert.match(cardIndex, /id="verify-modal-later" class="ds-btn ds-btn-ghost"/);
 
-  for (const id of ["recheck-configs", "recheck-env", "cancel", "copy-diagnostics"]) {
+  for (const id of [
+    "recheck-configs",
+    "recheck-env",
+    "cancel",
+    "copy-diagnostics",
+    "copy-raw-output",
+  ]) {
     assert.match(
       cardIndex,
       new RegExp(`id="${id}" class="ds-btn-fill[^"]*"[^>]*>\\s*<svg`),
       `${id} 要是灌色按鈕而且帶 icon`,
     );
   }
+  // 複製原始輸出那顆跟「看原始輸出」同一列靠右站，靠絕對定位疊上去——不能搬進
+  // <summary>：summary 裡的點擊會把面板收起來，學生按「複製」看到的是內容消失。
+  assert(
+    !/<summary>[^]*?copy-raw-output[^]*?<\/summary>/.test(cardIndex),
+    "複製原始輸出不能放進 <summary>，點下去會把面板收起來",
+  );
+  assert.match(cardStyles, /^#copy-raw-output \{[^}]*position: absolute;/m);
   // 翻頁那兩顆也是灌色按鈕，兩顆都預先灌滿：空心那顆並排時看起來像停用的
   // （Reed 指定統一）。
   assert.match(cardIndex, /id="wizard-prev" class="ds-btn-fill is-primary wizard-nav/);

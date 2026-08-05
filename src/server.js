@@ -14,6 +14,7 @@ import { isBenignExit } from "./installers.js";
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
+import { isProgressNoise } from "./output-noise.js";
 import {
   ensureWorkDir,
   moduleFile,
@@ -221,11 +222,19 @@ function childIsRunning(child) {
   return child && child.exitCode === null && child.signalCode === null;
 }
 
-function terminateRun(run) {
+// reason 是診斷用的：Windows VM 上 winget 裝 Python 收到 exit code 0x80004004
+// （E_ABORT，「操作已中止」），而全域只有這一支會主動中止子行程。它到底有沒有開槍，
+// 從輸出上看不出來——殺掉之後 winget 印的是自己的取消訊息，跟它自己放棄長得一樣。
+//
+// 印到伺服器自己的 stderr，不進 SSE：這是給我們看的，不是給學生看的。看的地方是
+// 跑嚮導的那個終端機視窗（bootstrap 就是在那裡 node bin/jr-setup-ui.js），
+// 不是頁面上的「看原始輸出」——那一份收的是子行程的輸出。
+function terminateRun(run, reason = "unknown") {
   if (run.finished || !childIsRunning(run.child)) {
     return;
   }
 
+  console.error(`[terminateRun] 中止子行程，來源：${reason}`);
   run.child.kill("SIGTERM");
 
   if (run.killTimer === null) {
@@ -392,6 +401,12 @@ async function runAction(
   const rawOutput = [];
 
   const flushStdout = streamLines(child.stdout, (line) => {
+    // 進度動畫連 rawOutput 都不收：那一份餵三個地方（原始輸出面板、挑失敗原因、
+    // 丟給 LLM 翻譯），三個都不需要幾百行轉圈符號。
+    if (isProgressNoise(line)) {
+      return;
+    }
+
     rawOutput.push(line);
 
     if (action.kind === "fixed") {
@@ -406,6 +421,11 @@ async function runAction(
     }
   });
   const flushStderr = streamLines(child.stderr, (line) => {
+    // stderr 也要過一次：brew 的下載進度就是寫在這邊。
+    if (isProgressNoise(line)) {
+      return;
+    }
+
     rawOutput.push(line);
     writeOutputLine(response, "stderr", line);
   });
@@ -470,7 +490,7 @@ async function runAction(
     const timer = setTimeout(() => finish(exitCode, signal), 1000);
     timer.unref();
   });
-  response.on("close", () => terminateRun(run));
+  response.on("close", () => terminateRun(run, "sse-close"));
 }
 
 export async function startServer({
@@ -839,7 +859,7 @@ export async function startServer({
         return;
       }
 
-      terminateRun(run);
+      terminateRun(run, "cancel-endpoint");
       sendJson(response, 200, { canceled: true });
       return;
     }
@@ -870,7 +890,7 @@ export async function startServer({
   const close = () =>
     new Promise((resolve, reject) => {
       for (const run of runs.values()) {
-        terminateRun(run);
+        terminateRun(run, "server-close");
       }
 
       server.close((error) => {

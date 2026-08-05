@@ -149,15 +149,13 @@ try {
   // 不放「驗證」按鈕：安裝完會自動接驗證，那顆只會閃一下就消失，學生不知道驗了沒
   // （Reed 實測）。重驗一律走「再 check 一次」，而它一直都在。
   //
-  // 裝好了就灰掉，即使還沒驗過：安裝按鈕只管安裝。原本這一態給可按的「重裝」，
+  // 裝好了就整顆收掉，即使還沒驗過：安裝按鈕只管安裝。原本這一態給可按的「重裝」，
   // 於是「只差看一眼」的列也長出一顆安裝按鈕，學生按下去畫面說「正在安裝」——
-  // 他要的只是再驗一次（Reed 實測 claude-namer）。驗證請按「重跑驗證」。
-  assert.deepEqual(
-    pending.buttons.map(({ text, disabled }) => ({ text, disabled })),
-    [{ text: "✅ 已安裝", disabled: true }],
-  );
+  // 他要的只是再驗一次（Reed 實測 claude-namer）。後來改成灰色的「✅ 已安裝」，
+  // 現在整顆拿掉：那一列的狀態已經說完同一件事（Reed 指定）。驗證請按「重跑驗證」。
+  assert.deepEqual(pending.buttons, []);
   assert.equal(pending.showRetest, true);
-  ok("裝好但沒驗過的列：安裝按鈕灰掉，驗證交給「重跑驗證」");
+  ok("裝好但沒驗過的列：安裝按鈕整顆收掉，驗證交給「重跑驗證」");
 
   // 例外：驗證真的失敗過的時候那顆要活過來。裝歪了（舊版、裝一半）而 check 仍是
   // ok 的情況存在，那時重跑安裝是唯一的自救手段。
@@ -236,12 +234,9 @@ try {
     true,
   );
   assert.equal(verified.status, "ok");
-  assert.deepEqual(
-    verified.buttons.map(({ text, disabled }) => ({ text, disabled })),
-    [{ text: "✅ 已安裝", disabled: true }],
-  );
+  assert.deepEqual(verified.buttons, []);
   assert.equal(verified.showRetest, true);
-  ok("驗過之後才變綠，安裝按鈕置灰並可再次驗證");
+  ok("驗過之後才變綠，安裝按鈕收掉並可再次驗證");
 
   const cards = [
     {
@@ -571,38 +566,44 @@ try {
       },
       new Set(["gh"]),
     ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
-    [
-      { text: "已安裝", disabled: true },
-      { text: "開始登入", disabled: false },
-    ],
+    // 裝好之後安裝鍵整顆收掉，只剩下一步該做的「開始登入」。
+    [{ text: "開始登入", disabled: false }],
   );
-  ok("按過安裝但伺服器仍回 missing 時，安裝按鈕不置灰，學生能重試");
+  ok("裝好之後安裝按鈕消失，卡片上只剩下一步要做的事");
+
+  // 迴歸：envRowModel 裝好後不再給按鈕，envCardRowModel 少了 installed 判斷就會
+  // 掉進「補一顆停用佔位」那支，反而長出灰色的「安裝」——比原本的「已安裝」更難解讀。
+  assert(
+    !envCardRowModel(
+      {
+        kind: "env",
+        checkId: "node",
+        checks: [
+          {
+            id: "node",
+            label: "Node.js",
+            status: "ok",
+            detail: "v24",
+            installAction: null,
+            fixAction: null,
+            hasInstaller: true,
+          },
+        ],
+      },
+      new Set(["node"]),
+    ).buttons.some((button) => button.dataName === "installAction"),
+    "裝好的項目不該補出停用的安裝佔位",
+  );
+  ok("裝好之後不會掉進佔位分支長出灰色的「安裝」");
 
   // 安裝鍵要掛回清單裡它負責的那一格（靠 checkId），不留在卡片底部的按鈕列——
   // 「CLI 未安裝」在清單裡、按鈕在清單外，學生得自己把兩者連起來（Reed 指定）。
   // 「開始登入」當初就是為了同一個理由搬進去的，兩顆現在一致。
-  for (const buttons of [
-    envCardRowModel(
-      { kind: "env", checkId: "gh", checks: [ghMissing, ghAuthBlocked] },
-      new Set(["gh"]),
-    ).buttons,
-    envCardRowModel(
-      {
-        kind: "env",
-        checkId: "gh",
-        checks: [
-          { ...ghMissing, status: "ok", detail: "gh 2.87.2" },
-          { ...ghAuthBlocked, status: "warn", fixAction: "login-gh" },
-        ],
-      },
-      new Set(["gh"]),
-    ).buttons,
-  ]) {
-    const install = buttons.find(
-      (button) => button.dataName === "installAction",
-    );
-    assert.equal(install.checkId, "gh");
-  }
+  const stillMissing = envCardRowModel(
+    { kind: "env", checkId: "gh", checks: [ghMissing, ghAuthBlocked] },
+    new Set(["gh"]),
+  ).buttons.find((button) => button.dataName === "installAction");
+  assert.equal(stillMissing.checkId, "gh");
   ok("安裝按鈕帶著 checkId，畫在清單裡對應的那一格");
 
   // 設定類項目（execution-policy）沒有 installer，它要的是「修正」。
@@ -636,29 +637,10 @@ try {
     ).buttons.map(({ text }) => text),
     ["修正"],
   );
-  // 對照組：真的有 installer 的項目，裝好之後還是要留下已完成的「已安裝」。
-  assert.deepEqual(
-    envCardRowModel(
-      {
-        kind: "env",
-        checkId: "node",
-        checks: [
-          {
-            id: "node",
-            label: "Node.js",
-            status: "ok",
-            detail: "v24",
-            installAction: null,
-            fixAction: null,
-            hasInstaller: true,
-          },
-        ],
-      },
-      new Set(["node"]),
-    ).buttons.map(({ text, disabled }) => ({ text, disabled: !!disabled })),
-    [{ text: "已安裝", disabled: true }],
-  );
   ok("沒有 installer 的設定類項目不放安裝按鈕，只放修正");
+  // 原本這裡有個對照組：有 installer 的項目裝好之後仍留一顆「已安裝」，用來跟
+  // 設定類項目的「什麼都不放」對比。安裝鍵改成裝好就收掉之後，兩者的結果都是空的，
+  // 對照不出東西——那個情境改由上面「不會掉進佔位分支」那條守住。
 
   assert.notEqual(mergedCard.detail, cardResultText(mergedCard));
   ok("卡片 description 與執行結果使用不同文字");
@@ -823,7 +805,17 @@ try {
     ],
     verifiedCheckIds: new Set(),
   });
-  assert.match(notRunYet.system[0].detail, /還沒實際跑跑看/);
+  // 有自動驗證的檢查拆成兩格：第一格「安裝」、第二格「驗證」。
+  assert.deepEqual(
+    notRunYet.system.map(({ id, text, checked }) => ({ id, text, checked })),
+    [
+      { id: "install-x", text: "安裝：自動命名 hook", checked: true },
+      { id: "system-x", text: "驗證：自動命名 hook", checked: false },
+    ],
+  );
+  // 安裝那一格講安裝的事，驗證那一格講它在等什麼——兩句話不再擠在同一格。
+  assert.equal(notRunYet.system[0].detail, "hook 檔案與 3 筆註冊都已生效");
+  assert.match(notRunYet.system[1].detail, /還沒實際跑跑看/);
   const ranAlready = checklistGroups({
     checks: [
       {
@@ -835,8 +827,52 @@ try {
     ],
     verifiedCheckIds: new Set(["x"]),
   });
-  assert.doesNotMatch(ranAlready.system[0].detail, /還沒實際跑跑看/);
-  ok("還沒跑過驗證的那一格會說自己在等什麼");
+  assert.doesNotMatch(ranAlready.system[1].detail, /還沒實際跑跑看/);
+  ok("安裝與驗證各自一格，驗證那格會說自己在等什麼");
+
+  // 迴歸（VM 實測）：安裝成功了，「安裝」那一格要當場打勾，不等驗證跑完、也不等
+  // 下一次伺服器檢查回來。原本兩件事共用一個勾，畫面停在空格 + 上一次留下的
+  // 「尚未安裝」，學生看到的是「我明明裝好了，它說沒裝」。
+  const justInstalled = checklistGroups({
+    checks: [
+      {
+        ...eyeRow,
+        label: "自動命名 hook",
+        status: "missing",
+        detail: "尚未安裝",
+        verifyAction: "verify-in-terminal",
+      },
+    ],
+    verifiedCheckIds: new Set(),
+    installedCheckIds: new Set(["x"]),
+  });
+  assert.equal(justInstalled.system[0].checked, true);
+  assert.equal(justInstalled.system[1].checked, false);
+  ok("剛按完安裝：安裝那格當場打勾，驗證那格還空著");
+
+  // 沒有自動驗證的檢查不拆——硬拆會長出一格永遠不知道該不該打勾的東西。
+  assert.equal(systemOnly.system.length, 1);
+  assert.equal(systemOnly.system[0].id, "system-node");
+  ok("沒有自動驗證的檢查維持單格");
+
+  // 迴歸（VM 實測，合併卡的第一列）：合併卡的驗證掛在最後那一份身上，前半份沒有
+  // verifyAction、不會被拆——但它那一格講的就是「這件事成了沒」，而唯一的達成方式
+  // 就是安裝。剛裝完也要當場打勾，不然畫面是「終端印安裝成功、這一列寫尚未安裝」。
+  const mergedFirstHalf = checklistGroups({
+    checks: [
+      {
+        id: "claude-md",
+        label: "Claude Code CLI 做事的規矩",
+        status: "missing",
+        detail: "尚未安裝",
+      },
+    ],
+    verifiedCheckIds: new Set(),
+    installedCheckIds: new Set(["claude-md"]),
+  });
+  assert.equal(mergedFirstHalf.system.length, 1);
+  assert.equal(mergedFirstHalf.system[0].checked, true);
+  ok("沒有自動驗證的列，剛裝完也當場打勾");
 
   // 驗過之後檔案被動過：勾留著，補一句提醒。改的可能是學生自己那半（合併過的
   // CLAUDE.md，工作坊那段還在所以檢查照樣說 ok），程式看不出來會不會影響驗過的

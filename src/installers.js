@@ -30,13 +30,52 @@ const CODEX_DARWIN_SCRIPT = [
   "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 ].join("\n");
 
+// Windows 走兩家官方的 PowerShell 安裝器。npm 那條在 Windows 上本來就能跑（全域
+// 目錄在 %APPDATA%，沒有 macOS 的權限問題），換掉是為了三件事：不再要求學生機器上
+// 的 Node 裝得對、兩個平台同一套安裝來源、以及 npm 那層轉手本身會壞的地方（關掉
+// optional deps、平台包缺失）就不存在了。
+//
+// ⚠️ 讀過兩支 .ps1 之後才敢寫的差異，不要照著 macOS 那半類推：
+//   claude  下載 claude.exe 再跑 `claude.exe install`，落點 %USERPROFILE%\.local\bin。
+//           它有沒有把那個目錄寫進登錄檔，腳本裡看不出來 → env-path.js 補一份保險。
+//   codex   自己把目錄寫進登錄檔的 User Path（SetEnvironmentVariable(..., "User")），
+//           嚮導既有的「重讀登錄檔」機制就抓得到，不用插手。
+//
+// -NoProfile：學生的 PowerShell profile 可能印東西或改 PATH，安裝不該受它影響。
+// 指令內容照兩家官方文件寫的形狀，包含 codex 那個 -ExecutionPolicy Bypass。
+const CLAUDE_WIN32_COMMAND = "irm https://claude.ai/install.ps1 | iex";
+const CODEX_WIN32_COMMAND = "irm https://chatgpt.com/codex/install.ps1 | iex";
+
+// 每一條 winget 都帶 --disable-interactivity：不准它停下來等人回答。
+//
+// 嚮導 spawn 出來的 winget 沒有人在看著，跳出任何一個要人選的提示就是永久卡住——
+// 畫面停在安裝中，學生只能按取消。--accept-*-agreements 只擋掉條款那兩題，其餘的
+// （來源要選哪個、要不要換套件）擋不到，這個旗標才是整批的。
+//
+// ⚠️ 它**不會**讓輸出變乾淨。winget 的轉圈符號與進度條靠 \r 一格一格重畫，在真的
+// 終端機裡是一行動畫，透過管子接出來就是幾百行 `- \ | /`——加了這個旗標之後照樣有
+// （Windows VM 實測，加旗標前後的原始輸出都是滿滿的轉圈符號）。winget 沒有關進度的
+// 旗標，要乾淨只能在我們這邊過濾（見 output-noise.js）。
+//
+// macOS 那幾條 brew 是同一件事、換一個開關：Homebrew 官方的 NONINTERACTIVE=1。
+//
+// 這條路已經踩過一次——同一個檔案裡 codex 的 darwin 安裝帶 CODEX_NON_INTERACTIVE，
+// 理由寫在它自己的註解裡：問句直接寫 /dev/tty，印在學生沒在看的那個終端機，然後停在
+// 那裡等一個永遠不會來的輸入。brew 是同一個形狀，只是還沒補上同一道防線。
+//
+// 目的是「讓它失敗，不要讓它卡住」。卡住的話學生看到「安裝中」永遠不動，只能按取消
+// 且不知道為什麼；失敗的話至少有一行原因、可以重按、可以貼給助教。
+//
+// ⚠️ 預防，不是修已知的 bug：沒有實測證據說 brew 一定會問。最可疑的是 ghostty 那條
+// ——cask 要動 /Applications，某些情況會要密碼。真的需要密碼時，加了這個變數會從
+// 「卡住」變成「明確失敗」，那時再照 docs/setup.sh 的做法先明確要一次 sudo。
+const BREW_ENV = { NONINTERACTIVE: "1" };
+
 export const INSTALLERS = {
   claude: {
-    // Windows 上的 npm 是 npm.cmd / npm.ps1，沒有 npm.exe。
-    // spawn 不開 shell 時找不到裸的 "npm"，必須寫完整檔名。
     win32: {
-      cmd: "npm.cmd",
-      args: ["install", "-g", "@anthropic-ai/claude-code"],
+      cmd: "powershell.exe",
+      args: ["-NoProfile", "-Command", CLAUDE_WIN32_COMMAND],
     },
     darwin: {
       cmd: "bash",
@@ -44,11 +83,19 @@ export const INSTALLERS = {
     },
   },
   codex: {
-    // Windows 上的 npm 是 npm.cmd / npm.ps1，沒有 npm.exe。
-    // spawn 不開 shell 時找不到裸的 "npm"，必須寫完整檔名。
     win32: {
-      cmd: "npm.cmd",
-      args: ["install", "-g", "@openai/codex"],
+      cmd: "powershell.exe",
+      args: [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        CODEX_WIN32_COMMAND,
+      ],
+      // 跟 macOS 同一個環境變數（.ps1 第 14 行讀它）。Windows 這邊其實有第二道
+      // 保險——Prompt-YesNo 在 stdio 被導向時直接回 false，而嚮導的 spawn 就是
+      // 導向的——但不靠那個副作用：意圖寫出來，兩個平台也才一致。
+      env: { CODEX_NON_INTERACTIVE: "1" },
     },
     darwin: {
       cmd: "bash",
@@ -85,6 +132,7 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
         "--silent",
       ],
     },
@@ -92,6 +140,7 @@ export const INSTALLERS = {
     darwin: {
       cmd: "brew",
       args: ["install", "python"],
+      env: BREW_ENV,
     },
   },
   git: {
@@ -108,12 +157,14 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
         "--silent",
       ],
     },
     darwin: {
       cmd: "brew",
       args: ["install", "git"],
+      env: BREW_ENV,
     },
   },
   gh: {
@@ -128,18 +179,21 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
         "--silent",
       ],
     },
     darwin: {
       cmd: "brew",
       args: ["install", "gh"],
+      env: BREW_ENV,
     },
   },
   ghostty: {
     darwin: {
       cmd: "brew",
       args: ["install", "--cask", "ghostty"],
+      env: BREW_ENV,
     },
   },
   "windows-terminal": {
@@ -154,6 +208,7 @@ export const INSTALLERS = {
         "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
+        "--disable-interactivity",
       ],
     },
   },

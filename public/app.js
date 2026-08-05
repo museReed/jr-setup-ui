@@ -107,6 +107,8 @@ const state = {
   lastChecks: [],
   availableActions: new Set(["diagnose-naming-block"]),
   envChecks: [],
+  // 撞上「還在跑」而被擋下來的那次重查，等當前那次收尾再補跑。null 代表沒有排隊。
+  envCheckQueued: null,
   activeSectionId: "env",
   viewingCardIndex: {},
   // 曾經被顯示過的卡片 ID，只增不減。記 ID 不記索引：加選工具會在中間插入新卡，
@@ -377,6 +379,8 @@ function renderWizard() {
     resultTexts: state.resultTexts,
     // 驗過之後被動過的那幾步：勾留著，多一句提醒。
     changedCheckIds: state.changedSteps,
+    // 「安裝」那一格要在按完安裝的當下就打勾，不等下一次伺服器檢查回來。
+    installedCheckIds: state.installedSteps,
   });
   const installChecks = cardChecks.filter(
     (check) => !check.id.endsWith("-auth"),
@@ -898,6 +902,19 @@ function finishLoginWait(step) {
 
 async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   if (state.envCheckInProgress) {
+    // 這一次不能直接丟掉。安裝完成後的重查若撞上還在跑的那次，畫面就永遠停在
+    // 安裝前的快照——卡片寫「未安裝」、清單不打勾，而且不會自己好（Windows VM
+    // 實測：gh 裝好了、新終端叫得到、runEnvCheck 也回 ok，畫面就是不動）。
+    //
+    // 也不能改成共用那次的結果：它是安裝開始前就出發的，答案本來就過期。
+    // 所以排隊，等當前那次收尾再補跑一次。
+    //
+    // 撞上的機會不小：runEnvCheck 在 Windows 實測要 8.3 秒（十三項併行 spawn）。
+    state.envCheckQueued = {
+      showLoading,
+      // 排隊期間只要有一次是學生手動按的，補跑那次就算手動——手動才會先退勾。
+      manual: state.envCheckQueued?.manual === true || manual,
+    };
     return null;
   }
 
@@ -972,6 +989,14 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     view.renderEnvBusy(false);
     view.elements.recheckEnv.disabled = state.runInProgress;
     renderCheckingLoader();
+
+    // 排在後面那次補跑。一次只留一筆，所以不會無限接力。
+    const queued = state.envCheckQueued;
+
+    if (queued !== null) {
+      state.envCheckQueued = null;
+      void checkEnvironment(queued.showLoading, { manual: queued.manual });
+    }
   }
 }
 
@@ -1598,6 +1623,30 @@ view.elements.copyDiagnostics.addEventListener("click", async () => {
     }, 2000);
   } catch (error) {
     view.addLine(`無法複製診斷資料：${error.message}`, "failed");
+  }
+});
+// 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
+// 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。
+view.elements.copyRawOutput.addEventListener("click", async () => {
+  const text = view.rawOutputText();
+
+  // 空的時候不要靜靜地複製一個空字串：學生會以為複製好了，貼出去才發現什麼都沒有。
+  if (text.trim() === "") {
+    view.addLine("目前沒有原始輸出可以複製。", "agent-status");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    // 這顆的字用 copy / copied，不跟其他按鈕的中文一致（Reed 指定）：它站在原始輸出
+    // 那一列上，旁邊全是英文的終端內容。
+    view.setButtonLabel(view.elements.copyRawOutput, "copied");
+    // 字要換回來，理由跟「複製診斷資料」那顆一樣：留著會看起來像已經按過了。
+    window.setTimeout(() => {
+      view.setButtonLabel(view.elements.copyRawOutput, "copy");
+    }, 2000);
+  } catch (error) {
+    view.addLine(`無法複製原始輸出：${error.message}`, "failed");
   }
 });
 view.elements.recheckEnv.addEventListener("click", () => checkEnvironment());
