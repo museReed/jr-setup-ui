@@ -116,7 +116,10 @@ const CASES = {
   //   Bash(pwd)               完全精確、沒有萬用字元 ← 最可能跟前綴走不同路的一種
   //   Bash(git status:*)      兩字前綴
   //   WebFetch(domain:...)    非 Bash 工具、帶 specifier
-  //   WebSearch               非 Bash 工具、裸工具名
+  //
+  // WebSearch 那條規則刻意不驗（Reed 指定）：它在部分地區用不了，驗它等於在那些地區
+  // 製造一個永遠紅的燈——學生只會看到紅燈去重裝白名單，裝一百次也不會好。「非 Bash
+  // 工具」這種形狀由 WebFetch 那條代表就夠了。
   //
   // 刻意不跑的：會改東西的（mkdir / cp / git commit…，在學生家目錄亂跑很糟）、
   // 機器上不一定有的（jq / tree / file），以及要前提的（npm run 要 package.json）。
@@ -132,9 +135,6 @@ const CASES = {
     // 二、token 是「全部都沒被問」的結論，不是「echo 跑過了」的副產物。寫成後者的話
     //     只驗得到第一條，後面幾種形狀壞掉也一樣綠。
     //
-    // WebSearch 刻意不列進條件：它在部分地區用不了，列進去會變成「失敗的原因錯了」
-    // 那類假紅燈——學生看到紅的去重裝白名單，裝一百次也不會好。它只留在提問裡讓
-    // 學生自己看一眼（watchFor 那句）。
     prompt: ({ resultFile }) =>
       "請依序做這四件事，一件都不要跳過：" +
       `1) 執行 echo ${ALLOWLIST_TOKEN}　2) 執行 pwd　3) 執行 git status　` +
@@ -142,11 +142,10 @@ const CASES = {
       "第 3 步跑出「不是 git 儲存庫」之類的錯誤也算跑過——這一題看的是有沒有被擋，不是成不成功。" +
       "如果其中任何一步跳出要你允許的提示，不要按允許，" +
       `把那一步的編號與提示原文寫進 ${resultFile} 就停下來。` +
-      `四步全部都沒有跳提示的話，把 ${ALLOWLIST_TOKEN} 寫進 ${resultFile}。` +
-      "最後再用 WebSearch 隨便查一個詞，告訴我有沒有跳提示就好，那一步不影響上面那行字。",
+      `四步全部都沒有跳提示的話，把 ${ALLOWLIST_TOKEN} 寫進 ${resultFile}。`,
     expect: () => ({ kind: "artifact", keyword: ALLOWLIST_TOKEN }),
     watchFor:
-      "四條指令與 WebFetch、WebSearch 都直接跑掉，沒有跳出任何「要不要允許」的詢問",
+      "三條指令與那次 WebFetch 都直接跑掉，沒有跳出任何「要不要允許」的詢問",
   },
   chained: {
     label: "Shell 不串接",

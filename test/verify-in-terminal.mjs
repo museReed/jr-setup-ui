@@ -128,7 +128,6 @@ for (const [shape, needle] of [
   ["完全精確、沒有萬用字元", "pwd"],
   ["兩字前綴", "git status"],
   ["非 Bash 工具、帶 specifier", "WebFetch"],
-  ["非 Bash 工具、裸工具名", "WebSearch"],
 ]) {
   assert(
     allowlistCase.includes(needle),
@@ -136,15 +135,18 @@ for (const [shape, needle] of [
   );
 }
 
-// ⚠️ WebSearch 不可以進判定條件：它在部分地區用不了，列進去會變成假紅燈——學生看到
-// 紅的去重裝白名單，裝一百次也不會好。它只留在提問裡讓學生自己看一眼。
+// ⚠️ WebSearch 那條規則整個不驗（Reed 指定）：它在部分地區用不了，驗它等於在那些
+// 地區製造一個永遠紅的燈——學生只會看到紅燈去重裝白名單，裝一百次也不會好。
+// 「非 Bash 工具」這種形狀由 WebFetch 那條代表就夠了。
+assert(
+  !allowlistCase.includes("WebSearch"),
+  "白名單那題不可以碰 WebSearch——它在部分地區用不了，會變成永遠紅的假燈",
+);
 assert(
   /四步全部都沒有跳提示的話/.test(allowlistCase),
-  "判定條件要寫成「四步」——把 WebSearch 算進去會在用不了的地區永遠紅",
+  "判定條件的步數要跟提問裡列的一致",
 );
-console.log(
-  "ok - 白名單那題覆蓋五種規則形狀，按了允許不會過，WebSearch 不進判定",
-);
+console.log("ok - 白名單那題覆蓋四種規則形狀，按了允許不會過，不碰 WebSearch");
 
 // 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
