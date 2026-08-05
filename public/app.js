@@ -1607,7 +1607,15 @@ view.onToolSelect((tool) => {
   state.selectedTools = toggleToolSelection(state.selectedTools, tool);
   saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
-  state.viewingCardIndex = {};
+  // 只清掉「學生不在」的那些段落——它們的卡片清單跟著工具變了，舊的位置可能指到
+  // 別張卡。學生正看著的這一段不能清：清了之後下一輪 render 會重新推導成「第一張
+  // 沒完成的卡」，於是人明明停在選工具卡上，按一下工具就被丟回剛才那張（VM 實測）。
+  //
+  // 旁證：選語言那顆從來沒清過，換語言就不會跳。
+  state.viewingCardIndex = {
+    [state.activeSectionId]:
+      state.viewingCardIndex[state.activeSectionId] ?? 0,
+  };
   renderNavigation();
   view.hideSectionLockMessage();
   // 環境段的卡片也跟著選擇走，所以改選之後要重查——只重查規則檔的話，取消勾選的
