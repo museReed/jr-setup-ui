@@ -446,6 +446,13 @@ function renderWizard() {
   // 因為驗證掛在它身上。
   const rowCheck =
     cardChecks.find((candidate) => candidate.status !== "ok") ?? card.check;
+  // 驗證按鈕只能有一個家：一個驗證就放卡片底下，多個就一律回到各自那一格。
+  //
+  // 兩邊都畫的話，底下那顆跑的永遠是 card.check——合併卡上它看起來像「全部重跑」，
+  // 實際只重跑第一個驗證（VM 實測：白名單那格已驗過，底下按下去開的是「一次只跑
+  // 一個指令」的終端）。一顆按鈕說謊比少一顆按鈕更糟。
+  const verifyChecks = cardChecks.filter((check) => check.verifyAction != null);
+  const perRowVerify = verifyChecks.length > 1;
   let row =
     card.kind === "env"
       ? envCardRowModel(card, state.installedSteps)
@@ -474,23 +481,21 @@ function renderWizard() {
       //
       // 帶 checkId 的按鈕會被 view 畫進 `system-<id>` 那一格（清單裡的「驗證：…」
       // 就是那個 id），跟安裝鍵當初搬進清單是同一條規矩：按鈕要待在它負責的那一格。
+      //
+      // 驗過的那一格按鈕不收掉，改寫成「重跑驗證」：驗證會失敗、環境會變，學生要能
+      // 在原地再驗一次。收掉的話那一格就再也沒有入口了（底下那顆已經不畫了）。
       buttons: [
         ...(row.buttons ?? []),
-        ...cardChecks
-          .filter(
-            (check) =>
-              check.verifyAction != null && !verified.has(check.id),
-          )
-          .map((check) => ({
-            action: check.verifyAction,
-            dataName: "verifyAction",
-            text: "驗證",
-            checkId: check.id,
-            step: check.id,
-            // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個
-            // 參數讀的是 spec.options（view.js 的 actionButton）。
-            options: check.verifyOptions,
-          })),
+        ...(perRowVerify ? verifyChecks : []).map((check) => ({
+          action: check.verifyAction,
+          dataName: "verifyAction",
+          text: verified.has(check.id) ? "重跑驗證" : "驗證",
+          checkId: check.id,
+          step: check.id,
+          // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個
+          // 參數讀的是 spec.options（view.js 的 actionButton）。
+          options: check.verifyOptions,
+        })),
       ],
     };
   }
@@ -570,7 +575,8 @@ function renderWizard() {
             onInput: (value) => cardModel.onPasteProofInput(value),
           }
         : null,
-    showRetest: card.kind === "env" || row?.showRetest === true,
+    // 多個驗證的卡片不畫底下那顆——按鈕已經回到各自那一格了（見 perRowVerify）。
+    showRetest: card.kind === "env" || (row?.showRetest === true && !perRowVerify),
     // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
     retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",

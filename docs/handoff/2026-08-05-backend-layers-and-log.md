@@ -44,7 +44,18 @@
 
 取得工具名字的方法：在 Windows 上讓 Claude 跑一次 PowerShell 指令，看 `~/.claude` 底下的 session log，或請它自己回報 tool name。
 
-**這件事不緊急**——規矩沒破，只是學生偶爾會遇到「這條為什麼要問我」。
+**已決定：兩件事都要補（hook 的 matcher + 一份 PowerShell 白名單），但不在這條分支做。**
+先開 PR 合併，等拿到 `tool_name` 再開新分支。matcher 猜錯不會報錯、只會安靜地沒作用，
+比不加更糟，所以一定要先有真實的名字。
+
+新查到的證據（`2.1.221` 的 binary strings）：PowerShell 是一級工具，不是內部 helper——
+裡面有 `PowerShell command with optional timeout`、`PowerShell command (unsandboxed)`
+這種工具描述字串。所以「模型會不會選 PowerShell」不是意外，是它工具箱裡本來就有。
+還沒查的：那個工具是不是所有 Windows 都開（有沒有 flag / 版本條件），以及從哪個 shell
+啟動 Claude Code 影不影響（推測不影響，工具清單由平台決定，但沒證實）。
+
+**成本最低的緩解**：把驗證題目的措辭從 Windows 語彙（建資料夾、檢查檔案在不在）改成
+中性寫法。模型是被題目的用詞帶去 PowerShell 的——那題正好長得像 `New-Item` / `Test-Path`。
 
 ### 2. VM 驗收
 

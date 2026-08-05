@@ -384,17 +384,24 @@ try {
     [
       // 主 check 是最後那個：驗證掛在它身上，而驗證要等兩份都裝好。
       ["output-style", "claude-md+output-style"],
-      // 擋串接與白名單寫的是同一個 settings.json，講的也是同一件事。hook 排後面是
-      // 因為只有它有驗證（開真終端跑 `echo a && echo b`）——反過來排那道驗證會靜靜
-      // 消失，卡片變成純結構檢查。
-      ["hook", "allowlist+hook"],
+      // 擋串接與白名單寫的是同一個 settings.json，講的也是同一件事。hook 排前面：
+      // 先看到「該擋的擋下來」，再看「不該問的不問」，順序才講得通。
+      //
+      // 主 check 跟著變成 allowlist（checks.at(-1)），MERGED_CARDS 的 key 也要跟著
+      // 換——沒換的話標題與說明會靜靜退回單列的預設值，下面兩條 assert 就是在防這個。
+      ["allowlist", "hook+allowlist"],
       ["codex-config", "codex-agents+codex-config"],
     ],
   );
   const permissionCard = mergedRules[1];
   assert.match(permissionCard.label, /什麼時候該停下來問你/);
   assert.match(permissionCard.detail, /改檔案不再逐次問你/);
-  ok("擋串接與白名單合成一張權限卡，驗證仍掛在 hook 上");
+  assert.deepEqual(
+    permissionCard.checks.map(({ id }) => id),
+    ["hook", "allowlist"],
+    "先擋串接再講白名單",
+  );
+  ok("擋串接與白名單合成一張權限卡，hook 排前面、主 check 是 allowlist");
   assert.match(
     mergedRules[0].label,
     /規矩與回話風格/,
@@ -475,6 +482,61 @@ try {
   // 那一句要學生原樣貼進終端的話裡，一定要含代碼本身，否則印出來的東西對不上。
   assert.ok(FULLSCREEN_PROMPT.includes(FULLSCREEN_PROOF));
   console.log("ok - 給學生貼的那句話含有要比對的代碼");
+
+  // 「這張卡叫什麼名字」在兩種卡上用相反的取法，而這條規則原本沒寫在任何地方：
+  //
+  //   env 卡     主 check 是清單的第一個   裝了再登入，第一份才是卡片的主體
+  //   config 卡  主 check 是清單的最後一個 兩份都裝完才驗證，驗證掛在最後那份
+  //
+  // 它是那種改對了看不出來、改錯了也看不出來的規則。實際咬過一次：hook 從清單尾端
+  // 搬到最前面之後，主 check 靜靜從 hook 變成 allowlist，MERGED_CARDS 的 key 沒跟著
+  // 換的話整張卡的標題與說明退回單列的預設值——不報錯，只是變醜。
+  const allEnvIds = [
+    "execution-policy",
+    "windows-terminal",
+    "powershell-version",
+    "powershell-encoding",
+    "claude",
+    "claude-auth",
+    "codex",
+    "codex-auth",
+    "git",
+    "gh",
+    "gh-auth",
+    "node",
+    "python",
+  ];
+  const everyCard = flattenCheckCards(
+    groupChecks(STEP_IDS.map(check)),
+    allEnvIds.map(check),
+  ).flatMap((group) => group.cards);
+
+  for (const card of everyCard) {
+    const ids = (card.checks ?? []).map(({ id }) => id);
+
+    if (ids.length === 0) continue; // 選工具那張沒有 check
+
+    const expected = card.kind === "env" ? ids[0] : ids.at(-1);
+    assert.equal(
+      card.checkId,
+      expected,
+      `${card.checkId}：env 卡的主 check 取第一個、其餘取最後一個，這張取錯了`,
+    );
+  }
+  console.log("ok - env 卡的主 check 是清單第一個，其餘卡是最後一個");
+
+  // MERGED_CARDS 是用主 check 的 id 當 key 查的。查不到就退回單列的預設描述，而那句
+  // 是「設定 X，讓這項功能能在接下來的課程中正常使用」——對每張卡都成立，所以對每張
+  // 卡都等於沒說。合併卡一旦掉回那句就代表 key 沒跟著主 check 走。
+  for (const card of everyCard) {
+    if (card.kind !== "config" || (card.checks ?? []).length < 2) continue;
+
+    assert(
+      !/讓這項功能能在接下來的課程中正常使用/.test(card.detail ?? ""),
+      `${card.checkId}：合併卡掉回預設描述了——MERGED_CARDS 的 key 要跟著主 check 走`,
+    );
+  }
+  console.log("ok - 每張合併卡都查得到自己的標題與說明，沒退回預設值");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

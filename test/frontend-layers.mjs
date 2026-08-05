@@ -545,6 +545,33 @@ try {
   assert.match(files.app, /options: check\.verifyOptions,/);
   ok("每一格驗證都有自己的按鈕，參數帶得對");
 
+  // 驗證按鈕只能有一個家。一個驗證就放卡片底下，多個就一律回到各自那一格——兩邊都
+  // 畫的話，底下那顆跑的永遠是 card.check，在合併卡上看起來像「全部重跑」，實際只
+  // 重跑第一個（VM 實測：白名單已驗過，底下按下去開的是「一次只跑一個指令」的終端）。
+  assert.match(
+    files.app,
+    /const perRowVerify = verifyChecks\.length > 1;/,
+    "有幾個驗證決定按鈕放哪裡",
+  );
+  assert.match(
+    files.app,
+    /showRetest: card\.kind === "env" \|\| \(row\?\.showRetest === true && !perRowVerify\)/,
+    "多驗證的卡片不畫底下那顆重跑驗證",
+  );
+  assert.match(files.app, /\.\.\.\(perRowVerify \? verifyChecks : \[\]\)\.map/);
+  // 驗過的那一格按鈕不收掉，改寫成「重跑驗證」：收掉的話那一格就沒有入口了，
+  // 而驗證會失敗、環境也會變，學生要能在原地再驗一次。
+  assert.match(
+    files.app,
+    /text: verified\.has\(check\.id\) \? "重跑驗證" : "驗證",/,
+    "驗過的那一格按鈕留著，文案改成重跑驗證",
+  );
+  assert(
+    !/check\.verifyAction != null && !verified\.has\(check\.id\)/.test(files.app),
+    "驗過就把按鈕收掉的舊規則要拿掉",
+  );
+  ok("一個驗證放卡片底下、多個放各自那一格；驗過的改叫重跑驗證");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
