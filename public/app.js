@@ -596,12 +596,31 @@ function renderWizard() {
       const target =
         cardChecks.find((candidate) => candidate.id === step) ?? rowCheck;
 
-      runConfigCheckAction(
-        isVerifyAction(action) ? target : rowCheck,
-        action,
-        button,
-        extra,
-      );
+      if (isVerifyAction(action)) {
+        // 格內的「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論
+        // 忘掉，清單退回未勾，再照這一次的結果打勾。
+        //
+        // 不清的話畫面會停在上一輪的答案上——重驗跑到一半，那一格還是綠的；這次
+        // 失敗了，那個勾也還在。學生按下重驗就是在說「上次那個結論我不算數了」。
+        // 底下那顆本來就這樣做，格內這顆漏了（VM 實測）。
+        const rerun = verified.has(target.id);
+
+        if (rerun) {
+          forgetVerification(target.id);
+          view.addLine(
+            `先清掉「${target.label}」上一輪的結果，重新驗證。`,
+            "agent-status",
+          );
+          renderWizard();
+        }
+
+        // 重畫過的話手上這顆 button 已經是被換掉的舊 DOM node，轉圈會轉在一顆不在
+        // 畫面上的按鈕身上。onRetest 傳 null 也是同一個理由。
+        runConfigCheckAction(target, action, rerun ? null : button, extra);
+        return;
+      }
+
+      runConfigCheckAction(rowCheck, action, button, extra);
     },
     onRetest: () => {
       if (card.kind === "env") {

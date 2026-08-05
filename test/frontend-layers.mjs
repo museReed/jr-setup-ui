@@ -524,8 +524,13 @@ try {
   // 拿隔壁那格的參數去跑（VM 實測：白名單那格按下去，開的是「Shell 不串接」的終端）。
   assert.match(
     files.app,
-    /isVerifyAction\(action\) \? target : rowCheck/,
-    "驗證要跑被按的那一格，安裝才對著 rowCheck",
+    /if \(isVerifyAction\(action\)\) \{[\s\S]*?runConfigCheckAction\(target,/,
+    "驗證要跑被按的那一格",
+  );
+  assert.match(
+    files.app,
+    /runConfigCheckAction\(rowCheck, action, button, extra\)/,
+    "安裝才對著 rowCheck",
   );
   ok("合併卡先把兩份都裝完才驗證，安裝對著沒好的那份、驗證對著被按的那格");
 
@@ -571,6 +576,24 @@ try {
     "驗過就把按鈕收掉的舊規則要拿掉",
   );
   ok("一個驗證放卡片底下、多個放各自那一格；驗過的改叫重跑驗證");
+
+  // 格內那顆「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論忘掉，
+  // 那一格退回未勾，再照這一次的結果打勾。
+  //
+  // 不清的話畫面會停在上一輪的答案上——重驗跑到一半那一格還是綠的，這次失敗了那個
+  // 勾也還在。底下那顆本來就有 forgetVerification，格內這顆漏了（VM 實測）。
+  assert.match(
+    files.app,
+    /const rerun = verified\.has\(target\.id\);[\s\S]{0,200}forgetVerification\(target\.id\);/,
+    "格內的重跑驗證要先清掉那一格上一輪的結果",
+  );
+  // 重畫過的話手上那顆 button 是被換掉的舊 DOM node，轉圈會轉在畫面外的按鈕身上。
+  assert.match(
+    files.app,
+    /runConfigCheckAction\(target, action, rerun \? null : button, extra\)/,
+    "清過重畫之後不能再把舊的 button 傳下去",
+  );
+  ok("格內的重跑驗證會先把那一格的勾退掉，跟底下那顆同一套");
 
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
