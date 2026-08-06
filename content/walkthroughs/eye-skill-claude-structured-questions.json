@@ -1,0 +1,22 @@
+{
+  "id": "eye-skill-claude-structured-questions",
+  "card": "skill-claude-structured-questions",
+  "row": "那個視窗裡跳出一組選項讓你選（不是用文字把選項寫出來）",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": [
+        {
+          "id": "see-1",
+          "kind": "see",
+          "title": "那個視窗裡跳出一組選項讓你選（不是用文字把選項寫出來）",
+          "detail": "",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}

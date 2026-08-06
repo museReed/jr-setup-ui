@@ -1,0 +1,15 @@
+{
+  "id": "fullscreen-yes",
+  "card": "claude",
+  "row": "跳出方框時按 1. Yes, try it",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": []
+    }
+  ],
+  "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）"
+}

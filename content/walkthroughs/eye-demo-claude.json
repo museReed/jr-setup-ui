@@ -1,0 +1,22 @@
+{
+  "id": "eye-demo-claude",
+  "card": "demo-claude",
+  "row": "左邊逐字打 code、右邊即時長出你剛才選的那個網頁",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": [
+        {
+          "id": "see-1",
+          "kind": "see",
+          "title": "左邊逐字打 code、右邊即時長出你剛才選的那個網頁",
+          "detail": "",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}

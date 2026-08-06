@@ -1,0 +1,15 @@
+{
+  "id": "fullscreen-mouse",
+  "card": "claude",
+  "row": "打一句話，用滑鼠點那句話中間",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": []
+    }
+  ],
+  "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）"
+}

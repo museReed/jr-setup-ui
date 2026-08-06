@@ -1,0 +1,22 @@
+{
+  "id": "eye-codex-namer",
+  "card": "codex-namer",
+  "row": "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": [
+        {
+          "id": "see-1",
+          "kind": "see",
+          "title": "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
+          "detail": "",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}

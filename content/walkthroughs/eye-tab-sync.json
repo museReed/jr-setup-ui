@@ -1,0 +1,22 @@
+{
+  "id": "eye-tab-sync",
+  "card": "tab-sync",
+  "row": "那個視窗的分頁標題變成「🔍 標題同步測試」",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": [
+        {
+          "id": "see-1",
+          "kind": "see",
+          "title": "那個視窗的分頁標題變成「🔍 標題同步測試」",
+          "detail": "",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}

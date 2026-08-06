@@ -1,0 +1,22 @@
+{
+  "id": "eye-skill-codex-handoff",
+  "card": "skill-codex-handoff",
+  "row": "那個視窗的分頁標題最後變成「📦 ...」",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": [
+        {
+          "id": "see-1",
+          "kind": "see",
+          "title": "那個視窗的分頁標題最後變成「📦 ...」",
+          "detail": "",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "eye-skill-claude-auto-rename",
+  "card": "skill-claude-auto-rename",
+  "row": "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "",
+      "detail": "",
+      "visual": null,
+      "kids": [
+        {
+          "id": "see-1",
+          "kind": "see",
+          "title": "那個視窗的分頁標題變成「{emoji} 中文敘述」",
+          "detail": "",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}
