@@ -535,14 +535,23 @@ try {
   assert.match(walkthrough, /data = written \? data : null/);
   ok("彈窗帶 token、看平台挑內容、沒編過的不開");
 
-  // 「怎麼做」住在 <label> 裡面，不擋預設行為的話按它會順手把那一格的勾打上——
+  // 那顆問號住在 <label> 裡面，不擋預設行為的話按它會順手把那一格的勾打上——
   // 等於在學生還沒做之前就替他宣告做完了。
   assert.match(
     files.view,
-    /checklist-how"[\s\S]{0,400}event\.preventDefault\(\)/,
+    /how\.addEventListener\("click",[\s\S]{0,200}event\.preventDefault\(\)/,
   );
   assert.match(files.view, /walkthroughIds\.has\(item\.id\)/);
-  ok("「怎麼做」待在它負責的那一格裡，而且不會順手把勾打上");
+  // 滑過去播完才開，中途移開就不開：不擋的話滑去拿別顆按鈕都會彈出一個蓋住半個
+  // 畫面的東西。
+  assert.match(files.view, /if \(hovering\) onWalkthrough\(item\.id, origin\(\)\)/);
+  assert.match(files.view, /url: "\/vendor\/question-mark\.json"/);
+  assert(server.includes('"/vendor/question-mark.json"'), "問號動畫要在靜態白名單裡");
+  // 彈窗要從問號長出來，所以 transform-origin 一定要先量再開；同一格內設原點又改
+  // transform 的話瀏覽器會併成一次計算，沒有起點就沒有補間，彈窗會直接跳出來。
+  assert.match(walkthrough, /box\.classList\.add\("is-measuring"\)/);
+  assert.match(walkthrough, /requestAnimationFrame\(\(\) => \{\s*\n\s*box\.classList\.add\("is-open"\)/);
+  ok("問號待在它負責的那一格裡、滑過去播完才開，彈窗從它長出來");
 
   assert(!files.view.includes('classList.toggle("is-active", station.current)'));
   assert(files.view.includes('addEventListener("mouseenter"'));

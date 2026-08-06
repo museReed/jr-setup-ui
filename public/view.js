@@ -573,6 +573,69 @@ function pasteProofElement({ value, matched, onInput }) {
   return wrap;
 }
 
+// 清單上那顆問號：進操作步驟的入口。
+//
+// 不是「怎麼做」三個字——那一列本來就有兩行文字加上可能的安裝／登入鍵，再塞一顆
+// 有字的按鈕會把它擠成兩截，而「有問題點這裡」是問號本來就在講的事。
+//
+// 滑鼠移上去先把問號播一次，播完才開彈窗；中途移開就不開——不擋的話，滑過去拿別
+// 顆按鈕都會彈出一個蓋住半個畫面的東西。直接點就不等動畫。
+function walkthroughButton(item, onWalkthrough) {
+  const how = document.createElement("button");
+  how.type = "button";
+  how.className = "checklist-how";
+  how.title = "怎麼做";
+  how.setAttribute("aria-label", `怎麼做：${item.text}`);
+  how.dataset.walkthrough = item.id;
+
+  const { box, ready } = lottieControl({
+    url: "/vendor/question-mark.json",
+    className: "checklist-how-anim",
+    loop: false,
+    autoplay: false,
+  });
+  how.append(box);
+
+  // 從按鈕的正中央長出來。彈窗算 transform-origin 要的是這個點。
+  const origin = () => {
+    const rect = how.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  };
+
+  let hovering = false;
+
+  how.addEventListener("pointerenter", async () => {
+    hovering = true;
+    const animation = await ready;
+
+    if (animation === null) return;
+
+    animation.goToAndPlay(0, true);
+    animation.addEventListener("complete", function onDone() {
+      animation.removeEventListener("complete", onDone);
+      // 播完的時候滑鼠可能已經移走了。移走了就當作他只是路過。
+      if (hovering) onWalkthrough(item.id, origin());
+    });
+  });
+
+  how.addEventListener("pointerleave", async () => {
+    hovering = false;
+    const animation = await ready;
+    animation?.goToAndStop(0, true);
+  });
+
+  how.addEventListener("click", (event) => {
+    // 它住在 <label> 裡面：不擋的話按問號會順手把那一格的勾打上，等於在學生還沒
+    // 做之前就替他宣告做完了。
+    event.preventDefault();
+    event.stopPropagation();
+    hovering = false;
+    onWalkthrough(item.id, origin());
+  });
+
+  return how;
+}
+
 function checklistElement(
   groups,
   onManualToggle,
@@ -660,24 +723,7 @@ function checklistElement(
       // 它住在 <label> 裡面，所以一定要擋掉預設行為——不擋的話按「怎麼做」會順手
       // 把那一格的勾打上，等於在他還沒做之前就替他宣告做完了。
       if (walkthroughIds.has(item.id)) {
-        const how = document.createElement("button");
-        how.type = "button";
-        // 一個問號的圓鈕，不是「怎麼做」三個字。這一列本來就有兩行文字加上可能的
-        // 安裝／登入鍵，再塞一顆有字的按鈕會把那一列擠成兩截；而「有問題點這裡」
-        // 是問號本來就在講的事，不需要再寫一次（Reed 指定）。
-        how.className = "checklist-how";
-        how.title = "怎麼做";
-        how.setAttribute("aria-label", `怎麼做：${item.text}`);
-        how.innerHTML =
-          '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/>' +
-          '<path d="M9.6 9.3a2.5 2.5 0 1 1 3 2.9v1.3"/><path d="M12.6 16.7v.01"/></svg>';
-        how.dataset.walkthrough = item.id;
-        how.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onWalkthrough(item.id);
-        });
-        label.append(how);
+        label.append(walkthroughButton(item, onWalkthrough));
       }
 
       checklist.append(label);

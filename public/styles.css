@@ -945,13 +945,15 @@ body {
     background 0.15s;
 }
 
-.checklist-how svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
+.checklist-how-anim {
+  display: block;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.checklist-how-anim svg {
+  display: block;
 }
 
 .checklist-how:hover {
@@ -993,7 +995,7 @@ body.wt-locked {
   background: rgba(20, 18, 15, 0.62);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.4s ease;
 }
 
 .wt-overlay.is-open {
@@ -1001,6 +1003,24 @@ body.wt-locked {
   pointer-events: auto;
 }
 
+/* 量尺寸用：還沒開之前要先讓它有版面，才算得出「問號在彈窗的哪個位置」。
+   透明但不是 display:none——display:none 量到的是零。
+
+   ⚠️ 量的時候一定要把縮放拿掉：getBoundingClientRect 回的是「變形之後」的矩形，
+   在 scale(0.02) 底下量到的是一個縮在正中央的小方塊，算出來的原點會落在畫面上另
+   一個地方，動畫看起來像從隨機的角落飛出來（實際踩到）。 */
+.wt-overlay.is-measuring {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wt-overlay.is-measuring .wt-panel {
+  transform: none;
+  transition: none;
+}
+
+/* 從那顆問號長出來：原點設在問號那一點，縮放時那一點不動，看起來就是從它長出來
+   的。收回去是同一段動畫倒著跑——原點還留著，方向自然對。 */
 .wt-panel {
   position: relative;
   width: 100%;
@@ -1011,6 +1031,17 @@ body.wt-locked {
   border-radius: var(--r-xl);
   background: var(--color-bg-elevated);
   box-shadow: var(--shadow-lg);
+  transform-origin: var(--wt-ox, 50%) var(--wt-oy, 50%);
+  transform: scale(0.02);
+  opacity: 0;
+  transition:
+    transform 0.5s cubic-bezier(0.2, 0.82, 0.28, 1),
+    opacity 0.28s ease;
+}
+
+.wt-overlay.is-open .wt-panel {
+  transform: none;
+  opacity: 1;
 }
 
 .wt-close {
@@ -1300,6 +1331,12 @@ body.wt-locked {
   .wt-body,
   .wt-chev {
     transition: none;
+  }
+
+  /* 設了「減少動態」就不要從一個點放大——那是整份嚮導動得最大的一下。淡入就好。 */
+  .wt-panel {
+    transform: none;
+    transition: opacity 0.15s ease;
   }
 }
 

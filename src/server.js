@@ -75,6 +75,8 @@ const ASSETS = [
   ["/vendor/milestone-cat.json", "application/json; charset=utf-8"],
   ["/vendor/loader-claude.json", "application/json; charset=utf-8"],
   ["/vendor/lock.json", "application/json; charset=utf-8"],
+  // 清單上那顆問號。它是進操作步驟的入口，動一下才看得出「這裡可以點」。
+  ["/vendor/question-mark.json", "application/json; charset=utf-8"],
   // 解鎖下一張時放的那一段：巫師施法，接著炸開。
   ["/vendor/wizard.json", "application/json; charset=utf-8"],
   ["/vendor/explosion.json", "application/json; charset=utf-8"],

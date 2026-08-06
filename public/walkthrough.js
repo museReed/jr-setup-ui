@@ -147,10 +147,31 @@ function ensureOverlay() {
   return overlay;
 }
 
+// 收回那顆問號裡。transform-origin 還留著上次算的那個點，所以縮回去的方向自然
+// 就是它來的方向；不用另外記。
 function close() {
   if (overlay === null) return;
   overlay.classList.remove("is-open");
   document.body.classList.remove("wt-locked");
+}
+
+// 從那顆問號的中心長出來。
+//
+// 做法是把 transform-origin 設在「問號相對於彈窗左上角」的位置，再從 scale(0.02)
+// 放到 1——縮放時原點那一點不會動，所以看起來就是從問號長出來的。
+//
+// 一定要等版面算完才量：彈窗是置中的，內容還沒填進去時量到的矩形是舊的，原點會
+// 算在畫面上另一個地方，動畫看起來像從隨機的角落飛出來。
+function setOrigin(panel, origin) {
+  if (origin === undefined || origin === null) {
+    panel.style.removeProperty("--wt-ox");
+    panel.style.removeProperty("--wt-oy");
+    return;
+  }
+
+  const rect = panel.getBoundingClientRect();
+  panel.style.setProperty("--wt-ox", `${origin.x - rect.left}px`);
+  panel.style.setProperty("--wt-oy", `${origin.y - rect.top}px`);
 }
 
 document.addEventListener("keydown", (event) => {
@@ -182,18 +203,29 @@ export async function loadWalkthrough(id) {
   return data;
 }
 
-export async function openWalkthrough(id) {
+export async function openWalkthrough(id, origin) {
   const data = await loadWalkthrough(id);
 
   if (data === null) return;
 
   const box = ensureOverlay();
+  const panel = box.querySelector(".wt-panel");
   box.querySelector("#wt-title").textContent = textFor(data.row, PLATFORM);
   box.querySelector(".wt-content").innerHTML = `<ol class="wt-steps">${data.steps
     .filter((step) => visibleOn(step, PLATFORM))
     .map((step, index) => stepHtml(step, index, data.id))
     .join("")}</ol>`;
-  box.classList.add("is-open");
-  document.body.classList.add("wt-locked");
-  box.querySelector(".wt-close").focus();
+
+  // 先讓它有版面可以量（還沒 is-open，所以是縮著且透明的），量完再開。
+  box.classList.add("is-measuring");
+  setOrigin(panel, origin);
+  box.classList.remove("is-measuring");
+
+  // 下一格才加 is-open：同一格內既設 transform-origin 又改 transform 的話，
+  // 瀏覽器會把兩者併成一次計算，沒有起點就沒有補間，彈窗會直接跳出來。
+  requestAnimationFrame(() => {
+    box.classList.add("is-open");
+    document.body.classList.add("wt-locked");
+    box.querySelector(".wt-close").focus();
+  });
 }

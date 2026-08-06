@@ -543,8 +543,9 @@ function renderWizard() {
     showChecklist: card.kind !== "setup",
     // 「怎麼做」那顆：只有真的編過內容的那幾格才畫得出來。
     walkthroughIds: state.walkthroughIds,
-    onWalkthrough: (id) => {
-      openWalkthrough(id).catch((error) =>
+    // origin 是那顆問號的中心點：彈窗要從它長出來。
+    onWalkthrough: (id, origin) => {
+      openWalkthrough(id, origin).catch((error) =>
         view.addLine(`打不開操作步驟：${error.message}`, "failed"),
       );
     },
