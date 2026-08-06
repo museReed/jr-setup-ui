@@ -1152,12 +1152,35 @@ body.wt-locked {
 
 .wt-detail {
   display: block;
-  margin-top: 3px;
+  margin: 3px 0 0;
   padding-left: 15px;
   max-width: 50ch;
   font-size: var(--fs-sm);
   line-height: var(--lh-relaxed);
   color: var(--color-text-muted);
+}
+
+/* 一句話講不完就畫成一串，不要用句號把兩三句擠成一段——學生照著做時是一項一項
+   對的，一整段他得自己在裡面找現在做到哪一句。 */
+.wt-points {
+  padding-left: 30px;
+  list-style: disc;
+}
+
+.wt-points li {
+  margin-bottom: 2px;
+}
+
+.wt-kid-detail {
+  margin: 3px 0 0;
+  max-width: 48ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--color-text-muted);
+}
+
+.wt-kid-detail.wt-points {
+  padding-left: 16px;
 }
 
 /* 只剩「別做」那一顆。它被靜靜摺進去而沒人看到的話，這個彈窗就是在幫倒忙。

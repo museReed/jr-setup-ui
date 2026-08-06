@@ -9,7 +9,7 @@
 // 內容來自 content/walkthroughs/<id>.json，用 tools/copy-studio 編。
 import { urlWithToken } from "./api.js";
 import { renderMock } from "./mocks.js";
-import { textFor, visibleOn } from "./platform.js";
+import { listFor, textFor, visibleOn } from "./platform.js";
 
 const KIND = {
   see: { icon: "wt-i-see", label: "會看到" },
@@ -31,6 +31,20 @@ const esc = (value) =>
     .replace(/"/g, "&quot;");
 
 const icon = (name) => `<svg class="wt-ico" aria-hidden="true"><use href="#${name}"></use></svg>`;
+
+// 說明只有一句就是一句；要講兩三件事就畫成一串，不要用句號把它們擠成一段。
+// 學生在照著做的時候是一項一項對的，一整段他得自己在裡面找現在做到哪一句。
+function detailHtml(value, cls) {
+  const items = listFor(value, PLATFORM);
+
+  if (items.length === 0) return "";
+
+  if (items.length === 1) {
+    return `<p class="${cls}">${esc(items[0])}</p>`;
+  }
+
+  return `<ul class="${cls} wt-points">${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
+}
 
 function figure(visual, walkthroughId, name) {
   if (visual == null) return "";
@@ -81,22 +95,24 @@ function stepHtml(step, index, walkthroughId) {
 <div>
 <span class="wt-kid-kind">${esc(meta.label)}</span>
 <b>${esc(textFor(kid.title, PLATFORM))}</b>
-<p>${esc(textFor(kid.detail, PLATFORM))}</p>
+${detailHtml(kid.detail, "wt-kid-detail")}
 ${figure(kid.visual, walkthroughId, shotName(index, kidIndex, kid.kind, kid.id, kid.visual?.platforms?.[0]))}
 </div>
 </li>`;
     })
     .join("");
 
-  return `<li class="wt-step${index === 0 ? " is-open" : ""}">
+  // 一開就全部攤開（Reed 指定）：學生要的是先看完整件事有幾步、長什麼樣，再回頭
+  // 一步一步做。收合留給他自己按，用來把做完的那幾步折起來。
+  return `<li class="wt-step is-open">
 <span class="wt-num">${index + 1}</span>
-<button class="wt-head" type="button" ${openable ? `aria-expanded="${index === 0}"` : "disabled"}>
+<button class="wt-head" type="button" ${openable ? 'aria-expanded="true"' : "disabled"}>
 <span class="wt-title-row">
 ${openable ? '<i class="wt-chev" aria-hidden="true"></i>' : ""}
 <b>${esc(textFor(step.title, PLATFORM))}</b>
 ${openable ? badges(kids) : ""}
 </span>
-<span class="wt-detail">${esc(textFor(step.detail, PLATFORM))}</span>
+${detailHtml(step.detail, "wt-detail")}
 </button>
 ${
   openable
