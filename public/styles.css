@@ -1044,41 +1044,10 @@ body.wt-locked {
   opacity: 1;
 }
 
-.wt-close {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-muted);
-  font-size: var(--fs-lg);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.wt-close:hover {
-  background: var(--color-bg-inset);
-  color: var(--color-text-strong);
-}
-
-.wt-eyebrow {
-  margin: 0 0 var(--space-1);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.12em;
-  color: var(--color-accent);
-}
-
-.wt-panel h2 {
-  margin: 0 0 var(--space-5);
-  padding: 0 var(--space-6) var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border-soft);
-  font-size: var(--fs-2xl);
-  line-height: var(--lh-snug);
-  color: var(--color-text-strong);
+/* 面板本身可以拿焦點：沒有 × 之後，鍵盤進來的第一站是這一整份步驟。
+   不畫外框——它只是個落點，不是可以按的東西。 */
+.wt-panel:focus-visible {
+  outline: none;
 }
 
 .wt-steps {

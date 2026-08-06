@@ -140,8 +140,10 @@ function ensureOverlay() {
   overlay.className = "wt-overlay";
   // 沒有標題列：學生是從那一列點進來的，那一列的字還在他背後的卡片上。再寫一次
   // 只是把同一句話講兩遍，還把第一步推到摺線底下（Reed 指定）。
-  overlay.innerHTML = `<div class="wt-panel" role="dialog" aria-modal="true">
-<button class="wt-close" type="button" aria-label="關閉">×</button>
+  //
+  // 右上角那顆 × 也拿掉了（Reed 指定）。關掉的路還有三條：底下那顆「知道了」、
+  // 點外面、Esc——一顆浮在第一步上面的關閉鍵不值得佔那個位置。
+  overlay.innerHTML = `<div class="wt-panel" role="dialog" aria-modal="true" tabindex="-1">
 <div class="wt-content"></div>
 <div class="wt-foot"><button class="ds-btn ds-btn-sm ds-btn-primary wt-done" type="button">知道了</button></div>
 </div>`;
@@ -149,7 +151,6 @@ function ensureOverlay() {
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) close();
   });
-  overlay.querySelector(".wt-close").addEventListener("click", close);
   overlay.querySelector(".wt-done").addEventListener("click", close);
 
   // 展開／收起。每一步是一顆按鈕，點了才長出附註。
@@ -248,6 +249,8 @@ export async function openWalkthrough(id, origin) {
   requestAnimationFrame(() => {
     box.classList.add("is-open");
     document.body.classList.add("wt-locked");
-    box.querySelector(".wt-close").focus();
+    // 焦點落在面板本身：沒有 × 之後，鍵盤進來的第一站是這一整份步驟，
+    // 讀屏會念 aria-label 那句「⋯：怎麼做」。
+    panel.focus();
   });
 }
