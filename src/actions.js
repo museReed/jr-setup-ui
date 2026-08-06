@@ -259,6 +259,7 @@ Object.assign(actions, {
       case: [
         "naming",
         "chained",
+        "allowlist",
         "context",
         "title",
         "skill-rename",

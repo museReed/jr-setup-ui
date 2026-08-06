@@ -43,6 +43,10 @@ function emitJr(event) {
 //   - context 那題叫它讀五個檔案 → 家目錄根本沒有，模型花整段在澄清
 //   - context 那題說「不要修改任何東西」→ 跟 hook 要求寫交接文件互相打架
 // 所以提問一律：明講要做什麼、明講遇到 hook 提示時怎麼辦。
+// 白名單那題要 echo 的字串。固定值就夠——這一格要抓的是「白名單有沒有生效」，
+// 不是防作弊。而且它要夠特別，不能是模型憑印象也寫得出來的字。
+const ALLOWLIST_TOKEN = "allowlist-ok-9d4b71";
+
 const CASES = {
   naming: {
     label: "自動命名",
@@ -93,6 +97,68 @@ const CASES = {
       "請原樣印出這一行，不要加任何說明：fullscreen-copy-ok-7f3a91",
     expect: () => null,
     watchFor: "印出代碼那一行，用滑鼠圈選它，再貼回嚮導的欄位",
+  },
+  // 白名單那一列的行為驗證。它跟 chained 是同一張卡的兩半，方向相反：
+  //   chained    危險的指令一定要被擋下來
+  //   allowlist  安全的指令一定不能再問
+  //
+  // 先前只有前者有實測。後者的結構檢查只數得出「settings.json 裡有 39 條規則、
+  // defaultMode 是 acceptEdits」——那證明得了檔案寫對，證明不了 Claude Code 真的
+  // 照著做（今天才踩過同一種：Codex 的三個 key 值全對，行為卻不是我們要的）。
+  //
+  // 題目不是「把 39 條都跑一遍」——那會驗到錯的東西。規則字串對不對是結構問題，
+  // checkAllowlist 已經逐條比對過了；這裡要證明的是「Claude Code 真的讀了那個檔案
+  // 並照著做」，而那是一個開關。
+  //
+  // 該覆蓋的是幾種**形狀不同**的規則，那些才可能各自壞掉：
+  //
+  //   Bash(echo:*)            單字前綴
+  //   Bash(pwd)               完全精確、沒有萬用字元 ← 最可能跟前綴走不同路的一種
+  //   Bash(git status:*)      兩字前綴
+  //   WebFetch(domain:...)    非 Bash 工具、帶 specifier
+  //
+  // WebSearch 那條規則刻意不驗（Reed 指定）：它在部分地區用不了，驗它等於在那些地區
+  // 製造一個永遠紅的燈——學生只會看到紅燈去重裝白名單，裝一百次也不會好。「非 Bash
+  // 工具」這種形狀由 WebFetch 那條代表就夠了。
+  //
+  // 刻意不跑的：會改東西的（mkdir / cp / git commit…，在學生家目錄亂跑很糟）、
+  // 機器上不一定有的（jq / tree / file），以及要前提的（npm run 要 package.json）。
+  // 那些失敗時的原因跟白名單無關，而學生只會看到一個紅燈。
+  //
+  // 也刻意沒有陰性對照（一條不在白名單、應該要被擋下來的指令）。它補得了一個真的
+  // 盲點——現在這題分不出「白名單有選擇性」與「全部放行」（有人把 defaultMode 設成
+  // bypassPermissions 的話，下面四步照樣全過）。
+  //
+  // 拿掉的理由是它判不了：「被拒絕」與「模型根本沒去試」在畫面上與事件流裡長得一樣，
+  // 而唯一能分辨的線索是比對指令字串——那條路 verify-hook-live 的註解已經封死過一次
+  //（事件流包含 prompt 本身，寫進去的話「有沒有真的送出」永遠成立，判定變成永遠誤判）。
+  // 而陰性對照非得在題目裡指名那條指令不可。
+  //
+  // 要補這個盲點，正確的方向是改成 headless（claude -p --output-format stream-json、
+  // 且不要傳 --allowedTools，讓 settings.json 獨自決定），從事件流裡找權限拒絕訊息。
+  // 那要先在真機器上採一次樣把措辭釘下來，不能憑猜（Reed 決定先不做）。
+  allowlist: {
+    label: "常用指令不用每次問你",
+    env: () => ({}),
+    // 兩個設計上的關鍵，改題目時不要順手拿掉：
+    //
+    // 一、「跳了提示就不要按允許」。少了它這題會變成假驗證：學生按了允許 → 指令
+    //     照樣跑 → 檔案裡照樣有 token → 通過，而白名單其實沒生效。
+    //
+    // 二、token 是「全部都沒被問」的結論，不是「echo 跑過了」的副產物。寫成後者的話
+    //     只驗得到第一條，後面幾種形狀壞掉也一樣綠。
+    //
+    prompt: ({ resultFile }) =>
+      "請依序做這四件事，一件都不要跳過：" +
+      `1) 執行 echo ${ALLOWLIST_TOKEN}　2) 執行 pwd　3) 執行 git status　` +
+      "4) 用 WebFetch 讀 https://raw.githubusercontent.com/museReed/jr-setup-ui/main/README.md。" +
+      "第 3 步跑出「不是 git 儲存庫」之類的錯誤也算跑過——這一題看的是有沒有被擋，不是成不成功。" +
+      "如果其中任何一步跳出要你允許的提示，不要按允許，" +
+      `把那一步的編號與提示原文寫進 ${resultFile} 就停下來。` +
+      `四步全部都沒有跳提示的話，把 ${ALLOWLIST_TOKEN} 寫進 ${resultFile}。`,
+    expect: () => ({ kind: "artifact", keyword: ALLOWLIST_TOKEN }),
+    watchFor:
+      "三條指令與那次 WebFetch 都直接跑掉，沒有跳出任何「要不要允許」的詢問",
   },
   chained: {
     label: "Shell 不串接",
@@ -432,7 +498,24 @@ function collectEvidence() {
   return null;
 }
 
-const launcher = writeLauncher(testCase.prompt({ agent, resultFile }));
+// 每一題只要提到結果檔，就一定要附上這句。
+//
+// 少了它，模型會防禦性地先跑一次「建立那個資料夾」——而那一步在 Windows 上撞權限牆
+//（New-Item 不在白名單裡，白名單那 39 條全是 Bash(...) 的名字），跳出「要不要允許」。
+// 學生按了拒絕，整條驗證就斷在那裡，結果檔永遠不會出現（Windows VM 實測：跑串接那題
+// 時，模型的第一個動作是 New-Item -ItemType Directory，被擋之後就沒有下文了）。
+//
+// 而那一步本來就是多的：上面第 353 行已經 mkdirSync 過了。
+const RESULT_DIR_NOTE =
+  "（那個檔案的資料夾已經存在，直接寫檔就好，不要先建立目錄。）";
+
+function buildPrompt(spec) {
+  const text = spec.prompt({ agent, resultFile });
+
+  return text.includes(resultFile) ? `${text}${RESULT_DIR_NOTE}` : text;
+}
+
+const launcher = writeLauncher(buildPrompt(testCase));
 const { cmd, args: openArgs } = openTerminal(launcher);
 const child = spawn(cmd, openArgs, { stdio: "ignore", detached: true });
 child.unref();

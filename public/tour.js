@@ -48,26 +48,25 @@ const seenHints = new Set();
 const seenComponents = new Set();
 let tourRunning = false;
 
-// 導覽跑了什麼、為什麼沒跑，全部記下來，跟著「複製診斷資料」一起交出去。
+// 這裡曾經有一份逐筆的導覽紀錄（tourLog，上限 80 筆），起因是 Reed 在 VM 上看到版面
+// 導覽沒出現就直接跳了元件導覽，而同一份 code 在 Mac 上重現不出來。
 //
-// 起因：Reed 在 VM 上看到版面導覽沒出現就直接跳了元件導覽，而同一份 code 在 Mac
-// 上重現不出來。沒有紀錄的話只能一路猜——鎖頭那邊裝了紀錄器之後推翻了兩個猜錯的
-// 假設，這裡照做。
-const tourLog = [];
-
-function logTour(event, detail = {}) {
-  // 只留最近幾十筆：每畫一輪卡片都會問一次，跑久了會長到複製不動。
-  if (tourLog.length > 80) tourLog.shift();
-  tourLog.push({ at: Math.round(performance.now()), event, ...detail });
-}
-
+// 拿掉了，兩個理由（Reed 指定）：
+//
+// 一、實際貼回來的那份 11 筆裡有 8 筆是重複的「跳過了，因為看過了」——每畫一輪卡片
+//     就記一次。真正有資訊的只有 component-start 那幾筆，而它們講的事底下的
+//     seenComponents 已經說完了。
+//
+// 二、導覽是這整份嚮導裡風險最低的東西：它沒出現，學生照樣裝得完。而診斷資料現在
+//     的用途是查「裝不起來」——留一份查 nice-to-have 的紀錄去稀釋原始輸出，划不來。
+//
+// 下面三個是狀態不是紀錄，加起來三行，留著。
 export function tourDiagnostics() {
   return {
     layoutSeen: store.get(TOUR_SEEN_KEY),
     seenComponents: [...seenComponents],
     seenHints: [...seenHints],
     tourRunning,
-    log: tourLog,
   };
 }
 let layoutDriver = null;
@@ -100,10 +99,6 @@ function layoutTour() {
       tourRunning = false;
       // 停在第幾步一起記：整份走完、中途按叉、或是根本沒畫出來就被收掉，三者的
       // 差別只有這個數字看得出來。
-      logTour("layout-destroyed", {
-        activeIndex: options?.state?.activeIndex ?? null,
-        steps: options?.config?.steps?.length ?? null,
-      });
       store.set(TOUR_SEEN_KEY, "1");
       // 版面導覽一結束就馬上接卡片導覽，不要等下一次重畫。
       //
@@ -187,7 +182,6 @@ export function startLayoutTour({ force = false } = {}) {
   const cardReady = cardIsPainted();
 
   if (!force && !shouldRunLayoutTour({ seen, cardReady })) {
-    logTour("layout-skipped", { seen, cardReady });
     return false;
   }
 
@@ -196,13 +190,9 @@ export function startLayoutTour({ force = false } = {}) {
   // 一步都指不到的話什麼都不做，而且不記「看過了」——記了的話學生永遠等不到它，
   // 而元件導覽會以為版面導覽已經講完（它就是靠這個旗標排隊的）。
   if (steps.length === 0) {
-    logTour("layout-no-visible-steps", {
-      elements: LAYOUT_TOUR_STEPS.map(({ element }) => element),
-    });
     return false;
   }
 
-  logTour("layout-start", { steps: steps.map(({ element }) => element) });
 
   tourRunning = true;
   const instance = layoutTour();
@@ -254,11 +244,6 @@ export function startComponentTour({ runInProgress } = {}) {
   });
 
   if (steps.length > 0) {
-    logTour("component-start", {
-      present: [...present],
-      steps: steps.map(({ id }) => id),
-      runInProgress: runInProgress === true,
-    });
   }
 
   return driveCardTour(steps, () => markSeen(steps));

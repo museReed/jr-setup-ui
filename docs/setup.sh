@@ -99,6 +99,10 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR"
 curl -fsSL "$TARBALL" | tar -xz -C "$APP_DIR" --strip-components=1
 
+# 留一張紙條說這份是從哪抓的。嚮導每次執行都會把它印進原始輸出——學生貼回來的 log
+# 裡才看得出他跑的是 main 還是我們請他驗的那條分支（畫面上完全看不出來）。
+printf '%s\n' "$BRANCH" > "$APP_DIR/.jr-source"
+
 say "啟動嚮導（關掉這個視窗就會結束）"
 # 用 exec 交棒：Ctrl-C 直接停掉嚮導，不會留下孤兒程序。
 exec node "$APP_DIR/bin/jr-setup-ui.js"

@@ -103,6 +103,67 @@ for (const [step, spec] of Object.entries(VERIFICATION)) {
 }
 console.log("ok - 每一列的終端驗證情境，腳本與白名單兩邊都認得");
 
+// 白名單那題的關鍵在「跳了提示就不要按允許」那一句。
+//
+// 少了它，這一題會變成假驗證：學生按了允許 → 指令照樣跑 → 檔案裡照樣有 token →
+// 驗證通過，而白名單其實沒生效。有那一句，檔案裡放的是提示原文，比對就會失敗
+// ——那才是我們要的答案。
+assert.match(source, /allowlist-ok-9d4b71/);
+assert(
+  /allowlist: \{[\s\S]*?不要按允許[\s\S]*?\},/.test(source),
+  "白名單那題要明講「跳了提示不要按允許」，否則按了允許也會過",
+);
+// 題目要用單一指令。串接的話會先被隔壁那個 hook 擋下來，驗到的是 hook 不是白名單。
+assert(
+  /allowlist: \{[\s\S]*?echo \$\{ALLOWLIST_TOKEN\}[\s\S]*?\},/.test(source),
+  "白名單那題要用單一的 echo——串接指令會先被 hook 擋掉",
+);
+
+// 覆蓋的是幾種形狀不同的規則，不是 39 條指令。少一種形狀，那種壞掉時卡片還是綠的。
+const allowlistCase = source.slice(
+  source.indexOf("  allowlist: {"),
+  source.indexOf("  chained: {"),
+);
+for (const [shape, needle] of [
+  ["完全精確、沒有萬用字元", "pwd"],
+  ["兩字前綴", "git status"],
+  ["非 Bash 工具、帶 specifier", "WebFetch"],
+]) {
+  assert(
+    allowlistCase.includes(needle),
+    `白名單那題少了「${shape}」這種規則（${needle}）`,
+  );
+}
+
+// ⚠️ WebSearch 那條規則整個不驗（Reed 指定）：它在部分地區用不了，驗它等於在那些
+// 地區製造一個永遠紅的燈——學生只會看到紅燈去重裝白名單，裝一百次也不會好。
+// 「非 Bash 工具」這種形狀由 WebFetch 那條代表就夠了。
+assert(
+  !allowlistCase.includes("WebSearch"),
+  "白名單那題不可以碰 WebSearch——它在部分地區用不了，會變成永遠紅的假燈",
+);
+assert(
+  /四步全部都沒有跳提示的話/.test(allowlistCase),
+  "判定條件的步數要跟提問裡列的一致",
+);
+console.log("ok - 白名單那題覆蓋四種規則形狀，按了允許不會過，不碰 WebSearch");
+
+// 迴歸（Windows VM 實測）：題目只丟一個檔案路徑給模型、沒說資料夾已經在了，模型就會
+// 防禦性地先跑一次「建立那個資料夾」——而那一步在 Windows 上撞權限牆（New-Item 不在
+// 白名單裡，那 39 條全是 Bash(...) 的名字）。學生按了拒絕，整條驗證斷在那裡，結果檔
+// 永遠不會出現。跑串接那題時就是這樣斷的，而且它影響的是每一題，不只那一題。
+assert(
+  source.includes("const RESULT_DIR_NOTE ="),
+  "提到結果檔的題目都要附「資料夾已經存在」，否則模型會先去建目錄然後撞權限",
+);
+assert(
+  /text\.includes\(resultFile\) \? `\$\{text\}\$\{RESULT_DIR_NOTE\}` : text/.test(
+    source,
+  ),
+  "那句話要自動接在每一題後面，不能靠各題自己記得寫",
+);
+console.log("ok - 會寫結果檔的題目都被告知資料夾已經存在");
+
 // 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
 //（Reed 實測就是這樣問的）。當初誤判的兩個原因（測試開關名字、比對關鍵字）都由上面

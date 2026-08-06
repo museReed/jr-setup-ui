@@ -446,6 +446,13 @@ function renderWizard() {
   // 因為驗證掛在它身上。
   const rowCheck =
     cardChecks.find((candidate) => candidate.status !== "ok") ?? card.check;
+  // 驗證按鈕只能有一個家：一個驗證就放卡片底下，多個就一律回到各自那一格。
+  //
+  // 兩邊都畫的話，底下那顆跑的永遠是 card.check——合併卡上它看起來像「全部重跑」，
+  // 實際只重跑第一個驗證（VM 實測：白名單那格已驗過，底下按下去開的是「一次只跑
+  // 一個指令」的終端）。一顆按鈕說謊比少一顆按鈕更糟。
+  const verifyChecks = cardChecks.filter((check) => check.verifyAction != null);
+  const perRowVerify = verifyChecks.length > 1;
   let row =
     card.kind === "env"
       ? envCardRowModel(card, state.installedSteps)
@@ -465,6 +472,31 @@ function renderWizard() {
       ...row,
       detail: cardResultText(card, state.resultTexts),
       results: cardResultItems(card, state.resultTexts),
+      // 每一格「驗證：…」都要有自己那顆按鈕。
+      //
+      // 底下那顆「重跑驗證」跑的永遠是 card.check（見 onRetest）。合併卡有兩個驗證
+      // 之後，第二格就完全沒有入口了——VM 實測：白名單那格寫著「按『重跑驗證』」，
+      // 按下去開的卻是隔壁那題的終端（原始輸出寫著「正在跑『Shell 不串接』驗證」）。
+      // 文案還把學生指向那顆錯的按鈕。
+      //
+      // 帶 checkId 的按鈕會被 view 畫進 `system-<id>` 那一格（清單裡的「驗證：…」
+      // 就是那個 id），跟安裝鍵當初搬進清單是同一條規矩：按鈕要待在它負責的那一格。
+      //
+      // 驗過的那一格按鈕不收掉，改寫成「重跑驗證」：驗證會失敗、環境會變，學生要能
+      // 在原地再驗一次。收掉的話那一格就再也沒有入口了（底下那顆已經不畫了）。
+      buttons: [
+        ...(row.buttons ?? []),
+        ...(perRowVerify ? verifyChecks : []).map((check) => ({
+          action: check.verifyAction,
+          dataName: "verifyAction",
+          text: verified.has(check.id) ? "重跑驗證" : "驗證",
+          checkId: check.id,
+          step: check.id,
+          // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個
+          // 參數讀的是 spec.options（view.js 的 actionButton）。
+          options: check.verifyOptions,
+        })),
+      ],
     };
   }
   const activeCheckId =
@@ -543,7 +575,8 @@ function renderWizard() {
             onInput: (value) => cardModel.onPasteProofInput(value),
           }
         : null,
-    showRetest: card.kind === "env" || row?.showRetest === true,
+    // 多個驗證的卡片不畫底下那顆——按鈕已經回到各自那一格了（見 perRowVerify）。
+    showRetest: card.kind === "env" || (row?.showRetest === true && !perRowVerify),
     // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
     retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
@@ -553,9 +586,41 @@ function renderWizard() {
     retestPrimary: card.kind !== "env" && !cardDone,
     nextUnlocked,
     onActionClick: (action, button, step, extra) => {
-      if (card.kind === "env") run(action, undefined, button);
-      // 安裝按鈕對著還沒好的那一份（rowCheck），驗證仍然掛在主 check 上。
-      else runConfigCheckAction(rowCheck, action, button, extra);
+      if (card.kind === "env") {
+        run(action, undefined, button);
+        return;
+      }
+
+      // 安裝按鈕對著還沒好的那一份（rowCheck）。驗證按鈕對著它自己那一格——合併卡
+      // 有兩個驗證，全部丟給 rowCheck 的話第二格會拿隔壁那格的參數去跑。
+      const target =
+        cardChecks.find((candidate) => candidate.id === step) ?? rowCheck;
+
+      if (isVerifyAction(action)) {
+        // 格內的「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論
+        // 忘掉，清單退回未勾，再照這一次的結果打勾。
+        //
+        // 不清的話畫面會停在上一輪的答案上——重驗跑到一半，那一格還是綠的；這次
+        // 失敗了，那個勾也還在。學生按下重驗就是在說「上次那個結論我不算數了」。
+        // 底下那顆本來就這樣做，格內這顆漏了（VM 實測）。
+        const rerun = verified.has(target.id);
+
+        if (rerun) {
+          forgetVerification(target.id);
+          view.addLine(
+            `先清掉「${target.label}」上一輪的結果，重新驗證。`,
+            "agent-status",
+          );
+          renderWizard();
+        }
+
+        // 重畫過的話手上這顆 button 已經是被換掉的舊 DOM node，轉圈會轉在一顆不在
+        // 畫面上的按鈕身上。onRetest 傳 null 也是同一個理由。
+        runConfigCheckAction(target, action, rerun ? null : button, extra);
+        return;
+      }
+
+      runConfigCheckAction(rowCheck, action, button, extra);
     },
     onRetest: () => {
       if (card.kind === "env") {
@@ -1088,7 +1153,7 @@ async function handleDone(
   runContext,
 ) {
   const outcome = runOutcome(result);
-  view.addRawLine(outcome.summary);
+  view.addRawLine(outcome.summary, result.at);
   const step = options?.step ?? runContext.step;
   const check =
     state.lastChecks.find((candidate) => candidate.id === step) ??
@@ -1391,7 +1456,9 @@ async function run(action, promptText, button = null, options) {
         );
       }
 
-      view.addRawLine(line.text);
+      // 時間戳只進原始輸出，不進 runContext.rawOutput——那一份要餵給挑失敗原因
+      // 那條與 LLM 翻譯，前綴會干擾它們的比對。
+      view.addRawLine(line.text, line.at);
     });
 
     events.addEventListener("agent", (event) => {
@@ -1610,7 +1677,14 @@ view.elements.replayTour.addEventListener("click", () => replayTour());
 view.elements.copyDiagnostics.addEventListener("click", async () => {
   try {
     const diagnostics = {
-      locks: await view.lockDiagnostics(),
+      // 每張卡最近幾次執行的原始輸出。這一份才是真正判斷得了問題的東西——這顆按鈕
+      // 原本只收鎖頭與導覽的狀態，學生按了貼回來，我們拿到的是動畫幀號。
+      //
+      // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
+      output: view.rawOutputDiagnostics(),
+      // 哪一段做完了、哪一段還鎖著。「為什麼我進不去下一段」是真的會問的問題，
+      // 而那個答案在畫面上只表現成一個鎖頭圖示。
+      sections: view.sectionLockStates(),
       // 導覽跑了什麼、為什麼沒跑。Reed 在 VM 上看到版面導覽沒出現就直接跳了元件
       // 導覽，而同一份 code 在 Mac 上重現不出來——沒有紀錄只能一路猜。
       tour: tourDiagnostics(),

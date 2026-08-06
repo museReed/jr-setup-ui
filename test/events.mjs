@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 
-import { parseJrEventLine, startServer } from "../src/server.js";
+import { startServer } from "../src/server.js";
+import { parseJrEventLine } from "../src/sse.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -65,11 +66,11 @@ try {
   );
   assert.match(
     stream,
-    /event: line\ndata: \{"stream":"stdout","text":"@@JR not-json"\}/,
+    /event: line\ndata: \{"stream":"stdout","text":"@@JR not-json","at":\d+\}/,
   );
   assert.match(
     stream,
-    /event: line\ndata: \{"stream":"stdout","text":"一般輸出"\}/,
+    /event: line\ndata: \{"stream":"stdout","text":"一般輸出","at":\d+\}/,
   );
   ok("server 把合法事件送 jr，認不得的行維持 line 原樣");
 
