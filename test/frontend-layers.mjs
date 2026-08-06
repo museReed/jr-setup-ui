@@ -350,6 +350,17 @@ try {
   );
   // 環境檢查是一支 HTTP 請求，沒有逐字稿。把每一列的結果寫進原始輸出，那塊才不是空的。
   assert(files.app.includes("view.addRawLine("));
+
+  // 時間戳只走原始輸出那條，不進 runContext.rawOutput——那一份要餵給「挑失敗原因
+  // 那一行」與 LLM 翻譯，前綴會干擾它們的比對。
+  assert(
+    files.app.includes("view.addRawLine(line.text, line.at)"),
+    "line 事件帶的 at 要傳給原始輸出，判斷問題時才看得出哪一步卡住",
+  );
+  assert(
+    files.app.includes("runContext.rawOutput.push(line.text)"),
+    "餵給挑原因與翻譯的那一份要維持沒有前綴的原文",
+  );
   ok("環境重掃畫完才關掉退勾狀態，原始輸出也留得下結果");
 
   // 鎖住的分頁原本只是淡一點——淡的東西看起來像「還沒載入」或「壞掉」，不像
@@ -443,12 +454,30 @@ try {
 
   // 擋住症狀不等於查到根因。狀態變化要留紀錄，讓 VM 上跑到的人按一顆按鈕整包
   // 送回來——只記變化，不記每一次重畫（重畫一秒好幾次，全記會把那一筆淹掉）。
-  assert(files.view.includes("export async function lockDiagnostics()"));
-  assert.match(files.view, /if \(raw !== \(observedLocks\?\.\[id\] \?\? null\) \|\| state !== previous\) \{/);
-  assert(files.view.includes("const LOCK_LOG_LIMIT = 200;"));
+  // 段落狀態只送「哪一段做完了、哪一段還鎖著」。曾經一起送的幀號、class 與 200 筆
+  // 逐筆紀錄都拿掉了——它們是為了查一個已經修好的動畫 bug，留著只會把原始輸出淹掉。
+  assert(files.view.includes("export function sectionLockStates()"));
+  assert(
+    !files.view.includes("lockDiagnostics"),
+    "動畫細節不再進診斷資料",
+  );
   // 原始輸入要一起記——要找的就是 locked / done 哪一個閃了一下。
-  assert.match(files.view, /locked: lockStates\[id\]\?\.locked \?\? null,\s*\n\s*done: done\?\.\[id\] \?\? null,/);
-  assert(files.app.includes("await view.lockDiagnostics()"));
+  assert(files.app.includes("sections: view.sectionLockStates()"));
+
+  // 診斷資料要含每張卡最近幾次執行的原始輸出。少了它，那顆按鈕收的只有鎖頭與導覽
+  // 的狀態——名字叫「診斷資料」，學生按了貼回來，我們拿到的是動畫幀號。
+  //
+  // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
+  assert(files.view.includes("export function rawOutputDiagnostics()"));
+  assert(files.app.includes("output: view.rawOutputDiagnostics()"));
+
+  // 每跑一輪不再把上一輪清掉：學生遇到失敗的第一個動作就是再按一次，那時失敗那次
+  // 的輸出已經沒了——而我們要判斷的正是失敗那次。改成保留最近幾次、用分隔線隔開。
+  assert(files.view.includes("const MAX_KEPT_RUNS = 3;"));
+  assert(
+    !/rawOutputs\.set\(id, ""\)/.test(files.view),
+    "clearRawOutput 不可以再把整份輸出清空",
+  );
   // 演完一定要回到定格，被打斷也一樣。resetSegments 要排在 goToAndStop 前面：
   // 播過區間之後 lottie 的 currentFrame 是「從區間起點算起」的相對值——播完
   // [32, 60] 它回報 27（32 + 27 = 59），診斷資料看起來像停在還沒成形的那一格。
@@ -489,10 +518,82 @@ try {
     files.app,
     /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n\s*if \(followUp === "auto"\)/,
   );
-  // 安裝按鈕對著還沒好的那一份，驗證仍然掛在主 check 上。
-  assert(files.app.includes("runConfigCheckAction(rowCheck, action, button, extra)"));
+  // 安裝按鈕對著還沒好的那一份。
   assert.match(files.app, /configRowModel\(rowCheck,/);
-  ok("合併卡先把兩份都裝完才驗證，按鈕對著還沒好的那一份");
+  // 驗證按鈕對著它自己那一格。合併卡有兩個驗證之後，全部丟給 rowCheck 的話第二格會
+  // 拿隔壁那格的參數去跑（VM 實測：白名單那格按下去，開的是「Shell 不串接」的終端）。
+  assert.match(
+    files.app,
+    /if \(isVerifyAction\(action\)\) \{[\s\S]*?runConfigCheckAction\(target,/,
+    "驗證要跑被按的那一格",
+  );
+  assert.match(
+    files.app,
+    /runConfigCheckAction\(rowCheck, action, button, extra\)/,
+    "安裝才對著 rowCheck",
+  );
+  ok("合併卡先把兩份都裝完才驗證，安裝對著沒好的那份、驗證對著被按的那格");
+
+  // 每一格「驗證：…」都要有自己那顆按鈕。底下那顆「重跑驗證」跑的永遠是 card.check
+  // （見 onRetest），所以合併卡的第二個驗證原本完全沒有入口——那一列還寫著「按重跑
+  // 驗證」，把學生指向一顆會開錯終端的按鈕（VM 實測）。
+  //
+  // 帶 checkId 的按鈕會被 view 畫進 `system-<id>` 那一格，跟安裝鍵當初搬進清單是同
+  // 一條規矩：按鈕要待在它負責的那一格。
+  assert.match(
+    files.app,
+    /dataName: "verifyAction",[\s\S]{0,200}checkId: check\.id,/,
+    "每一格驗證都要有自己那顆按鈕，而且要帶 checkId 才畫得進那一格",
+  );
+  // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個參數讀的是
+  // spec.options，寫錯的話按鈕跑得動但少了 case/agent，開出來是別題的終端。
+  assert.match(files.app, /options: check\.verifyOptions,/);
+  ok("每一格驗證都有自己的按鈕，參數帶得對");
+
+  // 驗證按鈕只能有一個家。一個驗證就放卡片底下，多個就一律回到各自那一格——兩邊都
+  // 畫的話，底下那顆跑的永遠是 card.check，在合併卡上看起來像「全部重跑」，實際只
+  // 重跑第一個（VM 實測：白名單已驗過，底下按下去開的是「一次只跑一個指令」的終端）。
+  assert.match(
+    files.app,
+    /const perRowVerify = verifyChecks\.length > 1;/,
+    "有幾個驗證決定按鈕放哪裡",
+  );
+  assert.match(
+    files.app,
+    /showRetest: card\.kind === "env" \|\| \(row\?\.showRetest === true && !perRowVerify\)/,
+    "多驗證的卡片不畫底下那顆重跑驗證",
+  );
+  assert.match(files.app, /\.\.\.\(perRowVerify \? verifyChecks : \[\]\)\.map/);
+  // 驗過的那一格按鈕不收掉，改寫成「重跑驗證」：收掉的話那一格就沒有入口了，
+  // 而驗證會失敗、環境也會變，學生要能在原地再驗一次。
+  assert.match(
+    files.app,
+    /text: verified\.has\(check\.id\) \? "重跑驗證" : "驗證",/,
+    "驗過的那一格按鈕留著，文案改成重跑驗證",
+  );
+  assert(
+    !/check\.verifyAction != null && !verified\.has\(check\.id\)/.test(files.app),
+    "驗過就把按鈕收掉的舊規則要拿掉",
+  );
+  ok("一個驗證放卡片底下、多個放各自那一格；驗過的改叫重跑驗證");
+
+  // 格內那顆「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論忘掉，
+  // 那一格退回未勾，再照這一次的結果打勾。
+  //
+  // 不清的話畫面會停在上一輪的答案上——重驗跑到一半那一格還是綠的，這次失敗了那個
+  // 勾也還在。底下那顆本來就有 forgetVerification，格內這顆漏了（VM 實測）。
+  assert.match(
+    files.app,
+    /const rerun = verified\.has\(target\.id\);[\s\S]{0,200}forgetVerification\(target\.id\);/,
+    "格內的重跑驗證要先清掉那一格上一輪的結果",
+  );
+  // 重畫過的話手上那顆 button 是被換掉的舊 DOM node，轉圈會轉在畫面外的按鈕身上。
+  assert.match(
+    files.app,
+    /runConfigCheckAction\(target, action, rerun \? null : button, extra\)/,
+    "清過重畫之後不能再把舊的 button 傳下去",
+  );
+  ok("格內的重跑驗證會先把那一格的勾退掉，跟底下那顆同一套");
 
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
@@ -516,9 +617,10 @@ try {
   }
   // 讀步驟與圖的兩條路徑都要擋住路徑穿越：id 會被接成檔名，收斜線就等於開一個
   // 讀任意檔案的洞（跟 verify-shot 的 agent 白名單同一個理由）。
-  assert.match(server, /url\.pathname\.startsWith\("\/walkthrough\/"\)/);
-  assert.match(server, /\^\[a-z0-9\]\[a-z0-9-\]\*\$/);
-  assert.match(server, /url\.pathname\.startsWith\("\/walkthrough-shot\/"\)/);
+  assert.match(server, /pathname\.startsWith\("\/walkthrough\/"\)/);
+  assert.match(server, /const WALKTHROUGH_ID = \/\^\[a-z0-9\]\[a-z0-9-\]\*\$\//);
+  assert.match(server, /pathname\.startsWith\("\/walkthrough-shot\/"\)/);
+  assert.match(server, /const SHOT_PATH = /);
   ok("操作步驟的檔案在白名單裡，兩條讀檔路徑都擋路徑穿越");
 
   const walkthrough = readFileSync(

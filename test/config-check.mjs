@@ -284,6 +284,50 @@ process.stdin.on("end", () => {
     );
   }
   ok("每個要用眼睛確認的檢查都有程式驗證那半");
+
+  // 反過來的那半條規則：程式驗得到就不該再問學生，程式驗不到的才配一格眼睛。
+  //
+  // 這條沒辦法自動判斷（「程式驗不驗得到」不是資料裡的欄位），所以改成把名單釘住：
+  // 加一格或拿掉一格都會在這裡紅，逼人回來說明理由。每一格眼睛驗的都是嚮導這端看
+  // 不到的東西——另一個終端視窗的分頁標題、瀏覽器裡長出來的網頁、跳出來的選單。
+  const EYE_CHECKS = [
+    "tab-sync",
+    "claude-namer",
+    "codex-namer",
+    "skill-claude-auto-rename",
+    "skill-codex-auto-rename",
+    "skill-claude-handoff",
+    "skill-codex-handoff",
+    "skill-claude-structured-questions",
+    "skill-codex-structured-questions",
+    "demo-claude",
+    "demo-codex",
+  ];
+  assert.deepEqual(
+    Object.entries(VERIFICATION)
+      .filter(([, spec]) => spec?.eye != null)
+      .map(([id]) => id)
+      .sort(),
+    [...EYE_CHECKS].sort(),
+    "眼睛項的名單變了——程式驗得到就不該問學生，改動要說得出理由",
+  );
+  ok("眼睛項的名單釘住：程式驗得到的不問學生");
+
+  // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
+  //
+  // 程式抓得到「指令真的跑起來了」，抓不到「有沒有先跳一個詢問」——學生按了允許的
+  // 話指令一樣會跑。所以按上面那條規則它「應該」要有一格眼睛。拿掉的理由是行為驗證
+  // 的題目本來就要模型自己回報一次，兩邊在問學生同一件事。
+  //
+  // 代價寫在這裡而不是只寫在註解裡：這一格的正面判定現在完全靠模型自我回報，沒有
+  // 第二道人眼把關。哪天有人「順手補回來」，先看懂這段再決定。
+  assert.equal(
+    VERIFICATION.allowlist.eye,
+    undefined,
+    "白名單那格的眼睛是刻意拿掉的，補回去之前先讀這段註解",
+  );
+  assert(VERIFICATION.allowlist.terminal != null);
+  ok("白名單是眼睛項規則的唯一例外，而且是刻意的");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

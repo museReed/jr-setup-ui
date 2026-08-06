@@ -532,7 +532,7 @@ const AGENT_ORDER = ["claude", "codex", "shared", "other"];
 export const CARD_DESCRIPTIONS = {
   "claude-md": "每次開新對話它都會先讀這份規矩，你不用每次重講一遍",
   "output-style": "它會先給答案再解釋，比較用表格，不寫長篇大論",
-  // hook 與 allowlist 合併成一張卡之後，這一行由 MERGED_CARDS.hook 提供，這裡不再
+  // hook 與 allowlist 合併成一張卡之後，這一行由 MERGED_CARDS.allowlist 提供，這裡不再
   // 是它的來源。留著是因為 checkCard 的 fallback 仍會查這張表——合併若哪天拆回去，
   // 沒有這兩行就會退回那句「設定 X，讓這項功能能在接下來的課程中正常使用」。
   hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
@@ -632,7 +632,9 @@ function envOrder(card) {
 //
 // key 是「最後裝的那一份」，也就是身上掛著行為驗證的那一份。
 const MERGED_CARDS = {
-  hook: {
+  // key 跟著 MERGE_ORDER 的最後一個走。這張卡把 hook 排到前面之後，最後那一份是
+  // allowlist——key 沒跟著換的話整張卡的標題與說明會靜靜退回單列的預設值。
+  allowlist: {
     label: "它什麼時候該停下來問你",
     detail:
       "兩件事一起設：危險的指令一定擋下來，安全的指令與工作區內的改檔案不再" +
@@ -660,10 +662,14 @@ const MERGE_ORDER = {
   // 它什麼時候該停下來問你。分兩張卡的話學生會以為是兩個無關的設定，而其中一張
   // （白名單）的實際效果——連改檔案都不再問——根本沒出現在標題上（Reed 拍板合併）。
   //
-  // hook 排在後面不是隨便挑的：合併卡的驗證掛在最後那一份身上，而只有 hook 那列有
-  // 驗證（開一個真終端跑 `echo a && echo b` 看有沒有被攔）。反過來排的話那道驗證
-  // 會靜靜消失，卡片變成純結構檢查。
-  hook: ["allowlist", "hook"],
+  // hook 排前面：它是「該擋的擋」，白名單是「不該問的不問」。先看到被攔下來的畫面，
+  // 再看什麼情況不會攔，順序才講得通——反過來的話學生先學到「都不問了」，再被告知
+  // 「但這種會問」。
+  //
+  // 原本 hook 在後面是因為「合併卡的驗證掛在最後那一份身上，而只有 hook 有驗證」。
+  // 那個理由已經不成立：白名單現在也有自己的行為驗證，兩格各有各的按鈕（app.js 的
+  // perRowVerify），驗證不再靠排序決定掛在誰身上。
+  hook: ["hook", "allowlist"],
 };
 
 export function mergeCardChecks(checks) {

@@ -132,7 +132,8 @@ try {
   // 接出來，接了才可能往下傳。
   const callers = [
     "src/env-check.js",
-    "src/server.js",
+    // 子行程的 spawn 從 server.js 搬到 run-registry.js 了。
+    "src/run-registry.js",
     "scripts/install-configs.mjs",
     "scripts/verify-behavior.mjs",
     "scripts/verify-hook-live.mjs",

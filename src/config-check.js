@@ -262,6 +262,21 @@ export const VERIFICATION = {
   "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
+  // 同一張卡的另一半。這兩格方向相反但驗的是同一套規矩：危險的指令一定擋下來，
+  // 安全的指令一定不再問。
+  //
+  // 先前只有「擋」有實測。「不問」那半的結構檢查只數得出「39 條規則、defaultMode
+  // 是 acceptEdits」——那證明得了檔案寫對，證明不了 Claude Code 真的照著做。今天
+  // 才踩過同一種：Codex 的三個模式 key 值全對，行為卻不是我們要的。
+  //
+  // 原本配一格眼睛（「指令直接跑掉，沒有跳出詢問」）。拿掉了（Reed 拍板）：那一格
+  // 問的事情，行為驗證的題目裡本來就要模型自己回報一次，學生等於被問了兩遍同一題。
+  //
+  // 代價要講清楚：現在「有沒有跳詢問」完全靠模型自我回報，沒有第二道人眼把關。這條
+  // 記在 handoff 的已知問題裡——真要有副產物得改 headless 從事件流找證據。
+  allowlist: {
+    terminal: { case: "allowlist", agent: "claude" },
+  },
   // 第三方 skill 一律只認落點在不在（那是別人的東西，我們不比對內容），唯獨 MCP
   // 這一格例外：它的落點只是 settings.json 裡多一行設定，那一行寫對了、npx 卻拉不
   // 到套件、瀏覽器沒裝起來，畫面上一樣是綠的。而學生要到 demo 段才會發現它是死的。

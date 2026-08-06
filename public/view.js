@@ -1342,47 +1342,18 @@ let observedLocks = null;
 //
 // 這沒有修掉「為什麼會短暫算錯」——那要另外查。但一次性的雜訊本來就不該讓畫面
 // 演一段慶祝動畫，這道關卡該有，跟根因是什麼無關。
-// 鎖頭狀態的變化紀錄。
+// 「複製診斷資料」帶走的段落狀態：哪一段做完了、哪一段還鎖著。
 //
-// 上面那道關卡擋住了症狀（一閃而過的狀態不再讓畫面演動畫），但沒有解釋「為什麼
-// 完成度會短暫算錯」。那個瞬間本機重現不出來——要先做完一整段才走得到——所以把
-// 它記下來，讓 VM 上跑到的人可以按一顆按鈕整包送回來。
+// 這裡曾經有兩樣東西也一起送：一份 200 筆的鎖頭逐筆變化紀錄，以及每個分頁的 lottie
+// 幀號與 class。兩樣都是為了查「完成度會短暫算錯、於是畫面演一段不該演的動畫」那個
+// bug——那個瞬間本機重現不出來，只能請 VM 上的人整包送回來。
 //
-// 只記變化，不記每一次重畫：重畫一秒好幾次，全記下來會把真正的那一筆淹掉。
-const LOCK_LOG_LIMIT = 200;
-const lockLog = [];
-
-function logLock(entry) {
-  lockLog.push({ at: Math.round(window.performance.now()), ...entry });
-
-  if (lockLog.length > LOCK_LOG_LIMIT) {
-    lockLog.shift();
-  }
-}
-
-// 按下「複製診斷資料」時收集的東西：現在每一格長怎樣，加上一路走來的變化紀錄。
-export async function lockDiagnostics() {
-  const tabs = await Promise.all(
-    elements.sectionButtons.map(async (button) => {
-      const animation = await lockAnimations.get(button);
-
-      return {
-        tab: button.dataset.sectionTarget,
-        classes: button.className,
-        lockClasses: button.querySelector(".section-tab-lock")?.className ?? null,
-        frame: animation ? Math.round(animation.currentFrame) : null,
-        paused: animation ? animation.isPaused : null,
-      };
-    }),
-  );
-
-  return {
-    committed: renderedLocks,
-    observed: observedLocks,
-    pendingUnlock: [...pendingUnlock],
-    tabs,
-    log: lockLog,
-  };
+// 那個 bug 查完也修好了，而診斷資料現在帶的是原始輸出，真正判斷得了問題的東西。
+// 幀號留著只會把它淹掉，而且它講的事下面這一行已經直說了（Reed 指定移除）。
+//
+// 真的又需要那些細節時，git log 找得回來——它們的價值在當時，不在常駐。
+export function sectionLockStates() {
+  return { ...renderedLocks };
 }
 
 // 這裡曾經有一道「要連續兩次算出同一個狀態才承認」的關卡（confirmedState），
@@ -1427,23 +1398,11 @@ export function renderSectionLocks(lockStates, done = {}) {
   for (const button of elements.sectionButtons) {
     const id = button.dataset.sectionTarget;
     const state = lockStateOf(lockStates, done, id);
-    const raw = state;
     const previous = renderedLocks?.[id] ?? null;
-    observed[id] = raw;
+    // observed 記的是「這一輪算出來的原始狀態」，跟 next（承認的）分開存——
+    // confirmedState 那段的關卡就是靠兩者的差別在判斷。
+    observed[id] = state;
     next[id] = state;
-
-    // 只在「算出來的」或「承認的」真的變了那一刻記一筆。原始輸入（locked / done）
-    // 一起記下來——要找的就是它們哪一個閃了一下。
-    if (raw !== (observedLocks?.[id] ?? null) || state !== previous) {
-      logLock({
-        tab: id,
-        raw,
-        state,
-        was: previous,
-        locked: lockStates[id]?.locked ?? null,
-        done: done?.[id] ?? null,
-      });
-    }
 
     if (button.querySelector(".section-tab-lock") === null) {
       button.prepend(lockIcon(button));
@@ -1871,14 +1830,38 @@ export function renderLoaders({ modifier, paused = false, label = null }) {
   typeInto(text, spec.text);
 }
 
-// 每跑一輪就把原始輸出換掉——它是這一次執行的逐字稿，留著上一次的只會分不清哪段
-// 是剛才那次。白話那幾行不清：那是這張卡的紀錄，學生翻回來要看得到當時發生什麼事。
+// 一張卡保留最近幾次執行。
+//
+// 這裡原本每跑一輪就把上一輪整個清掉，理由是「留著會分不清哪段是剛才那次」。分段
+// 的問題用一條分隔線就解決了，而清掉的代價要大得多：學生遇到失敗的第一個動作就是
+// 再按一次，那時失敗那次的輸出已經沒了——而我們要判斷的正是失敗那次。
+//
+// 三次是拿捏過的：夠涵蓋「失敗 → 重試 → 再失敗」這條最常見的求助情境，又不會讓
+// 一直重按的卡片把剪貼簿塞爆。
+const MAX_KEPT_RUNS = 3;
+const RUN_SEPARATOR = "──────────────── 上一次執行到此 ────────────────";
+
+// 每張卡存一個陣列，一格一次執行。存字串再靠分隔線切回來也做得到，但那樣「保留幾
+// 次」就變成字串處理，而分隔線本身也可能出現在子行程的輸出裡。
+const rawRuns = new Map();
+
+function runsOf(id) {
+  return rawRuns.get(id) ?? [];
+}
+
+function renderRawOutput(id) {
+  return runsOf(id).join(`\n${RUN_SEPARATOR}\n\n`);
+}
+
+// 開始新的一輪：推一格新的，並把太舊的丟掉。
 export function clearRawOutput() {
   const id = writeTargetId();
-  rawOutputs.set(id, "");
+  const runs = [...runsOf(id), ""].slice(-MAX_KEPT_RUNS);
+  rawRuns.set(id, runs);
+  rawOutputs.set(id, renderRawOutput(id));
 
   if (id === activeTranscriptId) {
-    elements.output.textContent = "";
+    elements.output.textContent = rawOutputs.get(id);
   }
 }
 
@@ -1888,12 +1871,40 @@ export function rawOutputText() {
   return rawOutputs.get(activeTranscriptId) ?? "";
 }
 
-export function addRawLine(text) {
+// 按「複製診斷資料」時一起帶走的東西：每張卡最近幾次執行的原始輸出。
+//
+// 那顆按鈕原本只收鎖頭與導覽的狀態——名字叫「診斷資料」，學生按了貼回來，我們拿到
+// 的是動畫幀號。真正判斷得了問題的是這一份，而且它跨卡片：學生只複製得到當下那張，
+// 但問題常常是前一張留下來的（環境重查拖累了規則卡的安裝）。
+export function rawOutputDiagnostics() {
+  return Object.fromEntries(
+    [...rawRuns.keys()]
+      .map((id) => [id, renderRawOutput(id)])
+      .filter(([, text]) => text.trim() !== ""),
+  );
+}
+
+// at 是「距這次執行開始幾毫秒」。標在原始輸出上，判斷問題時才看得出哪一步卡住
+// ——今天查 winget 被中止那次，最硬的線索是「27 MB 下載跑了三分鐘」，而那件事完全
+// 不在 log 裡。相對不是絕對：學生 VM 的時鐘常常是歪的，而我們要的是「花了多久」。
+//
+// 只標有帶 at 的行。環境檢查那幾列是一支 HTTP 請求的結果、不是逐字稿，標了沒有意義。
+function stamp(at) {
+  return typeof at === "number" ? `[+${(at / 1000).toFixed(1)}s] ` : "";
+}
+
+export function addRawLine(text, at = null) {
   const id = writeTargetId();
-  rawOutputs.set(id, `${rawOutputs.get(id) ?? ""}${text}\n`);
+  const line = `${stamp(at)}${text}\n`;
+  // 沒有人叫過 clearRawOutput 就先開一格：環境檢查那幾列是直接寫進來的，不走
+  // 「開始一次執行」那條路。
+  const runs = runsOf(id).length === 0 ? [""] : [...runsOf(id)];
+  runs[runs.length - 1] += line;
+  rawRuns.set(id, runs);
+  rawOutputs.set(id, renderRawOutput(id));
 
   if (id === activeTranscriptId) {
-    elements.output.textContent += `${text}\n`;
+    elements.output.textContent += line;
   }
 }
 
