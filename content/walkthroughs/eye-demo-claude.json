@@ -5,14 +5,16 @@
   "steps": [
     {
       "id": "run-demo",
-      "title": "按這一格右邊的「驗證」",
+      "title": "按清單下面的「驗證」",
       "detail": "Claude Code會開一個新視窗，從零把你剛才選的那個網頁做出來。這一格要跑幾分鐘，畫面一直在動就是正常的。",
       "visual": {
         "type": "mock",
         "mock": "wizard",
-        "caption": "就是這一格右邊那顆",
+        "caption": "按鈕在整份清單的下面，不是那一列右邊",
         "row": "看它一邊寫程式、旁邊的網頁一邊長出來",
-        "button": "驗證"
+        "button": "驗證",
+        "place": "below",
+        "row2": "（這張卡的其他項目）"
       },
       "kids": [
         {

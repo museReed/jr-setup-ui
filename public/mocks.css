@@ -211,6 +211,31 @@
   gap: 9px;
 }
 
+/* 沒有按鈕的那幾列。畫出來是為了讓「按鈕在清單下面」看得出是下面。 */
+.m-row-plain + .m-row-plain {
+  margin-top: 7px;
+}
+
+.m-below {
+  display: flex;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--mk-line-soft);
+}
+
+.m-step-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+}
+
+.m-step-title {
+  flex: 1;
+  font-size: 12px;
+  color: var(--mk-faint);
+}
+
 .m-box {
   flex: 0 0 auto;
   width: 17px;

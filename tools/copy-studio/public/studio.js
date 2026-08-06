@@ -1,6 +1,6 @@
 // copy-studio 的前端。狀態只有兩件事：現在編哪一份、那一份的內容。
 // 存檔靠 debounce，不用按鈕——編輯器要求人記得存檔，人就會忘記存檔。
-import { MOCK_KINDS, TERM_TONES, blankMock, renderMock } from "/mocks.js";
+import { MOCK_KINDS, TERM_TONES, WIZARD_PLACES, blankMock, renderMock } from "/mocks.js";
 import {
   PLATFORM_KEYS,
   PLATFORM_LABEL,
@@ -393,7 +393,12 @@ ${MOCK_KINDS.map((k) => `<option value="${k.id}"${visual.mock === k.id ? " selec
 
   if (visual.mock === "wizard") {
     return `${picker}${caption}
-<div class="field"><label>那一列寫什麼</label><input data-vfield="row" value="${esc(visual.row)}"></div>
+<div class="field"><label>按鈕在哪<em>畫錯了學生會照著找一顆不存在的按鈕</em></label>
+<select data-vfield="place">
+${WIZARD_PLACES.map((p) => `<option value="${p.id}"${(visual.place ?? "below") === p.id ? " selected" : ""}>${p.label}</option>`).join("")}
+</select></div>
+<div class="field"><label>${visual.place === "step" ? "那一步的標題" : "那一列寫什麼"}</label><input data-vfield="row" value="${esc(visual.row)}"></div>
+<div class="field"><label>再一列（選填）<em>多畫一列，「在清單下面」才看得出是下面</em></label><input data-vfield="row2" value="${esc(visual.row2)}"></div>
 <div class="field"><label>要圈的按鈕</label><input data-vfield="button" value="${esc(visual.button)}"></div>`;
   }
 
@@ -495,6 +500,14 @@ function onChange(event) {
     node.visual.lines[Number(target.closest("[data-line]").dataset.line)].tone = target.value;
     repaintMock(target);
     scheduleSave();
+    return;
+  }
+
+  // 按鈕位置換了要整個重畫：step 版的欄位標題跟另外兩種不一樣。
+  if (target.dataset.vfield === "place") {
+    nodeAt(target).visual.place = target.value;
+    scheduleSave();
+    paintEditor();
     return;
   }
 

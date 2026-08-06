@@ -5,14 +5,16 @@
   "steps": [
     {
       "id": "run-verify",
-      "title": "按這一格右邊的「驗證」",
+      "title": "按清單下面的「驗證」",
       "detail": "它會開一個新的終端視窗，自己跑一遍給你看。你不用打任何指令。",
       "visual": {
         "type": "mock",
         "mock": "wizard",
-        "caption": "就是這一格右邊那顆",
+        "caption": "按鈕在整份清單的下面，不是那一列右邊",
         "row": "看它有沒有跳出一組選項讓你選",
-        "button": "驗證"
+        "button": "驗證",
+        "place": "below",
+        "row2": "（這張卡的其他項目）"
       },
       "kids": [
         {

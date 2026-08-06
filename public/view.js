@@ -662,8 +662,15 @@ function checklistElement(
       if (walkthroughIds.has(item.id)) {
         const how = document.createElement("button");
         how.type = "button";
-        how.className = "ds-btn ds-btn-sm ds-btn-ghost checklist-how";
-        how.textContent = "怎麼做";
+        // 一個問號的圓鈕，不是「怎麼做」三個字。這一列本來就有兩行文字加上可能的
+        // 安裝／登入鍵，再塞一顆有字的按鈕會把那一列擠成兩截；而「有問題點這裡」
+        // 是問號本來就在講的事，不需要再寫一次（Reed 指定）。
+        how.className = "checklist-how";
+        how.title = "怎麼做";
+        how.setAttribute("aria-label", `怎麼做：${item.text}`);
+        how.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/>' +
+          '<path d="M9.6 9.3a2.5 2.5 0 1 1 3 2.9v1.3"/><path d="M12.6 16.7v.01"/></svg>';
         how.dataset.walkthrough = item.id;
         how.addEventListener("click", (event) => {
           event.preventDefault();

@@ -97,15 +97,10 @@
         {
           "id": "no-copy-shortcut",
           "kind": "warn",
-          "title": {
-            "mac": "不要按 Cmd+C",
-            "win": "不要按 Ctrl+C"
-          },
-          "detail": {
-            "mac": "在這個模式下 Cmd+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。",
-            "win": "在這個模式下 Ctrl+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。"
-          },
-          "visual": null
+          "title": "不要按 Ctrl+C",
+          "detail": "在這個模式下 Ctrl+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。",
+          "visual": null,
+          "only": "win"
         }
       ]
     },
