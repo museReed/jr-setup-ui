@@ -57,6 +57,130 @@
       ]
     },
     {
+      "id": "choose-design",
+      "title": "它跳出選單問你網頁要長什麼樣，四題都選一個",
+      "detail": [
+        "最上面那排是四題：網頁類型、主色調、視覺風格、字體",
+        "用上下鍵選一個，用左右鍵換到下一題",
+        "四題都選完之後移到 Submit 按 Enter",
+        "選哪個都可以，它會照你選的做出來"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "上下鍵選、左右鍵換題，最後移到 Submit",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "◻ 網頁類型   ◻ 主色調   ◻ 視覺風格   ◻ 字體   ✔ Submit  →"
+          },
+          {
+            "tone": "prompt",
+            "text": "這個示範網頁想做成哪一種類型？"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 1. ✨ 產品 Landing Page (Recommended)"
+          },
+          {
+            "tone": "dim",
+            "text": "     Hero + 特色卡片 + CTA，最常見也最好看的 demo 題材"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. 個人作品集 Portfolio"
+          },
+          {
+            "tone": "dim",
+            "text": "     自我介紹 + 作品格線 + 聯絡方式"
+          },
+          {
+            "tone": "dim",
+            "text": "  3. 數據儀表板 Dashboard"
+          },
+          {
+            "tone": "dim",
+            "text": "     統計卡片 + 純 CSS 圖表 + 資料表格"
+          },
+          {
+            "tone": "dim",
+            "text": "  4. 互動小遊戲 / 玩具頁"
+          },
+          {
+            "tone": "dim",
+            "text": "     一個能點擊互動的小創意（如卡片翻轉、計時器）"
+          },
+          {
+            "tone": "dim",
+            "text": "  5. Type something."
+          },
+          {
+            "tone": "dim",
+            "text": "  6. Chat about this"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
+      "id": "confirm-step-2",
+      "title": "它問要不要跑第 2 步時，回「對，跑第 2 步」",
+      "detail": [
+        "它會先把你四題選的整理成一張表給你看",
+        "然後問你要不要直接跑下一步",
+        "在最下面那格輸入框打「對，跑第 2 步」，按 Enter"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "打這一句，按 Enter",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "接下來第 2 步：用 /frontend-design 生成單檔自包含 HTML 存到 ~/demo-page.html，全程不開瀏覽器。要我直接跑嗎？"
+          },
+          {
+            "tone": "dim",
+            "text": "* Crunched for 44s"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 對，跑第 2 步"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
+      "id": "confirm-step-3",
+      "title": "它問要不要跑第 3 步時，回「對，跑第 3 步」",
+      "detail": [
+        "第 2 步做完它會再問一次",
+        "在輸入框打「對，跑第 3 步」，按 Enter",
+        "這一步會產出那份自走頁，然後用瀏覽器打開給你看"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "打這一句，按 Enter",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "接下來第 3 步：跑 self_play.py 產出自走頁，那一份會用瀏覽器打開給你看。要跑嗎？"
+          },
+          {
+            "tone": "dim",
+            "text": "* Sauteed for 1m 51s"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 對，跑第 3 步"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
       "id": "watch-typing",
       "title": "看左邊的視窗",
       "detail": "它會一個字一個字把程式打出來，不是一次貼一整段",
@@ -111,7 +235,7 @@
     {
       "id": "close-window",
       "title": "看完了就把那個終端視窗關掉",
-      "detail": "每按一次驗證就會開一個新的，不關的話做到後面會累積十幾個視窗，你會分不出哪個是哪個",
+      "detail": "每按一次驗證都會開一個新的，看完隨手關掉，待會回頭找比較容易",
       "visual": null,
       "kids": []
     }

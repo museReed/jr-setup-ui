@@ -457,10 +457,12 @@ export function configRowModel(
     check.verifyKind === "terminal" &&
     check.noInstall === true
   ) {
+    // 跑過一次之後才寫「重」——跟其他驗證按鈕同一套（見 app.js 的 retestText 與
+    // 格內那顆）。沒跑過就寫「重跑」的話，學生會以為自己漏掉了前面某一步。
     buttons.push({
       action: check.verifyAction,
       dataName: "verifyAction",
-      text: "開終端跑",
+      text: verified ? "重跑一次" : "開終端跑",
       step: check.id,
       options: check.verifyOptions ?? undefined,
     });

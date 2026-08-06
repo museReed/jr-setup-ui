@@ -220,6 +220,29 @@ try {
   assert.equal(demoRow.showRetest, false);
   ok("noInstall 的列只有「開終端跑」，不補按不動的安裝佔位");
 
+  // 跑過一次之後才寫「重」——所有跑驗證的按鈕都同一套（app.js 的 retestText、
+  // 格內那顆、這顆）。沒跑過就寫「重跑」，學生會以為自己漏掉了前面某一步。
+  const demoRowRan = configRowModel(
+    {
+      id: "demo-claude",
+      label: "跑一條龍 demo（Claude）",
+      status: "ok",
+      detail: "按右邊開終端跑一次",
+      noInstall: true,
+      installAction: null,
+      verifyAction: "verify-in-terminal",
+      verifyKind: "terminal",
+      verifyOptions: { case: "demo", agent: "claude" },
+      eyeCheck: "左邊逐字打 code、右邊即時長出網頁",
+    },
+    true,
+  );
+  assert.deepEqual(
+    demoRowRan.buttons.map(({ text }) => text),
+    ["重跑一次"],
+  );
+  ok("跑過的 demo 列按鈕才改叫「重跑一次」");
+
   const verified = configRowModel(
     {
       id: "hook",
@@ -745,15 +768,15 @@ try {
   assert.deepEqual(sectionManualItems("skills", 1, 2, "claude,codex"), []);
   ok("段落閘門已全數移除——驗證自己會開新的終端視窗");
 
-  // codex 的信任提示原本是一格勾選框，拿掉了：同一張卡的 CARD_HINTS 已經把那兩題
-  // 照原樣印出來（含要選哪一個），勾選框只是把同一件事再講一次，而且講得比較差
-  // ——沒說畫面長什麼樣，也沒提第二題（sandbox 模式）。
+  // codex 的信任提示原本是一格勾選框，後來改成卡片上照原樣印出那兩題，現在整塊
+  // 搬進「怎麼做」彈窗——那裡每一題各一步，有畫面示意也寫了要選哪一個。卡片上
+  // 再印一次是同一件事講兩遍。
   assert.deepEqual(
     sectionManualItems("rules", 0, 5, "claude,codex", "codex-namer"),
     [],
   );
-  assert.ok(CARD_HINTS["codex-namer"].lines.length >= 2);
-  ok("codex 的兩題改用 CARD_HINTS 照原樣印出來，不再多一格勾選框");
+  assert.deepEqual(CARD_HINTS, {});
+  ok("codex 的兩題搬進彈窗，卡片上不再多一格勾選框也不再印一次");
 
   // 清單第一格該不該打勾——三種情況各錯過一次，所以三種都釘住。
   const okRow = { id: "x", label: "x", status: "ok", detail: "" };

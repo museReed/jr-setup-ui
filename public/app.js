@@ -602,7 +602,15 @@ function renderWizard() {
     showRetest: card.kind === "env" || (row?.showRetest === true && !perRowVerify),
     // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
-    retestText: card.kind === "env" ? "再 check 一次" : "重跑驗證",
+    //
+    // 沒驗過的時候叫「驗證」，驗過了才改叫「重跑驗證」：第一次就寫「重跑」，學生會
+    // 以為自己漏掉了前面某一步。跟格內那顆同一套判斷（見上面 verified.has）。
+    retestText:
+      card.kind === "env"
+        ? "再 check 一次"
+        : verified.has(card.checkId)
+          ? "重跑驗證"
+          : "驗證",
     // 這張卡還沒完成，「重跑驗證」就是現在該按的那顆——不繞過「待驗證」那個中間
     // 狀態去判斷。原本看的是那一列的狀態，於是驗證失敗、正在跑、或列的狀態是別的
     // 值時，按鈕就退回空心，學生看不出該按哪顆（VM 實測 tab-sync 那張）。

@@ -92,11 +92,6 @@ export const FULLSCREEN_ITEMS = [
   },
 ];
 
-// 第一次跑 codex 會連續跳兩個問句，兩個都選錯就整組 hook 不跑、後面 codex 那幾格
-// 全部失敗——而失敗訊息只會說「驗證沒過」，不會說「你剛才那兩個選項選錯了」。
-//
-// 勾選框只寫「要接受信任提示」，但學生根本還沒看過那個畫面，不知道長什麼樣、有幾
-// 個選項、哪一個是對的。所以照原樣把它們印出來，學生對照著選就好。
 // 這兩列驗證完會留一張截圖，卡片要把它貼出來。一個 agent 一個檔，兩張卡各看各的
 // ——共用一個檔的話先驗 claude 再驗 codex，claude 那張顯示的會是 codex 截的圖。
 export const PLAYWRIGHT_SHOT_AGENTS = {
@@ -104,22 +99,16 @@ export const PLAYWRIGHT_SHOT_AGENTS = {
   "ext-playwright-codex": "codex",
 };
 
-export const CARD_HINTS = {
-  "codex-namer": {
-    title: "第一次跑 codex 會問這兩題，照這樣選：",
-    lines: [
-      "Allow this hook to run? → Yes（不接受的話整組 hook 都不會跑）",
-      "Select sandbox mode?   → default（課堂用預設就好）",
-    ],
-  },
-};
+// 第一次跑 codex 會連續跳兩個問句。原本照原樣印在卡片上，現在搬進「怎麼做」
+// 彈窗——那裡有畫面示意、有要選哪一個，卡片上再印一次是同一件事講兩遍。
+export const CARD_HINTS = {};
 
 export const CARD_GATES = {
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
   claude: FULLSCREEN_ITEMS,
   // codex-namer 原本有一格「第一次跑 codex 要接受 hook 信任提示」。拿掉了：
-  // 同一張卡下面的 CARD_HINTS 已經把那兩題照原樣印出來（含要選哪一個），勾選框
+  // 那兩題在「怎麼做」彈窗裡各有一步（含畫面與要選哪一個），勾選框
   // 只是把同一件事再講一次，而且講得比較差——它沒說畫面長什麼樣、也沒提第二題。
   "codex-namer": [],
 };

@@ -113,10 +113,10 @@
         {
           "id": "no-copy-shortcut",
           "kind": "warn",
-          "title": "不要按 Ctrl+C",
+          "title": "這裡的 Ctrl+C 不是複製",
           "detail": [
             "在這個模式下 Ctrl+C 不是複製，是中斷執行",
-            "按下去會把 Claude Code 關掉，你得重來一次",
+            "按下去會把 Claude Code 停掉，要再開一次才能繼續",
             "圈選放開滑鼠就已經複製好了"
           ],
           "visual": null,
@@ -145,7 +145,7 @@
     {
       "id": "close-terminals",
       "title": "把剛才開的兩個終端視窗關掉",
-      "detail": "每驗一次就開一個新的，不關的話做到後面會累積十幾個，你會分不出哪個是哪個",
+      "detail": "每驗一次都會開一個新的，看完隨手關掉，待會回頭找比較容易",
       "visual": null,
       "kids": []
     }
