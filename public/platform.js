@@ -24,14 +24,30 @@ export function isSplit(value) {
   return value !== null && typeof value === "object";
 }
 
-/** 取那個平台該顯示的字。沒分平台就回原字串。 */
-export function textFor(value, platform) {
-  if (!isSplit(value)) {
-    return value ?? "";
-  }
+/** 取那個平台該顯示的內容。沒分平台就回原值。可能是一句話，也可能是一串。 */
+export function valueFor(value, platform) {
+  if (Array.isArray(value)) return value;
 
-  // 兩個平台一起看時，先給 mac 的——編輯器會把兩格都畫出來，這個只是給預覽用的。
+  if (!isSplit(value)) return value ?? "";
+
+  // 兩個平台一起看時先給 mac 的，編輯器會把兩格都畫出來，這個只是給預覽用的。
   return value[platform ?? "mac"] ?? "";
+}
+
+/** 同上，但一定回一句話。要畫成清單的地方用 listFor。 */
+export function textFor(value, platform) {
+  const picked = valueFor(value, platform);
+  return Array.isArray(picked) ? (picked[0] ?? "") : picked;
+}
+
+/**
+ * 一句話講不完的地方畫成一串項目，不要用句號把兩三句擠成一段（Reed 定的規矩）。
+ * 回傳陣列：只有一句就是長度 1。
+ */
+export function listFor(value, platform) {
+  const picked = valueFor(value, platform);
+  const items = Array.isArray(picked) ? picked : [picked];
+  return items.map((item) => String(item ?? "").trim()).filter((item) => item !== "");
 }
 
 /** 字串 → 分平台。兩邊都先填原本那句，人只改要改的那一邊。 */

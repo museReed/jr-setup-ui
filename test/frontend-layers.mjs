@@ -610,6 +610,53 @@ try {
   assert(server.includes('"/app.js"'));
   ok("每一層的檔案都在 server 的靜態白名單裡");
 
+  // 操作步驟那一塊的四個檔也要在白名單裡。少一個的話瀏覽器載入時 404，而 import
+  // 失敗會讓整支 app.js 不執行——畫面整片空白，主控台以外看不出任何線索。
+  for (const asset of ["/walkthrough.js", "/mocks.js", "/mocks.css", "/platform.js"]) {
+    assert(server.includes(`"${asset}"`), `server 的靜態白名單少了 ${asset}`);
+  }
+  // 讀步驟與圖的兩條路徑都要擋住路徑穿越：id 會被接成檔名，收斜線就等於開一個
+  // 讀任意檔案的洞（跟 verify-shot 的 agent 白名單同一個理由）。
+  assert.match(server, /pathname\.startsWith\("\/walkthrough\/"\)/);
+  assert.match(server, /const WALKTHROUGH_ID = \/\^\[a-z0-9\]\[a-z0-9-\]\*\$\//);
+  assert.match(server, /pathname\.startsWith\("\/walkthrough-shot\/"\)/);
+  assert.match(server, /const SHOT_PATH = /);
+  ok("操作步驟的檔案在白名單裡，兩條讀檔路徑都擋路徑穿越");
+
+  const walkthrough = readFileSync(
+    new URL("../public/walkthrough.js", import.meta.url),
+    "utf8",
+  );
+  // 除了靜態白名單那幾個檔，其餘一律驗 token。彈窗自己 fetch 與 <img src> 都要帶，
+  // 不帶的話學生按下去只會拿到 401，而畫面上什麼都不會說。
+  assert.match(walkthrough, /fetch\(urlWithToken\(`\/walkthrough\/\$\{id\}`\)\)/);
+  assert.match(walkthrough, /urlWithToken\(`\/walkthrough-shot\//);
+  // 平台決定「去 Dock 找」還是「看工作列在閃」。講錯等於沒講。
+  assert.match(walkthrough, /navigator\.userAgent\.includes\("Windows"\)/);
+  // 沒編過的那幾份不給按鈕：空彈窗比沒有按鈕更讓人困惑。
+  assert.match(walkthrough, /data = written \? data : null/);
+  ok("彈窗帶 token、看平台挑內容、沒編過的不開");
+
+  // 那顆問號住在 <label> 裡面，不擋預設行為的話按它會順手把那一格的勾打上——
+  // 等於在學生還沒做之前就替他宣告做完了。
+  assert.match(
+    files.view,
+    /how\.addEventListener\("click",[\s\S]{0,200}event\.preventDefault\(\)/,
+  );
+  // 那一列的標題與說明可以住在 content/ 裡，沒寫才退回 src/ 帶過來的。
+  assert.match(files.view, /const rowText = copy\?\.title \|\| item\.text/);
+  assert.match(files.view, /const rowDetail = copy\?\.description \|\| item\.detail/);
+  // 滑過去播完才開，中途移開就不開：不擋的話滑去拿別顆按鈕都會彈出一個蓋住半個
+  // 畫面的東西。
+  assert.match(files.view, /if \(hovering\) onWalkthrough\(item\.id, origin\(\)\)/);
+  assert.match(files.view, /url: "\/vendor\/question-mark\.json"/);
+  assert(server.includes('"/vendor/question-mark.json"'), "問號動畫要在靜態白名單裡");
+  // 彈窗要從問號長出來，所以 transform-origin 一定要先量再開；同一格內設原點又改
+  // transform 的話瀏覽器會併成一次計算，沒有起點就沒有補間，彈窗會直接跳出來。
+  assert.match(walkthrough, /box\.classList\.add\("is-measuring"\)/);
+  assert.match(walkthrough, /requestAnimationFrame\(\(\) => \{\s*\n\s*box\.classList\.add\("is-open"\)/);
+  ok("問號待在它負責的那一格裡、滑過去播完才開，彈窗從它長出來");
+
   assert(!files.view.includes('classList.toggle("is-active", station.current)'));
   assert(files.view.includes('addEventListener("mouseenter"'));
   assert(files.view.includes('addEventListener("mouseleave"'));

@@ -1,8 +1,9 @@
 // copy-studio 的前端。狀態只有兩件事：現在編哪一份、那一份的內容。
 // 存檔靠 debounce，不用按鈕——編輯器要求人記得存檔，人就會忘記存檔。
-import { MOCK_KINDS, TERM_TONES, blankMock, renderMock } from "/mocks.js";
+import { MOCK_KINDS, TERM_TONES, WIZARD_PLACES, blankMock, renderMock } from "/mocks.js";
 import {
   PLATFORM_KEYS,
+  listFor,
   PLATFORM_LABEL,
   isSplit,
   textFor,
@@ -188,12 +189,19 @@ function paintEditor() {
   el.main.innerHTML = `
 <header class="doc-head">
 <div class="doc-meta"><code>${esc(data.id)}</code><span>卡片：${esc(data.card)}</span><span id="save-state" class="save-state">已寫進檔案</span></div>
-<h2>${esc(data.row)}</h2>
+<h2>${esc(textFor(data.title, state.platform) || data.id)}</h2>
 ${data.note ? `<p class="doc-note">${esc(data.note)}</p>` : ""}
 <div class="doc-actions">
 <button class="btn ghost sm" id="open-preview">看學生的樣子</button>
 </div>
 </header>
+
+<!-- 卡片上那一列長什麼樣。彈窗只負責步驟，標題與說明是這一列自己的事。 -->
+<section class="row-copy" data-row-copy>
+<h3>卡片上那一列</h3>
+${splitField(data, "title", "標題", "一句話講清楚這一格在檢查什麼，不加標點", 1, "不加句號、逗號、驚嘆號")}
+${splitField(data, "description", "說明", "為什麼要檢查這一格", 2, "最多兩句話，最多一個逗號")}
+</section>
 <ol class="steps">${data.steps.map((step, index) => stepHtml(step, index)).join("")}</ol>
 <button class="btn ghost wide" data-add-step>＋ 加一個「你要做」</button>`;
 
@@ -203,16 +211,19 @@ ${data.note ? `<p class="doc-note">${esc(data.note)}</p>` : ""}
 
 // 會分平台的欄位（標題與說明）都走這裡。沒分平台就一個框；分了就兩個框，各自標
 // mac / Windows。切到單一平台時只畫那一邊——編的時候不用被另一個平台的字干擾。
-function splitField(node, field, label, placeholder, rows) {
+function splitField(node, field, label, placeholder, rows, rule) {
   const value = node[field];
   const split = isSplit(value);
-  const head = `<label>${label}
+  const head = `<label>${label}${rule ? `<em>${esc(rule)}</em>` : ""}
 <button class="mini ${split ? "is-on" : ""}" data-split="${field}" type="button">${split ? "合併平台" : "分平台"}</button>
 </label>`;
 
+  // 一行一項。不用句號、也不用「——」：一句話講不完就換一行，畫出來會是一串項目。
+  const asText = (raw) => (Array.isArray(raw) ? raw.join("\n") : (raw ?? ""));
+
   if (!split) {
     return `<div class="field">${head}
-<textarea rows="${rows}" data-field="${field}" placeholder="${esc(placeholder)}">${esc(value ?? "")}</textarea>
+<textarea rows="${rows}" data-field="${field}" placeholder="${esc(placeholder)}">${esc(asText(value))}</textarea>
 </div>`;
   }
 
@@ -221,11 +232,24 @@ function splitField(node, field, label, placeholder, rows) {
     .map(
       (key) => `<div class="plat-box">
 <span class="plat-tag">${PLATFORM_LABEL[key]}</span>
-<textarea rows="${rows}" data-field="${field}" data-plat="${key}" placeholder="${esc(placeholder)}">${esc(value[key] ?? "")}</textarea>
+<textarea rows="${rows}" data-field="${field}" data-plat="${key}" placeholder="${esc(placeholder)}">${esc(asText(value[key]))}</textarea>
 </div>`,
     )
     .join("");
   return `<div class="field">${head}<div class="plats">${boxes}</div></div>`;
+}
+
+// 輸入框存回去：一行就存字串，多行就存陣列。順手擋掉句號與破折號——規矩訂了就用
+// 程式盯著，靠人記得比較快忘。
+function fromLines(text) {
+  const lines = String(text)
+    .replace(/[。]/g, "")
+    .replace(/——/g, "，")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+  return lines.length <= 1 ? (lines[0] ?? "") : lines;
 }
 
 function onlyPicker(node) {
@@ -393,7 +417,12 @@ ${MOCK_KINDS.map((k) => `<option value="${k.id}"${visual.mock === k.id ? " selec
 
   if (visual.mock === "wizard") {
     return `${picker}${caption}
-<div class="field"><label>那一列寫什麼</label><input data-vfield="row" value="${esc(visual.row)}"></div>
+<div class="field"><label>按鈕在哪<em>畫錯了學生會照著找一顆不存在的按鈕</em></label>
+<select data-vfield="place">
+${WIZARD_PLACES.map((p) => `<option value="${p.id}"${(visual.place ?? "below") === p.id ? " selected" : ""}>${p.label}</option>`).join("")}
+</select></div>
+<div class="field"><label>${visual.place === "step" ? "那一步的標題" : "那一列寫什麼"}</label><input data-vfield="row" value="${esc(visual.row)}"></div>
+<div class="field"><label>再一列（選填）<em>多畫一列，「在清單下面」才看得出是下面</em></label><input data-vfield="row2" value="${esc(visual.row2)}"></div>
 <div class="field"><label>要圈的按鈕</label><input data-vfield="button" value="${esc(visual.button)}"></div>`;
   }
 
@@ -410,6 +439,10 @@ ${MOCK_KINDS.map((k) => `<option value="${k.id}"${visual.mock === k.id ? " selec
 // ── 找節點 ─────────────────────────────────────────────────────────
 function nodeAt(element) {
   const stepEl = element.closest("[data-step]");
+
+  // 卡片那一列的標題與說明掛在整份文件上，不在任何一步裡面。
+  if (stepEl === null) return state.data;
+
   const kidEl = element.closest("[data-kid]");
   const step = state.data.steps[Number(stepEl.dataset.step)];
   return kidEl === null ? step : step.kids[Number(kidEl.dataset.kid)];
@@ -476,14 +509,15 @@ function onInput(event) {
 
   // 分平台的欄位帶 data-plat，寫進那一邊；沒帶就是整個換掉。
   if (target.dataset.plat !== undefined) {
-    node[field][target.dataset.plat] = target.value;
+    node[field][target.dataset.plat] = fromLines(target.value);
     scheduleSave();
     return;
   }
 
-  if (!["id", "title", "detail"].includes(field)) return;
+  if (!["id", "title", "detail", "description"].includes(field)) return;
 
-  node[field] = target.value;
+  // id 是拿來組檔名的，不是給人讀的句子，照原樣存。
+  node[field] = field === "id" ? target.value : fromLines(target.value);
   scheduleSave();
 }
 
@@ -495,6 +529,14 @@ function onChange(event) {
     node.visual.lines[Number(target.closest("[data-line]").dataset.line)].tone = target.value;
     repaintMock(target);
     scheduleSave();
+    return;
+  }
+
+  // 按鈕位置換了要整個重畫：step 版的欄位標題跟另外兩種不一樣。
+  if (target.dataset.vfield === "place") {
+    nodeAt(target).visual.place = target.value;
+    scheduleSave();
+    paintEditor();
     return;
   }
 
@@ -698,7 +740,8 @@ function showPreview() {
   // 會以為預覽是兩邊通用的。
   const platform = state.platform ?? "mac";
   el.previewBody.innerHTML = `
-<h3>${esc(state.data.row)}</h3>
+<h3>${esc(textFor(state.data.title, platform) || state.data.id)}</h3>
+<div class="pv-desc">${points(state.data.description, platform)}</div>
 <p class="pv-plat">用 ${PLATFORM_LABEL[platform]} 的內容預覽${state.platform === null ? "（沒選平台時預設看 mac）" : ""}</p>
 <ol class="pv-steps">
 ${state.data.steps
@@ -708,7 +751,7 @@ ${state.data.steps
 <span class="pv-num">${index + 1}</span>
 <div>
 <b>${esc(textFor(step.title, platform)) || "（還沒寫）"}</b>
-<p>${esc(textFor(step.detail, platform))}</p>
+${points(step.detail, platform)}
 ${step.visual ? pvVisual(step.visual, step, index, null, "do") : ""}
 ${(step.kids ?? [])
   .filter((kid) => visibleOn(kid, platform))
@@ -716,7 +759,7 @@ ${(step.kids ?? [])
     const meta = KINDS[kid.kind] ?? KINDS.see;
     return `<div class="pv-kid k-${esc(kid.kind)}">
 ${icon(meta.icon)}
-<div><b>${esc(textFor(kid.title, platform)) || "（還沒寫）"}</b><p>${esc(textFor(kid.detail, platform))}</p>
+<div><b>${esc(textFor(kid.title, platform)) || "（還沒寫）"}</b>${points(kid.detail, platform)}
 ${kid.visual ? pvVisual(kid.visual, kid, index, kidIndex, kid.kind) : ""}</div>
 </div>`;
   })
@@ -726,6 +769,16 @@ ${kid.visual ? pvVisual(kid.visual, kid, index, kidIndex, kid.kind) : ""}</div>
   )
   .join("")}
 </ol>`;
+}
+
+// 一句就一段，多句畫成一串——跟學生看到的一樣。
+function points(value, platform) {
+  const items = listFor(value, platform);
+
+  if (items.length === 0) return "";
+  if (items.length === 1) return `<p>${esc(items[0])}</p>`;
+
+  return `<ul class="pv-points">${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
 }
 
 function pvVisual(visual, node, stepIndex, kidIndex, kind) {

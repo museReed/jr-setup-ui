@@ -924,6 +924,424 @@ body {
   flex: 0 0 auto;
 }
 
+/* 一個問號的圓鈕，靠右。有字的按鈕會跟這一列本來就有的安裝／登入鍵搶位置，把
+   那一列擠成兩截——而「有問題點這裡」是問號本來就在講的事。 */
+.checklist-how {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.checklist-how-anim {
+  display: block;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.checklist-how-anim svg {
+  display: block;
+}
+
+.checklist-how:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-hover);
+}
+
+.checklist-how:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* 同一格兩顆都有時，登入那顆先（它是這一格真正要做的事），問號在它右邊。 */
+.checklist-inline-action ~ .checklist-how {
+  margin-left: var(--space-2);
+}
+
+/* ── 操作步驟彈窗 ────────────────────────────────────────────────────
+   主節點是「你要做」，只看主節點就走得完；附註收起來，點了才展開。 */
+.wt-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+body.wt-locked {
+  overflow: hidden;
+}
+
+.wt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: rgba(20, 18, 15, 0.62);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.wt-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 量尺寸用：還沒開之前要先讓它有版面，才算得出「問號在彈窗的哪個位置」。
+   透明但不是 display:none——display:none 量到的是零。
+
+   ⚠️ 量的時候一定要把縮放拿掉：getBoundingClientRect 回的是「變形之後」的矩形，
+   在 scale(0.02) 底下量到的是一個縮在正中央的小方塊，算出來的原點會落在畫面上另
+   一個地方，動畫看起來像從隨機的角落飛出來（實際踩到）。 */
+.wt-overlay.is-measuring {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wt-overlay.is-measuring .wt-panel {
+  transform: none;
+  transition: none;
+}
+
+/* 從那顆問號長出來：原點設在問號那一點，縮放時那一點不動，看起來就是從它長出來
+   的。收回去是同一段動畫倒著跑——原點還留著，方向自然對。 */
+.wt-panel {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  max-height: min(86vh, 780px);
+  overflow-y: auto;
+  padding: var(--space-6);
+  border-radius: var(--r-xl);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-lg);
+  transform-origin: var(--wt-ox, 50%) var(--wt-oy, 50%);
+  transform: scale(0.02);
+  opacity: 0;
+  transition:
+    transform 0.5s cubic-bezier(0.2, 0.82, 0.28, 1),
+    opacity 0.28s ease;
+}
+
+.wt-overlay.is-open .wt-panel {
+  transform: none;
+  opacity: 1;
+}
+
+/* 面板本身可以拿焦點：沒有 × 之後，鍵盤進來的第一站是這一整份步驟。
+   不畫外框——它只是個落點，不是可以按的東西。 */
+.wt-panel:focus-visible {
+  outline: none;
+}
+
+.wt-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wt-step {
+  position: relative;
+  margin-left: 11px;
+  padding: 0 0 var(--space-4) var(--space-6);
+  border-left: 2px solid var(--color-border);
+}
+
+.wt-step:last-child {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+
+/* box-sizing 要自己指定：設計系統沒設，預設的 content-box 會把 border 加在宣告寬度
+   之外，圓點整體往右偏一個邊框寬，線與點就對不齊了。 */
+.wt-num {
+  position: absolute;
+  left: -13px;
+  top: 0;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--color-bg-elevated);
+  border-radius: var(--r-pill);
+  background: var(--color-accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wt-head {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wt-head[disabled] {
+  cursor: default;
+}
+
+/* 標題那一行同時是「展開」的把手：箭頭在左、裡面有什麼掛在右。
+   原本標題底下另起一列寫「1 個會看到」，佔一整行卻只講了一個數字。 */
+.wt-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.wt-head b {
+  flex: 1;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-snug);
+  color: var(--color-text-strong);
+}
+
+.wt-detail {
+  display: block;
+  margin: 3px 0 0;
+  padding-left: 15px;
+  max-width: 50ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--color-text-muted);
+}
+
+/* 一句話講不完就畫成一串，不要用句號把兩三句擠成一段——學生照著做時是一項一項
+   對的，一整段他得自己在裡面找現在做到哪一句。 */
+.wt-points {
+  padding-left: 30px;
+  list-style: disc;
+}
+
+.wt-points li {
+  margin-bottom: 2px;
+}
+
+.wt-kid-detail {
+  margin: 3px 0 0;
+  max-width: 48ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--color-text-muted);
+}
+
+.wt-kid-detail.wt-points {
+  padding-left: 16px;
+}
+
+/* 只剩「別做」那一顆。它被靜靜摺進去而沒人看到的話，這個彈窗就是在幫倒忙。
+   其餘的數字對學生沒有用——左邊的箭頭已經說完「這裡點得開」。 */
+.wt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--red-2);
+  border-radius: var(--r-pill);
+  background: var(--color-danger-bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--red-6);
+}
+
+.wt-badge .wt-ico {
+  width: 13px;
+  height: 13px;
+}
+
+.wt-chev {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--color-text-faint);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.2s ease;
+}
+
+.wt-head:hover .wt-chev {
+  border-left-color: var(--color-accent);
+}
+
+.wt-step.is-open .wt-chev {
+  transform: rotate(90deg);
+}
+
+/* 0fr → 1fr：高度不用寫死，內容多長都收得起來。 */
+.wt-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s ease;
+}
+
+.wt-step.is-open .wt-body {
+  grid-template-rows: 1fr;
+  padding-top: var(--space-3);
+}
+
+.wt-body > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wt-kids {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.wt-kid {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--color-success);
+}
+
+.wt-kid.wt-warn {
+  border-left-color: var(--color-danger);
+}
+
+.wt-kid.wt-miss {
+  border-left-color: var(--color-border);
+}
+
+.wt-kid-mark {
+  color: var(--color-success-text);
+  padding-top: 2px;
+}
+
+.wt-warn .wt-kid-mark {
+  color: var(--red-6);
+}
+
+.wt-miss .wt-kid-mark {
+  color: var(--color-text-faint);
+}
+
+.wt-ico {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wt-kid-kind {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  color: var(--color-success-text);
+}
+
+.wt-warn .wt-kid-kind {
+  color: var(--red-6);
+}
+
+.wt-miss .wt-kid-kind {
+  color: var(--color-text-faint);
+}
+
+.wt-kid b {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--fs-md);
+  line-height: var(--lh-snug);
+  color: var(--color-text-strong);
+}
+
+.wt-warn .wt-kid b {
+  color: var(--red-6);
+}
+
+.wt-kid p {
+  margin: 3px 0 0;
+  max-width: 48ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--color-text-muted);
+}
+
+.wt-fig {
+  margin: var(--space-3) 0 0;
+  max-width: 360px;
+}
+
+.wt-fig img {
+  width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-border-soft);
+}
+
+.wt-fig figcaption {
+  margin-top: 5px;
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}
+
+/* 圖還沒補進來時不要留一個破圖——講出「這裡還缺一張」比較誠實。 */
+.wt-fig.is-missing img {
+  display: none;
+}
+
+.wt-fig.is-missing figcaption {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--r-md);
+}
+
+.wt-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-overlay,
+  .wt-body,
+  .wt-chev {
+    transition: none;
+  }
+
+  /* 設了「減少動態」就不要從一個點放大——那是整份嚮導動得最大的一下。淡入就好。 */
+  .wt-panel {
+    transform: none;
+    transition: opacity 0.15s ease;
+  }
+}
+
 /* 貼上欄位畫在清單裡面時，要跟項目對齊，不要貼著暗底的邊緣。 */
 .ds-checklist .paste-proof {
   padding: 0 var(--space-4) var(--space-4);

@@ -447,14 +447,14 @@ const ENV_CARD_META = {
     agent: "claude",
     label: "Claude Code",
     logo: "logo-claude",
-    description: "課堂上大部分的事都會請它做，先讓它裝好、認得你這個帳號",
+    description: "課堂上大部分的事都會請它做，這張裝好它、登入，再帶你把它第一次跑起來",
     checkIds: ["claude", "claude-auth"],
   },
   codex: {
     agent: "codex",
     label: "Codex CLI",
     logo: "logo-openai",
-    description: "另一個會寫程式的助手，課堂上會拿它跟 Claude 對照著看",
+    description: "另一個 AI 助手，課堂上會拿它跟 Claude 對照著看有什麼不一樣",
     checkIds: ["codex", "codex-auth"],
   },
   // Git 與 GitHub CLI 合成一張：學生腦中那是同一件事（把東西存起來、推上去），
@@ -464,7 +464,7 @@ const ENV_CARD_META = {
     label: "版本控制與 GitHub",
     logo: "logo-git",
     description:
-      "每次改了什麼都留得下紀錄、改壞了回得去，而且不用開網頁就能推上 GitHub、開 PR",
+      "改了什麼都留得下紀錄，改壞了回得去，也能把東西存到 GitHub 上",
     checkIds: ["git", "gh", "gh-auth"],
   },
   // Node 與 Python 合成一張：兩張都是「別的東西要靠它」，沒有登入、沒有行為驗證，
@@ -478,7 +478,7 @@ const ENV_CARD_META = {
     label: "Python 與 Node.js",
     logo: "logo-python",
     description:
-      "最後那個會自己長出來的網頁靠 Python 在背後跑。Node 在開這個嚮導時就裝好了，這裡只是確認它還在",
+      "這一張只有 Python 要按，Node 在開這個嚮導時就裝好了，這裡只是確認它還在",
     checkIds: ["node", "python"],
   },
   // Windows 的四列合成一張，站在整段最前面（見 ENV_FIRST）：全都是「這台機器本身
@@ -508,9 +508,9 @@ const ENV_CARD_META = {
   // 那列會看 WT_SESSION（沒用它開就是紅的），Ghostty 只檢查檔案在不在。
   ghostty: {
     agent: "other",
-    label: "Mac 先準備好",
+    label: "換上課堂用的終端機",
     logo: "logo-terminal",
-    description: "分頁、複製貼上都正常，後面每一步都在這個視窗裡做",
+    description: "後面每一步都在終端機視窗裡做，先換成跟講師一樣的那個",
   },
   terminal: {
     agent: "other",
@@ -544,15 +544,15 @@ export const CARD_DESCRIPTIONS = {
   // 這兩張的驗證要跑一分多鐘（每次兩趟 LLM）。不寫的話畫面看起來像當掉了，
   // 學生會去按取消——這是唯一「慢到需要先講」的兩張，所以寫在描述裡而不是跳泡泡。
   "claude-monitor":
-    "對話太長、它快忘記前面講過什麼時，會提早叫你收尾。這張的驗證要跑一分多鐘",
+    "對話太長它快忘記前面講過什麼時會提早叫你收尾，這張的驗證要跑一分多鐘",
   "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
   "codex-monitor":
-    "Codex 快忘記前面講過什麼時，也會提早叫你收尾。這張的驗證一樣要跑一分多鐘",
+    "Codex 快忘記前面講過什麼時也會提早叫你收尾，這張的驗證一樣要跑一分多鐘",
   // skill 的描述要回答「這支是拿來做什麼的」——標題已經是它的名字了。
   "skill-claude-auto-rename":
-    "幫這次對話重新取名。上面那個 hook 是自動取，這支是你不滿意時手動叫它重取",
+    "幫這次對話重新取名，前面那張是它自己取，這一支是你不滿意時可以叫它重取",
   "skill-codex-auto-rename":
-    "幫這次對話重新取名。上面那個 hook 是自動取，這支是你不滿意時手動叫它重取",
+    "幫這次對話重新取名，前面那張是它自己取，這一支是你不滿意時可以叫它重取",
   "skill-claude-handoff":
     "把這次做到哪、卡在哪寫成一份交接文件，下次開新對話貼給它就接得回來",
   "skill-codex-handoff":
@@ -562,17 +562,17 @@ export const CARD_DESCRIPTIONS = {
   "skill-codex-structured-questions":
     "要你做決定時跳出選項讓你點，不用自己想怎麼描述需求",
   "ext-frontend-design-claude":
-    "叫它做網頁時會先想版面與配色，產出的不是預設樣板的樣子",
+    "叫它做網頁時會先想版面與配色，做出來的不會每個都長一樣",
   "ext-frontend-design-codex":
-    "叫它做網頁時會先想版面與配色，產出的不是預設樣板的樣子",
+    "叫它做網頁時會先想版面與配色，做出來的不會每個都長一樣",
   "ext-skill-creator-claude":
     "把你反覆做的流程包成一支新的 skill，以後一句話就叫得動",
   "ext-playwright-claude":
-    "讓它能開瀏覽器：自己導到網址、點按鈕、填表單，還會截圖回來給你看",
+    "讓它能開瀏覽器自己點按鈕、填表單，還會截圖回來給你看，第一次要先下載瀏覽器可能要等幾分鐘",
   "ext-playwright-codex":
-    "讓它能開瀏覽器：自己導到網址、點按鈕、填表單，還會截圖回來給你看",
-  "demo-claude": "它問你要什麼配色、生成一個網頁，右邊即時長出來給你看",
-  "demo-codex": "它問你要什麼配色、生成一個網頁，右邊即時長出來給你看",
+    "讓它能開瀏覽器自己點按鈕、填表單，還會截圖回來給你看，第一次要先下載瀏覽器可能要等幾分鐘",
+  "demo-claude": "它問你要什麼配色，然後從零做一個網頁，右邊即時長出來給你看，這一張要跑幾分鐘",
+  "demo-codex": "它問你要什麼配色，然後從零做一個網頁，右邊即時長出來給你看，這一張要跑幾分鐘",
 };
 
 function checkCard(sectionId, card, check) {
@@ -637,24 +637,20 @@ const MERGED_CARDS = {
   allowlist: {
     label: "它什麼時候該停下來問你",
     detail:
-      "兩件事一起設：危險的指令一定擋下來（把好幾個指令串成一串跑會被攔），" +
-      "安全的指令與工作區內的改檔案不再逐次問你。看起來方向相反，其實是同一套" +
-      "規矩的兩半——該擋的擋、不該問的不問。裝好之後會開一個真的終端，" +
-      "當場試給你看串接指令有沒有被攔下來。",
+      "兩件事一起設：危險的指令一定擋下來，安全的指令與工作區內的改檔案不再" +
+      "逐次問你，裝好之後會開一個真的終端，當場試兩題給你看",
   },
   "output-style": {
     label: "Claude Code CLI 做事的規矩與回話風格",
     detail:
-      "兩份設定一起裝：一份是 Claude Code CLI 做事的規矩（每次開新對話都會先讀，" +
-      "你不用每次重講），一份是回話的樣子（先給答案再解釋、比較用表格、不寫長篇" +
-      "大論）。兩份都裝好之後會真的問它一題，照五條規矩逐條檢查它的回答。",
+      "兩份一起裝：一份是它每次開新對話都會先讀的規矩，一份決定它回話的樣子，" +
+      "先給答案再解釋、比較用表格，裝好會真的問它一題來驗，要跑一分多鐘",
   },
   "codex-config": {
     label: "Codex CLI 做事的規矩與回話風格",
     detail:
-      "跟上一張同一件事，這是 Codex CLI 這邊的兩份：一份是做事的規矩，" +
-      "一份寫在它的設定檔裡、決定回話的樣子。兩份都裝好之後會真的問它一題，" +
-      "照五條規矩逐條檢查它的回答。",
+      "跟上一張同一件事，這是 Codex 這邊的兩份，裝好會真的問它一題來驗，" +
+      "一樣要跑一分多鐘",
   },
 };
 

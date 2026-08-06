@@ -62,6 +62,17 @@ export async function fetchState() {
   return response.json();
 }
 
+// 哪幾格有操作步驟可看。只回 id，內容等學生真的按下去再抓。
+export async function fetchWalkthroughIds() {
+  const response = await fetch(withToken("/walkthroughs"));
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return response.json();
+}
+
 export async function saveVerifiedStep(step) {
   const response = await postJson("/state", { step });
   return response.json();

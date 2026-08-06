@@ -73,14 +73,41 @@ function taskbar(visual) {
 </div>`;
 }
 
-// 嚮導自己的一列＋那顆按鈕。學生看到的是同一套視覺，指認起來不用翻譯。
+// 嚮導自己的卡片＋那顆按鈕。學生看到的是同一套視覺，指認起來不用翻譯。
+//
+// 按鈕在哪一定要畫對——畫錯了學生會照著找一顆不存在的按鈕。卡片的規矩有三種：
+//
+//   below  這張卡只有一個驗證 → 按鈕在整份清單的正下方（最常見）
+//   row    這張卡有兩個以上的驗證 → 每一格自己右邊一顆
+//   step   人工項那幾步 → 按鈕在那一步的標題列右邊
+export const WIZARD_PLACES = [
+  { id: "below", label: "清單下面（這張卡只有一個驗證）" },
+  { id: "row", label: "那一格右邊（這張卡有兩個以上驗證）" },
+  { id: "step", label: "那一步的標題列右邊（人工項）" },
+];
+
 function wizard(visual) {
+  const button = `<span class="m-btn is-target">${esc(visual.button ?? "（哪顆按鈕）")}</span>`;
+  const place = visual.place ?? "below";
+
+  if (place === "step") {
+    return `<div class="m-card">
+<div class="m-step-head"><span class="m-step-title">${esc(visual.row ?? "（哪一步）")}</span>${button}</div>
+<div class="m-row m-row-plain"><span class="m-box"></span><span class="m-row-text">${esc(visual.row2 ?? "（那一步底下的項目）")}</span></div>
+</div>`;
+  }
+
+  if (place === "row") {
+    return `<div class="m-card">
+<div class="m-row"><span class="m-box"></span><span class="m-row-text">${esc(visual.row ?? "（哪一列）")}</span>${button}</div>
+</div>`;
+  }
+
+  // below：畫兩列讓「在清單下面」看得出來——只畫一列的話跟 row 版分不出差別。
   return `<div class="m-card">
-<div class="m-row">
-<span class="m-box"></span>
-<span class="m-row-text">${esc(visual.row ?? "（哪一列）")}</span>
-<span class="m-btn is-target">${esc(visual.button ?? "（哪顆按鈕）")}</span>
-</div>
+<div class="m-row m-row-plain"><span class="m-box"></span><span class="m-row-text">${esc(visual.row ?? "（哪一列）")}</span></div>
+${visual.row2 ? `<div class="m-row m-row-plain"><span class="m-box"></span><span class="m-row-text">${esc(visual.row2)}</span></div>` : ""}
+<div class="m-below">${button}</div>
 </div>`;
 }
 
@@ -120,7 +147,7 @@ export function blankMock(kind) {
   }
 
   if (kind === "wizard") {
-    return { type: "mock", mock: "wizard", caption: "", row: "", button: "" };
+    return { type: "mock", mock: "wizard", caption: "", place: "below", row: "", row2: "", button: "" };
   }
 
   if (kind === "browser") {

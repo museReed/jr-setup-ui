@@ -125,6 +125,7 @@ try {
     "GET /env",
     "GET /configs",
     "GET /verify-shot",
+    "GET /walkthroughs",
     "GET /state",
     "POST /state",
     "POST /run",
@@ -132,11 +133,19 @@ try {
     "POST /cancel",
     "GET /stream",
   ]);
-  ok("路由表就是這十條，多一條會被抓到");
+  ok("路由表就是這十一條，多一條會被抓到");
+
+  // 路徑帶參數的那兩條不進表：表是完全比對的，把它們塞進去就得改成正規式比對，
+  // 那正是改成表之前那團 if 的樣子。它們走 prefixRoute，而且各自驗過格式才碰檔案
+  // 系統——那一段會被接成檔案路徑，收斜線就等於開一個讀任意檔案的洞。
+  assert.match(server, /const handler =\s*\n\s*routes\[[^\]]+\] \?\?\s*\n\s*prefixRoute\(/);
+  assert.match(server, /const WALKTHROUGH_ID = \/\^\[a-z0-9\]\[a-z0-9-\]\*\$\//);
+  assert.match(server, /const SHOT_PATH = /);
+  ok("帶參數的兩條走 prefixRoute，而且自己驗過格式");
 
   // token 檢查要在路由表之前，不是每個 handler 自己記得做。靜態檔是刻意的例外
   // （<link> 與 import 由瀏覽器自己發請求，補不上查詢字串），它排在更前面。
-  const dispatchAt = server.indexOf("const handler = routes[");
+  const dispatchAt = server.indexOf("const handler =");
   assert(
     server.indexOf("tokenMatches(") < dispatchAt,
     "token 驗證要在派發之前，不能交給各個 handler 自己記得",

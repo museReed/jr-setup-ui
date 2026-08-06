@@ -12,7 +12,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 import { mergedOrder, walkthroughOrder } from "./order.mjs";
-import { isWritten, visibleOn } from "./public/platform.js";
+import { isWritten, visibleOn } from "../../public/platform.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const PUBLIC = path.join(import.meta.dirname, "public");
@@ -129,7 +129,8 @@ async function listWalkthroughs(platform) {
     out.push({
       id: data.id,
       card: data.card,
-      row: data.row,
+      // title 就是卡片上那一列。seed 出來還沒編的用 id 佔位，不要顯示成空白一列。
+      row: typeof data.title === "object" ? (data.title?.mac ?? data.id) : (data.title || data.id),
       section: meta.get(data.id)?.section ?? "其他",
       // 排不到名次的（卡片被拿掉了但檔案還在）沉到最後，不要靜靜消失。
       rank: ranks.get(data.id) ?? Number.MAX_SAFE_INTEGER,
@@ -243,6 +244,16 @@ async function handle(req, res, url) {
       "cache-control": "no-store",
     });
     return createReadStream(file).pipe(res);
+  }
+
+  // mocks.js 與 platform.js 住在嚮導的 public/：彈窗與編輯器要畫出一模一樣的畫面，
+  // 複製一份到這裡的話兩邊遲早會分岔。
+  if (["/mocks.js", "/platform.js", "/mocks.css"].includes(pathname)) {
+    res.writeHead(200, {
+      "content-type": MIME[path.extname(pathname)],
+      "cache-control": "no-store",
+    });
+    return createReadStream(path.join(ROOT, "public", pathname.slice(1))).pipe(res);
   }
 
   // 靜態：只有 public/ 底下那幾個檔，白名單以外一律 404。

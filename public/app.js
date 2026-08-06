@@ -8,6 +8,7 @@ import {
   replayTour,
   tourDiagnostics,
 } from "./tour.js";
+import { openWalkthrough } from "./walkthrough.js";
 import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
@@ -135,7 +136,20 @@ const state = {
   announcedCardId: null,
   pendingModalCheck: null,
   loginHints: { url: null, code: null },
+  // 哪幾格有操作步驟可看，以及那一列該寫什麼。開頁問一次——按鈕存在卻按出一個空
+  // 彈窗，比沒有按鈕更讓人困惑。
+  walkthroughs: new Map(),
 };
+
+async function loadWalkthroughIds() {
+  try {
+    const { items } = await api.fetchWalkthroughIds();
+    state.walkthroughs = new Map(items.map((item) => [item.id, item]));
+  } catch {
+    // 拿不到就當作都沒有：少幾顆按鈕不影響學生做事，是可以退的。
+    state.walkthroughs = new Map();
+  }
+}
 
 async function rememberVerifiedStep(step) {
   state.verifiedSteps.add(step);
@@ -559,6 +573,15 @@ function renderWizard() {
       });
     },
     showChecklist: card.kind !== "setup",
+    // 「怎麼做」那顆：只有真的編過內容的那幾格才畫得出來。順便帶著那一列的
+    // 標題與說明——它們也住在 content/ 裡。
+    walkthroughs: state.walkthroughs,
+    // origin 是那顆問號的中心點：彈窗要從它長出來。
+    onWalkthrough: (id, origin) => {
+      openWalkthrough(id, origin).catch((error) =>
+        view.addLine(`打不開操作步驟：${error.message}`, "failed"),
+      );
+    },
     hints: CARD_HINTS[card.checkId] ?? null,
     // 只有 playwright 那兩列會留截圖。帶上驗證次數當 cache buster——重驗一次要看到
     // 新的那張，瀏覽器不會因為網址一樣就拿舊的。
@@ -1786,7 +1809,9 @@ view.onVerifyModal(
 renderNavigation();
 
 async function initialize() {
-  await loadVerifiedSteps();
+  // 兩件事互不相干，一起等：哪幾格有操作步驟只影響要不要畫那顆按鈕，
+  // 序列跑的話開頁多等一趟來回。
+  await Promise.all([loadVerifiedSteps(), loadWalkthroughIds()]);
   // 選擇是 loadVerifiedSteps 從伺服器帶回來的，所以 chips 要在它之後才套。
   // 擺在前面的話畫面永遠停在預設值，卡片卻照著存下來的選擇跑，兩邊對不上。
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);

@@ -573,6 +573,79 @@ function pasteProofElement({ value, matched, onInput }) {
   return wrap;
 }
 
+// 清單上那顆問號：進操作步驟的入口。
+//
+// 不是「怎麼做」三個字——那一列本來就有兩行文字加上可能的安裝／登入鍵，再塞一顆
+// 有字的按鈕會把它擠成兩截，而「有問題點這裡」是問號本來就在講的事。
+//
+// 滑鼠移上去先把問號播一次，播完才開彈窗；中途移開就不開——不擋的話，滑過去拿別
+// 顆按鈕都會彈出一個蓋住半個畫面的東西。直接點就不等動畫。
+function walkthroughButton(item, rowText, onWalkthrough) {
+  const how = document.createElement("button");
+  how.type = "button";
+  how.className = "checklist-how";
+  how.title = "怎麼做";
+  how.setAttribute("aria-label", `怎麼做：${rowText}`);
+  how.dataset.walkthrough = item.id;
+
+  const { box, ready } = lottieControl({
+    url: "/vendor/question-mark.json",
+    className: "checklist-how-anim",
+    loop: false,
+    autoplay: false,
+  });
+  how.append(box);
+
+  // 平常停在最後一格，也就是問號畫完的樣子。第一格只有一個空圈圈——停在那裡的話
+  // 那一列右邊掛的是一個看不出是什麼的圓，學生不會知道那可以點（Reed 指出）。
+  //
+  // 讀完動畫自己的長度而不是寫死格號：換一份 json 進來也不會靜靜停在中間某一格。
+  const settle = async () => {
+    const animation = await ready;
+    animation?.goToAndStop(animation.totalFrames - 1, true);
+  };
+
+  settle();
+
+  // 從按鈕的正中央長出來。彈窗算 transform-origin 要的是這個點。
+  const origin = () => {
+    const rect = how.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  };
+
+  let hovering = false;
+
+  how.addEventListener("pointerenter", async () => {
+    hovering = true;
+    const animation = await ready;
+
+    if (animation === null) return;
+
+    animation.goToAndPlay(0, true);
+    animation.addEventListener("complete", function onDone() {
+      animation.removeEventListener("complete", onDone);
+      // 播完的時候滑鼠可能已經移走了。移走了就當作他只是路過。
+      if (hovering) onWalkthrough(item.id, origin());
+    });
+  });
+
+  how.addEventListener("pointerleave", () => {
+    hovering = false;
+    settle();
+  });
+
+  how.addEventListener("click", (event) => {
+    // 它住在 <label> 裡面：不擋的話按問號會順手把那一格的勾打上，等於在學生還沒
+    // 做之前就替他宣告做完了。
+    event.preventDefault();
+    event.stopPropagation();
+    hovering = false;
+    onWalkthrough(item.id, origin());
+  });
+
+  return how;
+}
+
 function checklistElement(
   groups,
   onManualToggle,
@@ -583,6 +656,9 @@ function checklistElement(
     onOpen = () => {},
     // 掛在某一格底下的按鈕（目前是登入那顆），key 是那一格的 check id。
     inlineActions = new Map(),
+    // 哪幾格有操作步驟可以看（id → {title, description}），以及按下去要做什麼。
+    walkthroughs = new Map(),
+    onWalkthrough = () => {},
   } = {},
 ) {
   const items = [...groups.system, ...groups.manual];
@@ -605,6 +681,15 @@ function checklistElement(
 
   const appendItems = (list) => {
     for (const item of list) {
+      // 這一列的標題與說明可以住在 content/ 裡（文案審閱者改得動的地方）。沒寫的
+      // 話照舊用 src/ 帶過來的那一份。
+      //
+      // 寫法的規矩：title 一句話講清楚這一格在檢查什麼、不加標點；description 最多
+      // 兩句（一個逗號）講它的目的。
+      const copy = walkthroughs.get(item.id);
+      const rowText = copy?.title || item.text;
+      const rowDetail = copy?.description || item.detail;
+
       const label = document.createElement("label");
       label.className = "ds-check";
       label.classList.add(item.automatic ? "is-system" : "is-manual");
@@ -617,16 +702,16 @@ function checklistElement(
       text.className = "ds-check-text";
       const visible = document.createElement("span");
       visible.className = "ds-check-label";
-      visible.setAttribute("data-text", item.text);
-      visible.textContent = item.text;
+      visible.setAttribute("data-text", rowText);
+      visible.textContent = rowText;
       text.append(visible);
 
-      if (item.failedReason || item.detail) {
+      if (item.failedReason || rowDetail) {
         const small = document.createElement("small");
         // 自己的 class：設計系統對 small 的配色寫死了青色（見 styles.css 那條
         // .check-detail），橘色那半要靠一個掛得上鉤子的名字才改得動。
         small.className = "check-detail";
-        small.textContent = item.failedReason || item.detail;
+        small.textContent = item.failedReason || rowDetail;
         text.append(small);
       }
 
@@ -649,6 +734,15 @@ function checklistElement(
       if (inline !== undefined) {
         inline.classList.add("checklist-inline-action");
         label.append(inline);
+      }
+
+      // 「怎麼做」跟登入那顆一樣待在它負責的那一格裡：操作步驟講的就是這一格，
+      // 放到清單外面學生又要自己把兩者連起來。
+      //
+      // 它住在 <label> 裡面，所以一定要擋掉預設行為——不擋的話按「怎麼做」會順手
+      // 把那一格的勾打上，等於在他還沒做之前就替他宣告做完了。
+      if (copy !== undefined) {
+        label.append(walkthroughButton(item, rowText, onWalkthrough));
       }
 
       checklist.append(label);
@@ -856,6 +950,8 @@ function renderCard(model) {
             : null,
           onOpen: model.onOpenStep ?? (() => {}),
           inlineActions,
+          walkthroughs: model.walkthroughs ?? new Map(),
+          onWalkthrough: model.onWalkthrough ?? (() => {}),
         }),
       );
     }

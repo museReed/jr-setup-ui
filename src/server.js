@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import http from "node:http";
+import path from "node:path";
 
 import { actions, buildAgentCommand } from "./actions.js";
 import {
@@ -11,7 +12,7 @@ import {
 import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
-import { VERIFY_SHOT_AGENTS, verifyShotPath } from "./paths.js";
+import { contentDir, VERIFY_SHOT_AGENTS, verifyShotPath } from "./paths.js";
 import {
   clearBehaviorVerified,
   clearStepVerified,
@@ -40,6 +41,12 @@ const ASSETS = [
   ["/model.js", "text/javascript; charset=utf-8"],
   ["/api.js", "text/javascript; charset=utf-8"],
   ["/tour.js", "text/javascript; charset=utf-8"],
+  // 操作步驟的彈窗。mocks.js／mocks.css 跟 copy-studio 共用同一份——編輯器裡看到的
+  // 畫面就是學生看到的畫面，複製一份的話兩邊遲早會分岔。
+  ["/walkthrough.js", "text/javascript; charset=utf-8"],
+  ["/mocks.js", "text/javascript; charset=utf-8"],
+  ["/mocks.css", "text/css; charset=utf-8"],
+  ["/platform.js", "text/javascript; charset=utf-8"],
   ["/tour-model.js", "text/javascript; charset=utf-8"],
   ["/vendor/driver.mjs", "text/javascript; charset=utf-8"],
   ["/vendor/driver.css", "text/css; charset=utf-8"],
@@ -50,6 +57,8 @@ const ASSETS = [
   ["/vendor/milestone-cat.json", "application/json; charset=utf-8"],
   ["/vendor/loader-claude.json", "application/json; charset=utf-8"],
   ["/vendor/lock.json", "application/json; charset=utf-8"],
+  // 清單上那顆問號。它是進操作步驟的入口，動一下才看得出「這裡可以點」。
+  ["/vendor/question-mark.json", "application/json; charset=utf-8"],
   // 解鎖下一張時放的那一段：巫師施法，接著炸開。
   ["/vendor/wizard.json", "application/json; charset=utf-8"],
   ["/vendor/explosion.json", "application/json; charset=utf-8"],
@@ -221,6 +230,41 @@ export async function startServer({
   } catch {
     sendText(response, 404, "還沒有截圖");
   }
+  return;
+  },
+  // 哪幾格有操作步驟，以及那一列該寫什麼。開頁時問一次。
+  //
+  // 回的不只是 id：卡片上那一列的標題與說明也住在 content/ 裡，這樣文案審閱者改完
+  // 就生效，不用回頭動 src/。沒寫的話卡片照舊用 src/ 裡原本那份。
+  "GET /walkthroughs": async (request, response, url) => {
+  let items = [];
+
+  try {
+    const dir = path.join(contentDir(), "walkthroughs");
+    const files = await readdir(dir);
+    const found = await Promise.all(
+      files
+        .filter((name) => name.endsWith(".json"))
+        .map(async (name) => {
+          const data = JSON.parse(await readFile(path.join(dir, name), "utf8"));
+          // 還沒編過的（只有骨架、標題空著）不算——那顆按鈕會按出一片空白。
+          const written = (data.steps ?? []).some((step) => {
+            const title = step.title;
+            const text = typeof title === "object" && title !== null ? title.mac : title;
+            return String(text ?? "").trim() !== "";
+          });
+          return written
+            ? { id: data.id, title: data.title ?? null, description: data.description ?? null }
+            : null;
+        }),
+    );
+    items = found.filter((item) => item !== null);
+  } catch {
+    items = [];
+  }
+
+  response.setHeader("Cache-Control", "no-store");
+  sendJson(response, 200, { items });
   return;
   },
   "GET /state": async (request, response, url) => {
@@ -501,6 +545,68 @@ export async function startServer({
   },
   };
 
+  // 路徑帶參數的那兩條。路由表是完全比對的，而這兩條的最後一段是 id 與檔名——
+  // 讓它們也進表的話就得把表變成正規式比對，那正是改成表之前那團 if 的樣子。
+  //
+  // 兩條都自己驗過格式才碰檔案系統：那一段會被接成檔案路徑，收任何斜線或點就等於
+  // 開一個讀任意檔案的洞（跟 verify-shot 的 agent 白名單同一個理由）。
+  const WALKTHROUGH_ID = /^[a-z0-9][a-z0-9-]*$/;
+  const SHOT_PATH = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9.-]*\.(png|jpg|webp)$/;
+
+  function prefixRoute(method, pathname) {
+    if (method !== "GET") return undefined;
+
+    if (pathname.startsWith("/walkthrough/")) {
+      return async (request, response) => {
+        const id = pathname.slice("/walkthrough/".length);
+
+        if (!WALKTHROUGH_ID.test(id)) {
+          sendText(response, 400, "id 不合法");
+          return;
+        }
+
+        try {
+          const text = await readFile(
+            path.join(contentDir(), "walkthroughs", `${id}.json`),
+            "utf8",
+          );
+          response.setHeader("Cache-Control", "no-store");
+          sendJson(response, 200, JSON.parse(text));
+        } catch {
+          sendText(response, 404, "這一格還沒有操作步驟");
+        }
+      };
+    }
+
+    if (pathname.startsWith("/walkthrough-shot/")) {
+      return async (request, response) => {
+        const rest = pathname.slice("/walkthrough-shot/".length);
+
+        if (!SHOT_PATH.test(rest)) {
+          sendText(response, 400, "路徑不合法");
+          return;
+        }
+
+        try {
+          const bytes = await readFile(path.join(contentDir(), "shots", rest));
+          response.writeHead(200, {
+            "Content-Type": rest.endsWith(".png")
+              ? "image/png"
+              : rest.endsWith(".webp")
+                ? "image/webp"
+                : "image/jpeg",
+            "Cache-Control": "no-store",
+          });
+          response.end(bytes);
+        } catch {
+          sendText(response, 404, "還沒有這張圖");
+        }
+      };
+    }
+
+    return undefined;
+  }
+
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
 
@@ -521,7 +627,9 @@ export async function startServer({
     }
 
 
-    const handler = routes[`${request.method} ${url.pathname}`];
+    const handler =
+      routes[`${request.method} ${url.pathname}`] ??
+      prefixRoute(request.method, url.pathname);
 
     if (handler === undefined) {
       sendText(response, 404, "找不到路由");
