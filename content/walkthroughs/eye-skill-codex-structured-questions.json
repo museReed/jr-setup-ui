@@ -1,0 +1,94 @@
+{
+  "id": "eye-skill-codex-structured-questions",
+  "card": "skill-codex-structured-questions",
+  "row": "看它有沒有跳出一組選項讓你選",
+  "steps": [
+    {
+      "id": "run-verify",
+      "title": "按這一格右邊的「驗證」",
+      "detail": "它會開一個新的終端視窗，自己跑一遍給你看。你不用打任何指令。",
+      "visual": {
+        "type": "mock",
+        "mock": "wizard",
+        "caption": "就是這一格右邊那顆",
+        "row": "看它有沒有跳出一組選項讓你選",
+        "button": "驗證"
+      },
+      "kids": [
+        {
+          "id": "new-window-mac",
+          "kind": "see",
+          "only": "mac",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，會被你現在這個視窗擋住——這不是壞掉。去下面的 Dock 找那個終端機圖示點一下，圖示底下有一個小點就代表它開著。還是找不到就按 F3，畫面會攤開所有開著的視窗。",
+          "visual": {
+            "type": "mock",
+            "mock": "dock",
+            "caption": "Dock 上的終端機圖示，底下有小點",
+            "app": ">_"
+          }
+        },
+        {
+          "id": "new-window-win",
+          "kind": "see",
+          "only": "win",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，只會在下面的工作列上閃——這不是壞掉。看到工作列有一格在閃，點它一下就會跳出來。",
+          "visual": {
+            "type": "mock",
+            "mock": "taskbar",
+            "caption": "工作列上那一格在閃",
+            "app": "終端機"
+          }
+        }
+      ]
+    },
+    {
+      "id": "watch-options",
+      "title": "看它怎麼問你問題",
+      "detail": "我們要的是Codex遇到「有好幾種做法」時，跳出一組選項讓你用鍵盤選，而不是把選項寫成一段文字要你自己打字回答。",
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "要看到的是這種、可以用上下鍵選的",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "要用哪一種做法？"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 1. 先做最小可用的版本"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. 一次做完整版"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "options-shown",
+          "kind": "see",
+          "title": "跳出一組可以選的選項",
+          "detail": "有箭頭、可以用上下鍵移動的那種。看到了再回來勾這一格。",
+          "visual": null
+        },
+        {
+          "id": "just-text",
+          "kind": "miss",
+          "title": "它只是把選項寫成文字",
+          "detail": "像「你可以選 A 或 B，告訴我你要哪個」這樣，就是沒生效。那張卡的技能包可能沒裝起來，回去重按一次安裝再驗。",
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "close-window",
+      "title": "看完了就把那個終端視窗關掉",
+      "detail": "每按一次驗證就會開一個新的，不關的話做到後面會累積十幾個視窗，你會分不出哪個是哪個。",
+      "visual": null,
+      "kids": []
+    }
+  ]
+}

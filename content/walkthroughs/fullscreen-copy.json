@@ -1,0 +1,135 @@
+{
+  "id": "fullscreen-copy",
+  "card": "claude",
+  "row": "圈選代碼那一行，貼進下面的欄位",
+  "note": "第二步：再開一個，圈選代碼貼回來（按鈕：開啟並送出測試句）",
+  "steps": [
+    {
+      "id": "click-open-and-send",
+      "title": "按卡片上的「開啟並送出測試句」",
+      "detail": "這一格右邊那顆。它會開一個新視窗，並且自動幫你送出一句話。",
+      "visual": {
+        "type": "mock",
+        "mock": "wizard",
+        "caption": "就是這一格右邊那顆",
+        "row": "圈選代碼那一行，貼進下面的欄位",
+        "button": "開啟並送出測試句"
+      },
+      "kids": [
+        {
+          "id": "new-window-mac",
+          "kind": "see",
+          "only": "mac",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，會被你現在這個視窗擋住——這不是壞掉。去下面的 Dock 找那個終端機圖示點一下，圖示底下有一個小點就代表它開著。還是找不到就按 F3，畫面會攤開所有開著的視窗。",
+          "visual": {
+            "type": "mock",
+            "mock": "dock",
+            "caption": "Dock 上的終端機圖示，底下有小點",
+            "app": ">_"
+          }
+        },
+        {
+          "id": "new-window-win",
+          "kind": "see",
+          "only": "win",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，只會在下面的工作列上閃——這不是壞掉。看到工作列有一格在閃，點它一下就會跳出來。",
+          "visual": {
+            "type": "mock",
+            "mock": "taskbar",
+            "caption": "工作列上那一格在閃",
+            "app": "終端機"
+          }
+        },
+        {
+          "id": "code-printed",
+          "kind": "see",
+          "title": "畫面印出一行代碼",
+          "detail": "一行英文加數字，長得像這樣。",
+          "visual": {
+            "type": "mock",
+            "mock": "term",
+            "caption": "終端裡印出來的那一行",
+            "lines": [
+              {
+                "tone": "prompt",
+                "text": "› 請原樣印出這一行，不要加任何說明："
+              },
+              {
+                "tone": "dim",
+                "text": ""
+              },
+              {
+                "tone": "ok",
+                "text": "fullscreen-copy-ok-7f3a91"
+              }
+            ]
+          }
+        }
+      ],
+      "mock": "term"
+    },
+    {
+      "id": "select-line",
+      "title": "用滑鼠圈選那一整行",
+      "detail": "從行首拖到行尾，整行反白起來。放開滑鼠的瞬間就複製好了。",
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "整行反白的樣子——頭尾都要圈到",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "› 請原樣印出這一行，不要加任何說明："
+          },
+          {
+            "tone": "dim",
+            "text": ""
+          },
+          {
+            "tone": "sel",
+            "text": "fullscreen-copy-ok-7f3a91"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "no-copy-shortcut",
+          "kind": "warn",
+          "title": {
+            "mac": "不要按 Cmd+C",
+            "win": "不要按 Ctrl+C"
+          },
+          "detail": {
+            "mac": "在這個模式下 Cmd+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。",
+            "win": "在這個模式下 Ctrl+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。"
+          },
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "paste-back",
+      "title": "回到嚮導，貼進卡片上的欄位",
+      "detail": "就是這一格下面那個輸入框。",
+      "visual": null,
+      "kids": [
+        {
+          "id": "auto-checked",
+          "kind": "see",
+          "title": "貼對了這一格自己打勾",
+          "detail": "對不起來的話它會直接告訴你——不是你做錯，多半是圈選時少圈到頭尾，再圈一次整行就好。",
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "close-terminals",
+      "title": "把剛才開的兩個終端視窗關掉",
+      "detail": "每驗一次就開一個新的，不關的話做到後面會累積十幾個，你會分不出哪個是哪個。",
+      "visual": null,
+      "kids": []
+    }
+  ]
+}

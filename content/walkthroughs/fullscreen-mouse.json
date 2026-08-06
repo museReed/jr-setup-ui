@@ -1,0 +1,40 @@
+{
+  "id": "fullscreen-mouse",
+  "card": "claude",
+  "row": "打一句話，用滑鼠點那句話中間",
+  "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）",
+  "steps": [
+    {
+      "id": "same-window",
+      "title": "回到剛才那個視窗，隨便打一句話",
+      "detail": "不用再開一個新的，這一格沒有按鈕。打什麼都行，先不要按 Enter 送出。",
+      "visual": null,
+      "kids": []
+    },
+    {
+      "id": "click-middle",
+      "title": "用滑鼠點那句話的中間",
+      "detail": "點在任何一個字上面就好。",
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "點在句子中間任何一個字上",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "› 幫我把登入流程改成用 email 驗證"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "cursor-jumps",
+          "kind": "see",
+          "title": "游標直接跳到你點的位置",
+          "detail": "沒有這個功能的話，你得按十幾次左右鍵才移得到句子中間——打錯字要回去改的時候差很多。",
+          "visual": null
+        }
+      ]
+    }
+  ]
+}

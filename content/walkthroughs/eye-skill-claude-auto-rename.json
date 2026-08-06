@@ -1,0 +1,82 @@
+{
+  "id": "eye-skill-claude-auto-rename",
+  "card": "skill-claude-auto-rename",
+  "row": "看那個視窗的標題有沒有被重新取名",
+  "steps": [
+    {
+      "id": "run-verify",
+      "title": "按這一格右邊的「驗證」",
+      "detail": "它會開一個新的終端視窗，自己跑一遍給你看。你不用打任何指令。",
+      "visual": {
+        "type": "mock",
+        "mock": "wizard",
+        "caption": "就是這一格右邊那顆",
+        "row": "看那個視窗的標題有沒有被重新取名",
+        "button": "驗證"
+      },
+      "kids": [
+        {
+          "id": "new-window-mac",
+          "kind": "see",
+          "only": "mac",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，會被你現在這個視窗擋住——這不是壞掉。去下面的 Dock 找那個終端機圖示點一下，圖示底下有一個小點就代表它開著。還是找不到就按 F3，畫面會攤開所有開著的視窗。",
+          "visual": {
+            "type": "mock",
+            "mock": "dock",
+            "caption": "Dock 上的終端機圖示，底下有小點",
+            "app": ">_"
+          }
+        },
+        {
+          "id": "new-window-win",
+          "kind": "see",
+          "only": "win",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，只會在下面的工作列上閃——這不是壞掉。看到工作列有一格在閃，點它一下就會跳出來。",
+          "visual": {
+            "type": "mock",
+            "mock": "taskbar",
+            "caption": "工作列上那一格在閃",
+            "app": "終端機"
+          }
+        }
+      ]
+    },
+    {
+      "id": "watch-title",
+      "title": "看那個視窗最上面那一條的字",
+      "detail": "視窗最上面（Windows 是分頁上）本來寫的是資料夾名字。這一格跟前面那張不一樣：前面那張是Claude Code自己取，這一支是你不滿意時可以叫它重取一次。",
+      "visual": {
+        "type": "mock",
+        "mock": "titlebar",
+        "caption": "標題會變成像這樣：🔧 修登入的錯誤",
+        "title": "🔧 修登入的錯誤",
+        "body": ""
+      },
+      "kids": [
+        {
+          "id": "title-changed",
+          "kind": "see",
+          "title": "標題變成一個表情符號加一句中文，寫著你剛才叫它做的事",
+          "detail": "看到標題真的變了，再回來把這一格勾起來。沒變就別勾——勾了只是騙自己。",
+          "visual": null
+        },
+        {
+          "id": "title-not-changed",
+          "kind": "miss",
+          "title": "標題完全沒動",
+          "detail": "多半是這個視窗在「會自動改標題」那張卡裝好之前就開著了。把它關掉、重按一次驗證，用新開的那個視窗看。",
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "close-window",
+      "title": "看完了就把那個終端視窗關掉",
+      "detail": "每按一次驗證就會開一個新的，不關的話做到後面會累積十幾個視窗，你會分不出哪個是哪個。",
+      "visual": null,
+      "kids": []
+    }
+  ]
+}

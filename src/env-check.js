@@ -49,36 +49,39 @@ export function checksForTools(checks, tools) {
   return checks.filter((check) => !dropped.has(check.id));
 }
 
-const CHECKS = [
-  { id: "claude", label: "Claude Code CLI" },
-  { id: "claude-auth", label: "Claude Code 登入狀態" },
-  { id: "codex", label: "Codex CLI" },
-  { id: "codex-auth", label: "Codex 登入狀態" },
-  { id: "git", label: "Git" },
-  { id: "gh", label: "GitHub CLI" },
-  { id: "gh-auth", label: "GitHub 登入狀態" },
-  { id: "node", label: "Node.js" },
-  { id: "python", label: "Python 3" },
-];
+// 平台是參數不是全域狀態：copy-studio 要在 mac 上算得出「Windows 的學生會依序
+// 遇到哪幾列」，才排得出兩個平台各自的順序。原本這份清單在 import 時就看
+// process.platform 定死了，在 mac 上永遠問不到 Windows 那四列。
+export function checksForPlatform(platform) {
+  const checks = [
+    { id: "claude", label: "Claude Code CLI" },
+    { id: "claude-auth", label: "Claude Code 登入狀態" },
+    { id: "codex", label: "Codex CLI" },
+    { id: "codex-auth", label: "Codex 登入狀態" },
+    { id: "git", label: "Git" },
+    { id: "gh", label: "GitHub CLI" },
+    { id: "gh-auth", label: "GitHub 登入狀態" },
+    { id: "node", label: "Node.js" },
+    { id: "python", label: "Python 3" },
+  ];
 
-if (process.platform === "win32") {
-  CHECKS.unshift({
-    id: "execution-policy",
-    label: "PowerShell 執行原則",
-  });
-  CHECKS.push(
-    {
-      id: "windows-terminal",
-      label: "終端機是 Windows Terminal",
-    },
-    { id: "powershell-version", label: "PowerShell 版本" },
-    { id: "powershell-encoding", label: "PowerShell 中文編碼" },
-  );
+  if (platform === "win32") {
+    checks.unshift({ id: "execution-policy", label: "PowerShell 執行原則" });
+    checks.push(
+      { id: "windows-terminal", label: "終端機是 Windows Terminal" },
+      { id: "powershell-version", label: "PowerShell 版本" },
+      { id: "powershell-encoding", label: "PowerShell 中文編碼" },
+    );
+  }
+
+  if (platform === "darwin") {
+    checks.push({ id: "ghostty", label: "Ghostty 終端機" });
+  }
+
+  return checks;
 }
 
-if (process.platform === "darwin") {
-  CHECKS.push({ id: "ghostty", label: "Ghostty 終端機" });
-}
+const CHECKS = checksForPlatform(process.platform);
 
 export function ghosttyStatus(paths, exists) {
   const installed = paths.some((path) => exists(path));

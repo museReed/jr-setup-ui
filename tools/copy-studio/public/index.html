@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>copy-studio · 操作步驟編輯器</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/studio.css">
+</head>
+<body>
+
+<!-- 「會看到」「別做」「沒發生的話」用圖示取代文字標籤：學生掃步驟時要一眼分得出
+     性質，讀兩個字比看一個符號慢。文字仍留在 title 屬性與讀屏文字裡。 -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-see" viewBox="0 0 24 24">
+    <path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12Z"/>
+    <circle cx="12" cy="12" r="2.8"/>
+  </symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="8.5"/>
+    <path d="M6 6l12 12"/>
+  </symbol>
+  <symbol id="i-miss" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="8.5"/>
+    <path d="M9.4 9.2a2.7 2.7 0 1 1 3.3 3.1v1.4"/>
+    <path d="M12.7 16.8v.01"/>
+  </symbol>
+  <symbol id="i-do" viewBox="0 0 24 24">
+    <path d="M6.5 3.6 18.8 11a1.2 1.2 0 0 1 0 2L6.5 20.4a1 1 0 0 1-1.5-.9V4.5a1 1 0 0 1 1.5-.9Z"/>
+  </symbol>
+  <symbol id="i-shot" viewBox="0 0 24 24">
+    <rect x="3" y="6" width="18" height="13" rx="2.2"/>
+    <circle cx="12" cy="12.5" r="3.4"/>
+    <path d="M9 6l1.4-2.2h3.2L15 6"/>
+  </symbol>
+  <symbol id="i-draw" viewBox="0 0 24 24">
+    <path d="M4 16.6 15.6 5a2.2 2.2 0 0 1 3.1 3.1L7.2 19.7 3 21l1.3-4.2Z"/>
+    <path d="M13.6 7.2 17 10.6"/>
+  </symbol>
+</svg>
+
+<div class="app">
+  <nav class="rail">
+    <header class="rail-head">
+      <h1>copy-studio</h1>
+      <p>操作步驟與截圖</p>
+    </header>
+    <div class="rail-summary" id="summary"></div>
+    <button class="btn ghost wide" id="show-todo">還缺哪些截圖</button>
+    <ul class="rail-list" id="rail-list"></ul>
+    <footer class="rail-foot">
+      <p>寫進 <code>content/</code>，改完 <code>git status</code> 就看得到。</p>
+    </footer>
+  </nav>
+
+  <main class="main" id="main">
+    <div class="empty">左邊挑一份開始編</div>
+  </main>
+
+  <aside class="preview" id="preview" hidden>
+    <header class="preview-head">
+      <span>學生看到的樣子</span>
+      <button class="btn ghost sm" id="close-preview">關掉</button>
+    </header>
+    <div class="preview-body" id="preview-body"></div>
+  </aside>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="/studio.js"></script>
+</body>
+</html>
