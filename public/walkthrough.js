@@ -53,23 +53,25 @@ function shotName(stepIndex, kidIndex, kind, stepId, platform) {
   return `${order}${sub}-${kind}-${stepId}${platform ? `.${platform}` : ""}.png`;
 }
 
-// 收起來那一行寫什麼。有地雷就先講地雷——「別做」被靜靜摺進去而沒人看到的話，
-// 這個彈窗就是在幫倒忙。
-function summary(kids) {
+// 標題右邊只留「別做」一顆，而且是紅的。
+//
+// 「會看到」「沒發生的話」「有畫面」那幾顆拿掉了（Reed 指定）：那一排數字對學生沒
+// 有用——他要嘛點開看，要嘛不看，知道裡面有幾個不會改變他做什麼。左邊的箭頭已經
+// 說完「這裡點得開」。
+//
+// 但地雷那顆一定要留：它被靜靜摺進去而沒人看到的話，這個彈窗就是在幫倒忙。整份
+// 十四份裡也只有一格有。
+function badges(kids) {
   const warn = kids.filter((kid) => kid.kind === "warn").length;
-  const rest = kids.length - warn;
 
-  if (warn > 0) {
-    return { danger: true, text: rest > 0 ? `${warn} 個地雷、${rest} 個會看到` : `${warn} 個地雷` };
-  }
+  if (warn === 0) return "";
 
-  return { danger: false, text: `${kids.length} 個會看到` };
+  return `<span class="wt-badge wt-warn" title="${esc(KIND.warn.label)}">${icon(KIND.warn.icon)}${warn}</span>`;
 }
 
 function stepHtml(step, index, walkthroughId) {
   const kids = (step.kids ?? []).filter((kid) => visibleOn(kid, PLATFORM));
   const openable = kids.length > 0 || step.visual != null;
-  const sum = summary(kids);
 
   const kidsHtml = kids
     .map((kid, kidIndex) => {
@@ -89,9 +91,12 @@ ${figure(kid.visual, walkthroughId, shotName(index, kidIndex, kid.kind, kid.id, 
   return `<li class="wt-step${index === 0 ? " is-open" : ""}">
 <span class="wt-num">${index + 1}</span>
 <button class="wt-head" type="button" ${openable ? `aria-expanded="${index === 0}"` : "disabled"}>
+<span class="wt-title-row">
+${openable ? '<i class="wt-chev" aria-hidden="true"></i>' : ""}
 <b>${esc(textFor(step.title, PLATFORM))}</b>
+${openable ? badges(kids) : ""}
+</span>
 <span class="wt-detail">${esc(textFor(step.detail, PLATFORM))}</span>
-${openable && kids.length > 0 ? `<span class="wt-more${sum.danger ? " is-danger" : ""}"><i class="wt-chev"></i>${esc(sum.text)}</span>` : ""}
 </button>
 ${
   openable

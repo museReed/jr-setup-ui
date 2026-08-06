@@ -1135,8 +1135,16 @@ body.wt-locked {
   cursor: default;
 }
 
+/* 標題那一行同時是「展開」的把手：箭頭在左、裡面有什麼掛在右。
+   原本標題底下另起一列寫「1 個會看到」，佔一整行卻只講了一個數字。 */
+.wt-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
 .wt-head b {
-  display: block;
+  flex: 1;
   font-size: var(--fs-lg);
   line-height: var(--lh-snug);
   color: var(--color-text-strong);
@@ -1145,46 +1153,48 @@ body.wt-locked {
 .wt-detail {
   display: block;
   margin-top: 3px;
+  padding-left: 15px;
   max-width: 50ch;
   font-size: var(--fs-sm);
   line-height: var(--lh-relaxed);
   color: var(--color-text-muted);
 }
 
-/* 收起時那一行。有地雷就講地雷而且是紅的——「別做」被靜靜摺進去而沒人看到的話，
-   這個彈窗就是在幫倒忙。 */
-.wt-more {
+/* 只剩「別做」那一顆。它被靜靜摺進去而沒人看到的話，這個彈窗就是在幫倒忙。
+   其餘的數字對學生沒有用——左邊的箭頭已經說完「這裡點得開」。 */
+.wt-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: var(--space-2);
-  padding: 3px 11px 3px 8px;
-  border: 1px solid var(--color-border-soft);
+  gap: 3px;
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--red-2);
   border-radius: var(--r-pill);
+  background: var(--color-danger-bg);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: var(--color-text-faint);
-}
-
-.wt-head:hover .wt-more {
-  border-color: var(--color-accent-soft);
-  background: var(--color-accent-bg);
-  color: var(--color-accent-hover);
-}
-
-.wt-more.is-danger {
-  border-color: var(--red-2);
-  background: var(--color-danger-bg);
   color: var(--red-6);
 }
 
+.wt-badge .wt-ico {
+  width: 13px;
+  height: 13px;
+}
+
 .wt-chev {
+  flex: 0 0 auto;
+  align-self: center;
   width: 0;
   height: 0;
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid var(--color-text-faint);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
   transition: transform 0.2s ease;
+}
+
+.wt-head:hover .wt-chev {
+  border-left-color: var(--color-accent);
 }
 
 .wt-step.is-open .wt-chev {
