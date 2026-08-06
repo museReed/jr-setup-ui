@@ -596,6 +596,17 @@ function walkthroughButton(item, rowText, onWalkthrough) {
   });
   how.append(box);
 
+  // 平常停在最後一格，也就是問號畫完的樣子。第一格只有一個空圈圈——停在那裡的話
+  // 那一列右邊掛的是一個看不出是什麼的圓，學生不會知道那可以點（Reed 指出）。
+  //
+  // 讀完動畫自己的長度而不是寫死格號：換一份 json 進來也不會靜靜停在中間某一格。
+  const settle = async () => {
+    const animation = await ready;
+    animation?.goToAndStop(animation.totalFrames - 1, true);
+  };
+
+  settle();
+
   // 從按鈕的正中央長出來。彈窗算 transform-origin 要的是這個點。
   const origin = () => {
     const rect = how.getBoundingClientRect();
@@ -618,10 +629,9 @@ function walkthroughButton(item, rowText, onWalkthrough) {
     });
   });
 
-  how.addEventListener("pointerleave", async () => {
+  how.addEventListener("pointerleave", () => {
     hovering = false;
-    const animation = await ready;
-    animation?.goToAndStop(0, true);
+    settle();
   });
 
   how.addEventListener("click", (event) => {
