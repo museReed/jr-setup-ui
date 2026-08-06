@@ -1,7 +1,8 @@
 {
   "id": "eye-demo-claude",
   "card": "demo-claude",
-  "row": "看它一邊寫程式、旁邊的網頁一邊長出來",
+  "title": "它一邊寫程式旁邊的網頁一邊長出來",
+  "description": "把前面裝的東西全部串起來跑一次，看它從零做出一個網頁。",
   "steps": [
     {
       "id": "run-demo",

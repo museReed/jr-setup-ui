@@ -136,18 +136,18 @@ const state = {
   announcedCardId: null,
   pendingModalCheck: null,
   loginHints: { url: null, code: null },
-  // 哪幾格有操作步驟可看。開頁問一次——按鈕存在卻按出一個空彈窗，比沒有按鈕更
-  // 讓人困惑。
-  walkthroughIds: new Set(),
+  // 哪幾格有操作步驟可看，以及那一列該寫什麼。開頁問一次——按鈕存在卻按出一個空
+  // 彈窗，比沒有按鈕更讓人困惑。
+  walkthroughs: new Map(),
 };
 
 async function loadWalkthroughIds() {
   try {
-    const { ids } = await api.fetchWalkthroughIds();
-    state.walkthroughIds = new Set(ids);
+    const { items } = await api.fetchWalkthroughIds();
+    state.walkthroughs = new Map(items.map((item) => [item.id, item]));
   } catch {
     // 拿不到就當作都沒有：少幾顆按鈕不影響學生做事，是可以退的。
-    state.walkthroughIds = new Set();
+    state.walkthroughs = new Map();
   }
 }
 
@@ -541,8 +541,9 @@ function renderWizard() {
       });
     },
     showChecklist: card.kind !== "setup",
-    // 「怎麼做」那顆：只有真的編過內容的那幾格才畫得出來。
-    walkthroughIds: state.walkthroughIds,
+    // 「怎麼做」那顆：只有真的編過內容的那幾格才畫得出來。順便帶著那一列的
+    // 標題與說明——它們也住在 content/ 裡。
+    walkthroughs: state.walkthroughs,
     // origin 是那顆問號的中心點：彈窗要從它長出來。
     onWalkthrough: (id, origin) => {
       openWalkthrough(id, origin).catch((error) =>

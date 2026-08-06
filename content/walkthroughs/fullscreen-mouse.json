@@ -1,7 +1,8 @@
 {
   "id": "fullscreen-mouse",
   "card": "claude",
-  "row": "打一句話，用滑鼠點那句話中間",
+  "title": "用滑鼠點句子中間游標就跳過去",
+  "description": "打錯字要回頭改時不用按十幾次左右鍵。",
   "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）",
   "steps": [
     {

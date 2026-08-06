@@ -1,7 +1,8 @@
 {
   "id": "eye-claude-namer",
   "card": "claude-namer",
-  "row": "看那個視窗的標題有沒有自己變成這次在做的事",
+  "title": "講第一句話之後標題自己變成那件事",
+  "description": "確認它讀得懂你在做什麼，開十個視窗才認得出哪個是哪個。",
   "steps": [
     {
       "id": "run-verify",

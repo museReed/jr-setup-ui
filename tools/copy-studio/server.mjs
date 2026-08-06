@@ -129,7 +129,8 @@ async function listWalkthroughs(platform) {
     out.push({
       id: data.id,
       card: data.card,
-      row: data.row,
+      // title 就是卡片上那一列。seed 出來還沒編的用 id 佔位，不要顯示成空白一列。
+      row: typeof data.title === "object" ? (data.title?.mac ?? data.id) : (data.title || data.id),
       section: meta.get(data.id)?.section ?? "其他",
       // 排不到名次的（卡片被拿掉了但檔案還在）沉到最後，不要靜靜消失。
       rank: ranks.get(data.id) ?? Number.MAX_SAFE_INTEGER,

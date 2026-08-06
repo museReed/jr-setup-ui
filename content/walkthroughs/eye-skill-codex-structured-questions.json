@@ -1,7 +1,8 @@
 {
   "id": "eye-skill-codex-structured-questions",
   "card": "skill-codex-structured-questions",
-  "row": "看它有沒有跳出一組選項讓你選",
+  "title": "Codex 也跳出一組選項讓你選",
+  "description": "跟上一張同一件事，這是 Codex 這邊的。",
   "steps": [
     {
       "id": "run-verify",

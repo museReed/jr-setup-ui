@@ -609,10 +609,13 @@ export async function startServer({
       return;
     }
 
-    // 哪幾格有操作步驟。開頁時問一次，決定哪幾列要畫「怎麼做」那顆按鈕——按鈕存在
-    // 卻按出一個空彈窗，比沒有按鈕更讓人困惑。
+    // 哪幾格有操作步驟，以及那一列該寫什麼。開頁時問一次。
+    //
+    // 回的不只是 id：卡片上那一列的標題與說明也住在 content/ 裡（title 一句話講
+    // 這一格在檢查什麼、description 最多兩句講目的），這樣文案審閱者改完就生效，
+    // 不用回頭動 src/。沒寫的話卡片照舊用 src/ 裡原本那份。
     if (request.method === "GET" && url.pathname === "/walkthroughs") {
-      let ids = [];
+      let items = [];
 
       try {
         const dir = path.join(contentDir(), "walkthroughs");
@@ -628,16 +631,18 @@ export async function startServer({
                 const text = typeof title === "object" && title !== null ? title.mac : title;
                 return String(text ?? "").trim() !== "";
               });
-              return written ? data.id : null;
+              return written
+                ? { id: data.id, title: data.title ?? null, description: data.description ?? null }
+                : null;
             }),
         );
-        ids = found.filter((id) => id !== null);
+        items = found.filter((item) => item !== null);
       } catch {
-        ids = [];
+        items = [];
       }
 
       response.setHeader("Cache-Control", "no-store");
-      sendJson(response, 200, { ids });
+      sendJson(response, 200, { items });
       return;
     }
 

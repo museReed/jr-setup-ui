@@ -122,10 +122,10 @@ function ensureOverlay() {
   document.body.insertAdjacentHTML("beforeend", SPRITE);
   overlay = document.createElement("div");
   overlay.className = "wt-overlay";
-  overlay.innerHTML = `<div class="wt-panel" role="dialog" aria-modal="true" aria-labelledby="wt-title">
+  // 沒有標題列：學生是從那一列點進來的，那一列的字還在他背後的卡片上。再寫一次
+  // 只是把同一句話講兩遍，還把第一步推到摺線底下（Reed 指定）。
+  overlay.innerHTML = `<div class="wt-panel" role="dialog" aria-modal="true">
 <button class="wt-close" type="button" aria-label="關閉">×</button>
-<p class="wt-eyebrow">怎麼做</p>
-<h2 id="wt-title"></h2>
 <div class="wt-content"></div>
 <div class="wt-foot"><button class="ds-btn ds-btn-sm ds-btn-primary wt-done" type="button">知道了</button></div>
 </div>`;
@@ -215,7 +215,8 @@ export async function openWalkthrough(id, origin) {
 
   const box = ensureOverlay();
   const panel = box.querySelector(".wt-panel");
-  box.querySelector("#wt-title").textContent = textFor(data.row, PLATFORM);
+  // 讀屏要講得出這是哪一格的步驟——畫面上沒有標題，就靠這個。
+  panel.setAttribute("aria-label", `${textFor(data.title, PLATFORM)}：怎麼做`);
   box.querySelector(".wt-content").innerHTML = `<ol class="wt-steps">${data.steps
     .filter((step) => visibleOn(step, PLATFORM))
     .map((step, index) => stepHtml(step, index, data.id))

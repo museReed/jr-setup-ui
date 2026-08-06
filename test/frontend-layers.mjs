@@ -541,7 +541,9 @@ try {
     files.view,
     /how\.addEventListener\("click",[\s\S]{0,200}event\.preventDefault\(\)/,
   );
-  assert.match(files.view, /walkthroughIds\.has\(item\.id\)/);
+  // 那一列的標題與說明可以住在 content/ 裡，沒寫才退回 src/ 帶過來的。
+  assert.match(files.view, /const rowText = copy\?\.title \|\| item\.text/);
+  assert.match(files.view, /const rowDetail = copy\?\.description \|\| item\.detail/);
   // 滑過去播完才開，中途移開就不開：不擋的話滑去拿別顆按鈕都會彈出一個蓋住半個
   // 畫面的東西。
   assert.match(files.view, /if \(hovering\) onWalkthrough\(item\.id, origin\(\)\)/);

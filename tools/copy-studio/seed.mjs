@@ -22,11 +22,17 @@ function slug(text) {
     .replace(/^-|-$/g, "");
 }
 
+// title / description 是卡片上那一列的文案，規矩見 docs/copy-review-criteria.md：
+// title 一句話講清楚這一格在檢查什麼、不加標點；description 最多兩句、一個逗號。
+// 這裡留空給人寫——從 src/ 抄一份過來的話，兩邊會各自漂移成兩份真相。
 function skeleton(id, card, row, hint) {
   return {
     id,
     card,
-    row,
+    title: "",
+    description: "",
+    // 那一列在 src/ 裡原本寫什麼。只是給編的人參考，程式不讀。
+    source: row,
     // 主節點一律是「你要做」。第一步先放一個空的，讓編輯器有東西可以接著填。
     steps: [
       {

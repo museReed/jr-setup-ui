@@ -85,6 +85,11 @@ code,.mono{font-family:var(--mono);font-size:.86em}
 .save-state{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ok-ink)}
 .save-state.is-dirty{color:var(--orange-5)}
 
+/* 卡片上那一列。跟步驟分開一塊：它是學生在卡片上看到的，不是彈窗裡的。 */
+.row-copy{background:var(--paper);border:1px solid var(--line-soft);border-radius:var(--r);
+  padding:14px 16px;margin-bottom:16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--sh)}
+.row-copy h3{margin:0;font-size:13px;color:var(--muted);font-weight:600}
+
 .steps{list-style:none;margin:0 0 16px;padding:0;display:flex;flex-direction:column;gap:14px}
 .step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;
   background:var(--paper);border:1px solid var(--line-soft);border-radius:var(--r);padding:16px;box-shadow:var(--sh)}

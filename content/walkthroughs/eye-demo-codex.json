@@ -1,7 +1,8 @@
 {
   "id": "eye-demo-codex",
   "card": "demo-codex",
-  "row": "看它一邊寫程式、旁邊的網頁一邊長出來",
+  "title": "Codex 也一邊寫程式旁邊的網頁一邊長出來",
+  "description": "跟上一張同一件事，這是 Codex 這邊的。",
   "steps": [
     {
       "id": "run-demo",

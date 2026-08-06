@@ -1,7 +1,8 @@
 {
   "id": "fullscreen-yes",
   "card": "claude",
-  "row": "跳出方框時按 1. Yes, try it",
+  "title": "第一次跑起來時把畫面換成整頁顯示",
+  "description": "整頁顯示的對話比較好讀，後面每一步都在這個視窗裡做。",
   "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）",
   "steps": [
     {

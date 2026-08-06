@@ -580,12 +580,12 @@ function pasteProofElement({ value, matched, onInput }) {
 //
 // 滑鼠移上去先把問號播一次，播完才開彈窗；中途移開就不開——不擋的話，滑過去拿別
 // 顆按鈕都會彈出一個蓋住半個畫面的東西。直接點就不等動畫。
-function walkthroughButton(item, onWalkthrough) {
+function walkthroughButton(item, rowText, onWalkthrough) {
   const how = document.createElement("button");
   how.type = "button";
   how.className = "checklist-how";
   how.title = "怎麼做";
-  how.setAttribute("aria-label", `怎麼做：${item.text}`);
+  how.setAttribute("aria-label", `怎麼做：${rowText}`);
   how.dataset.walkthrough = item.id;
 
   const { box, ready } = lottieControl({
@@ -646,8 +646,8 @@ function checklistElement(
     onOpen = () => {},
     // 掛在某一格底下的按鈕（目前是登入那顆），key 是那一格的 check id。
     inlineActions = new Map(),
-    // 哪幾格有操作步驟可以看，以及按下去要做什麼。
-    walkthroughIds = new Set(),
+    // 哪幾格有操作步驟可以看（id → {title, description}），以及按下去要做什麼。
+    walkthroughs = new Map(),
     onWalkthrough = () => {},
   } = {},
 ) {
@@ -671,6 +671,15 @@ function checklistElement(
 
   const appendItems = (list) => {
     for (const item of list) {
+      // 這一列的標題與說明可以住在 content/ 裡（文案審閱者改得動的地方）。沒寫的
+      // 話照舊用 src/ 帶過來的那一份。
+      //
+      // 寫法的規矩：title 一句話講清楚這一格在檢查什麼、不加標點；description 最多
+      // 兩句（一個逗號）講它的目的。
+      const copy = walkthroughs.get(item.id);
+      const rowText = copy?.title || item.text;
+      const rowDetail = copy?.description || item.detail;
+
       const label = document.createElement("label");
       label.className = "ds-check";
       label.classList.add(item.automatic ? "is-system" : "is-manual");
@@ -683,16 +692,16 @@ function checklistElement(
       text.className = "ds-check-text";
       const visible = document.createElement("span");
       visible.className = "ds-check-label";
-      visible.setAttribute("data-text", item.text);
-      visible.textContent = item.text;
+      visible.setAttribute("data-text", rowText);
+      visible.textContent = rowText;
       text.append(visible);
 
-      if (item.failedReason || item.detail) {
+      if (item.failedReason || rowDetail) {
         const small = document.createElement("small");
         // 自己的 class：設計系統對 small 的配色寫死了青色（見 styles.css 那條
         // .check-detail），橘色那半要靠一個掛得上鉤子的名字才改得動。
         small.className = "check-detail";
-        small.textContent = item.failedReason || item.detail;
+        small.textContent = item.failedReason || rowDetail;
         text.append(small);
       }
 
@@ -722,8 +731,8 @@ function checklistElement(
       //
       // 它住在 <label> 裡面，所以一定要擋掉預設行為——不擋的話按「怎麼做」會順手
       // 把那一格的勾打上，等於在他還沒做之前就替他宣告做完了。
-      if (walkthroughIds.has(item.id)) {
-        label.append(walkthroughButton(item, onWalkthrough));
+      if (copy !== undefined) {
+        label.append(walkthroughButton(item, rowText, onWalkthrough));
       }
 
       checklist.append(label);
@@ -931,7 +940,7 @@ function renderCard(model) {
             : null,
           onOpen: model.onOpenStep ?? (() => {}),
           inlineActions,
-          walkthroughIds: model.walkthroughIds ?? new Set(),
+          walkthroughs: model.walkthroughs ?? new Map(),
           onWalkthrough: model.onWalkthrough ?? (() => {}),
         }),
       );
