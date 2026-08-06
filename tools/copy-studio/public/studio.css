@@ -201,63 +201,6 @@ code,.mono{font-family:var(--mono);font-size:.86em}
 .pv-fig.is-missing img{display:none}
 .pv-fig.is-missing figcaption{color:var(--red-6);border:1px dashed var(--red-3);border-radius:var(--r-sm);padding:8px}
 
-/* ── 畫出來的畫面（mocks.js 產的） ── */
-.m-term{border-radius:var(--r-sm);overflow:hidden;box-shadow:var(--sh);font-family:var(--mono);font-size:12px}
-.m-term-bar{background:var(--term-bg2);padding:8px 11px;display:flex;gap:6px}
-.m-term-bar i{width:9px;height:9px;border-radius:50%;background:var(--term-dim)}
-.m-term-bar i:nth-child(1){background:#E85B4A}
-.m-term-bar i:nth-child(2){background:#D4A843}
-.m-term-bar i:nth-child(3){background:#30CECE}
-.m-term-body{background:var(--term-bg);color:var(--term-ink);padding:12px;line-height:1.75}
-.m-line{white-space:pre-wrap;word-break:break-word}
-.m-prompt{color:var(--term-prompt)}
-.m-ok{color:var(--term-ok)}
-.m-err{color:var(--term-err)}
-.m-dim{color:var(--term-dim)}
-.m-sel{background:var(--accent);color:#fff;border-radius:2px;padding:0 3px}
-
-.m-titlebar{border-radius:var(--r-sm);overflow:hidden;box-shadow:var(--sh);border:1px solid var(--line)}
-.m-tb-chrome{position:relative;display:flex;align-items:center;gap:6px;padding:9px 12px;
-  background:var(--inset);border-bottom:1px solid var(--line-soft)}
-.m-tb-chrome i{width:9px;height:9px;border-radius:50%;background:var(--line)}
-.m-tb-title{position:absolute;left:0;right:0;text-align:center;font-size:12px;color:var(--ink);
-  pointer-events:none}
-.m-tb-body{background:var(--term-bg);color:var(--term-dim);padding:16px 12px;
-  font-family:var(--mono);font-size:11.5px;min-height:52px}
-
-.m-dock{display:flex;gap:7px;align-items:flex-end;justify-content:center;padding:12px 14px 9px;
-  background:linear-gradient(180deg,var(--n3),var(--n4));border-radius:var(--r-sm);border:1px solid var(--line)}
-.m-app{position:relative;width:34px;height:34px;border-radius:8px;background:var(--n2);border:1px solid var(--line)}
-.m-app.is-live{background:var(--term-bg);border-color:var(--term-bg2);display:grid;place-items:center}
-.m-app.is-live b{color:var(--term-ok);font-family:var(--mono);font-size:12px}
-.m-app.is-live i{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
-  width:5px;height:5px;border-radius:50%;background:var(--accent)}
-
-.m-taskbar{display:flex;gap:6px;align-items:center;padding:8px 10px;background:var(--n6);
-  border-radius:var(--r-sm)}
-.m-tb-item{height:26px;min-width:46px;border-radius:4px;background:#4A4640;
-  display:grid;place-items:center;color:var(--n2);font-size:11px;padding:0 8px}
-.m-tb-item.is-flash{background:var(--orange-4);color:#fff;animation:tb 1.1s steps(1) infinite}
-@keyframes tb{50%{background:#4A4640;color:var(--n2)}}
-
-.m-card{background:var(--paper);border:1px solid var(--line-soft);border-radius:var(--r);
-  padding:12px;box-shadow:var(--sh)}
-.m-row{display:flex;align-items:center;gap:9px}
-.m-box{width:17px;height:17px;border:2px solid var(--line);border-radius:4px;flex:0 0 auto}
-.m-row-text{flex:1;font-size:13px;color:var(--ink)}
-.m-btn{border:1px solid var(--line);border-radius:var(--pill);padding:4px 12px;font-size:12px;color:var(--muted)}
-.m-btn.is-target{border-color:var(--accent);color:var(--orange-5);background:var(--orange-1);
-  box-shadow:0 0 0 3px rgba(244,115,28,.18)}
-
-.m-browser{border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--line);box-shadow:var(--sh)}
-.m-browser-bar{display:flex;align-items:center;gap:6px;padding:8px 11px;background:var(--inset)}
-.m-browser-bar i{width:9px;height:9px;border-radius:50%;background:var(--line)}
-.m-url{margin-left:6px;flex:1;font-family:var(--mono);font-size:11px;color:var(--faint);
-  background:var(--paper);padding:3px 9px;border-radius:var(--pill)}
-.m-browser-body{background:var(--paper);padding:18px 14px;font-size:13px;color:var(--muted);min-height:64px}
-.m-unknown{border:1px dashed var(--red-3);border-radius:var(--r-sm);padding:12px;
-  color:var(--red-6);font-size:12.5px}
-
 /* ── 提示 ── */
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:20;
   background:var(--ink);color:var(--n1);border-radius:var(--pill);padding:9px 18px;font-size:13px;

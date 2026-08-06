@@ -924,6 +924,351 @@ body {
   flex: 0 0 auto;
 }
 
+/* 「怎麼做」跟登入那顆並排在同一列的右邊。同一格兩顆都有時，登入那顆先（它是這一
+   格真正要做的事），怎麼做在它右邊。 */
+.checklist-how {
+  margin-left: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.checklist-inline-action ~ .checklist-how {
+  margin-left: var(--space-2);
+}
+
+/* ── 操作步驟彈窗 ────────────────────────────────────────────────────
+   主節點是「你要做」，只看主節點就走得完；附註收起來，點了才展開。 */
+.wt-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+body.wt-locked {
+  overflow: hidden;
+}
+
+.wt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: rgba(20, 18, 15, 0.62);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.wt-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.wt-panel {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  max-height: min(86vh, 780px);
+  overflow-y: auto;
+  padding: var(--space-6);
+  border-radius: var(--r-xl);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.wt-close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-muted);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wt-close:hover {
+  background: var(--color-bg-inset);
+  color: var(--color-text-strong);
+}
+
+.wt-eyebrow {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.12em;
+  color: var(--color-accent);
+}
+
+.wt-panel h2 {
+  margin: 0 0 var(--space-5);
+  padding: 0 var(--space-6) var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  font-size: var(--fs-2xl);
+  line-height: var(--lh-snug);
+  color: var(--color-text-strong);
+}
+
+.wt-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wt-step {
+  position: relative;
+  margin-left: 11px;
+  padding: 0 0 var(--space-4) var(--space-6);
+  border-left: 2px solid var(--color-border);
+}
+
+.wt-step:last-child {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+
+/* box-sizing 要自己指定：設計系統沒設，預設的 content-box 會把 border 加在宣告寬度
+   之外，圓點整體往右偏一個邊框寬，線與點就對不齊了。 */
+.wt-num {
+  position: absolute;
+  left: -13px;
+  top: 0;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--color-bg-elevated);
+  border-radius: var(--r-pill);
+  background: var(--color-accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wt-head {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wt-head[disabled] {
+  cursor: default;
+}
+
+.wt-head b {
+  display: block;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-snug);
+  color: var(--color-text-strong);
+}
+
+.wt-detail {
+  display: block;
+  margin-top: 3px;
+  max-width: 50ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--color-text-muted);
+}
+
+/* 收起時那一行。有地雷就講地雷而且是紅的——「別做」被靜靜摺進去而沒人看到的話，
+   這個彈窗就是在幫倒忙。 */
+.wt-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-2);
+  padding: 3px 11px 3px 8px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}
+
+.wt-head:hover .wt-more {
+  border-color: var(--color-accent-soft);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-hover);
+}
+
+.wt-more.is-danger {
+  border-color: var(--red-2);
+  background: var(--color-danger-bg);
+  color: var(--red-6);
+}
+
+.wt-chev {
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.2s ease;
+}
+
+.wt-step.is-open .wt-chev {
+  transform: rotate(90deg);
+}
+
+/* 0fr → 1fr：高度不用寫死，內容多長都收得起來。 */
+.wt-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s ease;
+}
+
+.wt-step.is-open .wt-body {
+  grid-template-rows: 1fr;
+  padding-top: var(--space-3);
+}
+
+.wt-body > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wt-kids {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.wt-kid {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--color-success);
+}
+
+.wt-kid.wt-warn {
+  border-left-color: var(--color-danger);
+}
+
+.wt-kid.wt-miss {
+  border-left-color: var(--color-border);
+}
+
+.wt-kid-mark {
+  color: var(--color-success-text);
+  padding-top: 2px;
+}
+
+.wt-warn .wt-kid-mark {
+  color: var(--red-6);
+}
+
+.wt-miss .wt-kid-mark {
+  color: var(--color-text-faint);
+}
+
+.wt-ico {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wt-kid-kind {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  color: var(--color-success-text);
+}
+
+.wt-warn .wt-kid-kind {
+  color: var(--red-6);
+}
+
+.wt-miss .wt-kid-kind {
+  color: var(--color-text-faint);
+}
+
+.wt-kid b {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--fs-md);
+  line-height: var(--lh-snug);
+  color: var(--color-text-strong);
+}
+
+.wt-warn .wt-kid b {
+  color: var(--red-6);
+}
+
+.wt-kid p {
+  margin: 3px 0 0;
+  max-width: 48ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--color-text-muted);
+}
+
+.wt-fig {
+  margin: var(--space-3) 0 0;
+  max-width: 360px;
+}
+
+.wt-fig img {
+  width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-border-soft);
+}
+
+.wt-fig figcaption {
+  margin-top: 5px;
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}
+
+/* 圖還沒補進來時不要留一個破圖——講出「這裡還缺一張」比較誠實。 */
+.wt-fig.is-missing img {
+  display: none;
+}
+
+.wt-fig.is-missing figcaption {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--r-md);
+}
+
+.wt-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-overlay,
+  .wt-body,
+  .wt-chev {
+    transition: none;
+  }
+}
+
 /* 貼上欄位畫在清單裡面時，要跟項目對齊，不要貼著暗底的邊緣。 */
 .ds-checklist .paste-proof {
   padding: 0 var(--space-4) var(--space-4);

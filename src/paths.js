@@ -40,3 +40,9 @@ export function moduleFile(relativePath, baseUrl) {
 export function materialsDir() {
   return moduleFile("../materials", import.meta.url);
 }
+
+// 操作步驟與截圖。跟 materials 一樣內建在 repo 裡、跟著套件一起送——它們是學生
+// 卡住時唯一的說明，不能靠上網抓。編輯用 tools/copy-studio。
+export function contentDir() {
+  return moduleFile("../content", import.meta.url);
+}

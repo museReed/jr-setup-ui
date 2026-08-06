@@ -12,7 +12,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 import { mergedOrder, walkthroughOrder } from "./order.mjs";
-import { isWritten, visibleOn } from "./public/platform.js";
+import { isWritten, visibleOn } from "../../public/platform.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const PUBLIC = path.join(import.meta.dirname, "public");
@@ -243,6 +243,16 @@ async function handle(req, res, url) {
       "cache-control": "no-store",
     });
     return createReadStream(file).pipe(res);
+  }
+
+  // mocks.js 與 platform.js 住在嚮導的 public/：彈窗與編輯器要畫出一模一樣的畫面，
+  // 複製一份到這裡的話兩邊遲早會分岔。
+  if (["/mocks.js", "/platform.js", "/mocks.css"].includes(pathname)) {
+    res.writeHead(200, {
+      "content-type": MIME[path.extname(pathname)],
+      "cache-control": "no-store",
+    });
+    return createReadStream(path.join(ROOT, "public", pathname.slice(1))).pipe(res);
   }
 
   // 靜態：只有 public/ 底下那幾個檔，白名單以外一律 404。

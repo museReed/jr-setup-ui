@@ -583,6 +583,9 @@ function checklistElement(
     onOpen = () => {},
     // 掛在某一格底下的按鈕（目前是登入那顆），key 是那一格的 check id。
     inlineActions = new Map(),
+    // 哪幾格有操作步驟可以看，以及按下去要做什麼。
+    walkthroughIds = new Set(),
+    onWalkthrough = () => {},
   } = {},
 ) {
   const items = [...groups.system, ...groups.manual];
@@ -649,6 +652,25 @@ function checklistElement(
       if (inline !== undefined) {
         inline.classList.add("checklist-inline-action");
         label.append(inline);
+      }
+
+      // 「怎麼做」跟登入那顆一樣待在它負責的那一格裡：操作步驟講的就是這一格，
+      // 放到清單外面學生又要自己把兩者連起來。
+      //
+      // 它住在 <label> 裡面，所以一定要擋掉預設行為——不擋的話按「怎麼做」會順手
+      // 把那一格的勾打上，等於在他還沒做之前就替他宣告做完了。
+      if (walkthroughIds.has(item.id)) {
+        const how = document.createElement("button");
+        how.type = "button";
+        how.className = "ds-btn ds-btn-sm ds-btn-ghost checklist-how";
+        how.textContent = "怎麼做";
+        how.dataset.walkthrough = item.id;
+        how.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onWalkthrough(item.id);
+        });
+        label.append(how);
       }
 
       checklist.append(label);
@@ -856,6 +878,8 @@ function renderCard(model) {
             : null,
           onOpen: model.onOpenStep ?? (() => {}),
           inlineActions,
+          walkthroughIds: model.walkthroughIds ?? new Set(),
+          onWalkthrough: model.onWalkthrough ?? (() => {}),
         }),
       );
     }

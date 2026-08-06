@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import http from "node:http";
+import path from "node:path";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import {
@@ -17,6 +18,7 @@ import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
 import { isProgressNoise } from "./output-noise.js";
 import {
+  contentDir,
   ensureWorkDir,
   moduleFile,
   VERIFY_SHOT_AGENTS,
@@ -58,6 +60,12 @@ const ASSETS = [
   ["/api.js", "text/javascript; charset=utf-8"],
   ["/tour.js", "text/javascript; charset=utf-8"],
   ["/tour-model.js", "text/javascript; charset=utf-8"],
+  // 操作步驟的彈窗。mocks.js 跟 copy-studio 共用同一份——編輯器裡看到的畫面就是
+  // 學生看到的畫面，複製一份的話兩邊遲早會分岔。
+  ["/walkthrough.js", "text/javascript; charset=utf-8"],
+  ["/mocks.js", "text/javascript; charset=utf-8"],
+  ["/mocks.css", "text/css; charset=utf-8"],
+  ["/platform.js", "text/javascript; charset=utf-8"],
   ["/vendor/driver.mjs", "text/javascript; charset=utf-8"],
   ["/vendor/driver.css", "text/css; charset=utf-8"],
   // 動畫：播放器與三支 lottie。走 vendor 不走 CDN，理由跟 driver.js 一樣——
@@ -595,6 +603,91 @@ export async function startServer({
         response.end(png);
       } catch {
         sendText(response, 404, "還沒有截圖");
+      }
+      return;
+    }
+
+    // 哪幾格有操作步驟。開頁時問一次，決定哪幾列要畫「怎麼做」那顆按鈕——按鈕存在
+    // 卻按出一個空彈窗，比沒有按鈕更讓人困惑。
+    if (request.method === "GET" && url.pathname === "/walkthroughs") {
+      let ids = [];
+
+      try {
+        const dir = path.join(contentDir(), "walkthroughs");
+        const files = await readdir(dir);
+        const found = await Promise.all(
+          files
+            .filter((name) => name.endsWith(".json"))
+            .map(async (name) => {
+              const data = JSON.parse(await readFile(path.join(dir, name), "utf8"));
+              // 還沒編過的（只有骨架、標題空著）不算——那顆按鈕會按出一片空白。
+              const written = (data.steps ?? []).some((step) => {
+                const title = step.title;
+                const text = typeof title === "object" && title !== null ? title.mac : title;
+                return String(text ?? "").trim() !== "";
+              });
+              return written ? data.id : null;
+            }),
+        );
+        ids = found.filter((id) => id !== null);
+      } catch {
+        ids = [];
+      }
+
+      response.setHeader("Cache-Control", "no-store");
+      sendJson(response, 200, { ids });
+      return;
+    }
+
+    // 操作步驟：學生按「怎麼做」時才抓，不是開頁就全部載進來——十四份裡他一次只
+    // 看得到一份。
+    //
+    // id 只放行 kebab-case：它會被接成檔案路徑，收任何斜線或點就等於開一個讀任意
+    // 檔案的洞。跟上面 verify-shot 的 agent 白名單同一個理由。
+    if (request.method === "GET" && url.pathname.startsWith("/walkthrough/")) {
+      const id = url.pathname.slice("/walkthrough/".length);
+
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+        sendText(response, 400, "id 不合法");
+        return;
+      }
+
+      try {
+        const text = await readFile(
+          path.join(contentDir(), "walkthroughs", `${id}.json`),
+          "utf8",
+        );
+        response.setHeader("Cache-Control", "no-store");
+        sendJson(response, 200, JSON.parse(text));
+      } catch {
+        sendText(response, 404, "這一格還沒有操作步驟");
+      }
+      return;
+    }
+
+    // 步驟裡真的要拍的那幾張圖。能畫的都畫掉了，所以這條路徑多半用不到——但用得到
+    // 的時候，沒有它學生就只看得到一個破圖。
+    if (request.method === "GET" && url.pathname.startsWith("/walkthrough-shot/")) {
+      const rest = url.pathname.slice("/walkthrough-shot/".length);
+
+      if (!/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9.-]*\.(png|jpg|webp)$/.test(rest)) {
+        sendText(response, 400, "路徑不合法");
+        return;
+      }
+
+      try {
+        const bytes = await readFile(path.join(contentDir(), "shots", rest));
+        response.writeHead(200, {
+          "Content-Type": rest.endsWith(".png")
+            ? "image/png"
+            : rest.endsWith(".webp")
+              ? "image/webp"
+              : "image/jpeg",
+          "Cache-Control": "no-store",
+        });
+        response.end(bytes);
+      } catch {
+        sendText(response, 404, "還沒有這張圖");
       }
       return;
     }

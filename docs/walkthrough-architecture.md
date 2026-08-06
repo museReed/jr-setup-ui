@@ -91,6 +91,25 @@ content/
 - `kids` 是那個動作的附註：`see` 會看到 / `warn` 別做 / `miss` 沒發生的話
 - `visual` 是選配。`{"type":"shot","want":"…","platforms":["mac"]}` 代表這一格要拍照，編輯器會顯示佔位框與算好的檔名
 
+## 嚮導那端怎麼接
+
+清單上每一格「要學生自己動手」的列，右邊多一顆**「怎麼做」**——按下去跳出彈窗，一步一步教。
+
+| 檔案 | 做什麼 |
+|---|---|
+| `public/walkthrough.js` | 彈窗本身。主節點收合、附註點了才展開 |
+| `public/mocks.js` / `public/mocks.css` | 畫出來的畫面。**copy-studio 載的是同一份**——編輯器裡看到的就是學生看到的 |
+| `public/platform.js` | 分平台的取值與過濾 |
+
+三條伺服器路徑：`/walkthroughs`（開頁問一次，哪幾格有得看）、`/walkthrough/<id>`（按下去才抓）、`/walkthrough-shot/<id>/<檔名>`。
+
+幾個刻意的決定：
+
+- **沒編過的那幾格不畫按鈕**。按出一個空彈窗比沒有按鈕更讓人困惑，所以 `/walkthroughs` 只回「第一步標題有字」的那些。
+- **平台看 `navigator.userAgent`**。「去 Dock 找」與「看工作列在閃」是兩件不同的事，講錯等於沒講。
+- **按鈕住在 `<label>` 裡面，所以一定要 `preventDefault`**。不擋的話按「怎麼做」會順手把那一格的勾打上——等於在學生還沒做之前就替他宣告做完了。
+- **`mocks.css` 不吃任何一邊的 token**，自己帶色值。靠 design-system 的變數的話，在 copy-studio 那邊會變成沒有樣式的一團字（接進嚮導時實際踩到：Dock 畫成了純文字的 `>_`）。
+
 ## 誰來編
 
 `tools/copy-studio`——跑在本機的編輯器，直接寫進 `content/`。
