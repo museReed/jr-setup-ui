@@ -17,15 +17,29 @@
       },
       "kids": [
         {
-          "id": "new-terminal",
+          "id": "new-window-mac",
           "kind": "see",
-          "title": "又一個新的終端視窗",
-          "detail": "它常常不會自己跳到最前面，會被你現在這個視窗擋住。去 Dock 找那個圖示——底下有一個小點就代表它開著。",
+          "only": "mac",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，會被你現在這個視窗擋住——這不是壞掉。去下面的 Dock 找那個終端機圖示點一下，圖示底下有一個小點就代表它開著。還是找不到就按 F3，畫面會攤開所有開著的視窗。",
           "visual": {
             "type": "mock",
             "mock": "dock",
             "caption": "Dock 上的終端機圖示，底下有小點",
-            "platform": "mac"
+            "app": ">_"
+          }
+        },
+        {
+          "id": "new-window-win",
+          "kind": "see",
+          "only": "win",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，只會在下面的工作列上閃——這不是壞掉。看到工作列有一格在閃，點它一下就會跳出來。",
+          "visual": {
+            "type": "mock",
+            "mock": "taskbar",
+            "caption": "工作列上那一格在閃",
+            "app": "終端機"
           }
         },
         {
@@ -83,8 +97,14 @@
         {
           "id": "no-copy-shortcut",
           "kind": "warn",
-          "title": "不要按 Cmd+C",
-          "detail": "在這個模式下它不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。（Windows 上是 Ctrl+C，同樣的意思。）",
+          "title": {
+            "mac": "不要按 Cmd+C",
+            "win": "不要按 Ctrl+C"
+          },
+          "detail": {
+            "mac": "在這個模式下 Cmd+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。",
+            "win": "在這個模式下 Ctrl+C 不是複製，是中斷執行——按下去會把 Claude Code 關掉，你得重來一次。圈選放開滑鼠就已經複製好了。"
+          },
           "visual": null
         }
       ]

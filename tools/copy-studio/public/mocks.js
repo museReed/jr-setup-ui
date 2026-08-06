@@ -8,6 +8,7 @@
 
 export const MOCK_KINDS = [
   { id: "term", label: "終端視窗", hint: "印出來的幾行字，可以反白其中一行" },
+  { id: "titlebar", label: "分頁標題", hint: "「標題有沒有變」那幾格全靠它" },
   { id: "dock", label: "mac 的 Dock", hint: "某個 app 底下有小圓點＝它開著" },
   { id: "taskbar", label: "Windows 工作列", hint: "某個項目在閃＝它開著但沒跳到前面" },
   { id: "wizard", label: "嚮導的卡片", hint: "圈出學生要按的那顆按鈕" },
@@ -40,6 +41,17 @@ function term(visual) {
   return `<div class="m-term">
 <div class="m-term-bar"><i></i><i></i><i></i></div>
 <div class="m-term-body">${lines || '<div class="m-line m-dim">&nbsp;</div>'}</div>
+</div>`;
+}
+
+// 十四格裡有六格在講「分頁標題有沒有變」——那是整份嚮導最常要學生指認的東西，
+// 而它在畫面最上面一條、最容易被當成裝飾略過。所以給它自己的畫面類型。
+function titlebar(visual) {
+  return `<div class="m-titlebar">
+<div class="m-tb-chrome"><i></i><i></i><i></i>
+<span class="m-tb-title">${esc(visual.title ?? "（標題）")}</span>
+</div>
+<div class="m-tb-body">${esc(visual.body ?? "")}</div>
 </div>`;
 }
 
@@ -79,7 +91,7 @@ function browser(visual) {
 </div>`;
 }
 
-const RENDERERS = { term, dock, taskbar, wizard, browser };
+const RENDERERS = { term, titlebar, dock, taskbar, wizard, browser };
 
 /** 回一段 HTML；認不得的 mock 回一個講得出問題的框，不要靜靜畫成空白。 */
 export function renderMock(visual) {
@@ -101,6 +113,10 @@ export function blankMock(kind) {
       caption: "",
       lines: [{ tone: "prompt", text: "› " }],
     };
+  }
+
+  if (kind === "titlebar") {
+    return { type: "mock", mock: "titlebar", caption: "", title: "", body: "" };
   }
 
   if (kind === "wizard") {

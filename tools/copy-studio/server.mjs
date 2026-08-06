@@ -11,6 +11,9 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
+import { mergedOrder, walkthroughOrder } from "./order.mjs";
+import { isWritten, visibleOn } from "./public/platform.js";
+
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const PUBLIC = path.join(import.meta.dirname, "public");
 const WALKTHROUGHS = path.join(ROOT, "content/walkthroughs");
@@ -70,37 +73,52 @@ export function shotName(stepIndex, kidIndex, kind, stepId, platform, ext = ".pn
   return `${order}${sub}-${kind}-${stepId}${plat}${ext}`;
 }
 
-async function listWalkthroughs() {
+// platform 為 null 代表兩個平台一起看；給了就只算那個平台看得到的節點。
+async function listWalkthroughs(platform) {
   if (!existsSync(WALKTHROUGHS)) return [];
 
   const files = (await readdir(WALKTHROUGHS)).filter((name) => name.endsWith(".json"));
+  const ranks = mergedOrder();
+  const scoped =
+    platform === null ? null : new Set(walkthroughOrder(platform).map((item) => item.id));
+  const meta = new Map(
+    [...walkthroughOrder("darwin"), ...walkthroughOrder("win32")].map((item) => [item.id, item]),
+  );
   const out = [];
 
-  for (const file of files.sort()) {
+  for (const file of files) {
     const data = JSON.parse(await readFile(path.join(WALKTHROUGHS, file), "utf8"));
+
+    // 這個平台上根本不會遇到的那幾份不列出來——列了只是讓人以為漏編。
+    if (scoped !== null && !scoped.has(data.id)) continue;
+
     let steps = 0;
     let written = 0;
     let wantShots = 0;
     let haveShots = 0;
 
     for (const [stepIndex, step] of (data.steps ?? []).entries()) {
+      if (!visibleOn(step, platform)) continue;
+
       const all = [[null, step], ...(step.kids ?? []).map((kid, i) => [i, kid])];
 
       for (const [kidIndex, node] of all) {
+        if (!visibleOn(node, platform)) continue;
+
         steps += 1;
 
-        if (String(node.title ?? "").trim() !== "") written += 1;
+        if (isWritten(node.title)) written += 1;
 
         if (node.visual?.type !== "shot") continue;
 
-        for (const platform of node.visual.platforms ?? [null]) {
+        for (const shotPlatform of node.visual.platforms ?? [null]) {
           wantShots += 1;
           const name = shotName(
             stepIndex,
             kidIndex,
             kidIndex === null ? "do" : node.kind,
             node.id,
-            platform,
+            shotPlatform,
           );
 
           if (existsSync(path.join(SHOTS, data.id, name))) haveShots += 1;
@@ -108,17 +126,30 @@ async function listWalkthroughs() {
       }
     }
 
-    out.push({ id: data.id, card: data.card, row: data.row, steps, written, wantShots, haveShots });
+    out.push({
+      id: data.id,
+      card: data.card,
+      row: data.row,
+      section: meta.get(data.id)?.section ?? "其他",
+      // 排不到名次的（卡片被拿掉了但檔案還在）沉到最後，不要靜靜消失。
+      rank: ranks.get(data.id) ?? Number.MAX_SAFE_INTEGER,
+      steps,
+      written,
+      wantShots,
+      haveShots,
+    });
   }
 
-  return out;
+  return out.sort((left, right) => left.rank - right.rank);
 }
 
 async function handle(req, res, url) {
   const { pathname } = url;
 
   if (pathname === "/api/walkthroughs") {
-    return json(res, 200, { items: await listWalkthroughs() });
+    const asked = url.searchParams.get("platform");
+    const platform = asked === "mac" || asked === "win" ? asked : null;
+    return json(res, 200, { platform, items: await listWalkthroughs(platform) });
   }
 
   const one = pathname.match(/^\/api\/walkthrough\/([a-z0-9-]+)$/);

@@ -1,6 +1,15 @@
 // copy-studio 的前端。狀態只有兩件事：現在編哪一份、那一份的內容。
 // 存檔靠 debounce，不用按鈕——編輯器要求人記得存檔，人就會忘記存檔。
 import { MOCK_KINDS, TERM_TONES, blankMock, renderMock } from "/mocks.js";
+import {
+  PLATFORM_KEYS,
+  PLATFORM_LABEL,
+  isSplit,
+  textFor,
+  toPlain,
+  toSplit,
+  visibleOn,
+} from "/platform.js";
 
 const KINDS = {
   do: { icon: "i-do", label: "你要做" },
@@ -15,7 +24,16 @@ const PLATFORMS = [
   { id: "win", label: "只有 Windows" },
 ];
 
-const state = { list: [], id: null, data: null, dirty: false };
+const SECTIONS = [
+  { id: "env", label: "讓 AI 能跑起來" },
+  { id: "rules", label: "讓它照你的規矩回話" },
+  { id: "skills", label: "給它技能包" },
+  { id: "demo", label: "跑一次給你看" },
+];
+
+// platform 為 null＝兩個平台一起看。它同時決定三件事：清單列哪幾份、哪些節點畫出來、
+// 分平台的欄位要編哪一邊。
+const state = { list: [], id: null, data: null, dirty: false, platform: null };
 
 const el = {
   rail: document.getElementById("rail-list"),
@@ -101,7 +119,8 @@ function paintSaveState() {
 
 // ── 左側清單 ────────────────────────────────────────────────────────
 async function refreshList() {
-  const { items } = await api("/api/walkthroughs");
+  const query = state.platform === null ? "" : `?platform=${state.platform}`;
+  const { items } = await api(`/api/walkthroughs${query}`);
   state.list = items;
   paintList();
 }
@@ -112,14 +131,29 @@ function paintList() {
   const done = state.list.filter((item) => item.written === item.steps && item.steps > 0).length;
 
   el.summary.innerHTML = `
+<div class="switch" role="group" aria-label="平台">
+<button data-platform="" class="${state.platform === null ? "is-now" : ""}">兩個平台</button>
+<button data-platform="mac" class="${state.platform === "mac" ? "is-now" : ""}">mac</button>
+<button data-platform="win" class="${state.platform === "win" ? "is-now" : ""}">Windows</button>
+</div>
 <div class="stat"><b>${done}</b><span>/ ${state.list.length} 份文案寫完</span></div>
 <div class="stat"><b>${haveShots}</b><span>/ ${totalShots} 張截圖補齊</span></div>`;
 
-  el.rail.innerHTML = state.list
-    .map((item) => {
-      const copyDone = item.steps > 0 && item.written === item.steps;
-      const shotsDone = item.wantShots === item.haveShots;
-      return `<li>
+  // 照學生實際遇到的順序排（伺服器算好的 rank），並照嚮導的四段分組——字母序排出來
+  // 的清單看不出「他先遇到哪一個」，而先後正是判斷文案夠不夠用的依據。
+  el.rail.innerHTML = SECTIONS.map((section) => {
+    const items = state.list.filter((item) => item.section === section.id);
+
+    if (items.length === 0) return "";
+
+    return `<li class="rail-sec">${esc(section.label)}</li>${items.map(railItem).join("")}`;
+  }).join("");
+}
+
+function railItem(item) {
+  const copyDone = item.steps > 0 && item.written === item.steps;
+  const shotsDone = item.wantShots === item.haveShots;
+  return `<li>
 <button class="rail-item ${item.id === state.id ? "is-now" : ""}" data-open="${esc(item.id)}">
 <span class="rail-row">${esc(item.row)}</span>
 <span class="rail-meta">
@@ -129,9 +163,17 @@ ${item.wantShots > 0 ? `<span class="tag ${shotsDone ? "is-ok" : "is-todo"}">圖
 <code>${esc(item.id)}</code>
 </button>
 </li>`;
-    })
-    .join("");
 }
+
+el.summary.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-platform]");
+  if (button === null) return;
+
+  state.platform = button.dataset.platform === "" ? null : button.dataset.platform;
+  await refreshList();
+
+  if (state.data !== null) paintEditor();
+});
 
 // ── 主編輯區 ────────────────────────────────────────────────────────
 async function open(id) {
@@ -159,22 +201,57 @@ ${data.note ? `<p class="doc-note">${esc(data.note)}</p>` : ""}
   wireEditor();
 }
 
+// 會分平台的欄位（標題與說明）都走這裡。沒分平台就一個框；分了就兩個框，各自標
+// mac / Windows。切到單一平台時只畫那一邊——編的時候不用被另一個平台的字干擾。
+function splitField(node, field, label, placeholder, rows) {
+  const value = node[field];
+  const split = isSplit(value);
+  const head = `<label>${label}
+<button class="mini ${split ? "is-on" : ""}" data-split="${field}" type="button">${split ? "合併平台" : "分平台"}</button>
+</label>`;
+
+  if (!split) {
+    return `<div class="field">${head}
+<textarea rows="${rows}" data-field="${field}" placeholder="${esc(placeholder)}">${esc(value ?? "")}</textarea>
+</div>`;
+  }
+
+  const keys = state.platform === null ? PLATFORM_KEYS : [state.platform];
+  const boxes = keys
+    .map(
+      (key) => `<div class="plat-box">
+<span class="plat-tag">${PLATFORM_LABEL[key]}</span>
+<textarea rows="${rows}" data-field="${field}" data-plat="${key}" placeholder="${esc(placeholder)}">${esc(value[key] ?? "")}</textarea>
+</div>`,
+    )
+    .join("");
+  return `<div class="field">${head}<div class="plats">${boxes}</div></div>`;
+}
+
+function onlyPicker(node) {
+  const now = node.only ?? "";
+  return `<label class="only-pick">只在
+<select data-field="only">
+<option value=""${now === "" ? " selected" : ""}>兩個平台</option>
+${PLATFORM_KEYS.map((key) => `<option value="${key}"${now === key ? " selected" : ""}>${PLATFORM_LABEL[key]}</option>`).join("")}
+</select>
+</label>`;
+}
+
 function stepHtml(step, index) {
+  // 切到單一平台時，只屬於另一邊的整格不畫——它在那個平台上不存在。
+  if (!visibleOn(step, state.platform)) return "";
+
   const kids = (step.kids ?? [])
     .map((kid, kidIndex) => kidHtml(kid, index, kidIndex))
     .join("");
 
-  return `<li class="step" data-step="${index}">
+  return `<li class="step${step.only ? " is-scoped" : ""}" data-step="${index}">
 <div class="step-mark"><span class="step-num">${index + 1}</span>${icon("i-do", "k-do")}</div>
 <div class="step-body">
-<div class="field">
-<label>這一步要學生做什麼</label>
-<textarea rows="1" data-field="title" placeholder="例如：按卡片上的「開啟並送出測試句」">${esc(step.title)}</textarea>
-</div>
-<div class="field">
-<label>補一句說明</label>
-<textarea rows="2" data-field="detail" placeholder="為什麼要按、按了會怎樣">${esc(step.detail)}</textarea>
-</div>
+${step.only ? `<span class="scope-tag">只有 ${PLATFORM_LABEL[step.only]}</span>` : ""}
+${splitField(step, "title", "這一步要學生做什麼", "例如：按卡片上的「開啟並送出測試句」", 1)}
+${splitField(step, "detail", "補一句說明", "為什麼要按、按了會怎樣", 2)}
 <div class="field id-field">
 <label>步驟 id<em>會變成截圖檔名的一段，用英文 kebab-case</em></label>
 <input data-field="id" value="${esc(step.id)}" placeholder="click-open-and-send">
@@ -186,6 +263,7 @@ ${visualHtml(step, index, null, "do")}
 <button class="btn ghost sm" data-add-kid="warn">${icon("i-warn")} 加「別做」</button>
 <button class="btn ghost sm" data-add-kid="miss">${icon("i-miss")} 加「沒發生的話」</button>
 <span class="grow"></span>
+${onlyPicker(step)}
 <button class="btn ghost sm danger" data-del-step>刪掉這一步</button>
 </div>
 </div>
@@ -193,23 +271,21 @@ ${visualHtml(step, index, null, "do")}
 }
 
 function kidHtml(kid, stepIndex, kidIndex) {
+  if (!visibleOn(kid, state.platform)) return "";
+
   const meta = KINDS[kid.kind] ?? KINDS.see;
-  return `<div class="kid k-${esc(kid.kind)}" data-kid="${kidIndex}">
+  return `<div class="kid k-${esc(kid.kind)}${kid.only ? " is-scoped" : ""}" data-kid="${kidIndex}">
 <div class="kid-mark" title="${esc(meta.label)}">${icon(meta.icon)}</div>
 <div class="kid-body">
-<div class="field">
-<label>${esc(meta.label)}</label>
-<textarea rows="1" data-field="title" placeholder="一句話">${esc(kid.title)}</textarea>
-</div>
-<div class="field">
-<textarea rows="2" data-field="detail" placeholder="說明">${esc(kid.detail)}</textarea>
-</div>
+${kid.only ? `<span class="scope-tag">只有 ${PLATFORM_LABEL[kid.only]}</span>` : ""}
+${splitField(kid, "title", meta.label, "一句話", 1)}
+${splitField(kid, "detail", "說明", "說明", 2)}
 <div class="field id-field">
 <label>id</label>
 <input data-field="id" value="${esc(kid.id)}" placeholder="new-terminal">
 </div>
 ${visualHtml(kid, stepIndex, kidIndex, kid.kind)}
-<div class="kid-tools"><button class="btn ghost sm danger" data-del-kid>刪掉</button></div>
+<div class="kid-tools">${onlyPicker(kid)}<span class="grow"></span><button class="btn ghost sm danger" data-del-kid>刪掉</button></div>
 </div>
 </div>`;
 }
@@ -263,7 +339,7 @@ function visualHtml(node, stepIndex, kidIndex, kind) {
   return `<div class="vis">${tabs}
 <div class="field">
 <label>這張圖要拍什麼<em>拍的人照這句話拍</em></label>
-<textarea rows="2" data-field="want" placeholder="例如：系統設定 → 隱私權 → 完全取用磁碟，Ghostty 那一列">${esc(visual.want)}</textarea>
+<textarea rows="2" data-vfield="want" placeholder="例如：系統設定 → 隱私權 → 完全取用磁碟，Ghostty 那一列">${esc(visual.want)}</textarea>
 </div>
 <div class="field">
 <label>平台</label>
@@ -291,7 +367,7 @@ ${MOCK_KINDS.map((k) => `<option value="${k.id}"${visual.mock === k.id ? " selec
 
   const caption = `<div class="field">
 <label>圖說</label>
-<input data-field="caption" value="${esc(visual.caption)}" placeholder="Dock 上的終端機圖示，底下有小點">
+<input data-vfield="caption" value="${esc(visual.caption)}" placeholder="Dock 上的終端機圖示，底下有小點">
 </div>`;
 
   if (visual.mock === "term") {
@@ -309,20 +385,26 @@ ${MOCK_KINDS.map((k) => `<option value="${k.id}"${visual.mock === k.id ? " selec
 <button class="btn ghost sm" data-add-line>＋ 加一行</button></div>`;
   }
 
+  if (visual.mock === "titlebar") {
+    return `${picker}${caption}
+<div class="field"><label>標題會變成什麼<em>寫一個真的例子，不要寫「emoji ＋ 中文」</em></label><input data-vfield="title" value="${esc(visual.title)}" placeholder="🔧 修登入的錯誤"></div>
+<div class="field"><label>視窗裡面隨便寫點什麼<em>選填，讓它看起來像真的視窗</em></label><input data-vfield="body" value="${esc(visual.body)}"></div>`;
+  }
+
   if (visual.mock === "wizard") {
     return `${picker}${caption}
-<div class="field"><label>那一列寫什麼</label><input data-field="row" value="${esc(visual.row)}"></div>
-<div class="field"><label>要圈的按鈕</label><input data-field="button" value="${esc(visual.button)}"></div>`;
+<div class="field"><label>那一列寫什麼</label><input data-vfield="row" value="${esc(visual.row)}"></div>
+<div class="field"><label>要圈的按鈕</label><input data-vfield="button" value="${esc(visual.button)}"></div>`;
   }
 
   if (visual.mock === "browser") {
     return `${picker}${caption}
-<div class="field"><label>網址</label><input data-field="url" value="${esc(visual.url)}"></div>
-<div class="field"><label>頁面上寫什麼</label><input data-field="body" value="${esc(visual.body)}"></div>`;
+<div class="field"><label>網址</label><input data-vfield="url" value="${esc(visual.url)}"></div>
+<div class="field"><label>頁面上寫什麼</label><input data-vfield="body" value="${esc(visual.body)}"></div>`;
   }
 
   return `${picker}${caption}
-<div class="field"><label>那個 app 叫什麼</label><input data-field="app" value="${esc(visual.app)}"></div>`;
+<div class="field"><label>那個 app 叫什麼</label><input data-vfield="app" value="${esc(visual.app)}"></div>`;
 }
 
 // ── 找節點 ─────────────────────────────────────────────────────────
@@ -368,7 +450,7 @@ function autosize(box) {
 
 function onInput(event) {
   const target = event.target;
-  const field = target.dataset.field ?? target.dataset.lineField;
+  const field = target.dataset.field ?? target.dataset.vfield ?? target.dataset.lineField;
   if (field === undefined) return;
 
   if (target.tagName === "TEXTAREA") autosize(target);
@@ -383,12 +465,23 @@ function onInput(event) {
     return;
   }
 
-  if (["want", "caption", "row", "button", "url", "body", "app"].includes(field)) {
+  // 畫面的欄位用 data-vfield，跟節點自己的欄位分開：兩邊都有 title，靠白名單分辨
+  // 的話「分頁標題」那種畫面一打字就會蓋掉整個步驟的標題。
+  if (target.dataset.vfield !== undefined) {
     node.visual[field] = target.value;
     repaintMock(target);
     scheduleSave();
     return;
   }
+
+  // 分平台的欄位帶 data-plat，寫進那一邊；沒帶就是整個換掉。
+  if (target.dataset.plat !== undefined) {
+    node[field][target.dataset.plat] = target.value;
+    scheduleSave();
+    return;
+  }
+
+  if (!["id", "title", "detail"].includes(field)) return;
 
   node[field] = target.value;
   scheduleSave();
@@ -419,6 +512,20 @@ function onChange(event) {
       target.value === "both" ? ["mac", "win"] : target.value === "" ? [null] : [target.value];
     scheduleSave();
     paintEditor();
+    return;
+  }
+
+  if (target.dataset.field === "only") {
+    const node = nodeAt(target);
+
+    if (target.value === "") {
+      delete node.only;
+    } else {
+      node.only = target.value;
+    }
+
+    scheduleSave();
+    paintEditor();
   }
 }
 
@@ -433,6 +540,16 @@ function repaintMock(from) {
 function onClick(event) {
   const target = event.target.closest("button");
   if (target === null) return;
+
+  // 「分平台」：兩邊先填一樣的字，人只改要改的那一邊。合併時留 mac 那句。
+  if (target.dataset.split !== undefined) {
+    const node = nodeAt(target);
+    const field = target.dataset.split;
+    node[field] = isSplit(node[field]) ? toPlain(node[field]) : toSplit(node[field]);
+    scheduleSave();
+    paintEditor();
+    return;
+  }
 
   if (target.dataset.vis !== undefined) {
     const node = nodeAt(target);
@@ -577,23 +694,29 @@ async function removeShot(slot) {
 // ── 預覽：學生看到的樣子 ────────────────────────────────────────────
 function showPreview() {
   el.preview.hidden = false;
+  // 預覽照現在選的平台走。「兩個平台」時用 mac 那一邊，並在標題說清楚——不講的話
+  // 會以為預覽是兩邊通用的。
+  const platform = state.platform ?? "mac";
   el.previewBody.innerHTML = `
 <h3>${esc(state.data.row)}</h3>
+<p class="pv-plat">用 ${PLATFORM_LABEL[platform]} 的內容預覽${state.platform === null ? "（沒選平台時預設看 mac）" : ""}</p>
 <ol class="pv-steps">
 ${state.data.steps
+  .filter((step) => visibleOn(step, platform))
   .map(
     (step, index) => `<li class="pv-step">
 <span class="pv-num">${index + 1}</span>
 <div>
-<b>${esc(step.title) || "（還沒寫）"}</b>
-<p>${esc(step.detail)}</p>
+<b>${esc(textFor(step.title, platform)) || "（還沒寫）"}</b>
+<p>${esc(textFor(step.detail, platform))}</p>
 ${step.visual ? pvVisual(step.visual, step, index, null, "do") : ""}
 ${(step.kids ?? [])
+  .filter((kid) => visibleOn(kid, platform))
   .map((kid, kidIndex) => {
     const meta = KINDS[kid.kind] ?? KINDS.see;
     return `<div class="pv-kid k-${esc(kid.kind)}">
 ${icon(meta.icon)}
-<div><b>${esc(kid.title) || "（還沒寫）"}</b><p>${esc(kid.detail)}</p>
+<div><b>${esc(textFor(kid.title, platform)) || "（還沒寫）"}</b><p>${esc(textFor(kid.detail, platform))}</p>
 ${kid.visual ? pvVisual(kid.visual, kid, index, kidIndex, kid.kind) : ""}</div>
 </div>`;
   })
@@ -640,8 +763,8 @@ async function showTodo() {
           rows.push({
             id: data.id,
             file: shotName(stepIndex, kidIndex, kind, node.id, platform),
-            want: node.visual.want,
-            title: node.title,
+            want: textFor(node.visual.want, platform ?? "mac"),
+            title: textFor(node.title, platform ?? "mac"),
           });
         }
       }

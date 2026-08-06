@@ -36,6 +36,19 @@ code,.mono{font-family:var(--mono);font-size:.86em}
 .stat{display:flex;align-items:baseline;gap:6px;font-size:12px;color:var(--muted)}
 .stat b{font-size:20px;color:var(--ink);font-variant-numeric:tabular-nums}
 .rail-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;flex:1}
+.rail-sec{margin:12px 0 2px;padding:0 10px;font-size:11px;letter-spacing:.06em;color:var(--faint)}
+.rail-sec:first-child{margin-top:0}
+
+/* 平台切換：它同時決定清單列什麼、編輯器畫什麼、分平台的欄位編哪一邊，
+   所以擺在最上面而不是藏在某個設定裡。 */
+.switch{display:flex;border:1px solid var(--line-soft);border-radius:var(--pill);
+  overflow:hidden;background:var(--n2)}
+/* flex:1 1 0 + min-width:0：預設的 flex-basis:auto 讓按鈕不會縮到比文字窄，
+   「兩個平台」四個字就會把 Windows 那顆擠出可視範圍。 */
+.switch button{flex:1 1 0;min-width:0;border:0;background:none;font:inherit;font-size:11.5px;
+  padding:5px 2px;cursor:pointer;color:var(--muted);white-space:nowrap}
+.switch button.is-now{background:var(--ink);color:var(--n1)}
+.switch button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .rail-item{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;
   background:none;border:1px solid transparent;border-radius:var(--r-sm);padding:8px 10px;
   cursor:pointer;font:inherit;color:var(--text)}
@@ -92,6 +105,25 @@ code,.mono{font-family:var(--mono);font-size:.86em}
 .field input:focus,.field textarea:focus,.field select:focus{outline:2px solid var(--orange-3);
   outline-offset:-1px;border-color:var(--orange-3)}
 .id-field input{font-family:var(--mono);font-size:12.5px}
+
+/* 分平台的欄位：兩個框並排，各自標平台。切到單一平台時只畫那一邊。 */
+.mini{margin-left:auto;border:1px solid var(--line-soft);background:var(--paper);
+  border-radius:var(--pill);padding:1px 9px;font:inherit;font-size:10.5px;color:var(--faint);cursor:pointer}
+.mini:hover{border-color:var(--orange-3);color:var(--orange-5)}
+.mini.is-on{background:var(--ink);border-color:var(--ink);color:var(--n1)}
+.plats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.plat-box{position:relative}
+.plat-tag{position:absolute;top:-7px;left:9px;background:var(--paper);padding:0 5px;
+  font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+/* 只在單一平台出現的節點：邊上一條虛線 + 一個標，切平台時才看得出誰會消失。 */
+.step.is-scoped,.kid.is-scoped{border-left:3px dashed var(--orange-3)}
+.scope-tag{align-self:flex-start;font-family:var(--mono);font-size:10.5px;color:var(--orange-5);
+  background:var(--orange-1);border:1px solid var(--orange-3);border-radius:var(--pill);padding:1px 9px}
+.only-pick{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--faint)}
+.only-pick select{font:inherit;font-size:11.5px;padding:3px 6px;border:1px solid var(--line-soft);
+  border-radius:var(--r-sm);background:var(--paper);color:var(--muted)}
+.pv-plat{margin:0 0 12px;font-size:11.5px;color:var(--faint)}
 
 /* ── 子節點 ── */
 .kids{display:flex;flex-direction:column;gap:10px}
@@ -183,6 +215,15 @@ code,.mono{font-family:var(--mono);font-size:.86em}
 .m-err{color:var(--term-err)}
 .m-dim{color:var(--term-dim)}
 .m-sel{background:var(--accent);color:#fff;border-radius:2px;padding:0 3px}
+
+.m-titlebar{border-radius:var(--r-sm);overflow:hidden;box-shadow:var(--sh);border:1px solid var(--line)}
+.m-tb-chrome{position:relative;display:flex;align-items:center;gap:6px;padding:9px 12px;
+  background:var(--inset);border-bottom:1px solid var(--line-soft)}
+.m-tb-chrome i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.m-tb-title{position:absolute;left:0;right:0;text-align:center;font-size:12px;color:var(--ink);
+  pointer-events:none}
+.m-tb-body{background:var(--term-bg);color:var(--term-dim);padding:16px 12px;
+  font-family:var(--mono);font-size:11.5px;min-height:52px}
 
 .m-dock{display:flex;gap:7px;align-items:flex-end;justify-content:center;padding:12px 14px 9px;
   background:linear-gradient(180deg,var(--n3),var(--n4));border-radius:var(--r-sm);border:1px solid var(--line)}

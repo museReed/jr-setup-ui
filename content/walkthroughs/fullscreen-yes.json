@@ -2,14 +2,87 @@
   "id": "fullscreen-yes",
   "card": "claude",
   "row": "跳出方框時按 1. Yes, try it",
+  "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）",
   "steps": [
     {
-      "id": "step-1",
-      "title": "",
-      "detail": "",
-      "visual": null,
-      "kids": []
+      "id": "open-claude",
+      "title": "按卡片上的「開啟 Claude Code」",
+      "detail": "它會開一個新的終端視窗，並且把 Claude Code 跑起來。",
+      "visual": {
+        "type": "mock",
+        "mock": "wizard",
+        "caption": "就是這一步的那顆按鈕",
+        "row": "第一步：開一個視窗，把這兩件做完",
+        "button": "開啟 Claude Code"
+      },
+      "kids": [
+        {
+          "id": "new-window-mac",
+          "kind": "see",
+          "only": "mac",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，會被你現在這個視窗擋住——這不是壞掉。去下面的 Dock 找那個終端機圖示點一下，圖示底下有一個小點就代表它開著。還是找不到就按 F3，畫面會攤開所有開著的視窗。",
+          "visual": {
+            "type": "mock",
+            "mock": "dock",
+            "caption": "Dock 上的終端機圖示，底下有小點",
+            "app": ">_"
+          }
+        },
+        {
+          "id": "new-window-win",
+          "kind": "see",
+          "only": "win",
+          "title": "一個新的終端視窗開起來了",
+          "detail": "它常常不會自己跳到最前面，只會在下面的工作列上閃——這不是壞掉。看到工作列有一格在閃，點它一下就會跳出來。",
+          "visual": {
+            "type": "mock",
+            "mock": "taskbar",
+            "caption": "工作列上那一格在閃",
+            "app": "終端機"
+          }
+        }
+      ]
+    },
+    {
+      "id": "answer-fullscreen",
+      "title": "畫面中間跳出一個方框時，按數字 1",
+      "detail": "那個方框在問你要不要換成整頁顯示——換了之後對話會佔滿整個視窗，比較好讀。選項寫著 1. Yes, try it，直接按鍵盤上的 1。",
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "方框長這樣，按 1",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "Use the new fullscreen layout?"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 1. Yes, try it"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. No, keep it as is"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "redrawn",
+          "kind": "see",
+          "title": "畫面整個重畫一次，方框消失",
+          "detail": "看到這個就成功了，回來把這一格勾起來。",
+          "visual": null
+        },
+        {
+          "id": "no-box",
+          "kind": "miss",
+          "title": "方框根本沒跳出來",
+          "detail": "你之前選過的話它就不會再問。畫面直接進到對話就是正常的，這一格可以直接勾。",
+          "visual": null
+        }
+      ]
     }
-  ],
-  "note": "第一步：開一個視窗，把這兩件做完（按鈕：開啟 Claude Code）"
+  ]
 }
