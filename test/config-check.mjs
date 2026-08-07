@@ -306,6 +306,11 @@ process.stdin.on("end", () => {
     "skill-codex-structured-questions",
     "demo-claude",
     "demo-codex",
+    // 設定寫對了不代表 Obsidian 真的會自己拉——那要有人把 app 打開看左邊那排。
+    "obsidian-vault",
+    // 證據在 GitHub 上，不在這台機器上——嚮導看不到學生的瀏覽器。
+    "vault-agent-claude",
+    "vault-agent-codex",
   ];
   assert.deepEqual(
     Object.entries(VERIFICATION)

@@ -1,0 +1,80 @@
+{
+  "id": "eye-obsidian-vault",
+  "card": "obsidian-vault",
+  "title": "筆記會自己存上去，不用按任何按鈕",
+  "description": "左邊最下面多一個分岔圖示，右下角一個打勾就是都存好了",
+  "steps": [
+    {
+      "id": "run-verify",
+      "title": "按清單下面的「驗證」",
+      "detail": [
+        "按下去它會幫你把 Obsidian 打開，並且直接開到你的筆記庫",
+        "第一次打開會問你要不要信任這個資料夾裡的外掛，選信任"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "wizard",
+        "caption": "按鈕在整份清單的下面，不是那一列右邊",
+        "row": "筆記會自己存上去，不用按任何按鈕",
+        "row2": "（這張卡的其他項目）",
+        "button": "驗證",
+        "place": "below"
+      },
+      "kids": []
+    },
+    {
+      "id": "watch-sidebar",
+      "title": "看左邊那排最下面、和右下角那一列",
+      "detail": [
+        "左邊那排最下面會多一個分岔的圖示，點下去會列出你改了哪幾篇還沒存",
+        "右下角那一列的右半邊有一個打勾，那是「都存好了」的意思",
+        "打勾左邊那個被劃掉的圖示代表「沒有還沒存的檔案」，也是正常的"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "右下角那一列：劃掉的圖示 + 一個打勾",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "0 backlinks    313 words 481 characters"
+          },
+          {
+            "tone": "ok",
+            "text": "⊘  ✓"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "sidebar-shown",
+          "kind": "see",
+          "title": "左邊最下面多了一個分岔圖示，右下角有打勾",
+          "detail": [
+            "點那個圖示會看到「你改了哪幾篇還沒存」的清單",
+            "兩個都看到了再回來把這一格勾起來"
+          ],
+          "visual": null
+        },
+        {
+          "id": "not-trusted",
+          "kind": "miss",
+          "title": "跳出「Vault not found」，或左邊那排什麼都沒多出來",
+          "detail": [
+            "跳「Vault not found」的話，回上一格按一次安裝——安裝時 Obsidian 要是關著的，開著它會把我們登記的那筆蓋掉",
+            "真的還是不行，也可以自己在 Obsidian 左下角按「開啟資料夾作為筆記庫」，選 ~/jr-workshop-vault，一樣的效果",
+            "打開了但左邊那排沒有多東西，多半是「要不要信任這個資料夾」選了不信任，關掉重按一次驗證，這次選信任"
+          ],
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "close-window",
+      "title": "看完了就把那個終端視窗關掉",
+      "detail": "每按一次驗證都會開一個新的，看完隨手關掉，待會回頭找比較容易",
+      "visual": null,
+      "kids": []
+    }
+  ]
+}

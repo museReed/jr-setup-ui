@@ -28,6 +28,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
+import { VAULT_DIR } from "../src/config-install.js";
 import { materialsDir, verifyShotPath } from "../src/paths.js";
 
 const POLL_INTERVAL_MS = 1_000;
@@ -78,6 +79,28 @@ const CASES = {
   },
   // 底部狀態列那一格：不驗任何東西，只負責把 Codex 開起來讓學生看一眼。
   // 那一條是純畫面（設定寫對了但沒重開 Codex，它還是舊的），程式抓不到。
+  // 整段筆記的收尾：叫 AI 真的寫一篇進去並存上去。
+  //
+  // 提問裡帶「筆記庫」與「存起來」這兩個詞，vault-sync 那支 skill 才會被叫起來
+  // （它的觸發詞就是這些）。檔名固定，學生上 GitHub 才知道要找哪一個。
+  "vault-note": {
+    label: "叫 AI 寫一篇筆記",
+    env: () => ({}),
+    prompt: () =>
+      "請在我的筆記庫新增一篇叫「測試筆記」的筆記，內容隨便寫兩三句話，" +
+      "然後幫我把筆記存起來。存完告訴我你寫了什麼、commit 訊息是什麼。",
+    expect: () => null,
+    watchFor: "它寫出一篇「測試筆記」，然後自己 commit 並推上去",
+  },
+  // 這一格也不叫 AI：要看的是 Obsidian 把 vault 打開之後左邊那排有沒有同步圖示。
+  // 幫學生把 app 開起來就好，剩下的交給眼睛。
+  "open-vault": {
+    label: "筆記庫",
+    env: () => ({}),
+    prompt: () => "",
+    expect: () => null,
+    watchFor: "Obsidian 打開你的筆記庫，左邊那排多一個同步圖示",
+  },
   statusline: {
     label: "底部狀態列",
     env: () => ({}),
@@ -375,6 +398,49 @@ const startedAt = Date.now();
 // 腳本寫成檔案再交給終端跑：把整段指令塞進終端的參數裡，引號與換行會被各平台的
 // 命令列各自重新解讀一次，中文和 && 都會被吃掉（前面踩過）。
 // 標題測試不叫 agent，改成起 watcher 再餵它一個名字。
+// AI 存完之後順手把 GitHub 上那個 repo 開起來。
+//
+// 證據在遠端不在本機——本機那個檔看得到只證明它會建檔。但「自己去 GitHub 找自己
+// 的 repo」對非資工背景的學生是一道多餘的關卡（要先知道自己帳號叫什麼），所以
+// 網址從 remote 撈出來，直接開給他看。
+//
+// remote 是 https://github.com/<誰>/obsidian-vault.git，砍掉尾巴的 .git 就是網頁。
+function browseVaultRepo() {
+  const vault = path.join(homedir(), VAULT_DIR);
+
+  if (process.platform === "win32") {
+    return [
+      `$url = (git -C '${vault}' remote get-url origin) -replace '\\.git$',''`,
+      "Write-Host '幫你把 GitHub 上那個筆記庫打開了——看看「測試筆記」在不在'",
+      "Start-Process $url",
+    ].join("\n");
+  }
+
+  return [
+    `url=$(git -C '${vault}' remote get-url origin | sed -e 's/\\.git$//')`,
+    "echo '幫你把 GitHub 上那個筆記庫打開了——看看「測試筆記」在不在'",
+    'open "$url"',
+  ].join("\n");
+}
+
+// 用 obsidian:// 這個網址開，不是直接叫 Obsidian.app：它認得「打開哪一個 vault」，
+// 學生機器上如果還有別的 vault，直接開 app 會停在上一次那個。
+function vaultScript() {
+  const url = "obsidian://open?vault=jr-workshop-vault";
+
+  if (process.platform === "win32") {
+    return [
+      `Start-Process '${url}'`,
+      "Write-Host 'Obsidian 應該打開了——看左邊那排有沒有同步圖示，看完關掉這個視窗'",
+    ].join("\n");
+  }
+
+  return [
+    `open '${url}'`,
+    "echo 'Obsidian 應該打開了——看左邊那排有沒有同步圖示，看完關掉這個視窗'",
+  ].join("\n");
+}
+
 function titleScript() {
   const name = "🔍 標題同步測試";
 
@@ -412,7 +478,11 @@ function writeLauncher(prompt) {
   // statusline 那格連提問都沒有——要看的是視窗本身，多帶一個空字串參數只會讓
   // Codex 以為你送了一句空的話。
   const body =
-    caseName === "title"
+    caseName === "vault-note"
+      ? `${agent} '${prompt}'\n${browseVaultRepo()}`
+      : caseName === "open-vault"
+      ? vaultScript()
+      : caseName === "title"
       ? titleScript()
       : caseName === "statusline"
         ? agent

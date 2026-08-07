@@ -422,8 +422,19 @@ export function configRowModel(
     // 但驗證失敗時那顆要活過來：裝歪了（舊版、裝一半）而 check 仍是 ok 的情況存在，
     // 那時重跑安裝是唯一的自救手段，拿掉就沒路走了。
     const rescueReinstall = installationDone && verificationFailed;
+    // 有些列裝好之後仍然要留一顆（check.reinstallable，見 config-check）：那些
+    // 設定會被別的程式改掉，重跑安裝是唯一的自救手段。它不是主要動作，畫成次要的。
+    const canRedo = installationDone && !rescueReinstall && check.reinstallable === true;
 
-    if (rescueReinstall) {
+    if (canRedo) {
+      buttons.push({
+        action: installAction,
+        dataName: "installAction",
+        text: "重新設定",
+        step: check.id,
+        secondary: true,
+      });
+    } else if (rescueReinstall) {
       buttons.push({
         action: installAction,
         dataName: "installAction",

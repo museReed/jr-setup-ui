@@ -30,9 +30,10 @@ function section(groups, sectionId) {
 }
 
 try {
+  // 筆記那一段排在主線之後：它是選配，跟前面四段沒有依賴關係。
   assert.deepEqual(
     SECTIONS.map(({ id }) => id),
-    ["env", "rules", "skills", "demo"],
+    ["env", "rules", "skills", "demo", "notes"],
   );
 
   const mergedEnv = section(

@@ -20,7 +20,14 @@ export const SECTIONS = [
   { id: "rules", title: "讓它照你的規矩回話", subtitle: "規則檔與 hooks" },
   { id: "skills", title: "給它技能包", subtitle: "Skills" },
   { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
+  // 選配的一段，排在主線之後：它跟前面四段沒有依賴關係，學生跑完主線再做。
+  { id: "notes", title: "把筆記存起來", subtitle: "Obsidian 與 GitHub" },
 ];
+
+// 選配的段不看前面做完沒。筆記那段跟主線沒有相依性——Obsidian 與筆記庫不需要
+// 任何一段裝好的東西（只有建 repo 那步要 GitHub 登入，而那步自己的錯誤訊息會把
+// 人指回去）。鎖著只會讓想先做的人卡在一句「先把某某做完」。
+const OPTIONAL_SECTIONS = new Set(["notes"]);
 
 export const SECTION_GATES = {
   // 規則段結束時原本要學生「關掉終端分頁、開一個新的」。拿掉了：規則段的驗證全部
@@ -103,15 +110,35 @@ export const PLAYWRIGHT_SHOT_AGENTS = {
 // 彈窗——那裡有畫面示意、有要選哪一個，卡片上再印一次是同一件事講兩遍。
 export const CARD_HINTS = {};
 
-// 眼睛那一格自己的按鈕：按下去開一個終端，學生看完回來勾。
+// 眼睛那一格自己的按鈕：那一格要學生去別的地方看，這顆帶他過去。
 //
-// 其他眼睛項不需要——它們的卡片底下那顆驗證本來就會開終端，看的就是那個視窗。
-// 底部狀態列這格不一樣：它那半的驗證是 headless 的行為測試，學生從頭到尾看不到
-// 任何視窗，沒有這顆按鈕就只能自己去開終端、自己打 codex。
+// 多數眼睛項不需要——它們的卡片底下那顆驗證本來就會開終端，看的就是那個視窗。
+// 這兩種不一樣：
 //
-// key 是卡片的 checkId，值是 verify-in-terminal 的參數。
-export const EYE_TERMINAL_ACTIONS = {
-  "codex-config": { case: "statusline", agent: "codex" },
+//   底部狀態列  那半的驗證是 headless 的，學生從頭到尾看不到任何視窗
+//   GitHub 那格 證據在遠端，而學生未必記得自己的 repo 網址
+//
+// key 是卡片的 checkId。resets 表示「按下去等於這一格重看一次」，勾要先退掉——
+// 開瀏覽器不算重看，所以那兩格是 false。
+export const EYE_ROW_ACTIONS = {
+  "codex-config": {
+    action: "verify-in-terminal",
+    text: "開終端驗證",
+    options: { case: "statusline", agent: "codex" },
+    resets: true,
+  },
+  "vault-agent-claude": {
+    action: "open-vault-repo",
+    text: "看改動歷史",
+    options: null,
+    resets: false,
+  },
+  "vault-agent-codex": {
+    action: "open-vault-repo",
+    text: "看改動歷史",
+    options: null,
+    resets: false,
+  },
 };
 
 export const CARD_GATES = {
@@ -270,10 +297,11 @@ export function sectionGateState(
   // 沒做完鎖住第二段，第二段做完了卻把第三段開了（Reed 實測看到一三開、二鎖）。
   //
   // 點名最早那一段：中間幾段擋人的理由都源自它，那才是學生該回去的地方。
-  const previousPending =
-    SECTIONS.slice(0, index).find(
-      (section) => sectionDone[section.id] !== true,
-    ) ?? null;
+  const previousPending = OPTIONAL_SECTIONS.has(sectionId)
+    ? null
+    : SECTIONS.slice(0, index).find(
+        (section) => sectionDone[section.id] !== true,
+      ) ?? null;
   const previousDone =
     previousPending === null ? true : sectionDone[previousPending.id];
   // 分開記「還不知道」與「確定沒做完」：兩者都擋，但話要講得不一樣——資料還沒
@@ -382,6 +410,28 @@ const CARD_DEFINITIONS = {
         id.startsWith("skill-codex-") || /^ext-.*-codex$/.test(id),
     },
   ],
+  notes: [
+    {
+      agent: "other",
+      label: "筆記庫",
+      logo: "logo-terminal",
+      includes: (id) => NOTE_CHECK_IDS.has(id),
+    },
+    {
+      agent: "claude",
+      label: "Claude",
+      logo: "logo-claude",
+      includes: (id) =>
+        id === "skill-claude-vault-sync" || id === "vault-agent-claude",
+    },
+    {
+      agent: "codex",
+      label: "Codex",
+      logo: "logo-openai",
+      includes: (id) =>
+        id === "skill-codex-vault-sync" || id === "vault-agent-codex",
+    },
+  ],
   demo: [
     {
       agent: "claude",
@@ -398,7 +448,20 @@ const CARD_DEFINITIONS = {
   ],
 };
 
+// 筆記那一段的成員。vault-sync 那支 skill 也算——它管的是筆記庫，跟「給它技能包」
+// 那段的三支不是同一件事，混在一起學生會以為那是主線的一部分。
+const NOTE_CHECK_IDS = new Set([
+  "obsidian",
+  "obsidian-vault",
+  "vault-agent-claude",
+  "vault-agent-codex",
+]);
+
 function sectionForCheck(id) {
+  if (NOTE_CHECK_IDS.has(id) || id.endsWith("-vault-sync")) {
+    return "notes";
+  }
+
   if (id.startsWith("skill-") || id.startsWith("ext-")) {
     return "skills";
   }
@@ -582,6 +645,17 @@ export const CARD_DESCRIPTIONS = {
     "讓它能開瀏覽器自己點按鈕、填表單，還會截圖回來給你看，第一次要先下載瀏覽器可能要等幾分鐘",
   "ext-playwright-codex":
     "讓它能開瀏覽器自己點按鈕、填表單，還會截圖回來給你看，第一次要先下載瀏覽器可能要等幾分鐘",
+  obsidian: "一個寫筆記的地方，筆記就是一個個純文字檔，哪天不用它了檔案還是打得開",
+  "obsidian-vault":
+    "你的筆記自動存到自己的 GitHub，換電腦、電腦壞掉都還在，別人看不到",
+  "vault-agent-claude":
+    "叫它寫一篇筆記進去，存之前它會問你這次要記成哪一句，之後翻得回來",
+  "vault-agent-codex":
+    "叫它寫一篇筆記進去，存之前它會問你這次要記成哪一句，之後翻得回來",
+  "skill-claude-vault-sync":
+    "叫它「幫我把筆記存起來」「筆記有衝突」就好，git 指令它自己下",
+  "skill-codex-vault-sync":
+    "叫它「幫我把筆記存起來」「筆記有衝突」就好，git 指令它自己下",
   "demo-claude": "它問你要什麼配色，然後從零做一個網頁，右邊即時長出來給你看，這一張要跑幾分鐘",
   "demo-codex": "它問你要什麼配色，然後從零做一個網頁，右邊即時長出來給你看，這一張要跑幾分鐘",
 };
@@ -612,7 +686,15 @@ function checkCard(sectionId, card, check) {
 //
 // 舊版一頁攤開所有列，靠驗收文件提醒順序；改成強制線性流程之後，順序錯了就是
 // 把學生推進一個必然失敗的驗證。
-const SETUP_FIRST = ["tab-sync"];
+//
+// 筆記那段的三張也在這裡：那張「接到 GitHub 的筆記庫」的操作步驟第三步要學生
+// 叫 AI 存一次，skill 沒先裝好的話那一步叫不動。
+const SETUP_FIRST = [
+  "tab-sync",
+  "obsidian",
+  "skill-claude-vault-sync",
+  "skill-codex-vault-sync",
+];
 
 function setupOrder(card) {
   const index = SETUP_FIRST.indexOf(card.checkId);
