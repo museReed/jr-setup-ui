@@ -196,7 +196,22 @@ function forgetVerification(stepId, manualIds = []) {
   // 重驗＝他回來把這張卡做完了，那顆「先跳過」的通行證跟著上一輪的結論一起作廢。
   state.skippedCards.delete(stepId);
 
-  for (const id of [`eye-${stepId}`, ...manualIds]) {
+  forgetManualChecked([`eye-${stepId}`, ...manualIds]);
+
+  api
+    .forgetVerification(stepId)
+    .catch((error) => view.addLine(`無法清除舊的驗證結果：${error.message}`, "failed"));
+}
+
+// 只退學生手上那幾格的勾，程式那半原封不動。
+//
+// 眼睛那一格按「開終端驗證」是「這一格從頭看一次」，不是「這一列重驗一次」。原本
+// 走的是整列的那一版（拿卡片的 checkId 去清），於是行為驗證 5 條全過、終端印著「驗證
+// 通過」，學生接著按開終端看狀態列，那個結論就被一起刪掉——清單上那一格永遠回到
+// 「還沒實際跑跑看」（Reed 貼的 log：兩次 verify-behavior 都過，中間夾一次
+// verify-in-terminal，之後就沒勾了）。
+function forgetManualChecked(ids) {
+  for (const id of ids) {
     state.manualCheckedIds.delete(id);
     state.completedGateIds.delete(id);
   }
@@ -204,9 +219,6 @@ function forgetVerification(stepId, manualIds = []) {
   api
     .saveManualChecked([...state.manualCheckedIds])
     .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
-  api
-    .forgetVerification(stepId)
-    .catch((error) => view.addLine(`無法清除舊的驗證結果：${error.message}`, "failed"));
 }
 
 // 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
@@ -614,7 +626,9 @@ function renderWizard() {
       const ids = (step?.items ?? []).map((item) => item.id);
 
       if (ids.length > 0) {
-        forgetVerification(card.checkId, ids);
+        // 一樣只退這一步的勾。開一個新視窗重做那兩件事，跟這一列程式那半驗過沒
+        // 驗過是兩回事。
+        forgetManualChecked(ids);
 
         if (ids.includes("fullscreen-copy")) {
           state.pasteProofValue = "";
@@ -686,7 +700,9 @@ function renderWizard() {
         // resets 的那幾格＝「按下去這一格從頭看一次」，所以勾先退掉。開瀏覽器
         // 去看遠端不算重看——那一格勾過了還把它退掉，學生會以為自己剛才白勾了。
         if (EYE_ROW_ACTIONS[card.checkId]?.resets === true) {
-          forgetVerification(card.checkId, [step]);
+          // 只退這一格的勾。這一列程式那半的結論（行為驗證）跟這一格無關，
+          // 拿 forgetVerification 去清會把剛剛驗過的 5 條一起洗掉。
+          forgetManualChecked([step]);
           view.addLine("先清掉這一格的勾，開一個新的視窗給你看。", "agent-status");
           renderWizard();
           run(action, undefined, null, extra);

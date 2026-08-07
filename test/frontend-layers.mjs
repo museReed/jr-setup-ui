@@ -643,6 +643,23 @@ try {
   );
   ok("格內的重跑驗證會先把那一格的勾退掉，跟底下那顆同一套");
 
+  // 「這一格從頭看一次」不等於「這一列重驗一次」。眼睛那顆與人工步驟那顆按下去只
+  // 該退學生手上的勾，不能碰程式那半——原本兩條都走 forgetVerification(card.checkId)，
+  // 於是行為驗證 5 條全過之後按一下「開終端驗證」，那個結論就被洗掉，清單那一格
+  // 永遠停在「還沒實際跑跑看」（Reed 貼的 log）。
+  assert.match(
+    files.app,
+    /function forgetManualChecked\(ids\)/,
+    "要有一個只退勾、不碰驗證結論的函式",
+  );
+  assert(
+    !/forgetVerification\(card\.checkId/.test(files.app),
+    "眼睛與人工步驟那兩顆不能再拿整列的 forgetVerification 去清",
+  );
+  assert.match(files.app, /forgetManualChecked\(\[step\]\);/, "眼睛那顆只退這一格");
+  assert.match(files.app, /forgetManualChecked\(ids\);/, "人工步驟那顆只退那一步");
+  ok("眼睛與人工步驟只退自己那幾格的勾，不洗掉程式那半的驗證");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
