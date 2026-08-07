@@ -458,7 +458,11 @@ async function claudeHudStep(step) {
 // 跑一條指令，把它的輸出直接串到畫面上。回傳 exit code，由呼叫端決定成敗——
 // 這幾支工具（winget / brew / gh）對「本來就裝好了」都會回非 0。
 async function runTool(cmd, args, hint) {
-  const env = await spawnEnv();
+  // GIT_TERMINAL_PROMPT=0：憑證拿不到時直接錯，不要停在那裡等一個不會來的輸入。
+  //
+  // 我們 spawn 的子程序沒有 tty，git 的密碼提問會讓整張卡永遠轉圈——畫面上最後
+  // 一行停在「執行：git push」，學生只能按取消（Reed 在 VM 上實測撞到）。
+  const env = { ...(await spawnEnv()), GIT_TERMINAL_PROMPT: "0" };
   const spawnable = resolveLaunch(cmd, args, { env });
 
   return new Promise((resolve, reject) => {
@@ -687,6 +691,10 @@ async function obsidianVaultStep(step) {
   );
   logProgress("打開 vault 自動拉、每 10 分鐘自動存一次，已經設好");
 
+  // 憑證要在任何一次 push 之前就位。原本排在最後面——第二次跑（remote 已經有了）
+  // 走的是 push 那條路，憑證還沒放進鑰匙圈，git 就停在那裡等密碼（VM 實測）。
+  await storeGitCredential();
+
   if (!existsSync(path.join(step.vault, ".git"))) {
     await runTool("git", ["-C", step.vault, "init", "-b", "main"], "請先裝好 Git");
   }
@@ -720,7 +728,6 @@ async function obsidianVaultStep(step) {
   }
 
   await registerVault(step);
-  await storeGitCredential();
   logProgress(`筆記庫已接上 GitHub → ${step.vault}`);
 }
 

@@ -9,3 +9,6 @@
 # 作業系統塞進資料夾的東西
 .DS_Store
 Thumbs.db
+
+# 同步外掛問過帳號密碼時留下的暫存檔。裡面沒有密碼，但也不該進版控。
+.obsidian/plugins/obsidian-git/.git_credentials_input

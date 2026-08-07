@@ -798,6 +798,30 @@ try {
   assert.deepEqual(CARD_HINTS, {});
   ok("codex 的兩題搬進彈窗，卡片上不再多一格勾選框也不再印一次");
 
+  // 失敗時白話區印的是腳本自己講的那句話，不是罐頭句。
+  //
+  // 迴歸（Reed 實測截圖）：安裝擋下來的理由是「Obsidian 現在開著，請先完全關掉它
+  // 再按一次安裝」，那句話只出現在原始輸出與那一列的說明裡，白話區卻寫「請檢查
+  // 原始輸出後再試一次」——把學生推去讀一堆他看不懂的東西，而答案就在裡面。
+  const withReason = terminalOutcomeLines({
+    action: "install-config-step",
+    succeeded: false,
+    check: { label: "接到 GitHub 的筆記庫" },
+    guidance: null,
+    reason: "Obsidian 現在開著，請先完全關掉它再按一次安裝",
+  });
+  assert.equal(withReason.length, 1);
+  assert.equal(withReason[0].text, "Obsidian 現在開著，請先完全關掉它再按一次安裝");
+  // 腳本沒講話時才退回罐頭句。
+  const withoutReason = terminalOutcomeLines({
+    action: "install-config-step",
+    succeeded: false,
+    check: { label: "接到 GitHub 的筆記庫" },
+    guidance: null,
+  });
+  assert.match(withoutReason[0].text, /請檢查原始輸出/);
+  ok("安裝失敗時白話區印腳本自己講的那句話，沒講才退回罐頭句");
+
   // 清單第一格該不該打勾——三種情況各錯過一次，所以三種都釘住。
   const okRow = { id: "x", label: "x", status: "ok", detail: "" };
   assert.equal(

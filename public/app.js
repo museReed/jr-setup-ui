@@ -1250,9 +1250,11 @@ async function handleDone(
       state.failedVerificationSteps.add(step);
       state.deferredVerificationSteps.delete(step);
     }
+    // 腳本自己講的那句話：那一列的說明與白話區印的是同一句，兩邊不要各講各的。
+    const reason = failureReason(runContext.rawOutput);
+
     if (step !== null && step !== undefined) {
       state.failedSteps.add(step);
-      const reason = failureReason(runContext.rawOutput);
       state.resultTexts.set(
         step,
         `${check?.label ?? "這個項目"}：${reason ?? outcome.summary}`,
@@ -1260,7 +1262,7 @@ async function handleDone(
     }
 
     view.addTerminalLines(
-      terminalOutcomeLines({ action, succeeded: false, check, guidance }),
+      terminalOutcomeLines({ action, succeeded: false, check, guidance, reason }),
     );
     view.shakeTerminal();
 
