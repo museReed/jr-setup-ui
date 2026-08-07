@@ -76,6 +76,19 @@ const CASES = {
     expect: () => null,
     watchFor: "分頁標題變成「🔍 標題同步測試」，五秒後自己還原",
   },
+  // 底部狀態列那一格：不驗任何東西，只負責把 Codex 開起來讓學生看一眼。
+  // 那一條是純畫面（設定寫對了但沒重開 Codex，它還是舊的），程式抓不到。
+  statusline: {
+    label: "底部狀態列",
+    env: () => ({}),
+    // Codex 的狀態列一開起來就在；Claude 的 HUD 要等「下一次互動之後」才畫出來，
+    // 所以送一句話進去——不送的話學生會盯著一片空白，以為裝失敗了。
+    prompt: ({ agent }) =>
+      agent === "claude" ? "請用一句話跟我打招呼就好，不要做別的事" : "",
+    expect: () => null,
+    watchFor:
+      "視窗最下面（輸入框下面）多出一條：模型、一條進度條、專案名，Codex 那邊還有額度",
+  },
   // 這兩格不驗任何東西，只負責「幫學生把終端開起來」。
   //
   // 全螢幕那個方框是 Claude Code 自己的一次性推銷，程式沒有辦法代按——但至少可以
@@ -396,7 +409,14 @@ function titleScript() {
 function writeLauncher(prompt) {
   const stamp = `${process.pid}-${Date.now()}`;
   const envLines = Object.entries(testCase.env({ agent }));
-  const body = caseName === "title" ? titleScript() : `${agent} '${prompt}'`;
+  // statusline 那格連提問都沒有——要看的是視窗本身，多帶一個空字串參數只會讓
+  // Codex 以為你送了一句空的話。
+  const body =
+    caseName === "title"
+      ? titleScript()
+      : caseName === "statusline"
+        ? agent
+        : `${agent} '${prompt}'`;
 
   if (process.platform === "win32") {
     const file = path.join(tmpdir(), `jr-verify-${stamp}.ps1`);

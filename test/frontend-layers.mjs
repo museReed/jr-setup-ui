@@ -958,8 +958,12 @@ try {
   assert(files.view.includes("inlineActions.get(item.id)"));
   // 放在那一格「裡面」而不是另起一列——另起一列會把清單撐高一截。
   assert(files.view.includes("label.append(inline)"));
-  assert(
-    files.view.includes('if (inlineActions.has(`system-${spec.checkId}`)) continue;'),
+  // 已經畫進清單的那幾顆不再重複一次。落點的算法只有一份（inlineRow），下面那圈
+  // 用同一個算——兩邊各自拼字串的話，帶 rowId 的按鈕會在清單裡和按鈕列各出現一次。
+  assert(files.view.includes("if (inlineActions.has(inlineRow(spec))) continue;"));
+  assert.match(
+    files.view,
+    /const inlineRow = \(spec\) => spec\.rowId \?\? `system-\$\{spec\.checkId\}`;/,
   );
   // 清單沒出現的卡不能把按鈕吃掉——那張卡會完全沒有那顆按鈕。
   assert.match(

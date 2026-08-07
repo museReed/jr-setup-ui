@@ -181,6 +181,44 @@
       "kids": []
     },
     {
+      "id": "back-to-default",
+      "title": "選完之後按 Shift+Tab 切回 Default mode",
+      "detail": [
+        "剛才切進 Plan mode 是為了跳出那組選單，它只出計畫不動手",
+        "按 Shift+Tab 就會切回來，再輸入一次 /plan 也可以",
+        "切回來之後畫面會印一句 Model changed to ... for Default mode，最下面那條也會變成 default",
+        "看到 default 再往下打「跑第 2 步」"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "看到這一句、最下面那條變成 default，就切回來了",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "按 Shift+Tab，把 Plan mode 切回 Default mode。"
+          },
+          {
+            "tone": "dim",
+            "text": "– 也可以再次輸入 /plan 切換模式。"
+          },
+          {
+            "tone": "dim",
+            "text": "– 底部狀態列顯示 Default 後，輸入「跑第 2 步」。"
+          },
+          {
+            "tone": "ok",
+            "text": "Model changed to gpt-5.6-sol default for Default mode."
+          },
+          {
+            "tone": "dim",
+            "text": "gpt-5.6-sol default · ~"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
       "id": "confirm-step-2",
       "title": "它問要不要跑第 2 步時，回「對，跑第 2 步」",
       "detail": [

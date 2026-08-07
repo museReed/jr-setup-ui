@@ -103,6 +103,17 @@ export const PLAYWRIGHT_SHOT_AGENTS = {
 // 彈窗——那裡有畫面示意、有要選哪一個，卡片上再印一次是同一件事講兩遍。
 export const CARD_HINTS = {};
 
+// 眼睛那一格自己的按鈕：按下去開一個終端，學生看完回來勾。
+//
+// 其他眼睛項不需要——它們的卡片底下那顆驗證本來就會開終端，看的就是那個視窗。
+// 底部狀態列這格不一樣：它那半的驗證是 headless 的行為測試，學生從頭到尾看不到
+// 任何視窗，沒有這顆按鈕就只能自己去開終端、自己打 codex。
+//
+// key 是卡片的 checkId，值是 verify-in-terminal 的參數。
+export const EYE_TERMINAL_ACTIONS = {
+  "codex-config": { case: "statusline", agent: "codex" },
+};
+
 export const CARD_GATES = {
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
@@ -313,6 +324,7 @@ const RULE_CHECK_IDS = {
     "output-style",
     "hook",
     "allowlist",
+    "claude-hud",
     "claude-namer",
     "claude-monitor",
   ]),
@@ -526,6 +538,8 @@ export const CARD_DESCRIPTIONS = {
   // 沒有這兩行就會退回那句「設定 X，讓這項功能能在接下來的課程中正常使用」。
   hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
   allowlist: "安全的指令與工作區內的改檔案不再逐次問你",
+  "claude-hud":
+    "輸入框下面多一行，隨時看得到現在用哪個模型、對話塞多滿、額度還剩多少",
   "codex-config": "Codex 這邊也照同一套規矩回話",
   "codex-agents": "同上，這一份是 Codex 會讀的規矩",
   "tab-sync": "開十個終端視窗也認得出哪個在做什麼",

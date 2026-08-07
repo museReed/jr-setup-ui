@@ -268,6 +268,7 @@ Object.assign(actions, {
         "demo",
         "fullscreen-open",
         "fullscreen-proof",
+        "statusline",
         "mcp-playwright",
       ],
       agent: ["claude", "codex"],

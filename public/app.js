@@ -12,6 +12,7 @@ import { openWalkthrough } from "./walkthrough.js";
 import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
+  EYE_TERMINAL_ACTIONS,
   CONFIG_TOOL_CHOICES,
   PLAYWRIGHT_SHOT_AGENTS,
   flattenCheckCards,
@@ -500,6 +501,20 @@ function renderWizard() {
       // 在原地再驗一次。收掉的話那一格就再也沒有入口了（底下那顆已經不畫了）。
       buttons: [
         ...(row.buttons ?? []),
+        // 眼睛那一格的按鈕落在它自己那一列（rowId），不是卡片底下的按鈕列。
+        ...(EYE_TERMINAL_ACTIONS[card.checkId] !== undefined &&
+        cardChecks.some((check) => check.eyeCheck != null)
+          ? [
+              {
+                action: "verify-in-terminal",
+                dataName: "verifyAction",
+                text: "開終端驗證",
+                rowId: `eye-${card.checkId}`,
+                step: `eye-${card.checkId}`,
+                options: EYE_TERMINAL_ACTIONS[card.checkId],
+              },
+            ]
+          : []),
         ...(perRowVerify ? verifyChecks : []).map((check) => ({
           action: check.verifyAction,
           dataName: "verifyAction",
@@ -619,6 +634,18 @@ function renderWizard() {
     onActionClick: (action, button, step, extra) => {
       if (card.kind === "env") {
         run(action, undefined, button);
+        return;
+      }
+
+      // 眼睛那一格的按鈕不是驗證，是「幫你把終端開起來看一眼」。走下面那條驗證
+      // 分支的話，會把這張卡程式那半的結論一起清掉——那半跟這一格無關。
+      //
+      // 開一個新視窗＝這一格從頭看一次，所以先把它的勾退掉（跟 onOpenStep 同一套）。
+      if (typeof step === "string" && step.startsWith("eye-")) {
+        forgetVerification(card.checkId, [step]);
+        view.addLine("先清掉這一格的勾，開一個新的視窗給你看。", "agent-status");
+        renderWizard();
+        run(action, undefined, null, extra);
         return;
       }
 

@@ -42,3 +42,20 @@ instructions = "Strictly follow the Output Style rules in AGENTS.md: conclusion 
 default_permissions = ":workspace"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"
+
+# status_line: what shows in the bar at the bottom of the Codex window.
+# The array order is the display order. Restart Codex for changes to apply.
+#   "context-used"         how much of this conversation is used (Context 54% used)
+#   "model-with-reasoning" which model is running (gpt-5.6-sol high)
+#   "current-dir"          which directory you are in
+#   "weekly-limit"         how much weekly quota is left (weekly 88% left)
+# Add "five-hour-limit" if you also want the five-hour quota.
+# The /statusline menu edits this exact setting — same effect.
+[tui]
+status_line = [
+  "context-used",
+  "model-with-reasoning",
+  "current-dir",
+  "weekly-limit",
+]
+status_line_use_colors = true

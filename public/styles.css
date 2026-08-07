@@ -517,15 +517,21 @@ body {
   display: block;
   flex: 0 0 auto;
   margin-left: auto;
-  width: 108px;
-  height: 72px;
+  align-self: center;
+  position: relative;
+  width: 84px;
+  height: 36px;
 }
 
 .terminal-mascot-art,
 .terminal-mascot-art svg {
   display: block;
+  position: absolute;
+  top: 50%;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: 56px;
+  transform: translateY(-50%);
 }
 
 /* 進度文字與右邊那幾顆按鈕排同一行。按鈕要黏在一起靠右，所以把空白全推給進度

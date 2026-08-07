@@ -5,12 +5,13 @@
 // 每做一件事就印一行，讓網頁那邊即時看得到。
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 import {
   applySubstitutions,
+  CLAUDE_HUD,
   describeStep,
   expandAllowRules,
   mergeAllowRules,
@@ -314,6 +315,144 @@ async function externalSkillStep(step) {
   });
 }
 
+// claude-hud：兩條非互動 CLI + 兩次寫檔（規格見 docs/claude-hud-card.md）。
+//
+// 為什麼不開一個互動式 Claude session 讓它自己跑問答：學生會被中途的選項卡住、
+// 答錯就裝出不一樣的 HUD、失敗了也很難判定卡在哪一步。
+async function runClaude(args, what) {
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch("claude", args, { env });
+
+  await new Promise((resolve, reject) => {
+    console.log(`執行：claude ${args.join(" ")}`);
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: "inherit",
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    child.once("error", (error) =>
+      reject(new Error(`叫不到 claude——請先裝好 Claude Code（${error.message}）`)),
+    );
+    // exit code 不是權威狀態，落點才是（跟第三方 skill 那段同一個理由：重裝一次
+    // 常常回非 0，東西卻本來就在）。所以這裡只記下來，成敗交給後面找 cache。
+    child.once("close", (exitCode) => {
+      if (exitCode !== 0) {
+        console.log(`（${what} 回了 exit ${exitCode}，接下來看落點在不在）`);
+      }
+
+      resolve();
+    });
+  });
+}
+
+// cache 路徑長這樣：plugins/cache/<marketplace>/claude-hud/<version>/
+// 中間那層是 marketplace 名，不能省。版號用數字排序取最新的一個。
+export function newestPluginDir(cacheRoot, readDir = readdirSync, exists = existsSync) {
+  const found = [];
+
+  if (!exists(cacheRoot)) {
+    return null;
+  }
+
+  for (const marketplace of readDir(cacheRoot)) {
+    const pluginRoot = path.join(cacheRoot, marketplace, "claude-hud");
+
+    if (!exists(pluginRoot)) continue;
+
+    for (const version of readDir(pluginRoot)) {
+      if (!/^[0-9]+(\.[0-9]+)+$/.test(version)) continue;
+      if (!exists(path.join(pluginRoot, version, "dist", "index.js"))) continue;
+
+      found.push({
+        version: version.split(".").map(Number),
+        dir: path.join(pluginRoot, version),
+      });
+    }
+  }
+
+  if (found.length === 0) {
+    return null;
+  }
+
+  found.sort((a, b) => {
+    for (let i = 0; i < Math.max(a.version.length, b.version.length); i += 1) {
+      const diff = (a.version[i] ?? 0) - (b.version[i] ?? 0);
+
+      if (diff !== 0) return diff;
+    }
+
+    return 0;
+  });
+
+  return found[found.length - 1].dir;
+}
+
+async function claudeHudStep(step) {
+  await runClaude(["plugin", "marketplace", "add", step.marketplace], "加 marketplace");
+  await runClaude(["plugin", "install", step.plugin, "-s", "user"], "裝 plugin");
+
+  const pluginDir = newestPluginDir(step.cacheRoot);
+
+  if (pluginDir === null) {
+    throw new Error(
+      `plugin 沒有落地——${step.cacheRoot} 底下找不到 claude-hud 的 dist/index.js，多半是網路問題，可以重按一次`,
+    );
+  }
+
+  logProgress(`plugin 已就位 → ${pluginDir}`);
+
+  // 固定用嚮導自己這支 node：Claude Code 本來就依賴它，一定存在。偵測 bun 會多一
+  // 個「學生沒裝 bun」的失敗點，而且 bun 走的是 TypeScript 原始碼。
+  const template = await readFile(
+    path.join(MATERIALS, step.commandTemplate),
+    "utf8",
+  );
+  const command = template.trim().replace("{RUNTIME}", process.execPath);
+  const settings = await readSettings(step.settingsTarget);
+  const previous = settings.statusLine?.command;
+
+  // 學生已經在用別的狀態列（claude-pace、cc-statusline、自己寫的腳本）時，舊的那條
+  // 先存起來再蓋——不然他換回去的唯一辦法是重寫一次。
+  if (typeof previous === "string" && !previous.includes("claude-hud")) {
+    await mkdir(path.dirname(step.previousTarget), { recursive: true });
+    await writeFile(step.previousTarget, `${previous}\n`);
+    logProgress(
+      `你原本那條狀態列已經留一份在 ${step.previousTarget}，想換回去可以照著貼`,
+    );
+  }
+
+  await writeSettings(step.settingsTarget, {
+    ...settings,
+    statusLine: {
+      type: "command",
+      command,
+      refreshInterval: CLAUDE_HUD.refreshInterval,
+    },
+  });
+  logProgress(`狀態列已寫進 ${step.settingsTarget}`);
+
+  // config.json 已經有的話合併，不整份蓋掉。
+  const existing = existsSync(step.configTarget)
+    ? JSON.parse(await readFile(step.configTarget, "utf8"))
+    : {};
+  await mkdir(path.dirname(step.configTarget), { recursive: true });
+  await writeFile(
+    step.configTarget,
+    `${JSON.stringify(
+      {
+        ...existing,
+        ...CLAUDE_HUD.config,
+        display: { ...(existing.display ?? {}), ...CLAUDE_HUD.config.display },
+        gitStatus: { ...(existing.gitStatus ?? {}), ...CLAUDE_HUD.config.gitStatus },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  logProgress(`版面設定已寫進 ${step.configTarget}`);
+}
+
 const args = parseArgs(process.argv.slice(2));
 
 try {
@@ -338,6 +477,8 @@ try {
     await skillStep(step);
   } else if (step.kind === "external-skill") {
     await externalSkillStep(step);
+  } else if (step.kind === "claude-hud") {
+    await claudeHudStep(step);
   } else {
     throw new Error(`不認得的步驟種類：${step.kind}`);
   }
