@@ -106,10 +106,18 @@ try {
   ok("清單第一格只認程式那半的驗證，不跟著眼睛勾選動");
 
   // 重驗那顆按鈕的字由 app 決定：env 卡是「再 check 一次」（重掃環境），config 卡是
-  // 「重跑驗證」（真的開終端跑）。view 只負責畫，寫死在 view 裡就沒得分。
+  // 「驗證」／驗過之後才是「重跑驗證」（真的開終端跑）。view 只負責畫，寫死在 view
+  // 裡就沒得分。
   assert(files.view.includes("model.retestText"), "重驗按鈕的字要由 model 帶進來");
-  assert(files.app.includes('retestText: card.kind === "env"'));
-  ok("重驗按鈕的字跟著卡片種類走，不是寫死在 view 裡");
+  assert(/retestText:\s*\n?\s*card\.kind === "env"/.test(files.app));
+  // 第一次就寫「重跑」，學生會以為自己漏掉了前面某一步。
+  assert(
+    /verified\.has\(card\.checkId\)\s*\n?\s*\? "重跑驗證"\s*\n?\s*: "驗證"/.test(
+      files.app,
+    ),
+    "沒驗過叫「驗證」，驗過才叫「重跑驗證」",
+  );
+  ok("重驗按鈕的字跟著卡片種類與驗過沒驗過走，不是寫死在 view 裡");
 
   // 迴歸（VM 實測，gh 那張卡）：brew 沒裝時伺服器產生的是一句人話——「找不到 brew
   // 指令，請先安裝並確認它在 PATH 裡」——但它走 agent 事件、不走 line。不把它收進
@@ -950,8 +958,12 @@ try {
   assert(files.view.includes("inlineActions.get(item.id)"));
   // 放在那一格「裡面」而不是另起一列——另起一列會把清單撐高一截。
   assert(files.view.includes("label.append(inline)"));
-  assert(
-    files.view.includes('if (inlineActions.has(`system-${spec.checkId}`)) continue;'),
+  // 已經畫進清單的那幾顆不再重複一次。落點的算法只有一份（inlineRow），下面那圈
+  // 用同一個算——兩邊各自拼字串的話，帶 rowId 的按鈕會在清單裡和按鈕列各出現一次。
+  assert(files.view.includes("if (inlineActions.has(inlineRow(spec))) continue;"));
+  assert.match(
+    files.view,
+    /const inlineRow = \(spec\) => spec\.rowId \?\? `system-\$\{spec\.checkId\}`;/,
   );
   // 清單沒出現的卡不能把按鈕吃掉——那張卡會完全沒有那顆按鈕。
   assert.match(

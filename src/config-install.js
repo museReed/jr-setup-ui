@@ -120,6 +120,44 @@ const EXTERNAL_SKILL_STEPS = {
 
 export const EXTERNAL_SKILL_IDS = Object.keys(EXTERNAL_SKILL_STEPS);
 
+// claude-hud：輸入框下面那一條狀態列。
+//
+// 它原本的裝法是在 Claude Code 裡打四個 slash 指令，其中兩個是互動式問答——學生
+// 會被中途的選項卡住，答錯就裝出不一樣的 HUD，失敗了也很難判定卡在哪一步。
+// 改成「兩條非互動 CLI + 兩次寫檔」，答案在這裡寫死（來源：docs/claude-hud-card.md）。
+export const CLAUDE_HUD = {
+  marketplace: "jarrodwatts/claude-hud",
+  plugin: "claude-hud@claude-hud",
+  // setup 問「自動刷新間隔」時選的是 5 秒；沒有它用量的倒數會卡住不動。
+  refreshInterval: 5,
+  // configure 那四題的答案。只寫偏離預設的 key——把 Minimal 那一堆 false 全部展開
+  // 的話，plugin 之後改預設值就會跟我們寫死的值打架。
+  //
+  // sevenDayThreshold: 0 是人為追加的：7 天用量預設只在超過 80% 才顯示，我們要它
+  // 一直看得到。configure 不會問這一題，只能直接寫檔。
+  config: {
+    lineLayout: "compact",
+    showSeparators: false,
+    language: "en",
+    display: {
+      showModel: true,
+      showContextBar: true,
+      showUsage: true,
+      usageBarEnabled: true,
+      usageCompact: false,
+      showResetLabel: true,
+      sevenDayThreshold: 0,
+    },
+    gitStatus: {
+      enabled: true,
+      showDirty: true,
+      showAheadBehind: false,
+      showFileStats: false,
+    },
+    jjStatus: { enabled: false },
+  },
+};
+
 export function skillStepId(agent, name) {
   return `skill-${agent}-${name}`;
 }
@@ -145,6 +183,7 @@ export const STEP_IDS = [
   "output-style",
   "hook",
   "allowlist",
+  "claude-hud",
   "codex-config",
   "codex-agents",
   "tab-sync",
@@ -158,9 +197,28 @@ export const STEP_IDS = [
   ...DEMO_STEPS,
 ];
 
-const CLAUDE_STEPS = ["claude-md", "output-style", "hook", "allowlist"];
+const CLAUDE_STEPS = [
+  "claude-md",
+  "output-style",
+  "hook",
+  "allowlist",
+  // 排在 Claude 那組最後：它改的是同一個 settings.json，而且要等前面幾張都寫完
+  // 再動那個檔，備份才有意義。
+  "claude-hud",
+];
 const CODEX_STEPS = ["codex-config", "codex-agents"];
 export const TAB_SYNC_MARKER = "jr-setup-ui tab sync";
+
+// 這一步是誰家的設定。合併要用同一家的 agent 去做——Codex 的 config.toml 交給
+// Claude 合併的話，動手的是沒在用那份設定的那一個（Reed 實測看到「Claude：思考中」
+// 出現在 Codex 那張卡上）。
+//
+// 共用的那幾步（tab-sync）與 skill / demo 回 null：它們沒有「誰家的」這回事。
+export function agentForStep(id) {
+  if (CLAUDE_STEPS.includes(id)) return "claude";
+
+  return CODEX_STEPS.includes(id) ? "codex" : null;
+}
 
 export function stepsForTools(tools) {
   const selected = tools.filter((tool) => TOOLS.includes(tool));
@@ -527,6 +585,23 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         kind: "allowlist",
         source: "claude-code/starter-allowlist.json",
         settingsTarget: `${claudeDir}/settings.json`,
+      };
+
+    case "claude-hud":
+      return {
+        id,
+        label: "輸入框下面那條狀態列",
+        kind: "claude-hud",
+        agent: "claude",
+        marketplace: CLAUDE_HUD.marketplace,
+        plugin: CLAUDE_HUD.plugin,
+        settingsTarget: `${claudeDir}/settings.json`,
+        configTarget: `${claudeDir}/plugins/claude-hud/config.json`,
+        // 舊的狀態列（別人的、或學生自己寫的）被蓋掉之前先存這裡。
+        previousTarget: `${claudeDir}/plugins/claude-hud/previous-statusline.txt`,
+        // cache 路徑第一層是 marketplace 名、第二層才是 plugin 名，中間那層不能省。
+        cacheRoot: `${claudeDir}/plugins/cache`,
+        commandTemplate: "claude-code/claude-hud/statusline.sh.template",
       };
 
     case "codex-config":

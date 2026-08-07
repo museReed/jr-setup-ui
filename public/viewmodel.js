@@ -2,6 +2,7 @@
 // 不碰 DOM、不碰 fetch，所以可以在 Node 裡直接單元測試。
 // View 只負責把這裡算出來的結果畫出去。
 import {
+  agentForCheck,
   CARD_GATES,
   GUIDANCE,
   MANUAL_STEPS,
@@ -156,13 +157,22 @@ export function isLoginAction(action) {
 // 終端上那個「誰在講話」的前綴。合併那顆的 agent 跟著第一張卡的工具選擇走，所以
 // 它的名字也要——寫死「Claude」的話，選了只要 Codex 的學生會看到 Codex 的輸出掛著
 // Claude 的名字。
-export function agentNameFor(action, tools = null) {
+export function agentNameFor(action, tools = null, step = null) {
   if (typeof action !== "string") {
     return "";
   }
 
   if (action === "merge-config-step") {
-    return tools === "codex" ? "Codex" : "Claude";
+    // 跟 actions.js 的 engine 同一條規矩：誰家的設定就是誰在跑。少改一處的話，
+    // 畫面上的名字會跟實際動手的那一支對不上（Reed 實測：Codex 那張卡印著 Claude）。
+    const selected = String(tools ?? "").split(",");
+    const owner = agentForCheck(step);
+
+    if (owner !== null && selected.includes(owner)) {
+      return owner === "codex" ? "Codex" : "Claude";
+    }
+
+    return selected.includes("claude") || tools === null ? "Claude" : "Codex";
   }
 
   if (action.startsWith("claude")) {
@@ -457,10 +467,12 @@ export function configRowModel(
     check.verifyKind === "terminal" &&
     check.noInstall === true
   ) {
+    // 跑過一次之後才寫「重」——跟其他驗證按鈕同一套（見 app.js 的 retestText 與
+    // 格內那顆）。沒跑過就寫「重跑」的話，學生會以為自己漏掉了前面某一步。
     buttons.push({
       action: check.verifyAction,
       dataName: "verifyAction",
-      text: "開終端跑",
+      text: verified ? "重跑一次" : "開終端跑",
       step: check.id,
       options: check.verifyOptions ?? undefined,
     });

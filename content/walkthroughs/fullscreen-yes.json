@@ -80,32 +80,82 @@
       ]
     },
     {
-      "id": "trust-folder",
-      "title": "問你信不信任這個資料夾時，選信任",
+      "id": "choose-theme",
+      "title": "問你要哪一種配色時，挑一個看得順眼的",
       "detail": [
-        "它在確認「你是不是真的要在這個資料夾裡做事」",
-        "選了不信任的話它什麼都不會做，而畫面不會告訴你是這個原因"
+        "它會列出深色、淺色幾種配色，用上下鍵移到你要的那個再按 Enter",
+        "選哪個都不影響後面的步驟，純粹是哪種你讀起來比較舒服",
+        "之後想換也可以，不用在這裡糾結"
       ],
       "visual": {
         "type": "mock",
         "mock": "term",
-        "caption": "選第一個",
+        "caption": "用上下鍵選，按 Enter 確認",
         "lines": [
           {
             "tone": "prompt",
-            "text": "Do you trust the files in this folder?"
+            "text": "Choose the text style that looks best with your terminal"
           },
           {
             "tone": "ok",
-            "text": "❯ 1. Yes, proceed"
+            "text": "❯ 1. Dark mode"
           },
           {
             "tone": "dim",
-            "text": "  2. No, exit"
+            "text": "  2. Light mode"
+          },
+          {
+            "tone": "dim",
+            "text": "  3. Dark mode (colorblind-friendly)"
           }
         ]
       },
-      "kids": []
+      "kids": [
+        {
+          "id": "no-theme-question",
+          "kind": "miss",
+          "title": "它沒問你配色",
+          "detail": "之前選過的話它就不會再問，畫面直接往下走很正常",
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "terminal-setup",
+      "title": "問要不要用建議的終端設定時，按數字 1",
+      "detail": [
+        "它在問要不要幫你把終端調成比較順手的設定",
+        "調過之後打長訊息要換行比較好按，而且不會再有提示音",
+        "選項寫著 1. Yes, use recommended settings，按鍵盤上的 1 再按 Enter"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "選第一個，按 Enter 確認",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "Use Claude Code's terminal setup?"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 1. Yes, use recommended settings"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. No, maybe later with /terminal-setup"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "no-terminal-setup",
+          "kind": "miss",
+          "title": "它沒問你這一題",
+          "detail": "之前設定過的話就不會再問，往下一步走就好",
+          "visual": null
+        }
+      ]
     },
     {
       "id": "answer-fullscreen",
@@ -122,7 +172,19 @@
         "lines": [
           {
             "tone": "prompt",
-            "text": "Use the new fullscreen layout?"
+            "text": "Try the new fullscreen renderer?"
+          },
+          {
+            "tone": "dim",
+            "text": "· Flicker-free output — fixes the flashing you see during long responses"
+          },
+          {
+            "tone": "dim",
+            "text": "· Mouse support — click to move your cursor or expand results"
+          },
+          {
+            "tone": "dim",
+            "text": "· Selected text auto-copies to your clipboard"
           },
           {
             "tone": "ok",
@@ -130,7 +192,11 @@
           },
           {
             "tone": "dim",
-            "text": "  2. No, keep it as is"
+            "text": "  2. Not now"
+          },
+          {
+            "tone": "dim",
+            "text": "Enter to confirm · Esc to cancel"
           }
         ]
       },
@@ -162,7 +228,7 @@
         "lines": [
           {
             "tone": "dim",
-            "text": "新版面已套用。"
+            "text": "新版面已套用"
           },
           {
             "tone": "prompt",
@@ -179,6 +245,34 @@
           "visual": null
         }
       ]
+    },
+    {
+      "id": "trust-folder",
+      "title": "問你信不信任這個資料夾時，選信任",
+      "detail": [
+        "它在確認「你是不是真的要在這個資料夾裡做事」",
+        "選信任它才做得了事，不小心選到第二個就把視窗關掉，重按一次按鈕再來一遍"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "選第一個",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "Do you trust the files in this folder?"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 1. Yes, proceed"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. No, exit"
+          }
+        ]
+      },
+      "kids": []
     }
   ]
 }

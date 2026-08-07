@@ -926,12 +926,17 @@ function renderCard(model) {
 
     // 修某一格的按鈕（「開始登入」）掛回那一格底下，不留在下面的按鈕列。清單沒出現
     // 時才退回按鈕列——不然那張卡會完全沒有那顆按鈕。
+    // 按鈕要待在它負責的那一格：帶 checkId 的落在「驗證：…」那一列，帶 rowId 的
+    // 落在指名的那一列（眼睛項用這個——它的 id 不是 system-<checkId>）。
+    const inlineRow = (spec) => spec.rowId ?? `system-${spec.checkId}`;
     const inlineSpecs = model.showChecklist
-      ? (model.row?.buttons ?? []).filter((spec) => spec.checkId !== undefined)
+      ? (model.row?.buttons ?? []).filter(
+          (spec) => spec.checkId !== undefined || spec.rowId !== undefined,
+        )
       : [];
     const inlineActions = new Map(
       inlineSpecs.map((spec) => [
-        `system-${spec.checkId}`,
+        inlineRow(spec),
         actionButton({ ...spec, hoverFill: true }, model.onActionClick),
       ]),
     );
@@ -1002,7 +1007,7 @@ function renderCard(model) {
     //
     // 已經畫進清單的那幾顆不再重複一次。
     for (const spec of model.row?.buttons ?? []) {
-      if (inlineActions.has(`system-${spec.checkId}`)) continue;
+      if (inlineActions.has(inlineRow(spec))) continue;
 
       actions.append(actionButton(spec, model.onActionClick));
     }

@@ -57,6 +57,84 @@
       ]
     },
     {
+      "id": "trust-directory",
+      "title": "問你信不信任這個資料夾時，選 1",
+      "detail": [
+        "它在確認「你是不是真的要在這個資料夾裡做事」",
+        "用上下鍵移到 1. Yes, continue，按 Enter",
+        "選信任它才載得到我們剛裝的設定，不小心選到第二個就把視窗關掉、重按一次驗證再來一遍"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "選第一個，按 Enter",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "Do you trust the contents of this directory?"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 1. Yes, continue"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. No, quit"
+          },
+          {
+            "tone": "dim",
+            "text": "Press enter to continue"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
+      "id": "trust-hooks",
+      "title": "接著問 hook 要不要信任，選 2",
+      "detail": [
+        "它發現我們剛裝的東西是新的，在問要不要讓它跑",
+        "用上下鍵移到 2. Trust all and continue，按 Enter",
+        "選到第三個的話它就不會跑，標題也不會變，關掉視窗重按一次驗證就好"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "選第二個，按 Enter",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "Hooks need review"
+          },
+          {
+            "tone": "dim",
+            "text": "2 hooks are new or changed."
+          },
+          {
+            "tone": "dim",
+            "text": "Hooks can run outside the sandbox after you trust them."
+          },
+          {
+            "tone": "dim",
+            "text": "  1. Review hooks"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 2. Trust all and continue"
+          },
+          {
+            "tone": "dim",
+            "text": "  3. Continue without trusting (hooks won't run)"
+          },
+          {
+            "tone": "dim",
+            "text": "Press enter to confirm or esc to go back"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
       "id": "watch-title",
       "title": "看那個視窗最上面那一條的字",
       "detail": [
@@ -66,48 +144,18 @@
       "visual": {
         "type": "mock",
         "mock": "titlebar",
-        "caption": "標題會變成像這樣：🔧 修登入的錯誤",
-        "title": "🔧 修登入的錯誤",
+        "caption": "標題會變成像這樣：🏗️ 設定 session 名稱",
+        "title": "🏗️ 設定 session 名稱",
         "body": ""
       },
       "kids": [
-        {
-          "id": "first-run-questions",
-          "kind": "warn",
-          "title": "第一次跑會先問你兩題，兩題都要照著選",
-          "detail": [
-            "第一題問要不要信任這個資料夾裡的設定，選 Yes；第二題問用哪種模式，選預設那個",
-            "第一題選錯的話，我們裝的東西整組都不會跑，標題就永遠不會變",
-            "而畫面不會告訴你是這個原因"
-          ],
-          "visual": {
-            "type": "mock",
-            "mock": "term",
-            "caption": "第一題長這樣，選 Yes",
-            "lines": [
-              {
-                "tone": "prompt",
-                "text": "Allow this hook to run?"
-              },
-              {
-                "tone": "ok",
-                "text": "❯ Yes"
-              },
-              {
-                "tone": "dim",
-                "text": "  No"
-              }
-            ]
-          }
-        },
         {
           "id": "title-changed",
           "kind": "see",
           "title": "標題變成一個表情符號加一句中文，寫著你剛才叫它做的事",
           "detail": [
             "看到標題真的變了，再回來把這一格勾起來",
-            "沒變就別勾",
-            "勾了只是騙自己"
+            "還沒變的話這一格先留著，往下看下面那格怎麼處理"
           ],
           "visual": null
         },
@@ -126,7 +174,7 @@
     {
       "id": "close-window",
       "title": "看完了就把那個終端視窗關掉",
-      "detail": "每按一次驗證就會開一個新的，不關的話做到後面會累積十幾個視窗，你會分不出哪個是哪個",
+      "detail": "每按一次驗證都會開一個新的，看完隨手關掉，待會回頭找比較容易",
       "visual": null,
       "kids": []
     }

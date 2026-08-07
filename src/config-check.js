@@ -9,6 +9,7 @@ import path from "node:path";
 import {
   applySubstitutions,
   CLAUDE_DEFAULT_MODE,
+  CLAUDE_HUD,
   CODEX_MODE_EXPECTATIONS,
   countInstalledRules,
   describeStep,
@@ -259,7 +260,13 @@ export const VERIFICATION = {
   // tools 綁死在列上：按 codex 那列的驗證卻連 claude 一起跑，慢一倍不說，claude
   // 失敗還會把 codex 那列判成紅的。
   "output-style": { behavior: "verify-behavior", options: { tools: "claude" } },
-  "codex-config": { behavior: "verify-behavior", options: { tools: "codex" } },
+  // 底部那條狀態列是純畫面：設定寫對了但沒重開 Codex，那條還是舊的，而檔案比對
+  // 一路都是綠的。所以配一格眼睛（跟 tab-sync 的分頁標題同一個判準）。
+  "codex-config": {
+    behavior: "verify-behavior",
+    options: { tools: "codex" },
+    eye: "Codex 視窗最下面那一條有四段：用掉多少、哪個模型、哪個資料夾、這週還剩多少",
+  },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
   // 同一張卡的另一半。這兩格方向相反但驗的是同一套規矩：危險的指令一定擋下來，
@@ -288,6 +295,12 @@ export const VERIFICATION = {
   },
   "ext-playwright-codex": {
     terminal: { case: "mcp-playwright", agent: "codex" },
+  },
+  // 設定檔對了不代表學生看得到那一條——HUD 只在「下一次互動之後」才畫出來。
+  // 所以這一格開一個真的 Claude、送一句話進去，剩下的交給眼睛。
+  "claude-hud": {
+    terminal: { case: "statusline", agent: "claude" },
+    eye: "輸入框下面多出一行，裡面有模型名、一條進度條、專案名",
   },
   // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
   "tab-sync": {
@@ -808,6 +821,54 @@ export async function checkExternalSkill(step) {
   };
 }
 
+// claude-hud 的三個檢查點（docs/claude-hud-card.md §6.2）：
+//
+//   1. settings.json 的 statusLine 指到 claude-hud，而且 refreshInterval 是 5
+//      （沒有 5 的話用量倒數會卡住不動，畫面看起來像壞了）
+//   2. enabledPlugins 打開了——只有 statusLine 沒有 plugin 的話指令會找不到模組
+//   3. config.json 的每一個 key 都跟我們寫進去的一樣（版面被 /claude-hud:configure
+//      改掉的話這裡會抓到）
+//
+// 不比對 statusLine 指令全文：那串裡有這台機器專屬的 node 路徑。
+export async function checkClaudeHud(step) {
+  const settings = existsSync(step.settingsTarget)
+    ? JSON.parse(await readFile(step.settingsTarget, "utf8"))
+    : {};
+  const command = settings.statusLine?.command;
+  const wired =
+    typeof command === "string" &&
+    command.includes("claude-hud") &&
+    settings.statusLine?.refreshInterval === CLAUDE_HUD.refreshInterval;
+  const enabled = settings.enabledPlugins?.[CLAUDE_HUD.plugin] === true;
+  const config = existsSync(step.configTarget)
+    ? JSON.parse(await readFile(step.configTarget, "utf8"))
+    : null;
+  const styled =
+    config !== null &&
+    Object.entries(CLAUDE_HUD.config).every(([key, value]) =>
+      typeof value === "object" && value !== null
+        ? Object.entries(value).every(
+            ([inner, expected]) => config[key]?.[inner] === expected,
+          )
+        : config[key] === value,
+    );
+  const missing = [
+    ...(enabled ? [] : ["plugin 還沒裝起來"]),
+    ...(wired ? [] : ["狀態列還沒接上"]),
+    ...(styled ? [] : ["版面設定還沒寫好"]),
+  ];
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: missing.length === 0 ? "ok" : "missing",
+    detail:
+      missing.length === 0
+        ? "已接上，每 5 秒自己更新一次"
+        : `${missing.join("、")}（要網路）`,
+  };
+}
+
 // demo 那一列沒有「安裝」這個動作，所以它永遠是「結構齊全、等你跑一次」的狀態：
 // 顯示成待驗證 ◐、只掛一顆開終端的按鈕。noInstall 讓 ViewModel 別補安裝按鈕——
 // 補了也沒有東西可裝，按下去只會失敗。
@@ -843,6 +904,8 @@ export async function runConfigCheck({ tools, lang }) {
       checks.push(await checkSkill(step, materials));
     } else if (step.kind === "external-skill") {
       checks.push(await checkExternalSkill(step));
+    } else if (step.kind === "claude-hud") {
+      checks.push(await checkClaudeHud(step));
     } else if (step.kind === "demo") {
       checks.push(checkDemo(step));
     } else {

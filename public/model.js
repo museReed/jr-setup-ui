@@ -92,11 +92,6 @@ export const FULLSCREEN_ITEMS = [
   },
 ];
 
-// 第一次跑 codex 會連續跳兩個問句，兩個都選錯就整組 hook 不跑、後面 codex 那幾格
-// 全部失敗——而失敗訊息只會說「驗證沒過」，不會說「你剛才那兩個選項選錯了」。
-//
-// 勾選框只寫「要接受信任提示」，但學生根本還沒看過那個畫面，不知道長什麼樣、有幾
-// 個選項、哪一個是對的。所以照原樣把它們印出來，學生對照著選就好。
 // 這兩列驗證完會留一張截圖，卡片要把它貼出來。一個 agent 一個檔，兩張卡各看各的
 // ——共用一個檔的話先驗 claude 再驗 codex，claude 那張顯示的會是 codex 截的圖。
 export const PLAYWRIGHT_SHOT_AGENTS = {
@@ -104,14 +99,19 @@ export const PLAYWRIGHT_SHOT_AGENTS = {
   "ext-playwright-codex": "codex",
 };
 
-export const CARD_HINTS = {
-  "codex-namer": {
-    title: "第一次跑 codex 會問這兩題，照這樣選：",
-    lines: [
-      "Allow this hook to run? → Yes（不接受的話整組 hook 都不會跑）",
-      "Select sandbox mode?   → default（課堂用預設就好）",
-    ],
-  },
+// 第一次跑 codex 會連續跳兩個問句。原本照原樣印在卡片上，現在搬進「怎麼做」
+// 彈窗——那裡有畫面示意、有要選哪一個，卡片上再印一次是同一件事講兩遍。
+export const CARD_HINTS = {};
+
+// 眼睛那一格自己的按鈕：按下去開一個終端，學生看完回來勾。
+//
+// 其他眼睛項不需要——它們的卡片底下那顆驗證本來就會開終端，看的就是那個視窗。
+// 底部狀態列這格不一樣：它那半的驗證是 headless 的行為測試，學生從頭到尾看不到
+// 任何視窗，沒有這顆按鈕就只能自己去開終端、自己打 codex。
+//
+// key 是卡片的 checkId，值是 verify-in-terminal 的參數。
+export const EYE_TERMINAL_ACTIONS = {
+  "codex-config": { case: "statusline", agent: "codex" },
 };
 
 export const CARD_GATES = {
@@ -119,7 +119,7 @@ export const CARD_GATES = {
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
   claude: FULLSCREEN_ITEMS,
   // codex-namer 原本有一格「第一次跑 codex 要接受 hook 信任提示」。拿掉了：
-  // 同一張卡下面的 CARD_HINTS 已經把那兩題照原樣印出來（含要選哪一個），勾選框
+  // 那兩題在「怎麼做」彈窗裡各有一步（含畫面與要選哪一個），勾選框
   // 只是把同一件事再講一次，而且講得比較差——它沒說畫面長什麼樣、也沒提第二題。
   "codex-namer": [],
 };
@@ -324,6 +324,7 @@ const RULE_CHECK_IDS = {
     "output-style",
     "hook",
     "allowlist",
+    "claude-hud",
     "claude-namer",
     "claude-monitor",
   ]),
@@ -335,6 +336,14 @@ const RULE_CHECK_IDS = {
   ]),
   shared: new Set(["tab-sync"]),
 };
+
+// 這一格是誰家的設定。跟後端 config-install.js 的 agentForStep 是同一條規矩——
+// 合併按鈕會用這一家的 agent 去跑，終端上印的名字要跟著它走。
+export function agentForCheck(id) {
+  if (RULE_CHECK_IDS.claude.has(id)) return "claude";
+
+  return RULE_CHECK_IDS.codex.has(id) ? "codex" : null;
+}
 
 const CARD_DEFINITIONS = {
   rules: [
@@ -537,6 +546,8 @@ export const CARD_DESCRIPTIONS = {
   // 沒有這兩行就會退回那句「設定 X，讓這項功能能在接下來的課程中正常使用」。
   hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
   allowlist: "安全的指令與工作區內的改檔案不再逐次問你",
+  "claude-hud":
+    "輸入框下面多一行，隨時看得到現在用哪個模型、對話塞多滿、額度還剩多少",
   "codex-config": "Codex 這邊也照同一套規矩回話",
   "codex-agents": "同上，這一份是 Codex 會讀的規矩",
   "tab-sync": "開十個終端視窗也認得出哪個在做什麼",

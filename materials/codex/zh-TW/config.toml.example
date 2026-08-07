@@ -37,3 +37,20 @@ instructions = "回覆必須嚴格遵守 AGENTS.md 的 Output Style 規則：結
 default_permissions = ":workspace"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"
+
+# status_line：Codex 視窗最下面那一條要顯示什麼。
+# 陣列的順序就是顯示順序，改完重開 Codex 才會生效。
+#   "context-used"         這次對話用掉多少（Context 54% used）
+#   "model-with-reasoning" 現在用哪個模型（gpt-5.6-sol high）
+#   "current-dir"          現在在哪個資料夾
+#   "weekly-limit"         這週還剩多少額度（weekly 88% left）
+# 也想看五小時額度的話，加一個 "five-hour-limit"。
+# 用 /statusline 選單改的效果跟這段一樣，改的是同一個地方。
+[tui]
+status_line = [
+  "context-used",
+  "model-with-reasoning",
+  "current-dir",
+  "weekly-limit",
+]
+status_line_use_colors = true

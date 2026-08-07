@@ -1,0 +1,113 @@
+{
+  "id": "eye-codex-config",
+  "card": "codex-config",
+  "title": "Codex 最下面那一條會顯示你現在的狀態",
+  "description": "隨時看得到這次對話用掉多少、跑哪個模型、還剩多少額度",
+  "steps": [
+    {
+      "id": "open-codex",
+      "title": "按這一列右邊的「開終端驗證」",
+      "detail": [
+        "它會開一個新的終端視窗，並且把 Codex 跑起來",
+        "你不用自己找終端、也不用打指令",
+        "那一條是安裝時寫進設定檔的，Codex 要重開才讀得到——所以一定要用新開的這個視窗看"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "wizard",
+        "caption": "按鈕在那一列的右邊，不是整份清單的下面",
+        "place": "row",
+        "row": "Codex 最下面那一條會顯示你現在的狀態",
+        "row2": "（這張卡的其他項目）",
+        "button": "開終端驗證"
+      },
+      "kids": [
+        {
+          "id": "new-window-mac",
+          "kind": "see",
+          "only": "mac",
+          "title": "一個新的終端視窗開起來了",
+          "detail": [
+            "它常常不會自己跳到最前面，會被你現在這個視窗擋住，這不是壞掉",
+            "去下面的 Dock 找那個終端機圖示點一下，圖示底下有一個小點就代表它開著",
+            "還是找不到就按 F3，畫面會攤開所有開著的視窗"
+          ],
+          "visual": {
+            "type": "mock",
+            "mock": "dock",
+            "caption": "Dock 上的終端機圖示，底下有小點",
+            "app": ">_"
+          }
+        },
+        {
+          "id": "new-window-win",
+          "kind": "see",
+          "only": "win",
+          "title": "一個新的終端視窗開起來了",
+          "detail": [
+            "它常常不會自己跳到最前面，只會在下面的工作列上閃，這不是壞掉",
+            "看到工作列有一格在閃，點它一下就會跳出來"
+          ],
+          "visual": {
+            "type": "mock",
+            "mock": "taskbar",
+            "caption": "工作列上那一格在閃",
+            "app": "終端機"
+          }
+        }
+      ]
+    },
+    {
+      "id": "watch-status-line",
+      "title": "看視窗最下面那一條",
+      "detail": [
+        "它在輸入框的下面，字很小、顏色比較淡",
+        "四段用「·」隔開，由左到右是：用掉多少、哪個模型、哪個資料夾、這週還剩多少"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "最下面那一條，四段用「·」隔開",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "Improve documentation in @filename"
+          },
+          {
+            "tone": "ok",
+            "text": "Context 54% used · gpt-5.6-sol high · ~/Projects/muse-platform · weekly 88% left"
+          }
+        ]
+      },
+      "kids": [
+        {
+          "id": "status-line-shown",
+          "kind": "see",
+          "title": "四段都看得到",
+          "detail": [
+            "百分比和資料夾名字跟截圖不一樣是正常的，那是你自己的狀態",
+            "四段都在的話回來把這一格勾起來"
+          ],
+          "visual": null
+        },
+        {
+          "id": "status-line-missing",
+          "kind": "miss",
+          "title": "那一條沒出現，或只有一兩段",
+          "detail": [
+            "多半是設定還沒裝好，或這個視窗是舊的——回卡片按一次安裝，再按一次「開終端驗證」",
+            "還是沒有的話在 Codex 裡打 /statusline，那個選單改的是同一份設定"
+          ],
+          "visual": null
+        }
+      ]
+    },
+    {
+      "id": "close-window",
+      "title": "看完了就把那個終端視窗關掉",
+      "detail": "每驗一次都會開一個新的，看完隨手關掉，待會回頭找比較容易",
+      "visual": null,
+      "kids": []
+    }
+  ]
+}

@@ -57,6 +57,64 @@
       ]
     },
     {
+      "id": "switch-plan-mode",
+      "title": "它說你不在 Plan mode 時，輸入 /plan",
+      "detail": [
+        "可以用鍵盤選的那種選單，只有在 Plan mode 底下才跳得出來",
+        "在最下面那格輸入框打 /plan，按 Enter",
+        "打的時候它會列出 /plan switch to Plan mode 讓你確認"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "在輸入框打 /plan，按 Enter",
+        "lines": [
+          {
+            "tone": "prompt",
+            "text": "你目前不在 Plan mode。若要互動式選單，請輸入 /plan 繼續剛才的 structured questions；若不要切換，請回覆「不切換」，我會改用文字選項。"
+          },
+          {
+            "tone": "ok",
+            "text": "❯ /plan"
+          },
+          {
+            "tone": "dim",
+            "text": "/plan  switch to Plan mode"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
+      "id": "resume-questions",
+      "title": "切好之後叫它繼續剛才那組問題",
+      "detail": [
+        "切過去的時候它會先說一句 Model changed to ... for Plan mode",
+        "在輸入框打「繼續剛才的 structured questions」，按 Enter",
+        "它就會把剛才那組問題重新跳出來"
+      ],
+      "visual": {
+        "type": "mock",
+        "mock": "term",
+        "caption": "打這一句，按 Enter",
+        "lines": [
+          {
+            "tone": "dim",
+            "text": "Model changed to gpt-5.6-sol medium for Plan mode."
+          },
+          {
+            "tone": "ok",
+            "text": "❯ 繼續剛才的 structured questions"
+          },
+          {
+            "tone": "dim",
+            "text": "Working (1s • esc to interrupt)"
+          }
+        ]
+      },
+      "kids": []
+    },
+    {
       "id": "watch-options",
       "title": "看它怎麼問你問題",
       "detail": "我們要的是Codex遇到「有好幾種做法」時，跳出一組選項讓你用鍵盤選，而不是把選項寫成一段文字要你自己打字回答",
@@ -66,16 +124,48 @@
         "caption": "要看到的是這種、可以用上下鍵選的",
         "lines": [
           {
+            "tone": "dim",
+            "text": "Question 1/3 (3 unanswered)"
+          },
+          {
             "tone": "prompt",
-            "text": "要用哪一種做法？"
+            "text": "你平常最常用終端機做什麼？"
           },
           {
             "tone": "ok",
-            "text": "❯ 1. 先做最小可用的版本"
+            "text": "❯ 1. 一般開發（Recommended）"
           },
           {
             "tone": "dim",
-            "text": "  2. 一次做完整版"
+            "text": "     以本機寫程式、跑指令和少量 SSH 為主；優點：選擇多、容易上手；缺點：不特別照顧重度遠端流程。"
+          },
+          {
+            "tone": "dim",
+            "text": "  2. 遠端與 tmux"
+          },
+          {
+            "tone": "dim",
+            "text": "     長時間連伺服器，並依賴 SSH 或 tmux；優點：鍵盤流程穩定、斷線後好接續；缺點：需要學快捷鍵與設定。"
+          },
+          {
+            "tone": "dim",
+            "text": "  3. 指令輔助與 AI"
+          },
+          {
+            "tone": "dim",
+            "text": "     希望工具能解釋、補全或代寫指令；優點：新指令較容易上手；缺點：通常較重，且可能牽涉帳號與雲端資料。"
+          },
+          {
+            "tone": "dim",
+            "text": "  4. None of the above"
+          },
+          {
+            "tone": "dim",
+            "text": "     Optionally, add details in notes (tab)."
+          },
+          {
+            "tone": "dim",
+            "text": "tab to add notes | enter to submit answer | ←/→ to navigate questions | esc to interrupt"
           }
         ]
       },
@@ -95,7 +185,7 @@
           "kind": "miss",
           "title": "它只是把選項寫成文字",
           "detail": [
-            "像「你可以選 A 或 B，告訴我你要哪個」這樣，就是沒生效",
+            "像「你可以選 A 或 B，告訴我你要哪個」這樣的話代表還沒生效",
             "那張卡的技能包可能沒裝起來，回去重按一次安裝再驗"
           ],
           "visual": null
@@ -105,7 +195,7 @@
     {
       "id": "close-window",
       "title": "看完了就把那個終端視窗關掉",
-      "detail": "每按一次驗證就會開一個新的，不關的話做到後面會累積十幾個視窗，你會分不出哪個是哪個",
+      "detail": "每按一次驗證都會開一個新的，看完隨手關掉，待會回頭找比較容易",
       "visual": null,
       "kids": []
     }

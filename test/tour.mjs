@@ -134,18 +134,15 @@ try {
   // 這條會擋下「順手再加一張」。真的要加，先問自己：不講的話學生會不會卡死或
   // 誤判？只是「知道會比較好」的，寫進卡片描述或清單的眼睛文案。
   assert.deepEqual(Object.keys(CARD_HINTS).sort(), [
-    "codex-namer",
     "execution-policy",
-    "ext-playwright-claude",
-    "ext-playwright-codex",
     "powershell-encoding",
     "tab-sync",
   ]);
-  ok("只有六張會卡死或誤判的卡片有提示");
+  ok("只有三張會卡死或誤判的卡片有提示");
 
   // ── 元件導覽 ────────────────────────────────────────────────
   //
-  // 七個元件一定要講到，順序就是學生操作的順序。以元件為單位記，不是以卡為單位：
+  // 六個元件一定要講到，順序就是學生操作的順序。以元件為單位記，不是以卡為單位：
   // 手動清單要到第三張卡才第一次出現，貼證明的輸入框只有 Claude Code 那張有，
   // 「重跑驗證」跟環境段的「再 check 一次」是兩件事——以卡為單位的話，這些後面
   // 才第一次遇到的元件永遠沒人講（Reed 在 VM 上實際卡到）。
@@ -160,7 +157,6 @@ try {
       "step-action",
       "paste-proof",
       "retest-rescan",
-      "retest-verify",
       "cancel-run",
     ],
   );
@@ -175,7 +171,7 @@ try {
     assert(step.title.length > 0);
     assert(step.description.length > 0);
   }
-  ok("元件導覽涵蓋七個元件；原始輸出歸版面導覽，不讓第一張卡為它單獨跳一次");
+  ok("元件導覽涵蓋六個元件；原始輸出歸版面導覽，不讓第一張卡為它單獨跳一次");
 
   const all = new Set(COMPONENT_TOUR_STEPS.map((step) => step.id));
   const componentBase = {
@@ -195,15 +191,14 @@ try {
       "step-action",
       "paste-proof",
       "retest-rescan",
-      "retest-verify",
     ],
   );
   assert.deepEqual(
     newComponentSteps({
       ...componentBase,
-      seenIds: new Set(["checklist-system", "retest-verify"]),
+      seenIds: new Set(["checklist-system", "retest-rescan"]),
     }).map((step) => step.id),
-    ["checklist-manual", "step-action", "paste-proof", "retest-rescan"],
+    ["checklist-manual", "step-action", "paste-proof"],
   );
   assert.deepEqual(
     newComponentSteps({
@@ -244,7 +239,6 @@ try {
       "step-action",
       "paste-proof",
       "retest-rescan",
-      "retest-verify",
     ],
   );
   assert.deepEqual(

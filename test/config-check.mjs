@@ -292,7 +292,11 @@ process.stdin.on("end", () => {
   // 不到的東西——另一個終端視窗的分頁標題、瀏覽器裡長出來的網頁、跳出來的選單。
   const EYE_CHECKS = [
     "tab-sync",
+    // HUD 只在「下一次互動之後」才畫出來——設定檔全對，畫面上仍可能是空的。
+    "claude-hud",
     "claude-namer",
+    // 底部狀態列：設定檔寫對了但 Codex 沒重開，那條還是舊的，而檔案比對一路都綠。
+    "codex-config",
     "codex-namer",
     "skill-claude-auto-rename",
     "skill-codex-auto-rename",
