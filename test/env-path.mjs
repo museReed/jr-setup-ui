@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { mergePath, spawnEnv, withUserBin } from "../src/env-path.js";
+import { mergePath, spawnEnv, withPath, withUserBin } from "../src/env-path.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -65,6 +65,27 @@ try {
     "/usr/bin:/bin:/Users/x/.local/bin:/opt/homebrew/bin",
   );
   ok("PATH 缺漏或有空項目時不拋錯");
+
+  // ⚠️ 整個 Windows 支援最陰的一個坑（Windows VM 實測：git 與 Claude Code CLI 都是
+  // winget/安裝器印 Successfully installed、exit code 0，那一列還是「未安裝」，而
+  // PATH 裡明明有 C:\Program Files\Git\cmd）。
+  //
+  // Windows 的環境變數不分大小寫，process.env 上那把鑰匙實際叫 `Path`。所以
+  // { ...process.env, PATH: 重算過的 } 會同時有兩把，而 Node 在 win32 上 spawn 前
+  // 會濾掉大小寫重複的鍵、保留**先出現的那一把**——`Path`（舊快照）贏，新算的
+  // `PATH` 整個被丟掉。重讀登錄檔那套機制等於從來沒生效過。
+  const windowsish = withPath(
+    { Path: "C:\\old", USERPROFILE: "C:\\Users\\x" },
+    "C:\\new",
+  );
+  assert.deepEqual(Object.keys(windowsish).sort(), ["PATH", "USERPROFILE"]);
+  assert.equal(windowsish.PATH, "C:\\new");
+  assert.equal(windowsish.Path, undefined, "舊的那把鑰匙一定要拿掉");
+  // 小寫的那把也算同一把。
+  assert.equal(withPath({ path: "C:\\old" }, "C:\\new").path, undefined);
+  // PATH 以外的東西原封不動。
+  assert.equal(windowsish.USERPROFILE, "C:\\Users\\x");
+  ok("重算過的 PATH 會蓋掉不同大小寫的舊鑰匙，不留兩把");
 
   const env = await spawnEnv();
   assert.equal(typeof env, "object");

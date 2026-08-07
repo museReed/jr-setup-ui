@@ -122,6 +122,38 @@ export function withUserBin(currentPath, home) {
   return [...entries, ...additions].join(":");
 }
 
+// 把重算過的 PATH 放進環境變數，同時把原本那把不同大小寫的鑰匙拿掉。
+//
+// ⚠️ 這是整個 Windows 支援最陰的一個坑。Windows 的環境變數不分大小寫，而
+// process.env 上那把鑰匙實際叫 `Path`（不是 `PATH`）。所以
+//
+//   { ...process.env, PATH: 重算過的 }
+//
+// 得到的物件同時有 `Path`（舊的快照）跟 `PATH`（新的）。Node 在 win32 上 spawn 前
+// 會把大小寫重複的鍵過濾掉，而它保留的是**先出現的那一把**——展開 process.env 時
+// `Path` 就已經在前面了，於是新的 `PATH` 整個被丟掉。
+//
+// 表現出來就是：登錄檔讀對了、mergePath 也算對了，子程序拿到的還是啟動當下那份舊
+// PATH。畫面上是「winget 印 Successfully installed、exit code 0，那一列還是未安裝」
+// ——git 與 Claude Code CLI 在 Windows VM 上都是這樣（Reed 實測，PATH 裡明明有
+// C:\Program Files\Git\cmd）。整套重讀登錄檔的機制等於從來沒有生效過。
+//
+// macOS 不受影響：那邊大小寫有分，Node 也不做這個過濾。
+export function withPath(base, value) {
+  const env = {};
+
+  for (const [key, existing] of Object.entries(base)) {
+    if (key.toLowerCase() === "path") {
+      continue;
+    }
+
+    env[key] = existing;
+  }
+
+  env.PATH = value;
+  return env;
+}
+
 // 回傳給子程序用的環境變數。
 export async function spawnEnv(now = Date.now()) {
   if (process.platform === "darwin") {
@@ -142,9 +174,9 @@ export async function spawnEnv(now = Date.now()) {
     return process.env;
   }
 
-  const env = {
-    ...process.env,
-    PATH: mergePath(
+  const env = withPath(
+    process.env,
+    mergePath(
       registry.machinePath,
       registry.userPath,
       process.env.PATH,
@@ -158,7 +190,7 @@ export async function spawnEnv(now = Date.now()) {
       // macOS 那邊同一個理由補 ~/.local/bin（實測不補就是裝完仍顯示未安裝）。
       `${homedir()}\\.local\\bin`,
     ),
-  };
+  );
   cache = { at: now, env };
   return env;
 }
