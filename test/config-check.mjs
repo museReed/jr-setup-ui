@@ -16,6 +16,7 @@ import {
   checkTabSync,
   probeHook,
   resolveBash,
+  wiredToScript,
 } from "../src/config-check.js";
 import {
   describeStep,
@@ -321,6 +322,42 @@ process.stdin.on("end", () => {
     "眼睛項的名單變了——程式驗得到就不該問學生，改動要說得出理由",
   );
   ok("眼睛項的名單釘住：程式驗得到的不問學生");
+
+  // Windows 的狀態列升級路徑。舊版把整段 PowerShell 塞進 settings.json 當一行指令，
+  // 那一行裡也有 claude-hud 字樣——只認字樣的話，已經裝過舊版的機器永遠是綠的、沒有
+  // 安裝鍵，狀態列卻永遠不出現（Windows VM 實測，又一個假綠燈）。
+  const ps1 = path.join(dir, "statusline.ps1");
+  writeFileSync(ps1, "# statusline\n");
+  const oldStyle =
+    "powershell -NoProfile -Command \"& { $dir = Get-ChildItem " +
+    "'.claude\\plugins\\cache\\*\\claude-hud\\*' }\"";
+  assert.equal(wiredToScript(oldStyle, ps1), false, "舊的一行寫法不算接上");
+  assert.equal(
+    wiredToScript(`powershell -NoProfile -File "${ps1}"`, ps1),
+    true,
+    "指到那支腳本才算接上",
+  );
+  // 反斜線／大小寫都不算數：settings.json 裡是反斜線，而 Windows 的路徑不分大小寫。
+  assert.equal(
+    wiredToScript(
+      `powershell -File "${ps1.replaceAll("/", "\\").toUpperCase()}"`,
+      ps1,
+    ),
+    true,
+    "斜線方向與大小寫要正規化後再比",
+  );
+  // 指到一個不存在的檔案，跟沒接上是同一件事。
+  assert.equal(
+    wiredToScript(
+      `powershell -File "${path.join(dir, "gone.ps1")}"`,
+      path.join(dir, "gone.ps1"),
+    ),
+    false,
+    "腳本檔不在就不算接上",
+  );
+  // mac 沒有腳本檔，那一列本來就是一行指令，一律當通過。
+  assert.equal(wiredToScript("bash -c '...'", null), true, "mac 不受這條限制");
+  ok("Windows 的狀態列必須指到落地的 .ps1，舊的一行寫法會被判成要重裝");
 
   // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
   //
