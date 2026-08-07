@@ -740,7 +740,13 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         previousTarget: `${claudeDir}/plugins/claude-hud/previous-statusline.txt`,
         // cache 路徑第一層是 marketplace 名、第二層才是 plugin 名，中間那層不能省。
         cacheRoot: `${claudeDir}/plugins/cache`,
-        commandTemplate: "claude-code/claude-hud/statusline.sh.template",
+        // 兩個平台的狀態列指令長得完全不一樣：mac 是一段 bash（用 ls + sort
+        // 找最新版），Windows 是一段 PowerShell（Get-ChildItem + [version] 排序）。
+        // 共通的只有「{RUNTIME} 換成這台機器的 node 絕對路徑」這件事。
+        commandTemplate:
+          platform === "win32"
+            ? "claude-code/claude-hud/statusline.ps1.template"
+            : "claude-code/claude-hud/statusline.sh.template",
       };
 
     case "codex-config":

@@ -7,7 +7,8 @@
 > - 步驟定義 `src/config-install.js` 的 `CLAUDE_HUD` 與 `describeStep` 的 `claude-hud`
 > - 安裝 `scripts/install-configs.mjs` 的 `claudeHudStep`
 > - 檢查 `src/config-check.js` 的 `checkClaudeHud`
-> - statusLine 指令原文 `materials/claude-code/claude-hud/statusline.sh.template`
+> - statusLine 指令原文 `materials/claude-code/claude-hud/statusline.sh.template`（mac）
+>   與 `statusline.ps1.template`（Windows）
 > - 學生看的步驟 `content/walkthroughs/eye-claude-hud.json`
 
 ---
@@ -127,6 +128,11 @@ setup 會依環境產生不同指令，一鍵版必須**在安裝當下重新偵
 原文放在 `materials/claude-code/claude-hud/statusline.sh.template`，裡面的 `{RUNTIME}`
 在安裝當下換成偵測到的 runtime 絕對路徑。**不要把這串寫進 JS 字串**——它有大量 `"`、`'`
 與 `\`，每一層逃脫都是一個壞掉的機會。
+
+Windows 那份（`statusline.ps1.template`）做同樣三件事，換成 PowerShell 的寫法：
+寬度從 `$Host.UI.RawUI.WindowSize.Width` 取（包在 try/catch 裡，取不到就跳過）、
+用 `Get-ChildItem` 掃同一個 cache 結構、版號用 `[version]` 轉型排序取最後一個。
+兩份共通的只有「`{RUNTIME}` 換成這台機器的 node 絕對路徑」這件事。
 
 這串在做三件事：
 
@@ -258,7 +264,7 @@ printf '{}' | bash -c '<§4.2 的指令>'
 | 幽靈安裝 | cache 有但 registry 沒有（或反過來） | 安裝前先對照 `plugins/cache/*/claude-hud` 與 `installed_plugins.json`，不一致就先清乾淨 |
 | Linux 跨檔案系統 | `EXDEV: cross-device link not permitted` | 舊版 Claude Code 的 bug，優先升級；否則 `TMPDIR=~/.cache/tmp` |
 | 學生已有其他狀態列 | 一鍵會蓋掉別人的設定 | §5.2 步驟 6 的檢查 |
-| Windows | 這份文件只驗證過 macOS | Windows 要走完全不同的路徑（Node launcher `.mjs` + `cmd.exe`），且 PowerShell 5.1 寫 JSON 會夾帶 BOM。詳見 plugin 的 setup skill |
+| Windows | 這份文件只驗證過 macOS | 已實作（`statusline.ps1.template`）但**還沒在 Windows 上跑過**。BOM 那個坑不成立：設定檔是嚮導用 Node 寫的，不是 PowerShell |
 | 串接指令 hook | 無 | 本機的 `block-chained-bash` hook 只擋 Claude 發出的 Bash 呼叫，**不影響 statusLine** —— 那是 Claude Code 自己 spawn 的子程序。實測正常 |
 
 ---
