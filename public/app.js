@@ -223,6 +223,23 @@ function forgetManualChecked(ids) {
 
 // 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
 // 「驗證成功」，不能等學生勾完眼睛才一起變。
+// installedSteps 是「這一輪按過安裝」的樂觀記憶，用途只有一個：撐住「終端印了安裝
+// 成功」到「下一次檢查回來」之間那幾秒，不然那一列會停在「尚未安裝」。
+//
+// 但它只該活到結果回來為止。新的結果說 missing 還留著的話，同一格會同時是「打勾」
+// 與「未安裝」，旁邊還有一顆安裝鍵，右上角計數照樣寫 3/3——三個地方各講各的
+// （Windows VM 實測 git：winget 印 Successfully installed，探測仍抓不到）。
+//
+// 只清 missing 那幾筆：ok 不用清（權威狀態自己就會打勾），warn 也不清（那是「裝了
+// 但有問題」，不是沒裝）。
+function forgetStaleInstalls(checks) {
+  for (const check of checks) {
+    if (check.status === "missing") {
+      state.installedSteps.delete(check.id);
+    }
+  }
+}
+
 async function rememberBehaviorVerified(step) {
   state.behaviorVerifiedSteps.add(step);
 
@@ -1164,6 +1181,7 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
       toolSelectionValue(state.selectedTools),
     );
     state.envChecks = checks;
+    forgetStaleInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
     // renderWizard 畫出來的清單還是退勾的狀態，而後面沒有人再畫一次——畫面就停在
@@ -1240,6 +1258,7 @@ async function checkConfigs() {
   try {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
+    forgetStaleInstalls(result.checks);
     state.availableActions = new Set([
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),

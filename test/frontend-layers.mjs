@@ -660,6 +660,26 @@ try {
   assert.match(files.app, /forgetManualChecked\(ids\);/, "人工步驟那顆只退那一步");
   ok("眼睛與人工步驟只退自己那幾格的勾，不洗掉程式那半的驗證");
 
+  // 「按過安裝」的樂觀記憶只該撐住結果回來之前那幾秒。新的檢查說 missing 還留著的
+  // 話，同一格會同時是「打勾 + 未安裝 + 一顆安裝鍵」，計數還寫 3/3（Windows VM
+  // 實測 git）。兩份檢查結果回來時都要清。
+  assert.match(
+    files.app,
+    /function forgetStaleInstalls\(checks\)[\s\S]{0,300}state\.installedSteps\.delete\(check\.id\)/,
+    "檢查回報 missing 時要把樂觀記憶清掉",
+  );
+  assert.match(
+    files.app,
+    /state\.envChecks = checks;\s*\n\s*forgetStaleInstalls\(checks\);/,
+    "環境檢查回來要清",
+  );
+  assert.match(
+    files.app,
+    /state\.lastChecks = result\.checks;\s*\n\s*forgetStaleInstalls\(result\.checks\);/,
+    "設定檢查回來也要清",
+  );
+  ok("檢查回報 missing 就把「按過安裝」的樂觀記憶清掉");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

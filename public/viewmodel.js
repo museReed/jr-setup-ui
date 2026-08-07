@@ -899,6 +899,9 @@ export function checklistGroups({
     // 沒」，而它唯一的達成方式就是安裝。所以剛裝完也要當場打勾，不等下一次伺服器
     // 檢查回來——不然會出現「終端印安裝成功、這一列還寫尚未安裝」（VM 實測，
     // 合併卡的第一列）。
+    //
+    // 這份記憶只該活到下一次檢查回來為止：新的結果說 missing 時，那一筆會在
+    // app.js 的 forgetStaleInstalls 被清掉，這裡不必再擋一次。
     const settled = checked || installedCheckIds.has(candidate.id);
 
     system.push({
