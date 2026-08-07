@@ -674,15 +674,29 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "obsidian": {
       // mac 有 brew 就走 cask；沒有 brew 的機器下載官方 dmg 掛載複製——嚮導不能代裝
       // brew（要 sudo 密碼，而 spawn 出來的子程序沒有 tty），所以不能只留 brew 這條。
-      const app =
+      // Windows 上的落點不只一種：Obsidian 走 Squirrel，裝到使用者自己的
+      // AppData 底下，但那個安裝器的版本、以及 x64／ARM 的差異都可能換位置
+      //（Windows VM 實測：winget 說裝好了，我賭的那一個路徑卻是空的）。
+      //
+      // 所以列出所有已知的候選，任何一個在就算裝好——賭單一路徑的代價是「東西
+      // 明明在，卡片卻紅著」，而學生完全不知道要去哪裡看。
+      const apps =
         platform === "win32"
-          ? `${home}/AppData/Local/Obsidian/Obsidian.exe`
-          : "/Applications/Obsidian.app";
+          ? [
+              `${home}/AppData/Local/Obsidian/Obsidian.exe`,
+              `${home}/AppData/Local/Programs/Obsidian/Obsidian.exe`,
+              `${home}/AppData/Local/obsidian/Obsidian.exe`,
+              "C:/Program Files/Obsidian/Obsidian.exe",
+              "C:/Program Files (x86)/Obsidian/Obsidian.exe",
+            ]
+          : ["/Applications/Obsidian.app"];
       return {
         id,
         label: "Obsidian",
         kind: "obsidian-app",
-        app,
+        // app 是「最常見的那一個」，只拿來寫訊息；判定看的是 apps 整組。
+        app: apps[0],
+        apps,
         winget: "Obsidian.Obsidian",
         cask: "obsidian",
         dmg: "https://github.com/obsidianmd/obsidian-releases/releases/latest/download/Obsidian-universal.dmg",

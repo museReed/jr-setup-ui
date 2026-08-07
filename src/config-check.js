@@ -899,13 +899,14 @@ export function checkVaultAgent(step) {
 }
 
 export function checkObsidianApp(step) {
-  const installed = existsSync(step.app);
+  // 任何一個候選在就算裝好（見 config-install 的 apps）。
+  const found = (step.apps ?? [step.app]).find((candidate) => existsSync(candidate));
 
   return {
     id: step.id,
     label: step.label,
-    status: installed ? "ok" : "missing",
-    detail: installed ? `已安裝 → ${step.app}` : "尚未安裝（要網路）",
+    status: found === undefined ? "missing" : "ok",
+    detail: found === undefined ? "尚未安裝（要網路）" : `已安裝 → ${found}`,
   };
 }
 

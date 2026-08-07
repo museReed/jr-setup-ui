@@ -480,9 +480,15 @@ async function runTool(cmd, args, hint) {
   });
 }
 
+function findObsidian(step) {
+  return (step.apps ?? [step.app]).find((candidate) => existsSync(candidate));
+}
+
 async function obsidianAppStep(step) {
-  if (existsSync(step.app)) {
-    logProgress(`Obsidian 本來就裝好了（${step.app}）`);
+  const already = findObsidian(step);
+
+  if (already !== undefined) {
+    logProgress(`Obsidian 本來就裝好了（${already}）`);
     return;
   }
 
@@ -527,15 +533,21 @@ async function obsidianAppStep(step) {
     await runTool("hdiutil", ["detach", mount, "-quiet"], "");
   }
 
-  if (!existsSync(step.app)) {
+  const installed = findObsidian(step);
+
+  if (installed === undefined) {
     // 不要猜原因。安裝工具自己印的那幾行就在上面，猜錯只會把學生指去錯的地方
     //（VM 實測：明明是 winget 來源的憑證問題，訊息卻說「多半是網路問題」）。
+    //
+    // 找過哪幾個位置也一起講：安裝工具說成功、我們卻說沒有的時候，這份清單是
+    // 判斷「它到底裝去哪」的唯一線索。
     throw new Error(
-      `Obsidian 沒有裝起來——${step.app} 不在。原因看上面那幾行安裝工具的輸出，修好之後可以重按一次`,
+      `Obsidian 沒有裝起來——這幾個位置都找過了：${(step.apps ?? [step.app]).join("、")}。` +
+        "原因看上面那幾行安裝工具的輸出，修好之後可以重按一次",
     );
   }
 
-  logProgress(`Obsidian 已安裝 → ${step.app}`);
+  logProgress(`Obsidian 已安裝 → ${installed}`);
 }
 
 // 建 vault、接上自己的 private repo、把 obsidian-git 放進去並設定好。
