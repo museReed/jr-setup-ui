@@ -36,16 +36,23 @@ try {
   process.exit(1);
 }
 
+// 走 GitHub 的登入轉址，不要直接開那一頁。
+//
+// 筆記庫是 private：瀏覽器沒登入的話 GitHub 一律回 404（不是 403），學生看到的
+// 是「這個頁面不存在」——他會以為是我們的網址壞了（Windows VM 實測）。
+//
+// /login?return_to=… 兩種狀態都對：沒登入先跳登入頁、登完自動回到這一頁；
+// 已經登入就直接轉過去，中間那一頁看都看不到。
+const target = new URL(url);
+const open = `https://github.com/login?return_to=${encodeURIComponent(target.pathname)}`;
+
 console.log(`打開：${url}`);
-// 那是 private repo：瀏覽器沒登入 GitHub 的話會看到 404，不是 403，也不是壞掉
-//（Windows VM 實測，學生的瀏覽器是全新的）。先講在前面比事後解釋有用。
-console.log("看到 404 的話，是那個瀏覽器還沒登入 GitHub——你的筆記庫是私人的，沒登入就看不到");
 
 // detached + unref：瀏覽器開起來之後這支就該結束，不然卡片會一直轉圈。
 const child =
   process.platform === "win32"
-    ? spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" })
-    : spawn("open", [url], { detached: true, stdio: "ignore" });
+    ? spawn("cmd", ["/c", "start", "", open], { detached: true, stdio: "ignore" })
+    : spawn("open", [open], { detached: true, stdio: "ignore" });
 
 child.unref();
 

@@ -409,18 +409,23 @@ const startedAt = Date.now();
 function browseVaultRepo() {
   const vault = path.join(homedir(), VAULT_DIR);
 
+  // 走 /login?return_to=：筆記庫是 private，瀏覽器沒登入的話 GitHub 回的是 404，
+  // 學生會以為網址壞了。這個網址沒登入先跳登入頁、登完自動回到改動歷史那一頁；
+  // 已經登入就直接轉過去（Windows VM 實測撞到）。
+  const note = "幫你把 GitHub 上的改動歷史打開了——最上面那一行就是剛才那次";
+
   if (process.platform === "win32") {
     return [
-      `$url = (git -C '${vault}' remote get-url origin) -replace '\\.git$',''`,
-      "Write-Host '幫你把 GitHub 上那個筆記庫打開了——看看「測試筆記」在不在'",
-      "Start-Process $url",
+      `$path = ((git -C '${vault}' remote get-url origin) -replace '\\.git$','' -replace 'https://github.com','') + '/commits/main/'`,
+      `Write-Host '${note}'`,
+      "Start-Process ('https://github.com/login?return_to=' + [uri]::EscapeDataString($path))",
     ].join("\n");
   }
 
   return [
-    `url=$(git -C '${vault}' remote get-url origin | sed -e 's/\\.git$//')`,
-    "echo '幫你把 GitHub 上那個筆記庫打開了——看看「測試筆記」在不在'",
-    'open "$url"',
+    `path=$(git -C '${vault}' remote get-url origin | sed -e 's/\\.git$//' -e 's#https://github.com##')/commits/main/`,
+    `echo '${note}'`,
+    'open "https://github.com/login?return_to=$(printf %s "$path" | sed -e \'s#/#%2F#g\')"',
   ].join("\n");
 }
 
