@@ -410,7 +410,25 @@ async function claudeHudStep(step) {
     path.join(MATERIALS, step.commandTemplate),
     "utf8",
   );
-  const command = template.trim().replace("{RUNTIME}", process.execPath);
+  const filled = template.replace("{RUNTIME}", process.execPath);
+  // Windows：腳本落地成一支 .ps1，settings.json 裡只留 -File 加路徑。整段塞進一行
+  // 指令的話，內層的單引號與帶空白的 node 路徑會被 cmd.exe 咬掉（見 config-install
+  // 的 scriptTarget）。BOM 不能省——PowerShell 5.1 沒有 BOM 就把中文註解當 ANSI 讀。
+  let command;
+
+  if (step.scriptTarget) {
+    await mkdir(path.dirname(step.scriptTarget), { recursive: true });
+    await writeFile(
+      step.scriptTarget,
+      `﻿${filled.replace(/^﻿/, "")}`,
+      "utf8",
+    );
+    logProgress(`狀態列腳本已寫進 ${step.scriptTarget}`);
+    command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${step.scriptTarget.replaceAll("/", "\\")}"`;
+  } else {
+    command = filled.trim();
+  }
+
   const settings = await readSettings(step.settingsTarget);
   const previous = settings.statusLine?.command;
 

@@ -134,6 +134,24 @@ Windows 那份（`statusline.ps1.template`）做同樣三件事，換成 PowerSh
 用 `Get-ChildItem` 掃同一個 cache 結構、版號用 `[version]` 轉型排序取最後一個。
 兩份共通的只有「`{RUNTIME}` 換成這台機器的 node 絕對路徑」這件事。
 
+**但兩邊落地的形狀不同。** mac 那份直接當成一行指令寫進 `settings.json`；Windows 那份
+落地成一支真的 `.ps1`（`~/.claude/plugins/claude-hud/statusline.ps1`），`settings.json`
+裡只留：
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\<你>\.claude\plugins\claude-hud\statusline.ps1"
+```
+
+原因是 Windows VM 實測踩到的：整段塞進 `powershell -Command "..."` 之後，那一行同時含
+單引號、`$` 變數，還有一個帶空白的 node 路徑（`C:\Program Files\nodejs\node.exe`），
+而 Claude Code 在 Windows 上是把整條交給 `cmd.exe` 再解析一次——引號互相打架，指令根本
+沒啟動。**而 statusline 失敗是安靜的**：那一條不出現，沒有任何錯誤訊息，四個檢查點還
+全綠。這跟命名 hook 在 Windows 上的薄殼是同一招：powershell 藏在腳本檔裡，外面只留一個
+`-File` 路徑，沒有東西需要跳脫。
+
+那支 `.ps1` 帶中文註解，所以寫檔時要加 UTF-8 BOM——PowerShell 5.1 沒有 BOM 就當成系統
+ANSI 讀，註解會變亂碼並可能吃掉後面的字元。
+
 這串在做三件事：
 
 1. **決定寬度** — 依序試 `COLUMNS` 環境變數 → `stty size` → 退回 `120`，然後減 4（Claude Code 輸入框左右各留 2 欄）。Claude Code 會把子程序的 stdout 導向管線，所以 `process.stdout.columns` 讀不到，必須靠環境變數傳。
@@ -264,7 +282,8 @@ printf '{}' | bash -c '<§4.2 的指令>'
 | 幽靈安裝 | cache 有但 registry 沒有（或反過來） | 安裝前先對照 `plugins/cache/*/claude-hud` 與 `installed_plugins.json`，不一致就先清乾淨 |
 | Linux 跨檔案系統 | `EXDEV: cross-device link not permitted` | 舊版 Claude Code 的 bug，優先升級；否則 `TMPDIR=~/.cache/tmp` |
 | 學生已有其他狀態列 | 一鍵會蓋掉別人的設定 | §5.2 步驟 6 的檢查 |
-| Windows | 這份文件只驗證過 macOS | 已實作（`statusline.ps1.template`）但**還沒在 Windows 上跑過**。BOM 那個坑不成立：設定檔是嚮導用 Node 寫的，不是 PowerShell |
+| Windows 的引號 | 狀態列不出現，沒有錯誤訊息，四個檢查點還全綠 | 整段塞進 `powershell -Command "..."` 會被 `cmd.exe` 再解析一次而散掉。改成落地一支 `.ps1`、只留 `-File`，見 §4.2（Windows VM 實測） |
+| Windows 的 BOM | `.ps1` 裡的中文註解變亂碼 | 那支腳本是 PowerShell 讀的，**要 BOM**。（`settings.json` 不用——那份是嚮導用 Node 寫的） |
 | 串接指令 hook | 無 | 本機的 `block-chained-bash` hook 只擋 Claude 發出的 Bash 呼叫，**不影響 statusLine** —— 那是 Claude Code 自己 spawn 的子程序。實測正常 |
 
 ---

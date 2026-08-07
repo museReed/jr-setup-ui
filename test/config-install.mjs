@@ -147,6 +147,23 @@ try {
   assert.match(windowsTabSync.rcBlock, /-NoNewWindow/);
   ok("Windows watcher 用 -NoNewWindow 起，跟終端共用同一個 console");
 
+  // Windows 的狀態列不能是 settings.json 裡的一行 powershell -Command：那一段含單
+  // 引號、$ 變數與一個帶空白的 node 路徑，Claude Code 會把整條交給 cmd.exe 再解析
+  // 一次，引號打架就整條不啟動，而且失敗是安靜的（VM 實測：狀態列不出現、沒錯誤）。
+  // 所以要落地成一支 .ps1，settings.json 只留 -File 加路徑。
+  const hudWin = describeStep("claude-hud", { ...AT, platform: "win32" });
+  assert.equal(
+    hudWin.commandTemplate,
+    "claude-code/claude-hud/statusline.ps1.template",
+  );
+  assert.equal(
+    hudWin.scriptTarget,
+    `${HOME}/.claude/plugins/claude-hud/statusline.ps1`,
+  );
+  const hudMac = describeStep("claude-hud", { ...AT, platform: "darwin" });
+  assert.equal(hudMac.scriptTarget, null, "mac 那條照舊直接寫進 settings.json");
+  ok("Windows 的狀態列落地成一支 .ps1，mac 維持一行指令");
+
   const claudeHooks = describeStep("claude-namer", { ...AT, platform: "linux" });
   const claudeMonitor = describeStep("claude-monitor", {
     ...AT,

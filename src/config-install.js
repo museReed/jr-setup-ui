@@ -759,12 +759,22 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         // cache 路徑第一層是 marketplace 名、第二層才是 plugin 名，中間那層不能省。
         cacheRoot: `${claudeDir}/plugins/cache`,
         // 兩個平台的狀態列指令長得完全不一樣：mac 是一段 bash（用 ls + sort
-        // 找最新版），Windows 是一段 PowerShell（Get-ChildItem + [version] 排序）。
+        // 找最新版），Windows 是一支 PowerShell 腳本（Get-ChildItem + [version] 排序）。
         // 共通的只有「{RUNTIME} 換成這台機器的 node 絕對路徑」這件事。
         commandTemplate:
           platform === "win32"
             ? "claude-code/claude-hud/statusline.ps1.template"
             : "claude-code/claude-hud/statusline.sh.template",
+        // Windows 上那段不能塞進 settings.json 當成一行指令：它含單引號、$ 變數與一個
+        // 帶空白的 node 路徑，而 Claude Code 會把整條交給 cmd.exe 再解析一次，引號
+        // 互相打架就整條不啟動——失敗還是安靜的（VM 實測：狀態列不出現、沒有錯誤）。
+        //
+        // 所以落地成一支真的 .ps1，settings.json 裡只留 -File 加一個路徑。
+        // 跟命名 hook 的 Windows 薄殼同一招。
+        scriptTarget:
+          platform === "win32"
+            ? `${claudeDir}/plugins/claude-hud/statusline.ps1`
+            : null,
       };
 
     case "codex-config":
