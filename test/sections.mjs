@@ -15,7 +15,11 @@ import {
   envLogoFor,
   progressSummary,
 } from "../public/viewmodel.js";
-import { STEP_IDS, describeStep } from "../src/config-install.js";
+import {
+  STEP_IDS,
+  describeStep,
+  stepsForTools,
+} from "../src/config-install.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -280,6 +284,22 @@ try {
   );
 
   console.log("ok - sections 分組、單卡順序、進度、logo 與未知 step fallback");
+
+  // 同一張卡不能被兩組都認走：畫面上會出現兩張一模一樣的卡，里程碑那條也多兩個點
+  // （Reed 實測截圖：筆記那段的 vault-agent-* 同時被「筆記庫」組與 Claude/Codex 組
+  // 認走，因為前者用的是「這一段有哪些成員」那個 Set 去分組）。
+  for (const group of flattenCheckCards(
+    groupChecks(stepsForTools(["claude", "codex"]).map((id) => check(id))),
+  )) {
+    const ids = group.cards.map(({ checkId }) => checkId);
+    assert.deepEqual(
+      ids.filter((id, index) => ids.indexOf(id) !== index),
+      [],
+      `${group.sectionId} 這一段有重複的卡片`,
+    );
+  }
+
+  ok("同一張卡只會被一組認走，沒有重複的卡片與里程碑");
 
   // 標題下那一行要回答「做完之後我會多出什麼」。原本十一張共用一句「設定 X，讓
   // 這項功能能在接下來的課程中正常使用」——那句話對每一張都成立，所以對每一張都

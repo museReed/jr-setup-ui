@@ -415,7 +415,10 @@ const CARD_DEFINITIONS = {
       agent: "other",
       label: "筆記庫",
       logo: "logo-terminal",
-      includes: (id) => NOTE_CHECK_IDS.has(id),
+      // 只認這兩張。用 NOTE_CHECK_IDS 的話會連 vault-agent-* 一起吃進來，而那兩張
+      // 下面的 Claude / Codex 組也認——同一張卡被畫兩次，里程碑那條也多兩個點
+      //（Reed 實測截圖）。那個 Set 是給分段用的，不是給分組用的。
+      includes: (id) => id === "obsidian" || id === "obsidian-vault",
     },
     {
       agent: "claude",
