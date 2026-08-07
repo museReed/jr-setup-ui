@@ -487,9 +487,28 @@ async function obsidianAppStep(step) {
   }
 
   if (process.platform === "win32") {
+    // --source winget 不能省。
+    //
+    // 不指定的話 winget 會連 msstore 一起查，而那個來源在 VM 上常常掛掉
+    //（0x8a15005e：伺服器憑證對不上）。更麻煩的是它掛掉之後 winget 不會退回只用
+    // 能用的那個來源，而是說「好幾個來源都有這個套件，請指定一個」然後整條失敗
+    //（Windows VM 實測）。指定了就不會去碰 msstore。
+    //
+    // --disable-interactivity：我們 spawn 的子程序沒有人在打字，跳出提問等於卡死。
     await runTool(
       "winget",
-      ["install", "-e", "--id", step.winget, "--accept-source-agreements", "--accept-package-agreements"],
+      [
+        "install",
+        "-e",
+        "--id",
+        step.winget,
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+        "--disable-interactivity",
+      ],
       "請確認 Windows 的「應用程式安裝程式」還在",
     );
   } else if ((await runTool("bash", ["-lc", "command -v brew"], "")) === 0) {
@@ -509,8 +528,10 @@ async function obsidianAppStep(step) {
   }
 
   if (!existsSync(step.app)) {
+    // 不要猜原因。安裝工具自己印的那幾行就在上面，猜錯只會把學生指去錯的地方
+    //（VM 實測：明明是 winget 來源的憑證問題，訊息卻說「多半是網路問題」）。
     throw new Error(
-      `Obsidian 沒有裝起來——${step.app} 不在，多半是網路問題，可以重按一次`,
+      `Obsidian 沒有裝起來——${step.app} 不在。原因看上面那幾行安裝工具的輸出，修好之後可以重按一次`,
     );
   }
 
