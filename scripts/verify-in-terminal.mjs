@@ -28,7 +28,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { VAULT_DIR } from "../src/config-install.js";
+import { describeStep, VAULT_DIR } from "../src/config-install.js";
+import { findObsidianApp } from "../src/config-check.js";
 import { materialsDir, verifyShotPath } from "../src/paths.js";
 
 const POLL_INTERVAL_MS = 1_000;
@@ -427,18 +428,28 @@ function browseVaultRepo() {
 // 學生機器上如果還有別的 vault，直接開 app 會停在上一次那個。
 function vaultScript() {
   const url = "obsidian://open?vault=jr-workshop-vault";
+  const done = "Obsidian 應該打開了——看左邊那排有沒有同步圖示，看完關掉這個視窗";
 
   if (process.platform === "win32") {
+    // 不要在 Windows 上走 obsidian:// 這個網址。
+    //
+    // 那個 protocol handler 要 Obsidian 自己啟動過一次才會註冊，而學生是嚮導幫他
+    // 裝的、從來沒開過——Windows 會跳「Get an app to open this 'obsidian' link」
+    // 然後叫他去逛 Microsoft Store（VM 實測）。
+    //
+    // 直接叫那支 exe 就沒有這個問題，開哪一本由 obsidian.json 決定（安裝時已經
+    // 把我們那本標成要開的那一本）。
+    const exe = findObsidianApp(
+      describeStep("obsidian", { lang: "zh-TW", home: homedir() }),
+    );
+
     return [
-      `Start-Process '${url}'`,
-      "Write-Host 'Obsidian 應該打開了——看左邊那排有沒有同步圖示，看完關掉這個視窗'",
+      exe === null ? `Start-Process '${url}'` : `Start-Process -FilePath '${exe}'`,
+      `Write-Host '${done}'`,
     ].join("\n");
   }
 
-  return [
-    `open '${url}'`,
-    "echo 'Obsidian 應該打開了——看左邊那排有沒有同步圖示，看完關掉這個視窗'",
-  ].join("\n");
+  return [`open '${url}'`, `echo '${done}'`].join("\n");
 }
 
 function titleScript() {

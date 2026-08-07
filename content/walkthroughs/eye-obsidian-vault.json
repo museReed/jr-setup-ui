@@ -62,8 +62,9 @@
           "kind": "miss",
           "title": "跳出「Vault not found」，或左邊那排什麼都沒多出來",
           "detail": [
+            "跳出「找不到能開啟這個連結的應用程式」或叫你去 Microsoft Store：那是系統還不認得 obsidian:// 這種網址，回上一格按一次重新設定就會改用別的方式打開",
             "跳「Vault not found」的話，回上一格按一次重新設定——設定的時候 Obsidian 要是關著的",
-            "真的還是不行，也可以自己在 Obsidian 左下角按「開啟資料夾作為筆記庫」，選 ~/jr-workshop-vault",
+            "真的還是不行，也可以自己打開 Obsidian、左下角按「開啟資料夾作為筆記庫」，選 jr-workshop-vault",
             "打開了但左邊那排沒有多東西，多半是「要不要信任這個資料夾」選了不信任，關掉重按一次驗證，這次選信任"
           ],
           "visual": null

@@ -844,14 +844,20 @@ async function registerVault(step) {
     return;
   }
 
+  // open: true 是「下次打開 Obsidian 就開這一本」。
+  //
+  // 只有在沒有別本被標成要開的時候才設：學生的機器上通常一本都沒有，設了他按下
+  // 驗證才會直接看到我們這本；已經有自己筆記庫的人（像開發機）不該被我們改掉
+  // 預設開哪一本。
+  const noneOpen = Object.values(vaults).every((entry) => entry?.open !== true);
+  const mine = noneOpen
+    ? { path: step.vault, ts: Date.now(), open: true }
+    : { path: step.vault, ts: Date.now() };
+
   await mkdir(path.dirname(step.registry), { recursive: true });
   await writeFile(
     step.registry,
-    `${JSON.stringify(
-      { ...current, vaults: { ...vaults, [id]: { path: step.vault, ts: Date.now() } } },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify({ ...current, vaults: { ...vaults, [id]: mine } }, null, 2)}\n`,
   );
   logProgress("已經讓 Obsidian 認得這個筆記庫");
 }
