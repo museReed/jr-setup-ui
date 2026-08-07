@@ -680,23 +680,27 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       //
       // 所以列出所有已知的候選，任何一個在就算裝好——賭單一路徑的代價是「東西
       // 明明在，卡片卻紅著」，而學生完全不知道要去哪裡看。
-      const apps =
+      // Windows 上不要賭單一路徑。Obsidian 走 Squirrel：真正的執行檔放在
+      // `app-<版本>\Obsidian.exe`，外層那個 stub 不是每個版本都會建。版號還會
+      // 隨著更新變，寫死等於下次更新就失效。
+      //
+      // 所以只講「去哪幾個資料夾找」，每個資料夾都看它自己與底下的 app-* 子資料夾
+      //（見 config-check 的 findObsidianApp）。
+      const appRoots =
         platform === "win32"
           ? [
-              `${home}/AppData/Local/Obsidian/Obsidian.exe`,
-              `${home}/AppData/Local/Programs/Obsidian/Obsidian.exe`,
-              `${home}/AppData/Local/obsidian/Obsidian.exe`,
-              "C:/Program Files/Obsidian/Obsidian.exe",
-              "C:/Program Files (x86)/Obsidian/Obsidian.exe",
+              `${home}/AppData/Local/Obsidian`,
+              `${home}/AppData/Local/Programs/Obsidian`,
+              "C:/Program Files/Obsidian",
+              "C:/Program Files (x86)/Obsidian",
             ]
-          : ["/Applications/Obsidian.app"];
+          : ["/Applications"];
       return {
         id,
         label: "Obsidian",
         kind: "obsidian-app",
-        // app 是「最常見的那一個」，只拿來寫訊息；判定看的是 apps 整組。
-        app: apps[0],
-        apps,
+        appRoots,
+        appName: platform === "win32" ? "Obsidian.exe" : "Obsidian.app",
         winget: "Obsidian.Obsidian",
         cask: "obsidian",
         dmg: "https://github.com/obsidianmd/obsidian-releases/releases/latest/download/Obsidian-universal.dmg",

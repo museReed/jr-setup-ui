@@ -1,7 +1,7 @@
 // 規則檔的安裝狀態：跟環境檢查同一個模式——一列一項，紅的給按鈕。
 // 判斷依據是「真的生效了嗎」，不是「指令有沒有跑完」。
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -898,15 +898,41 @@ export function checkVaultAgent(step) {
   };
 }
 
+// 找出 Obsidian 的執行檔，回傳完整路徑或 null。
+//
+// 每個候選資料夾看兩層：資料夾自己，以及底下的 `app-<版本>` 子資料夾——Squirrel
+// 把真正的執行檔放在後者，外層那個 stub 不是每個版本都會建（Windows VM 實測：
+// winget 說裝好了，外層那一個卻不存在）。
+//
+// 只掃兩層、不遞迴整顆磁碟：這支會在每次開頁時跑，慢了整個嚮導都會卡。
+export function findObsidianApp(step) {
+  for (const root of step.appRoots ?? []) {
+    const direct = path.join(root, step.appName);
+
+    if (existsSync(direct)) return direct;
+
+    if (!existsSync(root)) continue;
+
+    for (const entry of readdirSync(root)) {
+      if (!entry.startsWith("app-")) continue;
+
+      const versioned = path.join(root, entry, step.appName);
+
+      if (existsSync(versioned)) return versioned;
+    }
+  }
+
+  return null;
+}
+
 export function checkObsidianApp(step) {
-  // 任何一個候選在就算裝好（見 config-install 的 apps）。
-  const found = (step.apps ?? [step.app]).find((candidate) => existsSync(candidate));
+  const found = findObsidianApp(step);
 
   return {
     id: step.id,
     label: step.label,
-    status: found === undefined ? "missing" : "ok",
-    detail: found === undefined ? "尚未安裝（要網路）" : `已安裝 → ${found}`,
+    status: found === null ? "missing" : "ok",
+    detail: found === null ? "尚未安裝（要網路）" : `已安裝 → ${found}`,
   };
 }
 

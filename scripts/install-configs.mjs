@@ -23,7 +23,7 @@ import {
   mergeOutputStyle,
   upsertBlock,
 } from "../src/config-install.js";
-import { checkExternalSkill } from "../src/config-check.js";
+import { checkExternalSkill, findObsidianApp } from "../src/config-check.js";
 import { materialsDir } from "../src/paths.js";
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
@@ -480,14 +480,10 @@ async function runTool(cmd, args, hint) {
   });
 }
 
-function findObsidian(step) {
-  return (step.apps ?? [step.app]).find((candidate) => existsSync(candidate));
-}
-
 async function obsidianAppStep(step) {
-  const already = findObsidian(step);
+  const already = findObsidianApp(step);
 
-  if (already !== undefined) {
+  if (already !== null) {
     logProgress(`Obsidian 本來就裝好了（${already}）`);
     return;
   }
@@ -533,17 +529,28 @@ async function obsidianAppStep(step) {
     await runTool("hdiutil", ["detach", mount, "-quiet"], "");
   }
 
-  const installed = findObsidian(step);
+  const installed = findObsidianApp(step);
 
-  if (installed === undefined) {
+  if (installed === null) {
     // 不要猜原因。安裝工具自己印的那幾行就在上面，猜錯只會把學生指去錯的地方
     //（VM 實測：明明是 winget 來源的憑證問題，訊息卻說「多半是網路問題」）。
     //
     // 找過哪幾個位置也一起講：安裝工具說成功、我們卻說沒有的時候，這份清單是
     // 判斷「它到底裝去哪」的唯一線索。
+    // 掃過的地方都沒有，就真的去搜一遍再說。這一段只在失敗時跑，慢一點沒關係，
+    // 而它印出來的那一行是「它到底裝去哪」的直接答案——比我們繼續猜有用。
+    if (process.platform === "win32") {
+      console.log("找不到，改成整個搜一遍（要幾秒）……");
+      await runTool(
+        "where",
+        ["/R", path.join(HOME, "AppData", "Local"), step.appName],
+        "",
+      );
+    }
+
     throw new Error(
-      `Obsidian 沒有裝起來——這幾個位置都找過了：${(step.apps ?? [step.app]).join("、")}。` +
-        "原因看上面那幾行安裝工具的輸出，修好之後可以重按一次",
+      `Obsidian 沒有裝起來——這幾個資料夾（含底下的 app-* ）都找過了：${(step.appRoots ?? []).join("、")}。` +
+        "如果上面那段搜尋印出了路徑，把它貼回來",
     );
   }
 
