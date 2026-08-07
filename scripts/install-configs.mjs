@@ -632,6 +632,18 @@ async function storeGitCredential() {
   });
 
   logProgress("GitHub 的登入資料已經放進鑰匙圈，Obsidian 不會再問你帳號密碼");
+
+  const name = await capture("git", ["config", "--global", "user.name"]);
+
+  if (name === null || name === "") {
+    await runTool("git", ["config", "--global", "user.name", login], "請先裝好 Git");
+    await runTool(
+      "git",
+      ["config", "--global", "user.email", `${login}@users.noreply.github.com`],
+      "請先裝好 Git",
+    );
+    logProgress(`改動歷史上的名字設成 ${login}`);
+  }
 }
 
 async function obsidianVaultStep(step) {
@@ -699,32 +711,74 @@ async function obsidianVaultStep(step) {
     await runTool("git", ["-C", step.vault, "init", "-b", "main"], "請先裝好 Git");
   }
 
-  await runTool("git", ["-C", step.vault, "add", "-A"], "請先裝好 Git");
-  // 沒有東西可 commit 時 git 回非 0，那不是失敗。
-  await runTool(
-    "git",
-    ["-C", step.vault, "commit", "-m", "第一篇筆記"],
-    "請先裝好 Git",
-  );
-
+  // 三種情況都要走得通：
+  //
+  //   第一次        GitHub 上還沒有 → 建一個空的 private repo，接上去
+  //   重按一次      本機接好了      → 直接推
+  //   重灌過筆記庫  GitHub 上有、本機沒有（學生把資料夾砍了重來，或換一台機器）
+  //                 → 接上去、把上面的東西抓下來當基礎，再把這次的疊上去
+  //
+  // 最後那種本來會死在「Name already exists」，而錯誤訊息還猜成「多半是還沒登入」
+  //（VM 實測）。
   const hasRemote =
     (await runTool("git", ["-C", step.vault, "remote", "get-url", "origin"], "")) === 0;
 
   if (!hasRemote) {
-    // private：筆記預設不公開。--source 讓 gh 直接把這個資料夾接上去。
-    const code = await runTool(
-      "gh",
-      ["repo", "create", step.repo, "--private", "--source", step.vault, "--push"],
-      "請先裝好 GitHub CLI 並登入",
-    );
+    const url = await capture("gh", ["repo", "view", step.repo, "--json", "url", "--jq", ".url"]);
 
-    if (code !== 0) {
-      throw new Error(
-        "GitHub 上那個 repo 沒建起來——多半是還沒登入 GitHub，回前面那張卡按登入再回來重按一次",
+    if (url === null) {
+      // 只建 repo，不帶 --source/--push：那兩個參數要求本機先有 commit，而我們
+      // 這時候還沒 commit（順序不能反過來，見下面的 fetch）。
+      const code = await runTool(
+        "gh",
+        ["repo", "create", step.repo, "--private"],
+        "請先裝好 GitHub CLI 並登入",
       );
+
+      if (code !== 0) {
+        throw new Error(
+          "GitHub 上那個 repo 建不起來——先確認你已經登入 GitHub（環境那一段的最後一張卡）",
+        );
+      }
+    } else {
+      logProgress("GitHub 上本來就有這個筆記庫了，直接接上去");
     }
-  } else {
-    await runTool("git", ["-C", step.vault, "push", "-u", "origin", "main"], "");
+
+    const remote =
+      url ?? (await capture("gh", ["repo", "view", step.repo, "--json", "url", "--jq", ".url"]));
+
+    if (remote === null) {
+      throw new Error("找不到 GitHub 上那個筆記庫的網址，可以重按一次");
+    }
+
+    await runTool("git", ["-C", step.vault, "remote", "add", "origin", remote], "");
+  }
+
+  // 遠端已經有東西時，先把它當基礎——不然這次的 commit 跟上面那些是兩段沒有關係
+  // 的歷史，push 會被擋下來（而學生看到的是一句他看不懂的 non-fast-forward）。
+  //
+  // reset --mixed 只動 HEAD 與索引，不碰工作目錄：我們剛寫好的那些檔案都還在，
+  // 下面 add -A 會把「跟遠端不一樣的地方」變成這一次的改動。
+  await runTool("git", ["-C", step.vault, "fetch", "origin"], "");
+
+  if (
+    (await runTool("git", ["-C", step.vault, "rev-parse", "--verify", "origin/main"], "")) === 0
+  ) {
+    await runTool("git", ["-C", step.vault, "reset", "--mixed", "origin/main"], "");
+  }
+
+  await runTool("git", ["-C", step.vault, "add", "-A"], "請先裝好 Git");
+  // 沒有東西可 commit 時 git 回非 0，那不是失敗。
+  await runTool(
+    "git",
+    ["-C", step.vault, "commit", "-m", "✨ 建立筆記庫"],
+    "請先裝好 Git",
+  );
+
+  if ((await runTool("git", ["-C", step.vault, "push", "-u", "origin", "main"], "")) !== 0) {
+    throw new Error(
+      "推不上去——先確認你已經登入 GitHub（環境那一段的最後一張卡），再回來重按一次",
+    );
   }
 
   await registerVault(step);
