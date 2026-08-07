@@ -402,6 +402,31 @@ body {
   margin-left: auto;
 }
 
+/* 驗證失敗時那顆逃生按鈕。同一個位置，但長得完全不一樣：不是圓形的橘色箭頭，
+   而是一顆寫著字的中性膠囊。
+   圓形箭頭那顆的字是給讀螢幕的（.wizard-nav-label 被藏起來了），只換字沒有用
+   ——畫面上兩顆會一模一樣，學生分不出自己按的是「我過了」還是「我先跳過」。 */
+.wizard-nav.is-skip {
+  width: auto;
+  height: auto;
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-2);
+  background: var(--color-bg-inset);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+  box-shadow: none;
+  font-size: var(--fs-sm);
+}
+
+.wizard-nav.is-skip .wizard-nav-label {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: nowrap;
+}
+
 /* 剛解鎖：晃一下 + 頭上一朵煙火（跟分頁解鎖用同一種慶祝）。 */
 .wizard-nav.is-unlocking {
   animation: tab-unlock-shake 0.5s ease;

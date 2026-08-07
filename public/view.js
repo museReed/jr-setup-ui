@@ -1061,8 +1061,17 @@ function renderNavButton(button, spec, key) {
   }
 
   button.hidden = !show;
+  // 「先跳過這張」跟「下一張」共用同一顆按鈕，但它不是成就——畫成次要的，讓學生
+  // 看得出這是退路不是進度。
+  button.classList.toggle("is-skip", show && spec.secondary === true);
 
   // 解鎖那一刻放一段施法特效。回頭的那顆不用——它出現不是成就，只是「你可以往回看」。
+  // 逃生那顆也不用：慶祝一件沒做成的事只會讓學生以為自己過了。
+  if (spec.celebrate === false) {
+    shownNav[key] = show;
+    return;
+  }
+
   if (show && !shownNav[key] && key === "next" && !reducedMotion.matches) {
     playUnlockSpell(button);
   }

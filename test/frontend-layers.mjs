@@ -585,6 +585,46 @@ try {
   );
   ok("一個驗證放卡片底下、多個放各自那一格；驗過的改叫重跑驗證");
 
+  // 解鎖「下一張」看的是這張卡上每一列該驗的，不是主 check 那一列。合併卡有兩個
+  // 驗證，原本只看 card.checkId——驗完其中一個就走得掉，另一個從沒跑過（VM 實測）。
+  assert.match(
+    files.app,
+    /const verifyRequiredChecks = cardChecks\.filter\(/,
+    "該驗的是這張卡上的每一列",
+  );
+  assert(
+    !/card\.check\?\.verifyAction != null \|\| card\.check\?\.eyeCheck != null/.test(
+      files.app,
+    ),
+    "只看主 check 那一列的舊規則要拿掉",
+  );
+  // 「跑過」不夠，要「沒失敗」：原本失敗也算放行，於是徽章寫著失敗、箭頭卻是亮的。
+  assert.match(
+    files.app,
+    /state\.verificationAttempted\.has\(check\.id\) &&\s*\n?\s*!state\.failedVerificationSteps\.has\(check\.id\)/,
+    "驗證失敗不算跑過，不放行下一張",
+  );
+  // 鎖住不等於關死：失敗時給一顆寫明白的「先跳過這張」。它不慶祝、不算完成，
+  // 只登記在 skippedCards 裡讓學生走得掉。
+  assert.match(files.app, /state\.skippedCards\.add\(cardId\)/, "跳過要登記");
+  assert.match(
+    files.app,
+    /const canSkip =\s*\n?\s*card\.kind === "config" && !nextUnlocked && verificationFailedHere;/,
+    "只有「被鎖住而且原因是驗證失敗」才給逃生口",
+  );
+  assert.match(
+    files.app,
+    /celebrate: false/,
+    "逃生那顆不放解鎖特效——慶祝一件沒做成的事會讓學生以為自己過了",
+  );
+  // 重驗＝上一輪的結論作廢，那顆通行證也跟著失效。
+  assert.match(
+    files.app,
+    /state\.skippedCards\.delete\(stepId\)/,
+    "重驗會把跳過的紀錄一起清掉",
+  );
+  ok("驗證失敗鎖住下一張，只留一顆不慶祝的「先跳過這張」");
+
   // 格內那顆「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論忘掉，
   // 那一格退回未勾，再照這一次的結果打勾。
   //
