@@ -839,27 +839,40 @@ async function registerVault(step) {
     : {};
   const vaults = current.vaults ?? {};
 
-  if (vaults[id] !== undefined) {
-    logProgress("Obsidian 本來就認得這個筆記庫了");
-    return;
-  }
-
+  // 不要在「已經登記過」就提早結束。
+  //
+  // 那樣寫的話，之後才加的 open: true 永遠寫不進去——已經跑過一次安裝的機器
+  // （也就是所有正在重試的人）會一直停在筆記庫選單（Windows VM 實測）。
+  // 這一段本來就是冪等的，每次都重寫一遍最單純。
   // open: true 是「下次打開 Obsidian 就開這一本」。
   //
   // 只有在沒有別本被標成要開的時候才設：學生的機器上通常一本都沒有，設了他按下
   // 驗證才會直接看到我們這本；已經有自己筆記庫的人（像開發機）不該被我們改掉
   // 預設開哪一本。
-  const noneOpen = Object.values(vaults).every((entry) => entry?.open !== true);
-  const mine = noneOpen
-    ? { path: step.vault, ts: Date.now(), open: true }
-    : { path: step.vault, ts: Date.now() };
+  // open: true 是「下次打開 Obsidian 就開這一本」。沒有任何一本被標成要開的話，
+  // Obsidian 會停在筆記庫選單，學生得自己點一下——那一步嚮導做得掉。
+  //
+  // 只有在沒有別本被標成要開的時候才設（我們自己那筆不算）：學生機器上通常一本
+  // 都沒有；已經有自己筆記庫的人不該被我們改掉預設開哪一本。
+  const othersOpen = Object.entries(vaults).some(
+    ([key, entry]) => key !== id && entry?.open === true,
+  );
+  const mine = {
+    path: step.vault,
+    ts: Date.now(),
+    ...(othersOpen ? {} : { open: true }),
+  };
 
   await mkdir(path.dirname(step.registry), { recursive: true });
   await writeFile(
     step.registry,
     `${JSON.stringify({ ...current, vaults: { ...vaults, [id]: mine } }, null, 2)}\n`,
   );
-  logProgress("已經讓 Obsidian 認得這個筆記庫");
+  logProgress(
+    othersOpen
+      ? "已經讓 Obsidian 認得這個筆記庫"
+      : "已經讓 Obsidian 認得這個筆記庫，而且下次打開就是它",
+  );
 }
 
 const args = parseArgs(process.argv.slice(2));
