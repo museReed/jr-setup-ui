@@ -960,8 +960,25 @@ export async function checkObsidianVault(step) {
   const registry = existsSync(step.registry)
     ? JSON.parse(await readFile(step.registry, "utf8"))
     : { vaults: {} };
-  const known = Object.values(registry.vaults ?? {}).some(
-    (entry) => entry?.path === step.vault,
+  // 比對前先把路徑正規化。
+  //
+  // 我們寫進去的是斜線（C:\Users\Reed/jr-workshop-vault），但 Obsidian 一開起來
+  // 就會把那份名單整份重寫成反斜線——同一個資料夾，字串卻對不起來，卡片於是說
+  // 「Obsidian 還不認得這個筆記庫」而學生明明剛用它打開過（Windows VM 實測）。
+  //
+  // Windows 的路徑不分大小寫，所以那邊連大小寫也一起忽略。
+  const samePath = (left, right) => {
+    const clean = (value) =>
+      String(value ?? "")
+        .replace(/\\/g, "/")
+        .replace(/\/+$/, "");
+
+    return process.platform === "win32"
+      ? clean(left).toLowerCase() === clean(right).toLowerCase()
+      : clean(left) === clean(right);
+  };
+  const known = Object.values(registry.vaults ?? {}).some((entry) =>
+    samePath(entry?.path, step.vault),
   );
   const missing = [
     ...(hasVault ? [] : ["筆記庫還沒建"]),
