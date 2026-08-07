@@ -719,7 +719,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         // 學生得自己在 app 裡按「開啟資料夾作為筆記庫」（Reed 實測撞到）。
         registry:
           platform === "win32"
-            ? `${home}/AppData/Roaming/obsidian/obsidian.json`
+            ? `${home}/AppData/Roaming/Obsidian/obsidian.json`
             : platform === "darwin"
               ? `${home}/Library/Application Support/obsidian/obsidian.json`
               : `${home}/.config/obsidian/obsidian.json`,
