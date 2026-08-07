@@ -522,16 +522,36 @@ function agentHooks(id, home, platform) {
 
 // Claude 的 skill 住 ~/.claude/skills/，Codex 的住 ~/.agents/skills/（官方 user 目錄，
 // 舊版才在 ~/.codex/skills）。兩邊的 SKILL.md 內容不同，各自一列。
-function skillStep(id, home) {
+// 哪幾支 skill 有翻譯。其餘的只有繁中一份，lang 給什麼都拿同一個檔——寫在這裡
+// 而不是去問檔案系統，是因為 describeStep 是純函式，測試裡的 home 是假路徑。
+const TRANSLATED_SKILLS = new Set(["vault-sync"]);
+
+// 繁中是預設，檔名不帶語言；其他語言用 SKILL.<lang>.md。
+function skillFile(base, name, lang, suffix = "") {
+  const translated = TRANSLATED_SKILLS.has(name) && lang !== "zh-TW";
+  return translated ? `${base}.${lang}${suffix}` : `${base}${suffix}`;
+}
+
+function skillStep(id, home, lang) {
   const [, agent, ...rest] = id.split("-");
   const name = rest.join("-");
   const root = agent === "claude" ? `${home}/.claude/skills` : `${home}/.agents/skills`;
   const files = [
     {
-      source: `skills/skill-files/${agent}/${name}/SKILL.md`,
+      source: `skills/skill-files/${agent}/${name}/${skillFile("SKILL", name, lang, ".md")}`,
+      // 落點的檔名一律是 SKILL.md——那是 skill 系統認的名字，不是我們挑的。
       target: `${root}/${name}/SKILL.md`,
     },
   ];
+
+  // 一次性的設定步驟拆成參考檔：九成的呼叫是「幫我存起來」，不該每次都把那 80 行
+  // 讀進來。SKILL.md 只留一句指路，模型真的要接新筆記庫時才去讀它。
+  if (name === "vault-sync") {
+    files.push({
+      source: `skills/skill-files/${agent}/vault-sync/references/${skillFile("new-vault", name, lang, ".md")}`,
+      target: `${root}/${name}/references/new-vault.md`,
+    });
+  }
 
   // Codex 的 handoff 會叫模型去 Read _shared/codex-session-rename.md。那個檔案沒
   // 跟著裝的話，skill 讀得到、改名那半段卻是死的——附屬檔案跟著用得到它的那一列走。
@@ -791,7 +811,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       }
 
       if (STEP_IDS.includes(id)) {
-        return skillStep(id, home);
+        return skillStep(id, home, lang);
       }
 
       throw new Error(`不認得的步驟：${id}`);

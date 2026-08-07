@@ -21,7 +21,11 @@ export const SECTIONS = [
   { id: "skills", title: "給它技能包", subtitle: "Skills" },
   { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
   // 選配的一段，排在主線之後：它跟前面四段沒有依賴關係，學生跑完主線再做。
-  { id: "notes", title: "把筆記存起來", subtitle: "Obsidian 與 GitHub" },
+  {
+    id: "notes",
+    title: "使用 Obsidian 管理你的知識庫",
+    subtitle: "Obsidian 與 GitHub",
+  },
 ];
 
 // 選配的段不看前面做完沒。筆記那段跟主線沒有相依性——Obsidian 與筆記庫不需要
@@ -414,7 +418,7 @@ const CARD_DEFINITIONS = {
     {
       agent: "other",
       label: "筆記庫",
-      logo: "logo-terminal",
+      logo: "logo-obsidian",
       // 只認這兩張。用 NOTE_CHECK_IDS 的話會連 vault-agent-* 一起吃進來，而那兩張
       // 下面的 Claude / Codex 組也認——同一張卡被畫兩次，里程碑那條也多兩個點
       //（Reed 實測截圖）。那個 Set 是給分段用的，不是給分組用的。
@@ -648,7 +652,9 @@ export const CARD_DESCRIPTIONS = {
     "讓它能開瀏覽器自己點按鈕、填表單，還會截圖回來給你看，第一次要先下載瀏覽器可能要等幾分鐘",
   "ext-playwright-codex":
     "讓它能開瀏覽器自己點按鈕、填表單，還會截圖回來給你看，第一次要先下載瀏覽器可能要等幾分鐘",
-  obsidian: "一個寫筆記的地方，筆記就是一個個純文字檔，哪天不用它了檔案還是打得開",
+  obsidian:
+    "一個寫筆記的地方：東西存在你自己電腦上、不進別人的雲，筆記之間可以互相連起來，" +
+    "而且每一篇都只是純文字檔，哪天不用它了還是打得開",
   "obsidian-vault":
     "你的筆記自動存到自己的 GitHub，換電腦、電腦壞掉都還在，別人看不到",
   "vault-agent-claude":
