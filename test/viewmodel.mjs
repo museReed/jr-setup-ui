@@ -157,6 +157,26 @@ try {
   assert.equal(pending.showRetest, true);
   ok("裝好但沒驗過的列：安裝按鈕整顆收掉，驗證交給「重跑驗證」");
 
+  // 例外：reinstallable 的列裝好之後仍然留一顆次要的「重新設定」。
+  // 筆記庫那列的登記會被 Obsidian 結束時整份寫回去蓋掉——四個檢查點全綠、按驗證
+  // 卻跳 Vault not found（Reed 實測），沒有這顆按鈕就沒有自救手段。
+  const redoable = configRowModel(
+    {
+      id: "obsidian-vault",
+      label: "接到 GitHub 的筆記庫",
+      status: "ok",
+      detail: "已接上 GitHub",
+      installAction: "install-config-step",
+      reinstallable: true,
+    },
+    true,
+  );
+  assert.deepEqual(
+    redoable.buttons.map(({ text, secondary }) => [text, secondary === true]),
+    [["重新設定", true]],
+  );
+  ok("設定會被別的程式改掉的列，裝好之後仍然留一顆次要的重新設定");
+
   // 例外：驗證真的失敗過的時候那顆要活過來。裝歪了（舊版、裝一半）而 check 仍是
   // ok 的情況存在，那時重跑安裝是唯一的自救手段。
   const rescue = configRowModel(
@@ -777,6 +797,30 @@ try {
   );
   assert.deepEqual(CARD_HINTS, {});
   ok("codex 的兩題搬進彈窗，卡片上不再多一格勾選框也不再印一次");
+
+  // 失敗時白話區印的是腳本自己講的那句話，不是罐頭句。
+  //
+  // 迴歸（Reed 實測截圖）：安裝擋下來的理由是「Obsidian 現在開著，請先完全關掉它
+  // 再按一次安裝」，那句話只出現在原始輸出與那一列的說明裡，白話區卻寫「請檢查
+  // 原始輸出後再試一次」——把學生推去讀一堆他看不懂的東西，而答案就在裡面。
+  const withReason = terminalOutcomeLines({
+    action: "install-config-step",
+    succeeded: false,
+    check: { label: "接到 GitHub 的筆記庫" },
+    guidance: null,
+    reason: "Obsidian 現在開著，請先完全關掉它再按一次安裝",
+  });
+  assert.equal(withReason.length, 1);
+  assert.equal(withReason[0].text, "Obsidian 現在開著，請先完全關掉它再按一次安裝");
+  // 腳本沒講話時才退回罐頭句。
+  const withoutReason = terminalOutcomeLines({
+    action: "install-config-step",
+    succeeded: false,
+    check: { label: "接到 GitHub 的筆記庫" },
+    guidance: null,
+  });
+  assert.match(withoutReason[0].text, /請檢查原始輸出/);
+  ok("安裝失敗時白話區印腳本自己講的那句話，沒講才退回罐頭句");
 
   // 清單第一格該不該打勾——三種情況各錯過一次，所以三種都釘住。
   const okRow = { id: "x", label: "x", status: "ok", detail: "" };

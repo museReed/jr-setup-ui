@@ -1,7 +1,7 @@
 // 規則檔的安裝狀態：跟環境檢查同一個模式——一列一項，紅的給按鈕。
 // 判斷依據是「真的生效了嗎」，不是「指令有沒有跑完」。
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ import {
   applySubstitutions,
   CLAUDE_DEFAULT_MODE,
   CLAUDE_HUD,
+  OBSIDIAN_GIT,
   CODEX_MODE_EXPECTATIONS,
   countInstalledRules,
   describeStep,
@@ -295,6 +296,22 @@ export const VERIFICATION = {
   },
   "ext-playwright-codex": {
     terminal: { case: "mcp-playwright", agent: "codex" },
+  },
+  // 這兩列的證據在 GitHub 上，不在這台機器上——嚮導看不到學生的瀏覽器，所以
+  // 是眼睛項。程式那半（terminal）負責把終端開起來、把話送進去。
+  "vault-agent-claude": {
+    terminal: { case: "vault-note", agent: "claude" },
+    eye: "GitHub 的改動歷史上，最上面那一行是你剛才選的那句話",
+  },
+  "vault-agent-codex": {
+    terminal: { case: "vault-note", agent: "codex" },
+    eye: "GitHub 的改動歷史上，最上面那一行是你剛才選的那句話",
+  },
+  // 程式驗得到「設定寫對了」，驗不到「Obsidian 打開之後真的會自己拉」——那要有人
+  // 把 app 打開看左邊那排圖示。所以這一格配一格眼睛，按鈕幫他把 Obsidian 開起來。
+  "obsidian-vault": {
+    terminal: { case: "open-vault", agent: "claude" },
+    eye: "Obsidian 左邊最下面多一個分岔圖示，右下角有一個打勾",
   },
   // 設定檔對了不代表學生看得到那一條——HUD 只在「下一次互動之後」才畫出來。
   // 所以這一格開一個真的 Claude、送一句話進去，剩下的交給眼睛。
@@ -869,6 +886,127 @@ export async function checkClaudeHud(step) {
   };
 }
 
+// 跟 demo 那一列同一類：沒有「裝好了沒」可查，它就是「按下去跑一次」。
+// noInstall 讓 ViewModel 別補安裝按鈕——補了也沒有東西可裝。
+export function checkVaultAgent(step) {
+  return {
+    id: step.id,
+    label: step.label,
+    status: "ok",
+    detail: "按右邊開終端跑一次：叫 AI 寫一篇測試筆記，然後上 GitHub 看那個檔在不在",
+    noInstall: true,
+  };
+}
+
+// 找出 Obsidian 的執行檔，回傳完整路徑或 null。
+//
+// 每個候選資料夾看兩層：資料夾自己，以及底下的 `app-<版本>` 子資料夾——Squirrel
+// 把真正的執行檔放在後者，外層那個 stub 不是每個版本都會建（Windows VM 實測：
+// winget 說裝好了，外層那一個卻不存在）。
+//
+// 只掃兩層、不遞迴整顆磁碟：這支會在每次開頁時跑，慢了整個嚮導都會卡。
+export function findObsidianApp(step) {
+  for (const root of step.appRoots ?? []) {
+    const direct = path.join(root, step.appName);
+
+    if (existsSync(direct)) return direct;
+
+    if (!existsSync(root)) continue;
+
+    for (const entry of readdirSync(root)) {
+      if (!entry.startsWith("app-")) continue;
+
+      const versioned = path.join(root, entry, step.appName);
+
+      if (existsSync(versioned)) return versioned;
+    }
+  }
+
+  return null;
+}
+
+export function checkObsidianApp(step) {
+  const found = findObsidianApp(step);
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: found === null ? "missing" : "ok",
+    detail: found === null ? "尚未安裝（要網路）" : `已安裝 → ${found}`,
+  };
+}
+
+// 四個檢查點，缺哪一個就講哪一個——「沒裝好」對學生等於沒說。
+//
+//   資料夾在不在        沒有的話後面全部免談
+//   .git 有沒有 origin  沒有就只是本機資料夾，換電腦搬不走
+//   外掛檔在不在        沒有的話 Obsidian 開起來什麼都不會發生
+//   兩個設定值對不對    key 寫錯會被安靜忽略，行為退回預設值而畫面沒有錯誤
+export async function checkObsidianVault(step) {
+  const hasVault = existsSync(step.vault);
+  const hasPlugin = existsSync(path.join(step.pluginDir, "main.js"));
+  const dataPath = path.join(step.pluginDir, "data.json");
+  const data = existsSync(dataPath)
+    ? JSON.parse(await readFile(dataPath, "utf8"))
+    : {};
+  const wired =
+    data.autoPullOnBoot === OBSIDIAN_GIT.settings.autoPullOnBoot &&
+    data.autoSaveInterval === OBSIDIAN_GIT.settings.autoSaveInterval;
+  const hasRemote =
+    existsSync(path.join(step.vault, ".git", "config")) &&
+    (await readFile(path.join(step.vault, ".git", "config"), "utf8")).includes(
+      '[remote "origin"]',
+    );
+  const registry = existsSync(step.registry)
+    ? JSON.parse(await readFile(step.registry, "utf8"))
+    : { vaults: {} };
+  // 比對前先把路徑正規化。
+  //
+  // 我們寫進去的是斜線（C:\Users\Reed/jr-workshop-vault），但 Obsidian 一開起來
+  // 就會把那份名單整份重寫成反斜線——同一個資料夾，字串卻對不起來，卡片於是說
+  // 「Obsidian 還不認得這個筆記庫」而學生明明剛用它打開過（Windows VM 實測）。
+  //
+  // Windows 的路徑不分大小寫，所以那邊連大小寫也一起忽略。
+  const samePath = (left, right) => {
+    const clean = (value) =>
+      String(value ?? "")
+        .replace(/\\/g, "/")
+        .replace(/\/+$/, "");
+
+    return process.platform === "win32"
+      ? clean(left).toLowerCase() === clean(right).toLowerCase()
+      : clean(left) === clean(right);
+  };
+  const known = Object.values(registry.vaults ?? {}).some((entry) =>
+    samePath(entry?.path, step.vault),
+  );
+  const missing = [
+    ...(hasVault ? [] : ["筆記庫還沒建"]),
+    ...(known ? [] : ["Obsidian 還不認得這個筆記庫"]),
+    ...(hasRemote ? [] : ["還沒接上 GitHub"]),
+    ...(hasPlugin ? [] : ["同步外掛還沒放進去"]),
+    ...(wired ? [] : ["自動拉／自動存還沒設好"]),
+  ];
+
+  return {
+    id: step.id,
+    label: step.label,
+    status: missing.length === 0 ? "ok" : "missing",
+    detail:
+      missing.length === 0
+        ? `已接上 GitHub → ${step.vault}`
+        : `${missing.join("、")}（要網路）`,
+    // 這一列裝好之後仍然要留一顆按鈕。
+    //
+    // 別的列裝好就是裝好了，這一列不是：Obsidian 結束時會把自己那份筆記庫名單
+    // 整份寫回去，我們登記的那一筆會被連同刪掉——四個檢查點全綠、按驗證卻跳
+    // Vault not found（Reed 實測）。而且外掛的設定之後還會改版。
+    //
+    // 沒有這顆按鈕的話，學生唯一的自救手段是回上一張卡再往前翻。
+    reinstallable: true,
+  };
+}
+
 // demo 那一列沒有「安裝」這個動作，所以它永遠是「結構齊全、等你跑一次」的狀態：
 // 顯示成待驗證 ◐、只掛一顆開終端的按鈕。noInstall 讓 ViewModel 別補安裝按鈕——
 // 補了也沒有東西可裝，按下去只會失敗。
@@ -906,6 +1044,12 @@ export async function runConfigCheck({ tools, lang }) {
       checks.push(await checkExternalSkill(step));
     } else if (step.kind === "claude-hud") {
       checks.push(await checkClaudeHud(step));
+    } else if (step.kind === "vault-agent") {
+      checks.push(checkVaultAgent(step));
+    } else if (step.kind === "obsidian-app") {
+      checks.push(checkObsidianApp(step));
+    } else if (step.kind === "obsidian-vault") {
+      checks.push(await checkObsidianVault(step));
     } else if (step.kind === "demo") {
       checks.push(checkDemo(step));
     } else {
@@ -924,7 +1068,8 @@ export function withActions(check) {
   return {
     ...check,
     installAction:
-      check.noInstall === true || check.status === "ok"
+      check.noInstall === true ||
+      (check.status === "ok" && check.reinstallable !== true)
         ? null
         : "install-config-step",
     mergeAction: check.needsMerge === true ? "merge-config-step" : null,

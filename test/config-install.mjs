@@ -41,6 +41,10 @@ try {
     "ext-skill-creator-claude",
     "ext-playwright-claude",
     "demo-claude",
+    "obsidian",
+    "skill-claude-vault-sync",
+    "obsidian-vault",
+    "vault-agent-claude",
   ]);
   assert.deepEqual(stepsForTools(["codex"]), [
     "codex-config",
@@ -54,6 +58,10 @@ try {
     "ext-frontend-design-codex",
     "ext-playwright-codex",
     "demo-codex",
+    "obsidian",
+    "skill-codex-vault-sync",
+    "obsidian-vault",
+    "vault-agent-codex",
   ]);
   assert.deepEqual(stepsForTools(["claude", "codex"]), [
     "claude-md",
@@ -81,6 +89,12 @@ try {
     "ext-playwright-codex",
     "demo-claude",
     "demo-codex",
+    "obsidian",
+    "skill-claude-vault-sync",
+    "skill-codex-vault-sync",
+    "obsidian-vault",
+    "vault-agent-claude",
+    "vault-agent-codex",
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));

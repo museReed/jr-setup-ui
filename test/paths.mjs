@@ -110,6 +110,12 @@ try {
       if (typeof step.source === "string") {
         sources.add(step.source);
       }
+
+      // .gitignore 在素材裡叫 gitignore（npm 打包會把 .gitignore 吃掉），
+      // 它跟 source 一樣是「一定要跟著壓縮檔出去」的檔案。
+      if (typeof step.gitignoreSource === "string") {
+        sources.add(step.gitignoreSource);
+      }
     }
   }
 
@@ -123,7 +129,7 @@ try {
   ok(`${sources.size} 個素材檔都在`);
 
   const tracked = new Set(
-    execFileSync("git", ["ls-files", "materials"], {
+    execFileSync("git", ["-c", "core.quotePath=false", "ls-files", "materials"], {
       cwd: root,
       encoding: "utf8",
     })

@@ -6,13 +6,15 @@
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import {
   applySubstitutions,
   CLAUDE_HUD,
   describeStep,
+  OBSIDIAN_GIT,
   expandAllowRules,
   mergeAllowRules,
   mergeCodexModes,
@@ -21,7 +23,7 @@ import {
   mergeOutputStyle,
   upsertBlock,
 } from "../src/config-install.js";
-import { checkExternalSkill } from "../src/config-check.js";
+import { checkExternalSkill, findObsidianApp } from "../src/config-check.js";
 import { materialsDir } from "../src/paths.js";
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
@@ -453,6 +455,426 @@ async function claudeHudStep(step) {
   logProgress(`版面設定已寫進 ${step.configTarget}`);
 }
 
+// 跑一條指令，把它的輸出直接串到畫面上。回傳 exit code，由呼叫端決定成敗——
+// 這幾支工具（winget / brew / gh）對「本來就裝好了」都會回非 0。
+async function runTool(cmd, args, hint) {
+  // GIT_TERMINAL_PROMPT=0：憑證拿不到時直接錯，不要停在那裡等一個不會來的輸入。
+  //
+  // 我們 spawn 的子程序沒有 tty，git 的密碼提問會讓整張卡永遠轉圈——畫面上最後
+  // 一行停在「執行：git push」，學生只能按取消（Reed 在 VM 上實測撞到）。
+  const env = { ...(await spawnEnv()), GIT_TERMINAL_PROMPT: "0" };
+  const spawnable = resolveLaunch(cmd, args, { env });
+
+  return new Promise((resolve, reject) => {
+    console.log(`執行：${cmd} ${args.join(" ")}`);
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: "inherit",
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    child.once("error", (error) =>
+      reject(new Error(`叫不到 ${cmd}——${hint}（${error.message}）`)),
+    );
+    child.once("close", (exitCode) => resolve(exitCode ?? 1));
+  });
+}
+
+async function obsidianAppStep(step) {
+  const already = findObsidianApp(step);
+
+  if (already !== null) {
+    logProgress(`Obsidian 本來就裝好了（${already}）`);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    // --source winget 不能省。
+    //
+    // 不指定的話 winget 會連 msstore 一起查，而那個來源在 VM 上常常掛掉
+    //（0x8a15005e：伺服器憑證對不上）。更麻煩的是它掛掉之後 winget 不會退回只用
+    // 能用的那個來源，而是說「好幾個來源都有這個套件，請指定一個」然後整條失敗
+    //（Windows VM 實測）。指定了就不會去碰 msstore。
+    //
+    // --disable-interactivity：我們 spawn 的子程序沒有人在打字，跳出提問等於卡死。
+    await runTool(
+      "winget",
+      [
+        "install",
+        "-e",
+        "--id",
+        step.winget,
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+        "--disable-interactivity",
+      ],
+      "請確認 Windows 的「應用程式安裝程式」還在",
+    );
+  } else if ((await runTool("bash", ["-lc", "command -v brew"], "")) === 0) {
+    await runTool("brew", ["install", "--cask", step.cask], "請先裝好 Homebrew");
+  } else {
+    // 沒有 brew 的全新 Mac：下載官方 dmg、掛載、複製、卸載。
+    //
+    // 嚮導不能代裝 brew——它的安裝腳本要 sudo 密碼，而我們 spawn 的子程序是
+    // stdio: pipe、沒有 tty，sudo 讀不到密碼（docs/vm-setup-macos.md 有紀錄）。
+    console.log("這台機器沒有 Homebrew，改用官方安裝檔（要下載幾百 MB，慢一點是正常的）");
+    const dmg = path.join(tmpdir(), "obsidian.dmg");
+    const mount = path.join(tmpdir(), "obsidian-mount");
+    await runTool("curl", ["-fL", "--progress-bar", "-o", dmg, step.dmg], "請確認網路");
+    await runTool("hdiutil", ["attach", dmg, "-nobrowse", "-quiet", "-mountpoint", mount], "");
+    await runTool("cp", ["-R", path.join(mount, "Obsidian.app"), "/Applications/"], "");
+    await runTool("hdiutil", ["detach", mount, "-quiet"], "");
+  }
+
+  const installed = findObsidianApp(step);
+
+  if (installed === null) {
+    // 不要猜原因。安裝工具自己印的那幾行就在上面，猜錯只會把學生指去錯的地方
+    //（VM 實測：明明是 winget 來源的憑證問題，訊息卻說「多半是網路問題」）。
+    //
+    // 找過哪幾個位置也一起講：安裝工具說成功、我們卻說沒有的時候，這份清單是
+    // 判斷「它到底裝去哪」的唯一線索。
+    // 掃過的地方都沒有，就真的去搜一遍再說。這一段只在失敗時跑，慢一點沒關係，
+    // 而它印出來的那一行是「它到底裝去哪」的直接答案——比我們繼續猜有用。
+    if (process.platform === "win32") {
+      console.log("找不到，改成整個搜一遍（要幾秒）……");
+      await runTool(
+        "where",
+        ["/R", path.join(HOME, "AppData", "Local"), step.appName],
+        "",
+      );
+    }
+
+    throw new Error(
+      `Obsidian 沒有裝起來——這幾個資料夾（含底下的 app-* ）都找過了：${(step.appRoots ?? []).join("、")}。` +
+        "如果上面那段搜尋印出了路徑，把它貼回來",
+    );
+  }
+
+  logProgress(`Obsidian 已安裝 → ${installed}`);
+}
+
+// 建 vault、接上自己的 private repo、把 obsidian-git 放進去並設定好。
+//
+// 這一步只做一次；重按時每一段都是冪等的（已經有的就跳過），因為學生按第二次
+// 通常是因為前一次卡在某一段。
+// Obsidian 開著的時候不能裝。
+//
+// 它把「我知道哪些筆記庫」那份名單放在記憶體裡，結束時整份寫回硬碟——我們登記的
+// 那一筆會被連同刪掉，而且是安裝成功之後才發生的（Reed 實測：12:55 寫進去、
+// 12:59 被蓋掉，卡片一路都是綠的，按驗證卻跳 Vault not found）。
+//
+// 所以這一關必須擋，不能只在文案提醒。擋在最前面：後面那幾步要下載，白跑很浪費。
+async function obsidianRunning() {
+  const cmd =
+    process.platform === "win32"
+      ? ["tasklist", ["/FI", "IMAGENAME eq Obsidian.exe", "/NH"]]
+      : ["pgrep", ["-x", process.platform === "darwin" ? "Obsidian" : "obsidian"]];
+
+  return new Promise((resolve) => {
+    const child = spawn(cmd[0], cmd[1], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.once("error", () => resolve(false));
+    child.once("close", () =>
+      resolve(
+        process.platform === "win32"
+          ? out.toLowerCase().includes("obsidian.exe")
+          : out.trim().length > 0,
+      ),
+    );
+  });
+}
+
+// 跑一條指令，把 stdout 收回來（不印給學生看，通常是 token 之類的東西）。
+async function capture(cmd, args) {
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch(cmd, args, { env });
+
+  return new Promise((resolve) => {
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: ["ignore", "pipe", "ignore"],
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.once("error", () => resolve(null));
+    child.once("close", (code) => resolve(code === 0 ? out.trim() : null));
+  });
+}
+
+// 把 GitHub 的登入資料存進作業系統的鑰匙圈。
+//
+// 為什麼要這一步：Obsidian 裡的同步外掛跑的是系統 git，而它是被 GUI 程式叫起來
+// 的——拿不到終端那份環境，也叫不動 gh 的 credential helper。結果就是 Obsidian
+// 裡跳出一個「Username for https://github.com」的輸入框，同步整條斷在那裡
+// （Reed 在 VM 上實測撞到）。
+//
+// git credential approve 會把資料交給「這台機器上設定的那個 helper」——mac 是
+// osxkeychain、Windows 是認證管理員。所以這裡不挑平台，也不會把 token 寫成明文
+// 檔案；它跟 gh 本來就存 token 的地方是同一類。
+async function storeGitCredential() {
+  const token = await capture("gh", ["auth", "token"]);
+  const login = await capture("gh", ["api", "user", "--jq", ".login"]);
+
+  if (token === null || login === null) {
+    console.log("（還沒登入 GitHub，跳過鑰匙圈這一步）");
+    return;
+  }
+
+  // gh 自己那份設定也補一下：學生之後在終端裡 git push 才不會被問。
+  await runTool("gh", ["auth", "setup-git"], "請先裝好 GitHub CLI 並登入");
+
+  // 一個 helper 都沒設的機器上，credential approve 會安靜地什麼都不做——存進去
+  // 之後 Obsidian 照樣跳出輸入框，而且沒有任何錯誤訊息。所以先確認有 helper：
+  //
+  //   mac      osxkeychain（git 內建）
+  //   Windows  manager（Git for Windows 內建的認證管理員，通常預設就設好了）
+  const configured = await capture("git", ["config", "--get", "credential.helper"]);
+
+  if (configured === null || configured === "") {
+    await runTool(
+      "git",
+      [
+        "config",
+        "--global",
+        "credential.helper",
+        process.platform === "win32" ? "manager" : "osxkeychain",
+      ],
+      "請先裝好 Git",
+    );
+  }
+
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch("git", ["credential", "approve"], { env });
+
+  await new Promise((resolve) => {
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: ["pipe", "ignore", "ignore"],
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    child.once("error", () => resolve());
+    child.once("close", () => resolve());
+    child.stdin.end(
+      `protocol=https\nhost=github.com\nusername=${login}\npassword=${token}\n\n`,
+    );
+  });
+
+  logProgress("GitHub 的登入資料已經放進鑰匙圈，Obsidian 不會再問你帳號密碼");
+
+  const name = await capture("git", ["config", "--global", "user.name"]);
+
+  if (name === null || name === "") {
+    await runTool("git", ["config", "--global", "user.name", login], "請先裝好 Git");
+    await runTool(
+      "git",
+      ["config", "--global", "user.email", `${login}@users.noreply.github.com`],
+      "請先裝好 Git",
+    );
+    logProgress(`改動歷史上的名字設成 ${login}`);
+  }
+}
+
+async function obsidianVaultStep(step) {
+  if (await obsidianRunning()) {
+    throw new Error(
+      "Obsidian 現在開著，請先完全關掉它（mac 按 ⌘Q，不是關視窗）再按一次安裝——" +
+        "它結束時會把自己那份筆記庫名單整份寫回去，蓋掉我們剛登記的那一筆",
+    );
+  }
+
+  await mkdir(path.join(step.vault, ".obsidian"), { recursive: true });
+
+  const welcome = path.join(step.vault, "歡迎.md");
+
+  if (!existsSync(welcome)) {
+    await copyFile(sourcePath(step), welcome);
+    logProgress("放了一篇「這是什麼」進去");
+  }
+
+  // .gitignore 在素材裡叫 gitignore：npm 打包時會把 .gitignore 吃掉。
+  await copyFile(
+    path.join(MATERIALS, step.gitignoreSource),
+    path.join(step.vault, ".gitignore"),
+  );
+
+  // obsidian-git 的三個檔放進 plugins 目錄就等於裝好了，不必解壓縮。
+  await mkdir(step.pluginDir, { recursive: true });
+
+  for (const file of OBSIDIAN_GIT.files) {
+    const target = path.join(step.pluginDir, file);
+    const code = await runTool(
+      "curl",
+      ["-fL", "--silent", "--show-error", "-o", target, `${OBSIDIAN_GIT.release}/${file}`],
+      "請確認網路",
+    );
+
+    if (code !== 0 || !existsSync(target)) {
+      throw new Error(`下載 ${file} 失敗，多半是網路問題，可以重按一次`);
+    }
+  }
+
+  logProgress("同步用的外掛已放進筆記庫");
+
+  // 這一份是「哪些社群外掛要啟用」。沒有它的話檔案在、外掛卻是關的。
+  await writeFile(
+    path.join(step.configDir, "community-plugins.json"),
+    `${JSON.stringify([OBSIDIAN_GIT.plugin], null, 2)}\n`,
+  );
+
+  const dataPath = path.join(step.pluginDir, "data.json");
+  const current = existsSync(dataPath)
+    ? JSON.parse(await readFile(dataPath, "utf8"))
+    : {};
+  await writeFile(
+    dataPath,
+    `${JSON.stringify({ ...current, ...OBSIDIAN_GIT.settings }, null, 2)}\n`,
+  );
+  logProgress("打開 vault 自動拉、每 10 分鐘自動存一次，已經設好");
+
+  // 憑證要在任何一次 push 之前就位。原本排在最後面——第二次跑（remote 已經有了）
+  // 走的是 push 那條路，憑證還沒放進鑰匙圈，git 就停在那裡等密碼（VM 實測）。
+  await storeGitCredential();
+
+  if (!existsSync(path.join(step.vault, ".git"))) {
+    await runTool("git", ["-C", step.vault, "init", "-b", "main"], "請先裝好 Git");
+  }
+
+  // 三種情況都要走得通：
+  //
+  //   第一次        GitHub 上還沒有 → 建一個空的 private repo，接上去
+  //   重按一次      本機接好了      → 直接推
+  //   重灌過筆記庫  GitHub 上有、本機沒有（學生把資料夾砍了重來，或換一台機器）
+  //                 → 接上去、把上面的東西抓下來當基礎，再把這次的疊上去
+  //
+  // 最後那種本來會死在「Name already exists」，而錯誤訊息還猜成「多半是還沒登入」
+  //（VM 實測）。
+  const hasRemote =
+    (await runTool("git", ["-C", step.vault, "remote", "get-url", "origin"], "")) === 0;
+
+  if (!hasRemote) {
+    const url = await capture("gh", ["repo", "view", step.repo, "--json", "url", "--jq", ".url"]);
+
+    if (url === null) {
+      // 只建 repo，不帶 --source/--push：那兩個參數要求本機先有 commit，而我們
+      // 這時候還沒 commit（順序不能反過來，見下面的 fetch）。
+      const code = await runTool(
+        "gh",
+        ["repo", "create", step.repo, "--private"],
+        "請先裝好 GitHub CLI 並登入",
+      );
+
+      if (code !== 0) {
+        throw new Error(
+          "GitHub 上那個 repo 建不起來——先確認你已經登入 GitHub（環境那一段的最後一張卡）",
+        );
+      }
+    } else {
+      logProgress("GitHub 上本來就有這個筆記庫了，直接接上去");
+    }
+
+    const remote =
+      url ?? (await capture("gh", ["repo", "view", step.repo, "--json", "url", "--jq", ".url"]));
+
+    if (remote === null) {
+      throw new Error("找不到 GitHub 上那個筆記庫的網址，可以重按一次");
+    }
+
+    await runTool("git", ["-C", step.vault, "remote", "add", "origin", remote], "");
+  }
+
+  // 遠端已經有東西時，先把它當基礎——不然這次的 commit 跟上面那些是兩段沒有關係
+  // 的歷史，push 會被擋下來（而學生看到的是一句他看不懂的 non-fast-forward）。
+  //
+  // reset --mixed 只動 HEAD 與索引，不碰工作目錄：我們剛寫好的那些檔案都還在，
+  // 下面 add -A 會把「跟遠端不一樣的地方」變成這一次的改動。
+  await runTool("git", ["-C", step.vault, "fetch", "origin"], "");
+
+  if (
+    (await runTool("git", ["-C", step.vault, "rev-parse", "--verify", "origin/main"], "")) === 0
+  ) {
+    await runTool("git", ["-C", step.vault, "reset", "--mixed", "origin/main"], "");
+  }
+
+  await runTool("git", ["-C", step.vault, "add", "-A"], "請先裝好 Git");
+  // 沒有東西可 commit 時 git 回非 0，那不是失敗。
+  await runTool(
+    "git",
+    ["-C", step.vault, "commit", "-m", "✨ 建立筆記庫"],
+    "請先裝好 Git",
+  );
+
+  if ((await runTool("git", ["-C", step.vault, "push", "-u", "origin", "main"], "")) !== 0) {
+    throw new Error(
+      "推不上去——先確認你已經登入 GitHub（環境那一段的最後一張卡），再回來重按一次",
+    );
+  }
+
+  await registerVault(step);
+  logProgress(`筆記庫已接上 GitHub → ${step.vault}`);
+}
+
+// 把筆記庫登記進 Obsidian 自己那份名單。
+//
+// id 用路徑的雜湊，重按安裝不會長出第二筆。ts 是 Obsidian 用來排「最近開過」的，
+// 給現在的時間就好。
+//
+// ⚠️ Obsidian 開著的時候它會在結束時把這個檔整份寫回去，我們剛寫的可能被蓋掉。
+// 所以卡片文案要學生先把 Obsidian 關掉再按安裝。
+async function registerVault(step) {
+  const id = createHash("sha256").update(step.vault).digest("hex").slice(0, 16);
+  const current = existsSync(step.registry)
+    ? JSON.parse(await readFile(step.registry, "utf8"))
+    : {};
+  const vaults = current.vaults ?? {};
+
+  // 不要在「已經登記過」就提早結束。
+  //
+  // 那樣寫的話，之後才加的 open: true 永遠寫不進去——已經跑過一次安裝的機器
+  // （也就是所有正在重試的人）會一直停在筆記庫選單（Windows VM 實測）。
+  // 這一段本來就是冪等的，每次都重寫一遍最單純。
+  // open: true 是「下次打開 Obsidian 就開這一本」。
+  //
+  // 只有在沒有別本被標成要開的時候才設：學生的機器上通常一本都沒有，設了他按下
+  // 驗證才會直接看到我們這本；已經有自己筆記庫的人（像開發機）不該被我們改掉
+  // 預設開哪一本。
+  // open: true 是「下次打開 Obsidian 就開這一本」。沒有任何一本被標成要開的話，
+  // Obsidian 會停在筆記庫選單，學生得自己點一下——那一步嚮導做得掉。
+  //
+  // 只有在沒有別本被標成要開的時候才設（我們自己那筆不算）：學生機器上通常一本
+  // 都沒有；已經有自己筆記庫的人不該被我們改掉預設開哪一本。
+  const othersOpen = Object.entries(vaults).some(
+    ([key, entry]) => key !== id && entry?.open === true,
+  );
+  const mine = {
+    path: step.vault,
+    ts: Date.now(),
+    ...(othersOpen ? {} : { open: true }),
+  };
+
+  await mkdir(path.dirname(step.registry), { recursive: true });
+  await writeFile(
+    step.registry,
+    `${JSON.stringify({ ...current, vaults: { ...vaults, [id]: mine } }, null, 2)}\n`,
+  );
+  logProgress(
+    othersOpen
+      ? "已經讓 Obsidian 認得這個筆記庫"
+      : "已經讓 Obsidian 認得這個筆記庫，而且下次打開就是它",
+  );
+}
+
 const args = parseArgs(process.argv.slice(2));
 
 try {
@@ -479,6 +901,10 @@ try {
     await externalSkillStep(step);
   } else if (step.kind === "claude-hud") {
     await claudeHudStep(step);
+  } else if (step.kind === "obsidian-app") {
+    await obsidianAppStep(step);
+  } else if (step.kind === "obsidian-vault") {
+    await obsidianVaultStep(step);
   } else {
     throw new Error(`不認得的步驟種類：${step.kind}`);
   }

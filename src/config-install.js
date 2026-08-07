@@ -18,6 +18,7 @@ export const SKILL_NAMES = ["auto-rename", "handoff", "structured-questions"];
 // 學生知道有這個功能卻不知道怎麼呼叫。做什麼用的移到描述裡。
 const SKILL_LABELS = {
   "auto-rename": "auto-rename",
+  "vault-sync": "vault-sync",
   handoff: "handoff",
   "structured-questions": "structured-questions",
 };
@@ -120,6 +121,37 @@ const EXTERNAL_SKILL_STEPS = {
 
 export const EXTERNAL_SKILL_IDS = Object.keys(EXTERNAL_SKILL_STEPS);
 
+// 筆記那一段：Obsidian 本體、接上 GitHub 的筆記庫、以及讓 AI 接手管理的 skill。
+//
+// vault 的位置寫死。嚮導沒有檔案選擇器，讓學生貼路徑的話「一鍵」就不成立，而且
+// 每台機器路徑不一樣，驗證與 skill 裡的指令都得跟著變。
+export const VAULT_DIR = "jr-workshop-vault";
+export const VAULT_REPO = "obsidian-vault";
+export const OBSIDIAN_GIT = {
+  plugin: "obsidian-git",
+  // release 的三個檔直接放進 vault 的 plugins 目錄就等於裝好了，不必解壓縮。
+  files: ["main.js", "manifest.json", "styles.css"],
+  release: "https://github.com/Vinzent03/obsidian-git/releases/latest/download",
+  // key 名取自 2.38.6 的 DEFAULT_SETTINGS。寫錯的 key 會被安靜忽略——設定看起來
+  // 寫進去了，行為卻是預設值，而畫面上沒有任何錯誤。
+  settings: {
+    // 打開 vault 就先把另一台推上去的抓下來
+    autoPullOnBoot: true,
+    // Obsidian 沒有「關閉 vault」這個時機可以掛，所以改成每 10 分鐘自動
+    // commit + push 一次。學生不用記得按任何按鈕。
+    autoSaveInterval: 10,
+    // 推之前先拉——衝突大多是「另一台先推了」，先拉就少一半
+    pullBeforePush: true,
+    syncMethod: "merge",
+    commitMessage: "vault backup: {{date}}",
+    // 右下角那個分支名（main）拿掉：學生這一段不需要知道 branch 是什麼，而畫面上
+    // 一個看不懂的英文字只會讓他覺得這東西不是給他用的（Reed 實測看到）。
+    showBranchStatusBar: false,
+    // 「已存 N 個檔」那一行留著：它是唯一看得到「真的有在自動存」的地方。
+    showStatusBar: true,
+  },
+};
+
 // claude-hud：輸入框下面那一條狀態列。
 //
 // 它原本的裝法是在 Claude Code 裡打四個 slash 指令，其中兩個是互動式問答——學生
@@ -178,6 +210,15 @@ function externalStepsFor(agent) {
   );
 }
 
+export const NOTE_STEPS = ["obsidian", "obsidian-vault"];
+
+// 這兩列沒有東西可裝，跟 demo 同一類：按下去開一個真的終端，叫 AI 寫一篇測試
+// 筆記並存上去，學生自己去 GitHub 上看那個檔在不在。
+//
+// 為什麼證據要放在 GitHub 上：本機那個檔案是 AI 寫的，看得到只證明它會建檔；
+// 要證明「整條同步是通的」，得看那個檔有沒有真的離開這台機器。
+export const VAULT_AGENT_STEPS = ["vault-agent-claude", "vault-agent-codex"];
+
 export const STEP_IDS = [
   "claude-md",
   "output-style",
@@ -195,6 +236,10 @@ export const STEP_IDS = [
   ...CODEX_SKILL_STEPS,
   ...EXTERNAL_SKILL_IDS,
   ...DEMO_STEPS,
+  ...NOTE_STEPS,
+  ...VAULT_AGENT_STEPS,
+  skillStepId("claude", "vault-sync"),
+  skillStepId("codex", "vault-sync"),
 ];
 
 const CLAUDE_STEPS = [
@@ -244,6 +289,19 @@ export function stepsForTools(tools) {
     // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
     ...(selected.includes("claude") ? ["demo-claude"] : []),
     ...(selected.includes("codex") ? ["demo-codex"] : []),
+    // 筆記那一段整段排在 demo 之後（選配）。段內的順序是：
+    //
+    //   Obsidian      先有 app，vault 裡才寫得出 .obsidian/ 設定
+    //   vault-sync    筆記庫那張的操作步驟第三步就要學生叫 AI 存一次——skill 排在
+    //                 它後面的話，彈窗教的動作用的是還沒裝的東西（Reed 實測）
+    //   筆記庫        建資料夾、接 GitHub、設定自動同步
+    "obsidian",
+    ...(selected.includes("claude") ? [skillStepId("claude", "vault-sync")] : []),
+    ...(selected.includes("codex") ? [skillStepId("codex", "vault-sync")] : []),
+    "obsidian-vault",
+    // 整段的收尾：叫 AI 真的寫一篇進去，證明前面四張串起來是通的。
+    ...(selected.includes("claude") ? ["vault-agent-claude"] : []),
+    ...(selected.includes("codex") ? ["vault-agent-codex"] : []),
   ];
 }
 
@@ -464,16 +522,36 @@ function agentHooks(id, home, platform) {
 
 // Claude 的 skill 住 ~/.claude/skills/，Codex 的住 ~/.agents/skills/（官方 user 目錄，
 // 舊版才在 ~/.codex/skills）。兩邊的 SKILL.md 內容不同，各自一列。
-function skillStep(id, home) {
+// 哪幾支 skill 有翻譯。其餘的只有繁中一份，lang 給什麼都拿同一個檔——寫在這裡
+// 而不是去問檔案系統，是因為 describeStep 是純函式，測試裡的 home 是假路徑。
+const TRANSLATED_SKILLS = new Set(["vault-sync"]);
+
+// 繁中是預設，檔名不帶語言；其他語言用 SKILL.<lang>.md。
+function skillFile(base, name, lang, suffix = "") {
+  const translated = TRANSLATED_SKILLS.has(name) && lang !== "zh-TW";
+  return translated ? `${base}.${lang}${suffix}` : `${base}${suffix}`;
+}
+
+function skillStep(id, home, lang) {
   const [, agent, ...rest] = id.split("-");
   const name = rest.join("-");
   const root = agent === "claude" ? `${home}/.claude/skills` : `${home}/.agents/skills`;
   const files = [
     {
-      source: `skills/skill-files/${agent}/${name}/SKILL.md`,
+      source: `skills/skill-files/${agent}/${name}/${skillFile("SKILL", name, lang, ".md")}`,
+      // 落點的檔名一律是 SKILL.md——那是 skill 系統認的名字，不是我們挑的。
       target: `${root}/${name}/SKILL.md`,
     },
   ];
+
+  // 一次性的設定步驟拆成參考檔：九成的呼叫是「幫我存起來」，不該每次都把那 80 行
+  // 讀進來。SKILL.md 只留一句指路，模型真的要接新筆記庫時才去讀它。
+  if (name === "vault-sync") {
+    files.push({
+      source: `skills/skill-files/${agent}/vault-sync/references/${skillFile("new-vault", name, lang, ".md")}`,
+      target: `${root}/${name}/references/new-vault.md`,
+    });
+  }
 
   // Codex 的 handoff 會叫模型去 Read _shared/codex-session-rename.md。那個檔案沒
   // 跟著裝的話，skill 讀得到、改名那半段卻是死的——附屬檔案跟著用得到它的那一列走。
@@ -483,6 +561,10 @@ function skillStep(id, home) {
       target: `${root}/_shared/codex-session-rename.md`,
     });
   }
+
+  // vault-sync 那支 SKILL.md 裡的每一條指令都指著筆記庫。留成 VAULT_PATH 的話
+  // 模型會照字面打出 `git -C VAULT_PATH status`——那是一個不存在的資料夾。
+  const vaultPath = { from: "VAULT_PATH", to: `${home.replaceAll("\\", "/")}/${VAULT_DIR}` };
 
   return {
     id,
@@ -497,15 +579,17 @@ function skillStep(id, home) {
     // 安裝時就換成這台機器的絕對路徑，形狀跟 namingAllowRule 一致。
     // 代換套在所有 Claude skill 上，不挑名字：會叫命名腳本的不只 auto-rename，
     // handoff 收尾也要改名。沒有那段字串的 skill 代換不到東西，等於不動。
-    substitutions:
-      agent === "claude"
+    substitutions: [
+      ...(agent === "claude"
         ? [
             {
               from: "$HOME/.claude/hooks/set-session-name.sh",
               to: `${home.replaceAll("\\", "/")}/.claude/hooks/set-session-name.sh`,
             },
           ]
-        : [],
+        : []),
+      ...(name === "vault-sync" ? [vaultPath] : []),
+    ],
   };
 }
 
@@ -587,6 +671,79 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         settingsTarget: `${claudeDir}/settings.json`,
       };
 
+    case "obsidian": {
+      // mac 有 brew 就走 cask；沒有 brew 的機器下載官方 dmg 掛載複製——嚮導不能代裝
+      // brew（要 sudo 密碼，而 spawn 出來的子程序沒有 tty），所以不能只留 brew 這條。
+      // Windows 上的落點不只一種：Obsidian 走 Squirrel，裝到使用者自己的
+      // AppData 底下，但那個安裝器的版本、以及 x64／ARM 的差異都可能換位置
+      //（Windows VM 實測：winget 說裝好了，我賭的那一個路徑卻是空的）。
+      //
+      // 所以列出所有已知的候選，任何一個在就算裝好——賭單一路徑的代價是「東西
+      // 明明在，卡片卻紅著」，而學生完全不知道要去哪裡看。
+      // Windows 上不要賭單一路徑。Obsidian 走 Squirrel：真正的執行檔放在
+      // `app-<版本>\Obsidian.exe`，外層那個 stub 不是每個版本都會建。版號還會
+      // 隨著更新變，寫死等於下次更新就失效。
+      //
+      // 所以只講「去哪幾個資料夾找」，每個資料夾都看它自己與底下的 app-* 子資料夾
+      //（見 config-check 的 findObsidianApp）。
+      const appRoots =
+        platform === "win32"
+          ? [
+              `${home}/AppData/Local/Obsidian`,
+              `${home}/AppData/Local/Programs/Obsidian`,
+              "C:/Program Files/Obsidian",
+              "C:/Program Files (x86)/Obsidian",
+            ]
+          : ["/Applications"];
+      return {
+        id,
+        label: "Obsidian",
+        kind: "obsidian-app",
+        appRoots,
+        appName: platform === "win32" ? "Obsidian.exe" : "Obsidian.app",
+        winget: "Obsidian.Obsidian",
+        cask: "obsidian",
+        dmg: "https://github.com/obsidianmd/obsidian-releases/releases/latest/download/Obsidian-universal.dmg",
+      };
+    }
+
+    case "vault-agent-claude":
+    case "vault-agent-codex": {
+      const agent = id === "vault-agent-claude" ? "claude" : "codex";
+      return {
+        id,
+        label: `叫 AI 寫一篇進去（${agent === "claude" ? "Claude" : "Codex"}）`,
+        kind: "vault-agent",
+        agent,
+        vault: `${home}/${VAULT_DIR}`,
+        repo: VAULT_REPO,
+      };
+    }
+
+    case "obsidian-vault": {
+      const vault = `${home}/${VAULT_DIR}`;
+      return {
+        id,
+        label: "接到 GitHub 的筆記庫",
+        kind: "obsidian-vault",
+        vault,
+        repo: VAULT_REPO,
+        pluginDir: `${vault}/.obsidian/plugins/${OBSIDIAN_GIT.plugin}`,
+        configDir: `${vault}/.obsidian`,
+        source: "obsidian/歡迎.md",
+        gitignoreSource: "obsidian/gitignore",
+        // Obsidian 自己那份「我知道哪些筆記庫」的名單。資料夾建在硬碟上不等於
+        // Obsidian 認得它——沒登記的話 obsidian://open 會回「Vault not found」，
+        // 學生得自己在 app 裡按「開啟資料夾作為筆記庫」（Reed 實測撞到）。
+        registry:
+          platform === "win32"
+            ? `${home}/AppData/Roaming/Obsidian/obsidian.json`
+            : platform === "darwin"
+              ? `${home}/Library/Application Support/obsidian/obsidian.json`
+              : `${home}/.config/obsidian/obsidian.json`,
+      };
+    }
+
     case "claude-hud":
       return {
         id,
@@ -601,7 +758,13 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         previousTarget: `${claudeDir}/plugins/claude-hud/previous-statusline.txt`,
         // cache 路徑第一層是 marketplace 名、第二層才是 plugin 名，中間那層不能省。
         cacheRoot: `${claudeDir}/plugins/cache`,
-        commandTemplate: "claude-code/claude-hud/statusline.sh.template",
+        // 兩個平台的狀態列指令長得完全不一樣：mac 是一段 bash（用 ls + sort
+        // 找最新版），Windows 是一段 PowerShell（Get-ChildItem + [version] 排序）。
+        // 共通的只有「{RUNTIME} 換成這台機器的 node 絕對路徑」這件事。
+        commandTemplate:
+          platform === "win32"
+            ? "claude-code/claude-hud/statusline.ps1.template"
+            : "claude-code/claude-hud/statusline.sh.template",
       };
 
     case "codex-config":
@@ -672,7 +835,7 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       }
 
       if (STEP_IDS.includes(id)) {
-        return skillStep(id, home);
+        return skillStep(id, home, lang);
       }
 
       throw new Error(`不認得的步驟：${id}`);

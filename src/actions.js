@@ -40,6 +40,10 @@ const verifyInTerminalScript = moduleFile(
   "../scripts/verify-in-terminal.mjs",
   import.meta.url,
 );
+const openVaultRepoScript = moduleFile(
+  "../scripts/open-vault-repo.mjs",
+  import.meta.url,
+);
 const diagnoseNamingBlockScript = moduleFile(
   "../scripts/diagnose-naming-block.mjs",
   import.meta.url,
@@ -269,6 +273,8 @@ Object.assign(actions, {
         "fullscreen-open",
         "fullscreen-proof",
         "statusline",
+        "open-vault",
+        "vault-note",
         "mcp-playwright",
       ],
       agent: ["claude", "codex"],
@@ -279,6 +285,13 @@ Object.assign(actions, {
       `--agent=${agent}`,
     ],
     description: "開一個真的終端視窗跑驗證，學生只要看畫面。",
+  },
+  "open-vault-repo": {
+    kind: "fixed",
+    label: "看筆記的改動歷史",
+    cmd: process.execPath,
+    args: [openVaultRepoScript],
+    description: "把筆記庫的 commit 歷史在瀏覽器開起來，證據在遠端不在本機。",
   },
   "verify-hooks-live": {
     kind: "fixed",

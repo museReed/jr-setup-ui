@@ -1,0 +1,14 @@
+# Obsidian 自己的暫存與「你現在開了哪幾個分頁」——每切一次分頁就變一次，
+# 是兩台電腦衝突的最大來源。設定本身（appearance、community-plugins）要進版控，
+# 這樣換電腦才有一樣的環境。
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.trash/
+
+# 作業系統塞進資料夾的東西
+.DS_Store
+Thumbs.db
+
+# 同步外掛問過帳號密碼時留下的暫存檔。裡面沒有密碼，但也不該進版控。
+.obsidian/plugins/obsidian-git/.git_credentials_input

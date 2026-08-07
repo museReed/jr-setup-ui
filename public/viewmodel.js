@@ -422,8 +422,19 @@ export function configRowModel(
     // 但驗證失敗時那顆要活過來：裝歪了（舊版、裝一半）而 check 仍是 ok 的情況存在，
     // 那時重跑安裝是唯一的自救手段，拿掉就沒路走了。
     const rescueReinstall = installationDone && verificationFailed;
+    // 有些列裝好之後仍然要留一顆（check.reinstallable，見 config-check）：那些
+    // 設定會被別的程式改掉，重跑安裝是唯一的自救手段。它不是主要動作，畫成次要的。
+    const canRedo = installationDone && !rescueReinstall && check.reinstallable === true;
 
-    if (rescueReinstall) {
+    if (canRedo) {
+      buttons.push({
+        action: installAction,
+        dataName: "installAction",
+        text: "重新設定",
+        step: check.id,
+        secondary: true,
+      });
+    } else if (rescueReinstall) {
       buttons.push({
         action: installAction,
         dataName: "installAction",
@@ -1010,6 +1021,7 @@ export function terminalOutcomeLines({
   succeeded,
   check = null,
   guidance = null,
+  reason = null,
 }) {
   const label = check?.label ?? "這個項目";
   const plain = (text) => text.replace(/`[^`]+`/g, "指定測試");
@@ -1045,6 +1057,18 @@ export function terminalOutcomeLines({
   }
 
   if (guidance === null) {
+    // 腳本自己講出來的那句話優先。它通常是「該怎麼辦」（Obsidian 現在開著，請先
+    // 完全關掉它再按一次安裝），而罐頭句只是叫學生去讀一堆他看不懂的原始輸出
+    // ——那句話明明就在裡面（Reed 實測截圖）。
+    if (typeof reason === "string" && reason.trim() !== "") {
+      return [
+        {
+          className: "ds-term-line ds-term-line--err",
+          text: reason.trim(),
+        },
+      ];
+    }
+
     return [
       {
         className: "ds-term-line ds-term-line--err",

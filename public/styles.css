@@ -519,7 +519,9 @@ body {
   margin-left: auto;
   align-self: center;
   position: relative;
-  width: 84px;
+  /* 佈局高度維持 36px，那條 chrome 的高度就不會被小人撐開。實際畫多大交給下面
+     那條規則——圖比盒子高，多出來的部分吃掉 chrome 上下各 10px 的 padding。 */
+  width: 81px;
   height: 36px;
 }
 
@@ -530,7 +532,9 @@ body {
   top: 50%;
   left: 0;
   width: 100%;
-  height: 56px;
+  /* 1.5 倍（36 → 54），對齊那一列的中線：top 50% 是盒子的中心，而盒子跟標題、
+     那三顆圓點在同一條 flex 線上（align-items: center），所以中線是同一條。 */
+  height: 54px;
   transform: translateY(-50%);
 }
 
