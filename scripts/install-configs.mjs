@@ -547,6 +547,89 @@ async function obsidianRunning() {
   });
 }
 
+// 跑一條指令，把 stdout 收回來（不印給學生看，通常是 token 之類的東西）。
+async function capture(cmd, args) {
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch(cmd, args, { env });
+
+  return new Promise((resolve) => {
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: ["ignore", "pipe", "ignore"],
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.once("error", () => resolve(null));
+    child.once("close", (code) => resolve(code === 0 ? out.trim() : null));
+  });
+}
+
+// 把 GitHub 的登入資料存進作業系統的鑰匙圈。
+//
+// 為什麼要這一步：Obsidian 裡的同步外掛跑的是系統 git，而它是被 GUI 程式叫起來
+// 的——拿不到終端那份環境，也叫不動 gh 的 credential helper。結果就是 Obsidian
+// 裡跳出一個「Username for https://github.com」的輸入框，同步整條斷在那裡
+// （Reed 在 VM 上實測撞到）。
+//
+// git credential approve 會把資料交給「這台機器上設定的那個 helper」——mac 是
+// osxkeychain、Windows 是認證管理員。所以這裡不挑平台，也不會把 token 寫成明文
+// 檔案；它跟 gh 本來就存 token 的地方是同一類。
+async function storeGitCredential() {
+  const token = await capture("gh", ["auth", "token"]);
+  const login = await capture("gh", ["api", "user", "--jq", ".login"]);
+
+  if (token === null || login === null) {
+    console.log("（還沒登入 GitHub，跳過鑰匙圈這一步）");
+    return;
+  }
+
+  // gh 自己那份設定也補一下：學生之後在終端裡 git push 才不會被問。
+  await runTool("gh", ["auth", "setup-git"], "請先裝好 GitHub CLI 並登入");
+
+  // 一個 helper 都沒設的機器上，credential approve 會安靜地什麼都不做——存進去
+  // 之後 Obsidian 照樣跳出輸入框，而且沒有任何錯誤訊息。所以先確認有 helper：
+  //
+  //   mac      osxkeychain（git 內建）
+  //   Windows  manager（Git for Windows 內建的認證管理員，通常預設就設好了）
+  const configured = await capture("git", ["config", "--get", "credential.helper"]);
+
+  if (configured === null || configured === "") {
+    await runTool(
+      "git",
+      [
+        "config",
+        "--global",
+        "credential.helper",
+        process.platform === "win32" ? "manager" : "osxkeychain",
+      ],
+      "請先裝好 Git",
+    );
+  }
+
+  const env = await spawnEnv();
+  const spawnable = resolveLaunch("git", ["credential", "approve"], { env });
+
+  await new Promise((resolve) => {
+    const child = spawn(spawnable.cmd, spawnable.args, {
+      stdio: ["pipe", "ignore", "ignore"],
+      shell: false,
+      env,
+      ...(spawnable.spawnOptions ?? {}),
+    });
+    child.once("error", () => resolve());
+    child.once("close", () => resolve());
+    child.stdin.end(
+      `protocol=https\nhost=github.com\nusername=${login}\npassword=${token}\n\n`,
+    );
+  });
+
+  logProgress("GitHub 的登入資料已經放進鑰匙圈，Obsidian 不會再問你帳號密碼");
+}
+
 async function obsidianVaultStep(step) {
   if (await obsidianRunning()) {
     throw new Error(
@@ -637,6 +720,7 @@ async function obsidianVaultStep(step) {
   }
 
   await registerVault(step);
+  await storeGitCredential();
   logProgress(`筆記庫已接上 GitHub → ${step.vault}`);
 }
 
