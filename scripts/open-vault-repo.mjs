@@ -37,6 +37,9 @@ try {
 }
 
 console.log(`打開：${url}`);
+// 那是 private repo：瀏覽器沒登入 GitHub 的話會看到 404，不是 403，也不是壞掉
+//（Windows VM 實測，學生的瀏覽器是全新的）。先講在前面比事後解釋有用。
+console.log("看到 404 的話，是那個瀏覽器還沒登入 GitHub——你的筆記庫是私人的，沒登入就看不到");
 
 // detached + unref：瀏覽器開起來之後這支就該結束，不然卡片會一直轉圈。
 const child =
