@@ -576,7 +576,7 @@ try {
   // 而驗證會失敗、環境也會變，學生要能在原地再驗一次。
   assert.match(
     files.app,
-    /text: verified\.has\(check\.id\) \? "重跑驗證" : "驗證",/,
+    /verified\.has\(check\.id\)\s*\n?\s*\? "重跑驗證"\s*\n?\s*: "驗證",/,
     "驗過的那一格按鈕留著，文案改成重跑驗證",
   );
   assert(

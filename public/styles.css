@@ -525,8 +525,11 @@ body {
   height: 36px;
 }
 
-.terminal-mascot-art,
-.terminal-mascot-art svg {
+/* 置中的位移只掛在外層這一個盒子上，不掛在 svg 上。
+   lottie 是把 `transform: translate3d(0,0,0)` 直接寫進 svg 的 inline style 的，
+   inline 贏過樣式表——svg 身上的 translateY(-50%) 從來沒生效過，只剩 top: 50%，
+   於是整隻的上緣坐在盒子中線、往下垂半個身高，看起來掛在 chrome 外面（Reed 截圖）。 */
+.terminal-mascot-art {
   display: block;
   position: absolute;
   top: 50%;
@@ -536,6 +539,13 @@ body {
      那三顆圓點在同一條 flex 線上（align-items: center），所以中線是同一條。 */
   height: 54px;
   transform: translateY(-50%);
+}
+
+/* svg 只要填滿外層就好，位置的事已經在上面辦完了。 */
+.terminal-mascot-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* 進度文字與右邊那幾顆按鈕排同一行。按鈕要黏在一起靠右，所以把空白全推給進度

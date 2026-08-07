@@ -416,12 +416,19 @@ function renderWizard() {
         (card.kind === "config" && check.noInstall === true) ||
         (state.installedSteps.has(check.id) && check.status !== "missing"),
     );
-  const verificationRequired =
-    card.check?.verifyAction != null || card.check?.eyeCheck != null;
+  // 「該驗的」是這張卡上的每一列，不是主 check 那一列。合併的卡有兩個驗證
+  // （「一次只跑一個指令」與「常用指令不用每次問你」），原本只看 card.checkId，
+  // 於是驗完其中一個就解鎖下一張，另一個從沒跑過也走得掉（VM 實測截圖）。
+  const verifyRequiredChecks = cardChecks.filter(
+    (check) => check.verifyAction != null || check.eyeCheck != null,
+  );
+  const verificationRequired = verifyRequiredChecks.length > 0;
   const verificationAttempted =
     !verificationRequired ||
-    verified.has(card.checkId) ||
-    state.verificationAttempted.has(card.checkId);
+    verifyRequiredChecks.every(
+      (check) =>
+        verified.has(check.id) || state.verificationAttempted.has(check.id),
+    );
   const nextUnlocked =
     card.kind === "setup"
       ? true
@@ -468,6 +475,10 @@ function renderWizard() {
   // 一個指令」的終端）。一顆按鈕說謊比少一顆按鈕更糟。
   const verifyChecks = cardChecks.filter((check) => check.verifyAction != null);
   const perRowVerify = verifyChecks.length > 1;
+  // 這張卡上還有檔案在等 AI 合併。驗證要等合併做完——驗一份還沒併進去的設定，拿到的
+  // 結果跟列上那句「需要合併」互相矛盾，學生只能挑一句相信（VM 實測 codex-config：
+  // 沒按「用 AI 合併」就跑了規矩與回話風格的測試）。
+  const mergePending = cardChecks.some((check) => check.needsMerge === true);
   let row =
     card.kind === "env"
       ? envCardRowModel(card, state.installedSteps)
@@ -508,19 +519,27 @@ function renderWizard() {
               {
                 action: EYE_ROW_ACTIONS[card.checkId].action,
                 dataName: "verifyAction",
-                text: EYE_ROW_ACTIONS[card.checkId].text,
+                text: mergePending
+                  ? "先按「用 AI 合併」"
+                  : EYE_ROW_ACTIONS[card.checkId].text,
                 rowId: `eye-${card.checkId}`,
                 step: `eye-${card.checkId}`,
                 options: EYE_ROW_ACTIONS[card.checkId].options ?? undefined,
+                disabled: mergePending,
               },
             ]
           : []),
         ...(perRowVerify ? verifyChecks : []).map((check) => ({
           action: check.verifyAction,
           dataName: "verifyAction",
-          text: verified.has(check.id) ? "重跑驗證" : "驗證",
+          text: mergePending
+            ? "先按「用 AI 合併」"
+            : verified.has(check.id)
+              ? "重跑驗證"
+              : "驗證",
           checkId: check.id,
           step: check.id,
+          disabled: mergePending,
           // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個
           // 參數讀的是 spec.options（view.js 的 actionButton）。
           options: check.verifyOptions,
