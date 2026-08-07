@@ -27,13 +27,30 @@ try {
   // 兩個都選時優先 claude：課堂主線，而且它那邊裝好的 acceptEdits 讓合併不會停下
   // 來問（Reed 指定）。
   assert.equal(resolveEngine(merge, { tools: "claude,codex" }), "claude");
+  // 誰家的設定就用誰去合併（Reed 實測：Codex 的 config.toml 那張卡，終端上印的是
+  // 「Claude：思考中…」——動手的是沒在用那份設定的那一個）。
+  assert.equal(
+    resolveEngine(merge, { tools: "claude,codex", step: "codex-config" }),
+    "codex",
+  );
+  assert.equal(
+    resolveEngine(merge, { tools: "claude,codex", step: "codex-agents" }),
+    "codex",
+  );
+  assert.equal(
+    resolveEngine(merge, { tools: "claude,codex", step: "claude-md" }),
+    "claude",
+  );
+  // 那一家沒被選到就退回工具選擇——機器上根本沒有那支 CLI。
+  assert.equal(resolveEngine(merge, { tools: "claude", step: "codex-config" }), "claude");
+  assert.equal(resolveEngine(merge, { tools: "codex", step: "claude-md" }), "codex");
   // tools 是這顆 action 宣告的選項之一，沒宣告的話伺服器會把前端送的值丟掉，
   // engine 永遠拿到 undefined 而退回 claude——形同沒改。
   assert(merge.options.tools.includes("codex"));
   // 固定字串的 engine 照舊，不要為了新形狀把舊的那幾顆一起改掉。
   assert.equal(resolveEngine(actions["codex-hello"]), "codex");
   assert.equal(resolveEngine(actions["claude-hello"], { tools: "codex" }), "claude");
-  ok("合併用哪個 agent 跟著工具選擇走，固定 engine 的 action 不受影響");
+  ok("合併用那份設定自己家的 agent，沒選到才退回工具選擇");
 
   const claudeWrite = buildAgentCommand("claude", prompt, "write");
   assert(claudeWrite.args.join(" ").includes("Write"));

@@ -1344,6 +1344,17 @@ try {
   // 兩個都選時優先 Claude——它是課堂主線，而且它那邊裝好的 acceptEdits 讓合併
   // 不會停下來問。
   assert.equal(agentNameFor("merge-config-step", "claude,codex"), "Claude");
+  // 名字要跟實際跑的那一支對得上（見 actions.js 的 engine）。少改一處的話，Codex
+  // 那張卡的終端會印著「Claude：思考中…」。
+  assert.equal(
+    agentNameFor("merge-config-step", "claude,codex", "codex-config"),
+    "Codex",
+  );
+  assert.equal(
+    agentNameFor("merge-config-step", "claude,codex", "claude-md"),
+    "Claude",
+  );
+  assert.equal(agentNameFor("merge-config-step", "claude", "codex-config"), "Claude");
   assert.equal(agentNameFor("merge-config-step"), "Claude");
   assert.equal(agentNameFor("hello"), "");
   ok("能從 action 名稱判斷類型與代理名稱");

@@ -337,6 +337,14 @@ const RULE_CHECK_IDS = {
   shared: new Set(["tab-sync"]),
 };
 
+// 這一格是誰家的設定。跟後端 config-install.js 的 agentForStep 是同一條規矩——
+// 合併按鈕會用這一家的 agent 去跑，終端上印的名字要跟著它走。
+export function agentForCheck(id) {
+  if (RULE_CHECK_IDS.claude.has(id)) return "claude";
+
+  return RULE_CHECK_IDS.codex.has(id) ? "codex" : null;
+}
+
 const CARD_DEFINITIONS = {
   rules: [
     {

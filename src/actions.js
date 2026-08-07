@@ -1,4 +1,4 @@
-import { LANGUAGES, STEP_IDS } from "./config-install.js";
+import { agentForStep, LANGUAGES, STEP_IDS } from "./config-install.js";
 import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
 import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
 import { moduleFile } from "./paths.js";
@@ -298,9 +298,25 @@ Object.assign(actions, {
     // 整組被拿掉、CLI 也不會安裝——但 config.toml 是 protectExisting，仍然會要求
     // 合併。按下去跑的是一個不存在的指令，拿到「找不到 claude 指令」。
     //
-    // 兩個都選時優先 claude：它是課堂的主線，而且合併要改檔案，Claude 這邊裝好的
-    // acceptEdits 讓它不會停下來問。
-    engine: ({ tools }) => (tools === "codex" ? "codex" : "claude"),
+    // 誰家的設定就用誰去合併：Codex 的 config.toml / AGENTS.md 交給 codex，
+    // Claude 的 CLAUDE.md 交給 claude。同一家的 agent 才認得那份檔案的規矩，而且
+    // 畫面上「Codex：思考中…」跟卡片標題也對得起來。
+    //
+    // 那一家沒被選到（或這一步不屬於任何一家）才退回工具選擇：選「只要 Codex」的
+    // 學生機器上根本沒有 claude，按下去會拿到「找不到 claude 指令」。
+    //
+    // 兩個都選、又沒有歸屬時優先 claude：合併要改檔案，Claude 這邊裝好的 acceptEdits
+    // 讓它不會停下來問。
+    engine: ({ step, tools }) => {
+      const selected = String(tools ?? "").split(",");
+      const owner = agentForStep(step);
+
+      if (owner !== null && selected.includes(owner)) {
+        return owner;
+      }
+
+      return selected.includes("claude") ? "claude" : "codex";
+    },
     permission: "write",
     options: {
       step: STEP_IDS,

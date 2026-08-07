@@ -209,6 +209,17 @@ const CLAUDE_STEPS = [
 const CODEX_STEPS = ["codex-config", "codex-agents"];
 export const TAB_SYNC_MARKER = "jr-setup-ui tab sync";
 
+// 這一步是誰家的設定。合併要用同一家的 agent 去做——Codex 的 config.toml 交給
+// Claude 合併的話，動手的是沒在用那份設定的那一個（Reed 實測看到「Claude：思考中」
+// 出現在 Codex 那張卡上）。
+//
+// 共用的那幾步（tab-sync）與 skill / demo 回 null：它們沒有「誰家的」這回事。
+export function agentForStep(id) {
+  if (CLAUDE_STEPS.includes(id)) return "claude";
+
+  return CODEX_STEPS.includes(id) ? "codex" : null;
+}
+
 export function stepsForTools(tools) {
   const selected = tools.filter((tool) => TOOLS.includes(tool));
 
