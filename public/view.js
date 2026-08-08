@@ -1232,6 +1232,17 @@ function renderSectionNotice(notice) {
     detail.textContent = notice.detail;
     host.append(detail);
   }
+
+  // 清理那顆按鈕就放在講這件事的那一句旁邊，不另外開一張卡：學生看到問題的那一刻
+  // 就有得按，不用先記住再去別的地方找。
+  for (const action of notice.actions ?? []) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ds-btn ds-btn-sm section-notice-action";
+    button.textContent = action.label;
+    button.addEventListener("click", () => action.onClick());
+    host.append(button);
+  }
 }
 
 export function renderWizard(model) {

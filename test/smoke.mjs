@@ -258,6 +258,38 @@ try {
   assert.equal(badKind.status, 400);
   ok("POST /state 的 clear 仍然只認 verified 與 behavior");
 
+  // 搬走舊 skill 是整份嚮導唯一會移走東西的動作，所以它的入口要擋得住。
+  // 名字用的是函式驗證器（資料夾名不可能窮舉），但形狀要擋掉路徑穿越與斜線。
+  const runUrl = `${baseUrl}/run?t=${encodeURIComponent(token)}`;
+  const quarantine = (name) =>
+    fetch(runUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "quarantine-skills",
+        options: { lang: "zh-TW", tools: "claude", name },
+      }),
+    });
+
+  for (const evil of [
+    "../../.ssh",
+    "a/b",
+    "a\\b",
+    ".",
+    "..",
+    "with space",
+    "",
+    123,
+  ]) {
+    const rejected = await quarantine(evil);
+    assert.equal(
+      rejected.status,
+      400,
+      `搬走舊 skill 不該接受這個名字：${JSON.stringify(evil)}`,
+    );
+  }
+  ok("搬走舊 skill 的名字擋掉斜線、路徑穿越、空白與非字串");
+
   const pageResponse = await fetch(
     `${baseUrl}/?t=${encodeURIComponent(token)}`,
   );

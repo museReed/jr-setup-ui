@@ -40,6 +40,14 @@ const verifyInTerminalScript = moduleFile(
   "../scripts/verify-in-terminal.mjs",
   import.meta.url,
 );
+const quarantineSkillsScript = moduleFile(
+  "../scripts/quarantine-skills.mjs",
+  import.meta.url,
+);
+const uninstallLegacyCliScript = moduleFile(
+  "../scripts/uninstall-legacy-cli.mjs",
+  import.meta.url,
+);
 const openVaultRepoScript = moduleFile(
   "../scripts/open-vault-repo.mjs",
   import.meta.url,
@@ -245,6 +253,46 @@ Object.assign(actions, {
     options: { tools: ["claude", "codex", "claude,codex"] },
     buildArgs: ({ tools }) => [verifyBehaviorScript, `--tools=${tools}`],
     description: "請學生自己的 AI 回答一題並判定回覆有沒有照格式規則。",
+  },
+  // 這兩顆是整份嚮導唯一會移走東西的動作，所以規矩比別的動作嚴：
+  //
+  //   - 要移什麼由伺服器端自己重新偵測，網頁只送 tools / lang（那兩個本來就有白名單）。
+  //     網頁傳路徑進來、伺服器照著刪的那條路不存在。
+  //   - skill 是「搬到隔離區」不是刪；npm 那兩個套件名寫死在 src/legacy.js。
+  //   - 兩顆都要學生自己按。不在安裝流程裡自動跑。
+  "quarantine-skills": {
+    kind: "fixed",
+    label: "把舊的 skill 搬走",
+    cmd: process.execPath,
+    // ⚠️ 一次只搬一個，而且一定要指名。
+    //
+    // 原本設計成一顆「全部搬走」——那是錯的：我們分不出「上一輪發的」與「他自己裝的」，
+    // 而多數人兩種都有（實測自己這台 14 個 skill 裡有 9 個會被判成殘留）。一顆按鈕
+    // 把他自己寫的 skill 一起搬走，比留著殘留糟糕得多。
+    //
+    // 名字只擋形狀（不含斜線、點、空白），真正的把關在腳本裡：那個名字必須出現在它
+    // 自己重跑一次的偵測結果裡才會動手。
+    options: {
+      lang: LANGUAGES,
+      tools: ["claude", "codex", "claude,codex"],
+      name: (value) =>
+        typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value),
+    },
+    buildArgs: ({ lang, tools, name }) => [
+      quarantineSkillsScript,
+      `--lang=${lang}`,
+      `--tools=${tools}`,
+      `--name=${name}`,
+    ],
+    description: "把指定的一個舊 skill 資料夾搬到隔離區（不刪除）。",
+  },
+  "uninstall-legacy-cli": {
+    kind: "fixed",
+    label: "移除 npm 裝的舊版",
+    cmd: process.execPath,
+    options: { tools: ["claude", "codex", "claude,codex"] },
+    buildArgs: ({ tools }) => [uninstallLegacyCliScript, `--tools=${tools}`],
+    description: "移除舊一輪用 npm install -g 裝的 claude / codex。",
   },
   "verify-hook-live": {
     kind: "fixed",
