@@ -755,21 +755,42 @@ try {
   //（VM 實測：環境那半順序是對的所以正常消失，規則檔那半反了）。
   assert.match(
     files.app,
-    /reportStraySkills\(result\.strays \?\? \[\]\);[\s\S]{0,600}renderWizard\(\)/,
+    /state\.straySkills = result\.strays \?\? \[\];[\s\S]{0,600}renderWizard\(\)/,
     "殘留清單要在重畫之前更新",
   );
   // 第一頁那條「先搬到隔離區」同一個坑：搬完之後提示要消得掉。
   assert.match(
     files.app,
-    /reportWizardSkills\(result\.wizardSkills \?\? \[\]\);[\s\S]{0,300}renderWizard\(\)/,
+    /state\.wizardSkills = result\.wizardSkills \?\? \[\];[\s\S]{0,600}renderWizard\(\)/,
     "嚮導要裝的 skill 清單也要在重畫之前更新",
   );
   assert.match(
     files.app,
-    /reportDuplicateInstalls\(checks\);[\s\S]{0,400}renderWizard\(\)/,
-    "重複安裝的清單也要在重畫之前更新",
+    /state\.envChecks = checks;[\s\S]{0,600}renderWizard\(\)/,
+    "環境檢查的清單也要在重畫之前更新",
   );
   ok("提示的資料在重畫之前就更新，做完動作那條才消得掉");
+
+  // ⚠️ 反過來：寫 log 的一律排在 renderWizard 之後。
+  //
+  // 卡片還沒畫出來時 addRawLine 會寫進一個不存在的 transcript，而每個 report 函式
+  // 都有「同樣的結果只寫一次」的去重——寫錯地方那一次就是唯一一次，之後永遠補不
+  // 回來。實測第一次開頁時三段掃描紀錄只出現一段，就是這樣來的：規則檔檢查毫秒就
+  // 回來（卡片還沒畫），環境檢查被 npm ls 拖了一兩秒（卡片已經在了）。
+  //
+  // 規則一句話：改 state 的排在重畫前，寫 log 的排在重畫後。
+  for (const [call, what] of [
+    ["reportStrayScan\\(", "停發 skill 的掃描紀錄"],
+    ["reportWizardSkills\\(", "嚮導要裝的 skill 掃描紀錄"],
+    ["reportCopyScan\\(", "舊版檢查的掃描紀錄"],
+  ]) {
+    assert.match(
+      files.app,
+      new RegExp(`renderWizard\\(\\)[\\s\\S]{0,1200}${call}`),
+      `${what}要排在 renderWizard 之後，不然會寫進不存在的卡片`,
+    );
+  }
+  ok("掃描紀錄一律在重畫之後才寫，卡片已經存在才有地方可寫");
 
   // 兩個檢查都要在原始輸出裡留下「我跑過」的痕跡，不管有沒有抓到東西。
   //
@@ -779,8 +800,14 @@ try {
   assert.match(files.app, /function reportCopyScan\(checks\)/);
   assert.match(
     files.app,
-    /reportCopyScan\(checks\);[\s\S]{0,200}reportDuplicateInstalls\(checks\);/,
+    /reportCopyScan\(checks\);\s*\n\s*reportDuplicateInstalls\(checks\);/,
     "並存掃描的紀錄要在提示之前寫，log 才是先範圍後結論",
+  );
+  // 路徑只印一次。reportCopyScan 已經整段寫進原始輸出，reportDuplicateInstalls
+  // 再印一次就變成同一份清單出現兩遍（實測第一次開頁就看得到）。
+  assert(
+    !/view\.addRawLine\(`\$\{check\.label\}：\$\{found\}`\)/.test(files.app),
+    "重複安裝那條不要再印一次路徑，reportCopyScan 已經寫過了",
   );
   assert.match(
     files.app,
@@ -828,6 +855,30 @@ try {
     "舊的份數判準要拿掉，不然「只有舊版」那台機器永遠不會被指出來",
   );
   ok("npm 舊版的提示看的是 npm 本人的答案，不是 PATH 上的份數");
+
+  // ⚠️「只有舊版」與「新舊並存」可以同時發生在同一台機器上，要各講各的。
+  //
+  // 原本寫成「全部都只有一份才講『你只有舊版』」，Reed 那台（claude 兩份、codex
+  // 只有 npm 那一份）就走了並存那句，codex 最該講的那整句被吃掉。
+  assert.match(
+    files.app,
+    /const coexisting = legacy\.filter/,
+    "兩種狀況要分開算，不能用整批的性質去猜",
+  );
+  assert(
+    !/onlyLegacy\.length === legacy\.length/.test(files.app),
+    "不能用「全部都只有一份」當判準——混合的機器會漏掉最重要的那一句",
+  );
+  ok("同一台機器上「只有舊版」與「並存」各講各的");
+
+  // ⚠️ skill 的名字要去重：同一支在 claude 與 codex 底下各一份資料夾，直接串起來
+  // 會變成「auto-rename、handoff、…、auto-rename、handoff、…」（實測第一次開頁）。
+  assert.match(
+    files.app,
+    /const uniqueNames = \(skills\) => \[\s*\n?\s*\.\.\.new Set\(skills\.map\(\(skill\) => skill\.name\)\),?\s*\n?\s*\]/,
+    "名字要去重，不然同一支會列兩次",
+  );
+  ok("skill 名字去重，claude 與 codex 各一份不會列成兩支");
 
   // ⚠️ 搬走舊 skill 一定是一個一個來，永遠不能有「全部搬走」。
   //
