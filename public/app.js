@@ -1298,6 +1298,10 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
 //
 // 跟舊 skill 殘留同一套：只講事實、列出路徑，不改紅燈也不替他刪。哪一份才是他要的
 // 我們不知道（他可能刻意留著舊版）。
+// 跑完要重查「環境」那半的動作。它們帶 options（所以走的是規則檔那條路），但真正
+// 改動的是 PATH 上的執行檔。
+const ENV_REFRESH_ACTIONS = new Set(["uninstall-legacy-cli"]);
+
 const reportedDuplicates = new Set();
 
 function reportDuplicateInstalls(checks) {
@@ -1690,6 +1694,14 @@ async function handleDone(
 
   if (configAction) {
     await checkConfigs();
+
+    // 這一顆動到的是 PATH 上的執行檔，不是規則檔。只重查規則檔的話，畫面上那句
+    // 「在這台機器上不只一份」會留著不動——它的資料住在環境檢查那半（VM 實測：
+    // npm 印了 removed 2 packages、exit 0，提示照樣掛在那裡）。
+    if (ENV_REFRESH_ACTIONS.has(action)) {
+      await checkEnvironment(false);
+    }
+
     return;
   }
 

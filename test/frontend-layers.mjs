@@ -756,6 +756,20 @@ try {
   );
   ok("搬走舊 skill 一個一個來，沒有「全部搬走」");
 
+  // 移除 npm 舊版動到的是 PATH 上的執行檔，不是規則檔。它帶 options（所以走規則檔
+  // 那條路），只重查規則檔的話，「在這台機器上不只一份」那句話會留著不動——它的資料
+  // 住在環境檢查那半（VM 實測：npm 印了 removed 2 packages、exit 0，提示照樣掛著）。
+  assert.match(
+    files.app,
+    /const ENV_REFRESH_ACTIONS = new Set\(\["uninstall-legacy-cli"\]\)/,
+  );
+  assert.match(
+    files.app,
+    /if \(ENV_REFRESH_ACTIONS\.has\(action\)\) \{\s*\n\s*await checkEnvironment\(false\);/,
+    "跑完要連環境那半一起重查",
+  );
+  ok("移除 npm 舊版之後會重查環境那半，提示才消得掉");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
