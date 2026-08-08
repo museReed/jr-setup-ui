@@ -96,4 +96,4 @@ if (failed) {
 
 console.log("");
 console.log("移除完成。這一步是可逆的：真的需要舊版，npm install -g 裝回來就好。");
-console.log("回到卡片按一次「再 check 一次」，那一列會重新探測現在用的是哪一份。");
+console.log("嚮導會自己重查一次，那一列與上面那句提示都會跟著更新。");

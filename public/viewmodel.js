@@ -1025,6 +1025,14 @@ export function nextCardUnlocked({
   );
 }
 
+// 清理那兩顆的收尾句。它們做的是移走東西，套用安裝那句會講成相反的意思。
+const CLEANUP_DONE = {
+  "uninstall-legacy-cli":
+    "✅ 移除完成。現在叫得動的是原生安裝器那一份。",
+  "quarantine-skills":
+    "✅ 已搬到隔離區。它沒有被刪掉，路徑在原始輸出裡。",
+};
+
 export function terminalOutcomeLines({
   action,
   succeeded,
@@ -1051,6 +1059,18 @@ export function terminalOutcomeLines({
           // class 不會報錯，只會靜靜地沒有樣式。這句不是錯誤，是「還要你做一件事」。
           className: "ds-term-line ds-term-line--prompt",
           text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按「重跑驗證」。`,
+        },
+      ];
+    }
+
+    // 清理那兩顆做的是移走東西，不是安裝。照著跑「安裝成功，已完成這個項目」的話，
+    // 學生剛按完「移除 npm 裝的舊版」，畫面回他一句安裝成功——兩句話講的是相反的事
+    //（VM 實測截圖）。
+    if (CLEANUP_DONE[action] !== undefined) {
+      return [
+        {
+          className: "ds-term-line ds-term-line--ok",
+          text: CLEANUP_DONE[action],
         },
       ];
     }

@@ -822,6 +822,32 @@ try {
   assert.match(withoutReason[0].text, /請檢查原始輸出/);
   ok("安裝失敗時白話區印腳本自己講的那句話，沒講才退回罐頭句");
 
+  // 清理那兩顆做的是移走東西，不是安裝。套用安裝那句的話，學生剛按完「移除 npm 裝的
+  // 舊版」，畫面回他一句「安裝成功，已完成這個項目」——兩句話講的是相反的事
+  //（Windows VM 實測截圖）。
+  const removed = terminalOutcomeLines({
+    action: "uninstall-legacy-cli",
+    succeeded: true,
+  });
+  assert.match(removed[0].text, /移除完成/);
+  assert(!/安裝成功/.test(removed[0].text));
+  const moved = terminalOutcomeLines({
+    action: "quarantine-skills",
+    succeeded: true,
+  });
+  assert.match(moved[0].text, /已搬到隔離區/);
+  assert.match(moved[0].text, /沒有被刪掉/);
+  // 一般的安裝維持原本那句。
+  assert.match(
+    terminalOutcomeLines({
+      action: "install-config-step",
+      succeeded: true,
+      check: { label: "白名單" },
+    })[0].text,
+    /安裝成功/,
+  );
+  ok("清理那兩顆的收尾句講的是移除與搬走，不是安裝");
+
   // 清單第一格該不該打勾——三種情況各錯過一次，所以三種都釘住。
   const okRow = { id: "x", label: "x", status: "ok", detail: "" };
   assert.equal(
