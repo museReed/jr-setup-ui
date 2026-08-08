@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 
 // Node 20 起，spawn 在 shell:false 下執行 .cmd / .bat 會直接丟 EINVAL
 // （BatBadBut 漏洞的修補，CVE-2024-27980）。Windows 上 npm 裝出來的 CLI
@@ -73,6 +73,68 @@ export function findExecutable(cmd, env, fileExists) {
   }
 
   return null;
+}
+
+// PATH 上同名的執行檔全部找出來，不是只找第一個。
+//
+// 「指令跑得起來」不等於「跑起來的是我們要的那一支」：舊一輪工作坊用 `npm install -g`
+// 裝的 claude / codex 跟現在用的原生安裝器落點不同（~/.local/bin），兩份可以並存，而
+// `claude --version` 回的是 PATH 裡先出現的那一支。嚮導只看 exit code 的話會判成綠燈，
+// 學生用的卻是舊的那份。
+//
+// 用 realpath 去重：同一支檔案被兩個目錄用軟連結指過去很常見（Homebrew 就是），
+// 那不是「兩份」，報成兩份只會製造假警報。realpath 解不開就退回原字串。
+export function findAllExecutables(
+  cmd,
+  env,
+  { platform = process.platform, fileExists = existsSync, realPath = null } = {},
+) {
+  const windows = platform === "win32";
+  const separator = windows ? ";" : ":";
+  const slash = windows ? "\\" : "/";
+  const extensions = windows
+    ? (env.PATHEXT ?? DEFAULT_PATHEXT).split(";")
+    : [""];
+  const resolve =
+    realPath ??
+    ((value) => {
+      try {
+        return realpathSync(value);
+      } catch {
+        return value;
+      }
+    });
+  const found = [];
+  const seen = new Set();
+
+  for (const directory of (env.PATH ?? env.Path ?? "").split(separator)) {
+    const trimmed = directory.trim().replace(/[\\/]+$/, "");
+
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    for (const extension of extensions) {
+      const candidate = `${trimmed}${slash}${cmd}${extension.trim()}`;
+
+      if (!fileExists(candidate)) {
+        continue;
+      }
+
+      const resolved = resolve(candidate);
+      // Windows 的路徑不分大小寫，比對前先統一。
+      const key = windows ? resolved.toLowerCase() : resolved;
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      found.push(candidate);
+    }
+  }
+
+  return found;
 }
 
 // 動作實際要 spawn 的指令。副檔名已經寫死的（npm.cmd）維持原本的處理，
