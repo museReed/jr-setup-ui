@@ -1247,8 +1247,6 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     state.wizardSource = os.source ?? "unknown";
     state.home = os.home ?? "";
     forgetStaleInstalls(checks);
-    reportCopyScan(checks);
-    reportDuplicateInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
     // renderWizard 畫出來的清單還是退勾的狀態，而後面沒有人再畫一次——畫面就停在
@@ -1256,6 +1254,11 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     state.manualRecheck = false;
     renderWizard();
     renderEnvActionButtons();
+    // 寫 log 排在重畫之後，跟 checkConfigs 同一條規則：卡片要先存在，addRawLine 才
+    // 有地方可寫。環境這半今天剛好沒事（npm ls 拖了一兩秒，回來時卡片已經在了），
+    // 但那是運氣不是設計——查得快一點就會變成規則檔那半的樣子。
+    reportCopyScan(checks);
+    reportDuplicateInstalls(checks);
 
     // 學生自己按的那次要有結尾。重掃通常一秒內回來，只有轉圈圈閃一下的話，
     // 按鈕看起來還是像沒反應——而且多數時候狀態本來就不會變。
@@ -1388,10 +1391,8 @@ function reportDuplicateInstalls(checks) {
       `${check.label} 在這台機器上有 ${paths.length} 份，正在用的是排在最前面那一份。`,
       "agent-status",
     );
-
-    for (const found of paths) {
-      view.addRawLine(`${check.label}：${found}`);
-    }
+    // 路徑不在這裡印：reportCopyScan 已經整段寫進原始輸出了，這裡再印一次會變成
+    // 同一份清單出現兩遍（實測第一次開頁就看得到）。這個函式只負責白話終端那一句。
   }
 }
 
@@ -1443,7 +1444,6 @@ const reportedWizardSkills = new Set();
 //
 // 一支都沒抓到時那句「0 支」才是真正有用的一行：它證明這個掃描跑過，而不是壞掉。
 function reportWizardSkills(skills) {
-  state.wizardSkills = skills;
   const key = skills.map((skill) => skill.path).join("|");
 
   if (reportedWizardSkills.has(key)) {
@@ -1463,7 +1463,6 @@ function reportWizardSkills(skills) {
 const reportedStrays = new Set();
 
 function reportStraySkills(strays) {
-  state.straySkills = strays;
   const fresh = strays.filter((stray) => !reportedStrays.has(stray.path));
 
   if (fresh.length === 0) {
@@ -1520,20 +1519,26 @@ function resetSkillsNotice() {
     return null;
   }
 
-  const names = state.wizardSkills.map((skill) => skill.name).join("、");
+  // ⚠️ 名字要去重。同一支 skill 在 claude 與 codex 底下各有一份資料夾，直接串起來
+  // 會變成「auto-rename、handoff、structured-questions、auto-rename、handoff、
+  // structured-questions…」——實測第一次開頁就是這樣，讀起來像畫面壞了。
+  //
+  // 數字仍然講資料夾數（那才是實際要搬的數量），但講清楚那是資料夾不是 skill。
+  const uniqueNames = (skills) => [
+    ...new Set(skills.map((skill) => skill.name)),
+  ];
+  const names = uniqueNames(state.wizardSkills).join("、");
   // 第三方那幾支（npx skills add 裝的）重裝要連得上網，講清楚才不會斷網時卡住。
-  const external = state.wizardSkills.filter(
-    (skill) => skill.kind === "external",
+  const external = uniqueNames(
+    state.wizardSkills.filter((skill) => skill.kind === "external"),
   );
   const networkNote =
     external.length === 0
       ? ""
-      : `其中 ${external.length} 支是從網路上抓的（${external
-          .map((skill) => skill.name)
-          .join("、")}），重裝需要連得上網。`;
+      : `其中 ${external.join("、")} 是從網路上抓的，重裝需要連得上網。`;
 
   return {
-    text: `這台機器上已經有 ${state.wizardSkills.length} 支嚮導要裝的 skill：${names}`,
+    text: `這台機器上已經有 ${state.wizardSkills.length} 個嚮導要裝的 skill 資料夾（${names}；claude 與 codex 各一份）`,
     detail:
       "它們多半是上一輪工作坊裝的。直接安裝只會覆蓋我們現在發的那幾個檔案，舊版留下的其他東西會留在同一個資料夾裡，而 Claude 載入時看的是整個資料夾。按下面那顆會先把舊的搬到隔離區（不是刪除，路徑會印在「看原始輸出」裡）再裝一份乾淨的。你自己裝的 skill 不會被碰到。" +
       networkNote,
@@ -1603,11 +1608,26 @@ function duplicateCliNotice() {
     return null;
   }
 
-  // 兩種機器要講不一樣的話：只有舊版的那台是「你現在用的就是舊的」，兩份都有的
-  // 那台是「跑起來的不一定是新的」。混成同一句的話，前者會以為自己沒事。
-  const onlyLegacy = legacy.filter(
-    (check) => (check.copies ?? []).length < 2,
-  );
+  // ⚠️ 兩種狀況可以同時發生在同一台機器上，要各講各的。
+  //
+  // 原本寫成「全部都只有一份才講『你只有舊版』」，於是 Reed 這台（claude 有新舊
+  // 兩份、codex 只有 npm 那一份）走了並存那句，而 codex 最該講的「你現在用的就是
+  // 舊版、嚮導不會幫你裝新的」整句被吃掉。逐支判斷，不要用整批的性質去猜。
+  const onlyLegacy = legacy.filter((check) => (check.copies ?? []).length < 2);
+  const coexisting = legacy.filter((check) => (check.copies ?? []).length > 1);
+  const sentences = [];
+
+  if (onlyLegacy.length > 0) {
+    sentences.push(
+      `${onlyLegacy.map((check) => check.label).join("、")}：這台機器上只有 npm 那一份，所以你現在用的就是上一輪的舊版——嚮導看它跑得起來，不會另外幫你裝新的。`,
+    );
+  }
+
+  if (coexisting.length > 0) {
+    sentences.push(
+      `${coexisting.map((check) => check.label).join("、")}：新舊兩份並存，跑起來的是 PATH 裡排在最前面那一份，不一定是新的。`,
+    );
+  }
 
   return {
     // 方向詞要跟真的位置一致。按鈕排在這段文字的下面（.section-notice 是直排的
@@ -1615,9 +1635,7 @@ function duplicateCliNotice() {
     // 一個不存在的位置，他就開始找、找不到就以為畫面壞了。
     text: `${legacy.map((check) => check.label).join("、")} 是上一輪用 npm 裝的舊版`,
     detail:
-      (onlyLegacy.length === legacy.length
-        ? "這台機器上只有 npm 那一份，所以你現在用的就是上一輪的舊版——嚮導看它跑得起來，不會另外幫你裝新的。"
-        : "新舊兩份可以並存，跑起來的是 PATH 裡排在最前面那一份，不一定是新的。") +
+      sentences.join("") +
       "按下面那顆會把 npm 那一份移除（可逆：npm install -g 就裝得回來），移除完再按各列的安裝鍵裝新版。完整路徑在「看原始輸出」裡。",
     actions: [
       {
@@ -1677,20 +1695,29 @@ async function checkConfigs() {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
     forgetStaleInstalls(result.checks);
-    // ⚠️ 這一行要排在 renderWizard 前面：它是畫面上那條琥珀色提示的資料來源。
+    // ⚠️ 這兩行要排在 renderWizard 前面：它們是畫面上那兩條琥珀色提示的資料來源。
     // 排在後面的話，這一次畫的是上一輪的清單，而畫完之後沒有人再畫一次——學生把
     // skill 搬走了，那條提示照樣掛在那裡（VM 實測）。環境那半本來就是這個順序，
     // 所以重複安裝那條會正常消失，兩邊對照就看得出來是順序的問題。
-    reportStrayScan(result.strayScan, result.strays ?? []);
-    reportStraySkills(result.strays ?? []);
-    // ⚠️ 這一行同樣要排在 renderWizard 前面：它是第一頁那條「先搬到隔離區」的資料
-    // 來源。排在後面的話，搬完之後那條提示還會掛著（跟殘留那條同一個坑）。
-    reportWizardSkills(result.wizardSkills ?? []);
+    state.straySkills = result.strays ?? [];
+    state.wizardSkills = result.wizardSkills ?? [];
     state.availableActions = new Set([
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
     ]);
     renderWizard();
+    // ⚠️ 寫 log 的三行反過來，一定要排在 renderWizard 後面。
+    //
+    // 原本跟上面那兩行擠在一起，結果第一次開頁時三段掃描紀錄只出現一段（實測）：
+    // 規則檔檢查是純檔案操作、毫秒就回來，那時第一張卡還沒畫出來，addRawLine 寫進
+    // 一個不存在的 transcript；而每個 report 函式都有「同樣的結果只寫一次」的去重，
+    // 所以它們永遠不會再寫第二次。環境那半剛好被 npm ls 拖了一兩秒才回來，卡片已經
+    // 在了——兩邊的差別純粹是誰先回來，不是誰寫得對。
+    //
+    // 分開的規則很簡單：改 state 的排在重畫前，寫 log 的排在重畫後。
+    reportStrayScan(result.strayScan, result.strays ?? []);
+    reportStraySkills(result.strays ?? []);
+    reportWizardSkills(result.wizardSkills ?? []);
     view.renderConfigSummary(
       configSummary(result.checks, state.verifiedSteps),
     );
