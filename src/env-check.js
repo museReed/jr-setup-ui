@@ -12,6 +12,7 @@ import {
 } from "./execution-policy.js";
 import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
+import { LEGACY_NPM_PACKAGES } from "./legacy.js";
 import { readSourceMarker } from "./paths.js";
 import { findAllExecutables, resolveSpawn } from "./spawn-command.js";
 
@@ -647,22 +648,66 @@ async function checkGhAuth(installed) {
 // 而「哪一份才是他要的」我們也不知道（他可能刻意留著舊版）。跟舊 skill 殘留同一套處理。
 //
 // 只查這兩支：其餘（git / gh / node / python）沒有我們自己造成的雙安裝來源。
-async function withDuplicateNote(pending, cmd) {
-  const check = await pending;
+//
+// copies 跟 duplicates 是兩回事，刻意分成兩個欄位：
+//   copies      查到的每一份，不管找到幾份都帶——它是「這個檢查真的跑過」的證據
+//   duplicates  只有 ≥2 份時才有，畫面上那條琥珀色提示與移除鍵讀的是它
+//
+// 為什麼要 copies：沒有它的話，一台乾淨機器的原始輸出裡完全看不到這個檢查——「查過
+// 但沒事」跟「根本沒查」長得一模一樣。真機驗收要確認的第一件事正是這個（Reed 指定）。
+// npm 全域裝了哪幾個舊版套件。整個環境檢查只問一次，兩列共用。
+//
+// ⚠️ 判準是「問 npm」，不是「看路徑長得像不像 npm 裝的」。移除腳本
+//（scripts/uninstall-legacy-cli.mjs）用的就是這一句，兩邊要同一個判準，不然畫面上
+// 說有、按下去卻說沒有。而且路徑推測會誤判：原生安裝器裝的那份也可能落在看起來
+// 很像 npm 的目錄底下。
+//
+// 為什麼值得多這一支 spawn：光看 PATH 上有幾份的話，「只有 npm 那一份、沒有新版」
+// 完全抓不到——那一列是綠的、只有一份、看起來毫無問題，但他用的就是上一輪的舊版。
+// Reed 這台的 codex 正是這個狀態。
+//
+// 套件不在時 npm 會回非零，但 JSON 照樣印得出來，所以看的是內容不是 exit code。
+async function legacyNpmPackages() {
+  const result = await runProbe("npm", ["ls", "-g", "--depth=0", "--json"]);
 
-  if (check.status !== "ok") {
-    return check;
+  if (result.type !== "close") {
+    // 問不到就當作沒有：這條提示會長出一顆移除鍵，寧可漏講也不要對一台沒有舊版的
+    // 機器叫他去移除東西。
+    return new Set();
   }
 
-  const found = findAllExecutables(cmd, await spawnEnv());
+  try {
+    const dependencies = JSON.parse(result.stdout || "{}").dependencies ?? {};
+    return new Set(Object.keys(dependencies));
+  } catch {
+    return new Set();
+  }
+}
 
-  if (found.length < 2) {
-    return check;
+// 那一列不是綠的時候照樣掃：findAllExecutables 只是掃 PATH 上的目錄（同步的檔案
+// 檢查，不 spawn），成本可以忽略。而逾時的那一列最需要這份路徑清單——「叫得動但
+// 版本問不出來」常常正是並存造成的。只有 duplicates 仍然守著 status，因為畫面上那顆
+// 移除鍵不該掛在一列還沒問清楚的檢查上。
+async function withDuplicateNote(pending, cmd, npmPackages) {
+  const check = await pending;
+  const found = findAllExecutables(cmd, await spawnEnv());
+  const npmPackage = LEGACY_NPM_PACKAGES[cmd];
+  // npmInstalled 一律是布林值，不是「有就帶、沒有就省略」——省略的話網頁分不出
+  // 「問過、npm 說沒有」跟「這一輪根本沒問」。
+  const legacy = {
+    copies: found,
+    npmPackage,
+    npmInstalled: (await npmPackages).has(npmPackage),
+  };
+
+  if (check.status !== "ok" || found.length < 2) {
+    return { ...check, ...legacy };
   }
 
   return {
     ...check,
     detail: `${check.detail}（這台機器上有 ${found.length} 份，正在用的不一定是最新那份）`,
+    ...legacy,
     duplicates: found,
   };
 }
@@ -691,17 +736,29 @@ export async function runEnvCheck(tools = []) {
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
     const python = checkPython();
     const checksToRun = [];
+    // 兩列共用同一次查詢，而且跟其他檢查併行——它是這一輪最慢的一支（npm 冷啟動
+    // 破秒），序列化的話整個第一頁都在等它。
+    const npmPackages =
+      wanted.has("claude") || wanted.has("codex")
+        ? legacyNpmPackages()
+        : Promise.resolve(new Set());
 
     if (wanted.has("claude")) {
       const claude = checkVersion("claude", "Claude Code CLI", "claude", [
         "--version",
       ]);
-      checksToRun.push(withDuplicateNote(claude, "claude"), checkClaudeAuth(claude));
+      checksToRun.push(
+        withDuplicateNote(claude, "claude", npmPackages),
+        checkClaudeAuth(claude),
+      );
     }
 
     if (wanted.has("codex")) {
       const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
-      checksToRun.push(withDuplicateNote(codex, "codex"), checkCodexAuth(codex));
+      checksToRun.push(
+        withDuplicateNote(codex, "codex", npmPackages),
+        checkCodexAuth(codex),
+      );
     }
 
     checksToRun.push(git, gh, checkGhAuth(gh), node, python);

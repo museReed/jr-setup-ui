@@ -755,8 +755,14 @@ try {
   //（VM 實測：環境那半順序是對的所以正常消失，規則檔那半反了）。
   assert.match(
     files.app,
-    /reportStraySkills\(result\.strays \?\? \[\]\);[\s\S]{0,300}renderWizard\(\)/,
+    /reportStraySkills\(result\.strays \?\? \[\]\);[\s\S]{0,600}renderWizard\(\)/,
     "殘留清單要在重畫之前更新",
+  );
+  // 第一頁那條「先搬到隔離區」同一個坑：搬完之後提示要消得掉。
+  assert.match(
+    files.app,
+    /reportWizardSkills\(result\.wizardSkills \?\? \[\]\);[\s\S]{0,300}renderWizard\(\)/,
+    "嚮導要裝的 skill 清單也要在重畫之前更新",
   );
   assert.match(
     files.app,
@@ -764,6 +770,64 @@ try {
     "重複安裝的清單也要在重畫之前更新",
   );
   ok("提示的資料在重畫之前就更新，做完動作那條才消得掉");
+
+  // 兩個檢查都要在原始輸出裡留下「我跑過」的痕跡，不管有沒有抓到東西。
+  //
+  // 沒有這兩條的話，一台乾淨機器的「看原始輸出」是空的——而 RETIRED_SKILLS 今天正是
+  // 空的，殘留檢查永遠抓不到東西。「查過但沒事」跟「根本沒查」分不出來，真機驗收就
+  // 驗不到這兩個檢查有沒有真的執行（Reed 指定）。
+  assert.match(files.app, /function reportCopyScan\(checks\)/);
+  assert.match(
+    files.app,
+    /reportCopyScan\(checks\);[\s\S]{0,200}reportDuplicateInstalls\(checks\);/,
+    "並存掃描的紀錄要在提示之前寫，log 才是先範圍後結論",
+  );
+  assert.match(
+    files.app,
+    /function reportStrayScan\(scan, strays\)/,
+  );
+  assert.match(
+    files.app,
+    /reportStrayScan\(result\.strayScan, result\.strays \?\? \[\]\);[\s\S]{0,200}reportStraySkills\(/,
+    "殘留掃描的紀錄要在提示之前寫",
+  );
+  // 抓到幾份都寫：只寫 >=2 的話就退回原本那個「乾淨機器上看不到」的狀態。
+  assert(
+    !/copies\.length < 2/.test(files.app),
+    "reportCopyScan 不可以只在有並存時才寫——那正是這條要防的",
+  );
+  ok("兩個回訪檢查都會在原始輸出留下跑過的證據，沒抓到東西時也一樣");
+
+  // ⚠️ 「先搬到隔離區再裝」掛在第一頁，不是技能包那一段（Reed 拍板）。
+  //
+  // 時機才是重點：走到技能包那一段時，安裝已經一路覆蓋過去了，那顆按鈕只剩事後補救。
+  // 第一頁是他還沒動手裝任何東西的那一刻。技能包那一段原本那一顆同時拿掉——同一件事
+  // 兩個入口，行為遲早會走鐘。
+  assert.match(
+    files.app,
+    /function resetSkillsNotice\(\) \{\s*\n\s*if \(state\.activeSectionId !== "env" \|\| state\.wizardSkills\.length === 0\)/,
+    "換新那條要掛在第一頁，而且沒東西可搬時不出現",
+  );
+  assert(
+    !/state\.activeSectionId !== "skills"/.test(files.app),
+    "技能包那一段的舊入口要拿掉，同一件事只留一個入口",
+  );
+  ok("先搬到隔離區再裝掛在第一頁，技能包那一段的舊入口已移除");
+
+  // ⚠️ npm 舊版的判準是「問過 npm」，不是「PATH 上有幾份」。
+  //
+  // 看份數會漏掉最重要的一種機器：只有 npm 那一份、沒有新版——那一列是綠的、只有
+  // 一份，看起來毫無問題，但他用的就是上一輪的舊版，而且嚮導不會去裝新的。
+  assert.match(
+    files.app,
+    /check\.npmInstalled === true/,
+    "移除舊版那條要看 npm 怎麼說，不是看 PATH 上有幾份",
+  );
+  assert(
+    !/\(check\.duplicates \?\? \[\]\)\.length > 1/.test(files.app),
+    "舊的份數判準要拿掉，不然「只有舊版」那台機器永遠不會被指出來",
+  );
+  ok("npm 舊版的提示看的是 npm 本人的答案，不是 PATH 上的份數");
 
   // ⚠️ 搬走舊 skill 一定是一個一個來，永遠不能有「全部搬走」。
   //
