@@ -1220,6 +1220,7 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     );
     state.envChecks = checks;
     forgetStaleInstalls(checks);
+    reportDuplicateInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
     // renderWizard 畫出來的清單還是退勾的狀態，而後面沒有人再畫一次——畫面就停在
@@ -1287,6 +1288,34 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
 // 只講一次、只回報、不刪除：那個資料夾也可能是學生自己裝的 skill，我們分辨不出來。
 // 所以話要講成「這裡有幾個不是這一輪發的」，讓他自己決定。每次重查都印一次的話，
 // 那句話會在終端裡洗版，反而沒人看。
+// 同一支 CLI 在 PATH 上有兩份以上。舊一輪工作坊用 npm 裝的、跟現在用原生安裝器裝的
+// 可以並存，而跑起來的是 PATH 裡先出現的那一支——那一列照樣是綠的。
+//
+// 跟舊 skill 殘留同一套：只講事實、列出路徑，不改紅燈也不替他刪。哪一份才是他要的
+// 我們不知道（他可能刻意留著舊版）。
+const reportedDuplicates = new Set();
+
+function reportDuplicateInstalls(checks) {
+  for (const check of checks) {
+    const paths = check.duplicates ?? [];
+    const key = `${check.id}:${paths.join("|")}`;
+
+    if (paths.length < 2 || reportedDuplicates.has(key)) {
+      continue;
+    }
+
+    reportedDuplicates.add(key);
+    view.addLine(
+      `${check.label} 在這台機器上有 ${paths.length} 份，正在用的是排在最前面那一份。`,
+      "agent-status",
+    );
+
+    for (const found of paths) {
+      view.addRawLine(`${check.label}：${found}`);
+    }
+  }
+}
+
 const reportedStrays = new Set();
 
 function reportStraySkills(strays) {

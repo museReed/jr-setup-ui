@@ -12,7 +12,7 @@ import {
 } from "./execution-policy.js";
 import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
-import { resolveSpawn } from "./spawn-command.js";
+import { findAllExecutables, resolveSpawn } from "./spawn-command.js";
 
 // 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
 // 但同學撞到的是「剛裝完的第一次啟動」——npm 剛寫完檔案、Defender 正在掃、
@@ -638,6 +638,34 @@ async function checkGhAuth(installed) {
   }
 }
 
+// 這兩支有兩條安裝路：舊一輪工作坊用 `npm install -g`（落點在全域 node_modules），
+// 現在用兩家官方的原生安裝器（落點在 ~/.local/bin）。兩份可以並存，而 `claude --version`
+// 回的是 PATH 裡先出現的那一支——只看 exit code 的話，那一列是綠的，學生用的卻是舊的。
+//
+// ⚠️ 只回報、不改紅燈。跑得起來就是跑得起來，把一台能用的機器判成失敗只會擋住他；
+// 而「哪一份才是他要的」我們也不知道（他可能刻意留著舊版）。跟舊 skill 殘留同一套處理。
+//
+// 只查這兩支：其餘（git / gh / node / python）沒有我們自己造成的雙安裝來源。
+async function withDuplicateNote(pending, cmd) {
+  const check = await pending;
+
+  if (check.status !== "ok") {
+    return check;
+  }
+
+  const found = findAllExecutables(cmd, await spawnEnv());
+
+  if (found.length < 2) {
+    return check;
+  }
+
+  return {
+    ...check,
+    detail: `${check.detail}（這台機器上有 ${found.length} 份，正在用的不一定是最新那份）`,
+    duplicates: found,
+  };
+}
+
 export async function runEnvCheck(tools = []) {
   // 沒被選到的工具連查都不查，不只是畫面上藏起來——每一項都是一次 spawn。
   const wanted = new Set(checksForTools(CHECKS, tools).map((check) => check.id));
@@ -653,12 +681,12 @@ export async function runEnvCheck(tools = []) {
       const claude = checkVersion("claude", "Claude Code CLI", "claude", [
         "--version",
       ]);
-      checksToRun.push(claude, checkClaudeAuth(claude));
+      checksToRun.push(withDuplicateNote(claude, "claude"), checkClaudeAuth(claude));
     }
 
     if (wanted.has("codex")) {
       const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
-      checksToRun.push(codex, checkCodexAuth(codex));
+      checksToRun.push(withDuplicateNote(codex, "codex"), checkCodexAuth(codex));
     }
 
     checksToRun.push(git, gh, checkGhAuth(gh), node, python);

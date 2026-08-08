@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  findAllExecutables,
   findExecutable,
   needsCmdWrapper,
   resolveLaunch,
@@ -13,6 +14,56 @@ function ok(description) {
 }
 
 try {
+  // 「指令跑得起來」不等於「跑起來的是我們要的那一支」：舊一輪工作坊用 npm 裝的
+  // claude / codex 跟現在的原生安裝器落點不同，兩份可以並存，而 `claude --version`
+  // 回的是 PATH 裡先出現的那一支——只看 exit code 的話那一列是綠的。
+  const posixEnv = { PATH: "/usr/local/bin:/Users/x/.local/bin" };
+  assert.deepEqual(
+    findAllExecutables("claude", posixEnv, {
+      platform: "darwin",
+      fileExists: () => true,
+      realPath: (value) => value,
+    }),
+    ["/usr/local/bin/claude", "/Users/x/.local/bin/claude"],
+  );
+  ok("PATH 上同名的執行檔全部找得出來，順序就是 PATH 的順序");
+
+  // 同一支檔案被兩個目錄用軟連結指過去很常見（Homebrew 就是），那不是「兩份」。
+  assert.deepEqual(
+    findAllExecutables("claude", posixEnv, {
+      platform: "darwin",
+      fileExists: () => true,
+      realPath: () => "/opt/homebrew/bin/claude",
+    }),
+    ["/usr/local/bin/claude"],
+  );
+  ok("軟連結指到同一支的不算兩份，避免假警報");
+
+  // Windows：分隔符與副檔名都不一樣，而且路徑不分大小寫。
+  assert.deepEqual(
+    findAllExecutables(
+      "claude",
+      { PATH: "C:\\npm;C:\\Users\\x\\.local\\bin", PATHEXT: ".EXE;.CMD" },
+      {
+        platform: "win32",
+        fileExists: (candidate) => candidate.endsWith(".CMD"),
+        realPath: (value) => value,
+      },
+    ),
+    ["C:\\npm\\claude.CMD", "C:\\Users\\x\\.local\\bin\\claude.CMD"],
+  );
+  ok("Windows 上照 PATHEXT 找，分隔符與大小寫都處理過");
+
+  assert.deepEqual(
+    findAllExecutables("claude", { PATH: "" }, {
+      platform: "darwin",
+      fileExists: () => true,
+    }),
+    [],
+    "PATH 是空的時候不該回半個東西",
+  );
+  ok("PATH 空的時候回空陣列，不拋錯");
+
   // 迴歸：Node 20 起 spawn 在 shell:false 下執行 .cmd 會丟 EINVAL
   // （BatBadBut 修補）。實測按下安裝按鈕就是撞這個。
   assert.equal(needsCmdWrapper("npm.cmd", "win32"), true);
