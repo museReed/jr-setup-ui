@@ -126,6 +126,9 @@ const state = {
   // 驗證失敗、學生按了「先跳過這張」的卡。只放行「下一張」，不算完成——徽章、圓點、
   // 進度條走的仍然是 cardIsComplete，跳過的卡在那裡照樣是失敗。
   skippedCards: new Set(),
+  // 已經自動重查過環境的那幾段。見 renderWizardNav 底下那段：每一段每次開頁只自動
+  // 查一次，不設閘的話「重查 → 重畫 → 再重查」會變成無窮迴圈。
+  autoRecheckedSections: new Set(),
   manualCheckedIds: new Set(),
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
@@ -909,6 +912,29 @@ function renderWizardNav({
   const atLast = currentIndex >= cards.length - 1;
   const nextSectionOpen =
     nextSection !== undefined && lockStates[nextSection.id]?.locked !== true;
+
+  // 走到一段的最後一張、下一段卻還鎖著時，自動重查一次環境。
+  //
+  // 段落鎖本身是當下算的（sectionCompletion 每次重畫都重算），但它吃的 envChecks
+  // 可能是幾分鐘前的：環境檢查只在開頁、環境卡按完安裝、登入等待結束、學生手動按
+  // 「再 check 一次」時才跑——「卡片做完」這個時刻沒有任何人去重新探測。
+  //
+  // 實測的樣子（Windows VM）：git 早就裝好了，但嚮導手上那份紀錄還停在「未安裝」，
+  // 於是最後一張卡明明寫著「已完成 2/2」，那個位置卻連一顆按鈕都沒有。學生手動按
+  // 一次重查就好了——那正是這裡該替他做的事。
+  //
+  // 每一段每次開頁只自動查一次：重查完會 renderWizard，不設閘就是無窮迴圈。
+  if (
+    atLast &&
+    nextSection !== undefined &&
+    !nextSectionOpen &&
+    !state.envCheckInProgress &&
+    !state.autoRecheckedSections.has(state.activeSectionId)
+  ) {
+    state.autoRecheckedSections.add(state.activeSectionId);
+    view.addLine("這一段的最後一張了，先重查一次目前狀態。", "agent-status");
+    void checkEnvironment(false);
+  }
 
   view.renderWizardNav({
     prev: {

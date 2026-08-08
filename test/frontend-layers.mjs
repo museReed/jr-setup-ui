@@ -680,6 +680,28 @@ try {
   );
   ok("檢查回報 missing 就把「按過安裝」的樂觀記憶清掉");
 
+  // 段落鎖是當下算的，但它吃的 envChecks 可能是幾分鐘前的——環境檢查只在開頁、環境卡
+  // 按完安裝、登入結束、手動重查時才跑，「卡片做完」這個時刻沒有人去重新探測。
+  // 實測：最後一張卡寫著「已完成 2/2」，那個位置卻連一顆按鈕都沒有，學生手動按一次
+  // 重查就出現了（Windows VM）。
+  assert.match(
+    files.app,
+    /atLast &&\s*\n\s*nextSection !== undefined &&\s*\n\s*!nextSectionOpen &&/,
+    "走到一段最後一張、下一段還鎖著時要自動重查",
+  );
+  // 重查完會 renderWizard，不設閘就是「重查 → 重畫 → 再重查」的無窮迴圈。
+  assert.match(
+    files.app,
+    /!state\.autoRecheckedSections\.has\(state\.activeSectionId\)[\s\S]{0,200}state\.autoRecheckedSections\.add\(state\.activeSectionId\)/,
+    "每一段每次開頁只自動重查一次，否則會無窮迴圈",
+  );
+  assert.match(
+    files.app,
+    /!state\.envCheckInProgress &&/,
+    "已經在查就不要再插一次",
+  );
+  ok("走到一段最後一張而下一段還鎖著時，自動重查一次（每段只一次）");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
