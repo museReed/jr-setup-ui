@@ -1403,9 +1403,12 @@ function duplicateCliNotice() {
   }
 
   return {
-    text: `${duplicated.map((check) => check.label).join("、")}在這台機器上不只一份`,
+    // 方向詞要跟真的位置一致。按鈕排在這段文字的下面（.section-notice 是直排的
+    // flex），原本寫「按右邊那顆」——這個 repo 修過好幾次同一種錯：文案把學生指向
+    // 一個不存在的位置，他就開始找、找不到就以為畫面壞了。
+    text: `${duplicated.map((check) => check.label).join("、")} 在這台機器上不只一份`,
     detail:
-      "正在用的是 PATH 裡排在最前面那一份，不一定是最新的。上一輪工作坊是用 npm 裝的，按右邊那顆會把 npm 那一份移除（可逆：npm install -g 就裝得回來）。完整路徑在「看原始輸出」裡。",
+      "正在用的是 PATH 裡排在最前面那一份，不一定是最新的。上一輪工作坊是用 npm 裝的，按下面那顆會把 npm 那一份移除（可逆：npm install -g 就裝得回來）。完整路徑在「看原始輸出」裡。",
     actions: [
       {
         label: "移除 npm 裝的舊版",
