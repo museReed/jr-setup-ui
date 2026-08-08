@@ -21,6 +21,27 @@ export const LEGACY_NPM_PACKAGES = {
   codex: "@openai/codex",
 };
 
+// 工作坊發過、但這一輪已經不發的 skill 名字。
+//
+// ⚠️ 可以被標成殘留的東西，只有這份名單裡的名字。學生自己裝的 skill 永遠不進入判斷。
+//
+// 第一版不是這樣寫的：當時的規則是「不在這一輪發的名單裡就算殘留」。那條規則在真的
+// 機器上跑出來的結果是——七個全是 Reed 自己的 skill（codex-agent、text-to-lottie、
+// video-dub-selfdub-cards…），工作坊殘留零個。而且那個零不是巧合：
+// `git log --diff-filter=D materials/skills/**` 掃過全部歷史，**沒有任何 skill 目錄
+// 被刪過或改名過**——工作坊一路只發過 auto-rename、handoff、structured-questions、
+// vault-sync。也就是說那條規則的真陽性在結構上就是不可能有的。
+//
+// 所以範圍鎖死在「我們自己發過的名字」。今天這份名單是空的，畫面上什麼都不會出現
+// ——那是正確的，因為真的沒有殘留。
+//
+// 什麼時候要往裡面加：把某支 skill 改名或停發時。舊名字加進來，學生機器上那個資料夾
+// 才會被指出來（它現在仍然會被 Claude 載入）。跟 RETIRED_CODEX_KEYS 同一個形狀、
+// 同一個理由：只補不刪的東西，要有一份明確的退場名單主動去退。
+//
+// 名字寫「資料夾名」，不是步驟 id——落地之後只剩資料夾名，那才是掃得到的東西。
+export const RETIRED_SKILLS = [];
+
 // 移除一律是「搬到這裡」，不是刪除。
 //
 // 理由有兩個，而且第二個比第一個重要：

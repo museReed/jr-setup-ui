@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,6 +26,7 @@ import {
   mergeAgentHookRegistrations,
   upsertBlock,
 } from "../src/config-install.js";
+import { RETIRED_SKILLS } from "../src/legacy.js";
 import { materialsDir } from "../src/paths.js";
 
 const MATERIALS = materialsDir();
@@ -375,56 +377,83 @@ process.stdin.on("end", () => {
   // 沒有 SKILL.md 的資料夾不算——別把學生隨手放的東西講成殘留。
   mkdirSync(path.join(claudeSkills, "notes"), { recursive: true });
 
-  const strays = straySkillDirs([
+  // 學生自己裝的 skill（這裡的 my-own-thing）永遠不能被標成殘留。
+  mkdirSync(path.join(claudeSkills, "my-own-thing"), { recursive: true });
+  writeFileSync(path.join(claudeSkills, "my-own-thing", "SKILL.md"), "# 我的\n");
+
+  const steps = [
     {
       kind: "skill",
       files: [{ target: `${claudeSkills}/handoff/SKILL.md`.replaceAll("\\", "/") }],
     },
-  ]);
+  ];
+
+  // 名單是空的（現況：從來沒有 skill 被停發或改名過）——那就什麼都不該出現。
+  assert.deepEqual(straySkillDirs(steps, []), []);
+  ok("退場名單是空的時候什麼都不標，包含學生自己裝的");
+
+  // 名單裡有名字時才命中，而且只命中那個名字。
+  const strays = straySkillDirs(steps, ["old-namer"]);
   assert.deepEqual(
     strays.map((stray) => stray.name),
     ["old-namer"],
   );
-  ok("掃得出上一輪留下的 skill，_shared 與沒有 SKILL.md 的資料夾不算");
+  assert(strays[0].path.endsWith(path.join("skills", "old-namer")));
+  ok("只有退場名單裡的名字會被標出來");
 
-  // 這一層只掃「傳進來的 steps 指到的根目錄」——誰決定要掃哪幾個根，是上一層的事。
+  // 同名的空資料夾不算——沒有 SKILL.md 就不是一個 skill。
+  mkdirSync(path.join(claudeSkills, "empty-one"), { recursive: true });
+  assert.deepEqual(straySkillDirs(steps, ["empty-one"]), []);
+  ok("同名但沒有 SKILL.md 的資料夾不會被搬走");
+
+  // 符號連結的 skill 也要抓得到。用列目錄再過濾的寫法會漏掉它們——readdir 的
+  // isDirectory() 對 symlink 回 false（Reed 那台的 html-debug-overlay 就是這樣被跳過
+  // 的）。既然要找的名字是已知的，直接問那個路徑在不在就沒有這個死角。
+  const linkTarget = path.join(dir, "linked-skill");
+  mkdirSync(linkTarget, { recursive: true });
+  writeFileSync(path.join(linkTarget, "SKILL.md"), "# 連結過來的\n");
+  symlinkSync(linkTarget, path.join(claudeSkills, "linked-old"), "dir");
+  assert.deepEqual(
+    straySkillDirs(steps, ["linked-old"]).map((stray) => stray.name),
+    ["linked-old"],
+  );
+  ok("符號連結的 skill 也抓得到");
+
+  // 兩個 agent 的根目錄都要看：第一次進來預設只選 claude，但「機器上還躺著上一輪的
+  // 東西」跟他這次要用哪一個工具無關（Reed 指出）。
   const codexSkills = path.join(skillRoot, ".agents", "skills");
-  mkdirSync(path.join(codexSkills, "handoff"), { recursive: true });
-  writeFileSync(path.join(codexSkills, "handoff", "SKILL.md"), "# codex 的\n");
-  assert.equal(
-    straySkillDirs([
-      {
-        kind: "skill",
-        files: [
-          { target: `${claudeSkills}/handoff/SKILL.md`.replaceAll("\\", "/") },
-        ],
-      },
-    ]).some((stray) => stray.path.includes(".agents")),
-    false,
-    "沒有傳進來的根目錄不掃",
+  mkdirSync(path.join(codexSkills, "old-codex-thing"), { recursive: true });
+  writeFileSync(
+    path.join(codexSkills, "old-codex-thing", "SKILL.md"),
+    "# codex 上一輪的\n",
   );
-  ok("straySkillDirs 只掃傳進來的 steps 指到的那幾個根目錄");
+  assert.deepEqual(
+    straySkillDirs(
+      [
+        ...steps,
+        {
+          kind: "skill",
+          files: [
+            { target: `${codexSkills}/handoff/SKILL.md`.replaceAll("\\", "/") },
+          ],
+        },
+      ],
+      ["old-codex-thing"],
+    ).map((stray) => stray.name),
+    ["old-codex-thing"],
+  );
+  ok("codex 那半的根目錄同樣掃得到");
 
-  // 而上一層一律看兩個 agent 的根目錄，不跟著這次選了哪些工具走。
-  //
-  // 跟著選擇走的話，第一次進來（預設只選 claude）就掃不到 ~/.agents/skills——上一輪
-  // 用 codex 的學員一開始看不到自己機器上的 codex 舊 skill，要等他去選了 codex 才會
-  // 出現（Reed 指出）。而「我機器上還躺著上一輪的東西」跟他這次要用哪一個工具無關。
-  //
-  // 誤報靠「這一輪發的名單也用全部工具的」解掉：codex 這一輪正在發的 handoff 不能被
-  // 講成殘留。這裡兩件事一起驗。
-  const scanned = scanStraySkills("zh-TW");
-  assert.equal(
-    typeof scanned.every === "function",
-    true,
-    "scanStraySkills 要回一個陣列",
+  // 現況：這份名單是空的，所以真的機器上跑起來什麼都不會出現。
+  // 這條會在有人往 RETIRED_SKILLS 加東西時紅——那時請一併確認「加的是我們自己發過的
+  // 名字」，不是拿它來清學生的東西。
+  assert.deepEqual(
+    RETIRED_SKILLS,
+    [],
+    "往退場名單加東西時，請確認加的是工作坊自己發過、現在停發的 skill 名字",
   );
-  assert.equal(
-    scanned.some((stray) => stray.name === "handoff"),
-    false,
-    "這一輪正在發的 skill 永遠不能被講成殘留",
-  );
-  ok("殘留掃描一律看兩個 agent 的根目錄，且不誤報這一輪發的");
+  assert.deepEqual(scanStraySkills("zh-TW"), []);
+  ok("退場名單目前是空的，真機上不會標出任何東西");
 
   // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
   //

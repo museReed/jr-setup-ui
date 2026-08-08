@@ -24,6 +24,7 @@ import {
   stepsForTools,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
+import { RETIRED_SKILLS } from "./legacy.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -1055,49 +1056,37 @@ export function checkDemo(step) {
 // 固定路徑再覆蓋，只補不刪，所以那些資料夾會留下來，而且 Claude 照樣會載入它們。
 // hook 註冊、tab-sync 的 rc 區塊、Codex 的舊 key 都各自有主動清理的機制，skill 沒有。
 //
-// ⚠️ 只回報、不刪除，也不判斷對錯：那個資料夾可能是學生自己裝的 skill。這裡沒有辦法
-// 分辨「我們上一輪發的」與「他自己加的」——所以話要講成「這裡有幾個不是這一輪發的」，
-// 讓他自己決定，而不是替他決定。
+// ⚠️ 只認 RETIRED_SKILLS 這份名單裡的名字。學生自己裝的 skill 永遠不進入判斷。
 //
-// 只掃這一輪真的有步驟指過去的根目錄：學生只選了 Claude 時，~/.agents/skills 底下
-// 那些 codex skill 不該被講成多餘的。
-export function straySkillDirs(steps) {
-  const roots = new Map();
+// 第一版的規則是「不在這一輪發的名單裡就算殘留」。那條在真的機器上跑出來是七個全是
+// Reed 自己的 skill、工作坊殘留零個——而那個零是結構性的：git 歷史裡沒有任何 skill
+// 目錄被刪過或改名過。與其讓學生看一堆跟他無關的東西（然後學會忽略它），不如把範圍
+// 鎖死在我們自己發過的名字上。名單今天是空的，那就什麼都不會出現。
+//
+// 用「直接看那個路徑在不在」而不是列目錄再過濾：後者會漏掉符號連結的 skill
+//（readdir 的 isDirectory() 對 symlink 回 false，Reed 那台的 html-debug-overlay 就是
+// 這樣被跳過的）。既然要找的名字是已知的，直接問就好，也順便沒有那個死角。
+export function straySkillDirs(steps, retired = RETIRED_SKILLS) {
+  const roots = new Set();
 
   for (const step of steps) {
     for (const dir of skillDirsOf(step)) {
-      const root = path.dirname(dir);
-      roots.set(root, [...(roots.get(root) ?? []), path.basename(dir)]);
+      roots.add(path.dirname(dir));
     }
   }
 
   const strays = [];
 
-  for (const [root, known] of roots) {
-    let entries;
+  for (const root of roots) {
+    for (const name of retired) {
+      const dir = path.join(root, name);
 
-    try {
-      entries = readdirSync(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      // `_shared` 那種底線開頭的是附屬檔案的家，不是一個 skill。
-      if (!entry.isDirectory() || entry.name.startsWith("_")) {
+      // 沒有 SKILL.md 就不是一個 skill——同名的空資料夾不該被搬走。
+      if (!existsSync(path.join(dir, "SKILL.md"))) {
         continue;
       }
 
-      if (known.includes(entry.name)) {
-        continue;
-      }
-
-      // 沒有 SKILL.md 的資料夾不是 skill，別把學生隨手放的東西講成殘留。
-      if (!existsSync(path.join(root, entry.name, "SKILL.md"))) {
-        continue;
-      }
-
-      strays.push({ name: entry.name, path: path.join(root, entry.name) });
+      strays.push({ name, path: dir });
     }
   }
 
