@@ -848,8 +848,9 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = index;
       renderWizard();
     },
-    // 一次只講一件事：兩段各自只會有一種提醒，不會互搶。
-    sectionNotice: straySkillNotice() ?? duplicateCliNotice(),
+    // 第一頁上兩則可能同時成立（機器上既有上一輪的 skill、又有兩份 CLI），所以是
+    // 一個陣列不是一則——只留一則的話另一則永遠沒機會出現。
+    sectionNotices: [straySkillNotice(), duplicateCliNotice()],
     // 只在「這一段的最後一張已經做完」時才列。還沒做完的話，擋著的就是眼前這張，
     // 再列一次只是噪音；而那時進度條底下多一句話也會蓋掉他正在做的事。
     sectionBlockers: {
@@ -1362,8 +1363,16 @@ function reportStraySkills(strays) {
 // （而且終端是每張卡各自一份）。
 //
 // 話講成事實，不下判斷：那個資料夾也可能是他自己裝的 skill，我們分不出來。
+// 第一頁也要出現（Reed 指定）：回訪的學生應該在動手裝任何東西之前就看到，而不是走到
+// 第三段才發現自己機器上還躺著上一輪的東西。技能包那一段仍然留著——那是他真的在想
+// 「我有哪些 skill」的時刻。中間那幾段不放，免得同一句話跟著他一路走。
+const STRAY_SKILL_SECTIONS = new Set(["env", "skills"]);
+
 function straySkillNotice() {
-  if (state.activeSectionId !== "skills" || state.straySkills.length === 0) {
+  if (
+    !STRAY_SKILL_SECTIONS.has(state.activeSectionId) ||
+    state.straySkills.length === 0
+  ) {
     return null;
   }
 
