@@ -62,6 +62,14 @@
         white-space: pre;
       }
 
+      /* 內文裡的 code 不要吃上面那條「整塊黑底」的樣式——那條是給指令方塊用的。 */
+      code.inline {
+        display: inline;
+        padding: 2px 5px;
+        background: #e7ebee;
+        color: #202020;
+      }
+
       button {
         padding: 11px 14px;
         border: 1px solid #777;
@@ -126,6 +134,24 @@
         </ol>
       </section>
 
+      <section>
+        <h2>卡住了怎麼辦</h2>
+        <p>
+          嚮導裡每一張卡的右上角都有一顆
+          <strong>鈴鐺</strong>。在卡住的那一張按它，它會把那一步的資訊整理好、開一個
+          填好的回報頁面——你看過內容、確定沒問題，再按 GitHub 的送出。
+        </p>
+        <ol>
+          <li>不會替你送出，也不會在你不知情的情況下上傳任何東西</li>
+          <li>家目錄會換成 <code class="inline">~</code>，但送出前還是自己看一眼</li>
+          <li>
+            也可以直接開：<a href="https://github.com/museReed/jr-setup-feedback/issues"
+              >回報區</a
+            >
+          </li>
+        </ol>
+      </section>
+
       <footer>
         <p>
           嚮導只跑在你自己的電腦上（只監聽 127.0.0.1），這個網站不會、也沒辦法
@@ -148,7 +174,21 @@
           } catch {
             button.textContent = "請手動選取";
           }
+
+          // 字要換回來。原本按完永遠停在「已複製」——同一台電腦上換一條指令再按，
+          // 學生看不出來到底有沒有複製到新的那一條。
+          window.setTimeout(() => {
+            button.textContent = "複製";
+          }, 2000);
         });
+      }
+
+      // 把「你這台大概是哪個平台」那一段排到前面。判斷錯了也不會怎樣：兩段都還在，
+      // 只是順序不同——所以用 userAgent 猜就夠，不用 navigator.userAgentData 那套。
+      if (/Windows/i.test(navigator.userAgent)) {
+        const main = document.querySelector("main");
+        const windows = document.querySelector("#win-command").closest("section");
+        main.insertBefore(windows, main.querySelector("section"));
       }
     </script>
   </body>

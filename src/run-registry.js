@@ -10,7 +10,6 @@
 // 領域模組不准 import 它，跟不准 import server.js 是同一條規則（見
 // test/backend-layers.mjs）。
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 
 import { parseClaudeLine, parseCodexLine } from "./agent-events.js";
 import { resolveEngine, shouldExplainOutput } from "./actions.js";
@@ -18,7 +17,7 @@ import { spawnEnv } from "./env-path.js";
 import { isBenignExit } from "./installers.js";
 import { isProgressNoise } from "./output-noise.js";
 import { loadSelection } from "./progress-state.js";
-import { ensureWorkDir, moduleFile } from "./paths.js";
+import { ensureWorkDir, moduleFile, readSourceMarker } from "./paths.js";
 import { resolveLaunch } from "./spawn-command.js";
 import { streamLines, writeEvent, writeOutputLine } from "./sse.js";
 
@@ -27,18 +26,6 @@ const explainOutputScript = moduleFile(
   import.meta.url,
 );
 const EXPLAIN_FALLBACK = "（無法翻譯，請看下方原始輸出）";
-
-// bootstrap 把「這份嚮導是從哪個分支抓的」寫在這裡。
-//
-// 版本問題比想像中常見：學生跑的是幾天前抓的那份、或是我們請他驗某條分支卻抓成
-// main，而畫面上完全看不出來。package.json 的 version 是 0.0.0，幫不上忙。
-export function readSourceMarker(readFile = readFileSync) {
-  try {
-    return readFile(new URL("../.jr-source", import.meta.url), "utf8").trim();
-  } catch {
-    return "unknown";
-  }
-}
 
 // 每次執行開頭的環境摘要。這幾行是給我們看的，不是給學生看的——該塞的就塞。
 //

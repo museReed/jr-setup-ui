@@ -40,6 +40,7 @@ const ASSETS = [
   ["/viewmodel.js", "text/javascript; charset=utf-8"],
   ["/model.js", "text/javascript; charset=utf-8"],
   ["/api.js", "text/javascript; charset=utf-8"],
+  ["/report.js", "text/javascript; charset=utf-8"],
   ["/tour.js", "text/javascript; charset=utf-8"],
   // 操作步驟的彈窗。mocks.js／mocks.css 跟 copy-studio 共用同一份——編輯器裡看到的
   // 畫面就是學生看到的畫面，複製一份的話兩邊遲早會分岔。
