@@ -1121,15 +1121,29 @@ function skillDirsOf(step) {
   return [];
 }
 
+// 殘留掃描一律看兩個 agent 的 skills 根目錄，不跟著這次選了哪些工具走。
+//
+// 跟著選擇走的話，第一次進來（預設只選 claude）就掃不到 ~/.agents/skills——上一輪用
+// codex 的學員一開始看不到自己機器上的 codex 舊 skill，要等他去選了 codex 才會出現。
+// 而「我機器上還躺著上一輪的東西」這件事，跟他這次打算用哪一個工具無關。
+//
+// 誤報的疑慮靠另一件事解掉：「這一輪發的」那份名單也用全部工具的，所以 codex 這一輪
+// 正在發的 skill 不會因為沒被選到而被講成殘留。
+export function scanStraySkills(lang) {
+  return straySkillDirs(
+    stepsForTools(["claude", "codex"]).map((id) =>
+      describeStep(id, { lang, home: HOME }),
+    ),
+  );
+}
+
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
   const checks = [];
-  const steps = [];
 
   for (const id of ids) {
     const step = describeStep(id, { lang, home: HOME });
-    steps.push(step);
 
     if (step.kind === "output-style") {
       checks.push(await checkOutputStyle(materials, step));
@@ -1164,7 +1178,7 @@ export async function runConfigCheck({ tools, lang }) {
     lang,
     tools,
     checks: checks.map(withActions),
-    strays: straySkillDirs(steps),
+    strays: scanStraySkills(lang),
   };
 }
 
