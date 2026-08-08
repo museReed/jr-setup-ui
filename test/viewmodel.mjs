@@ -114,7 +114,7 @@ try {
     status: "warn",
     detail: "需要合併",
     installAction: "install-config-step",
-    mergeAction: "merge-config-step",
+    mergeAction: "merge-in-terminal",
   });
   assert.deepEqual(configActions.buttons, [
     {
@@ -124,9 +124,9 @@ try {
       step: "claude-md",
     },
     {
-      action: "merge-config-step",
+      action: "merge-in-terminal",
       dataName: "mergeAction",
-      text: "用 AI 合併",
+      text: "開終端用 AI 合併",
       step: "claude-md",
     },
   ]);
@@ -1160,7 +1160,7 @@ try {
   });
   assert.doesNotMatch(mergeOutcome[0].text, /安裝成功/);
   assert.match(mergeOutcome[0].text, /沒有覆蓋/);
-  assert.match(mergeOutcome[0].text, /用 AI 合併/);
+  assert.match(mergeOutcome[0].text, /開終端用 AI 合併/);
   assert.match(mergeOutcome[0].text, /重跑驗證/);
   // 設計系統只有 prompt / ok / err，用不存在的 class 只會靜靜地沒有樣式。
   assert.match(mergeOutcome[0].className, /ds-term-line--(prompt|ok|err)$/);

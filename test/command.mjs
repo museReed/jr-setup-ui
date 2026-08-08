@@ -52,6 +52,32 @@ try {
   assert.equal(resolveEngine(actions["claude-hello"], { tools: "codex" }), "claude");
   ok("合併用那份設定自己家的 agent，沒選到才退回工具選擇");
 
+  // ⚠️ 畫面上那顆合併按鈕走的是「開一個真的終端視窗」那條，不是背景那條。
+  //
+  // 真機（Windows）撞出來的：Codex 的沙箱第一次用會跳系統授權框，那個框跳在嚮導
+  // 視窗後面，學生順手關掉——嚮導只拿到 ShellExecuteExW failed: 1223（使用者取消），
+  // 畫面上是一張沒頭沒尾的紅卡。agent 中途要批准寫入時也一樣，背景那條沒有人可以
+  // 回答，一次失敗的合併跑了 7 分鐘、53 萬 tokens。
+  const terminalMerge = actions["merge-in-terminal"];
+  assert.equal(terminalMerge.kind, "fixed", "開視窗那條不是 agent 動作");
+  assert.deepEqual(
+    terminalMerge.buildArgs({
+      step: "codex-agents",
+      lang: "zh-TW",
+      tools: "claude,codex",
+    }).slice(1),
+    ["--step=codex-agents", "--lang=zh-TW", "--tools=claude,codex"],
+  );
+  // 三個都要宣告成選項：沒宣告的伺服器會丟掉，腳本就挑錯 agent、挑錯語言。
+  for (const key of ["step", "lang", "tools"]) {
+    assert(terminalMerge.options[key] !== undefined, `${key} 要宣告成選項`);
+  }
+  ok("合併走開終端那條，三個參數都傳得進去");
+
+  // 背景那條刻意留著（無人值守的批次安裝要它），但不能再是畫面上用的那一顆。
+  assert(actions["merge-config-step"] !== undefined, "背景那條不要刪");
+  ok("背景合併留著當批次安裝的路，但畫面上不用它");
+
   const claudeWrite = buildAgentCommand("claude", prompt, "write");
   assert(claudeWrite.args.join(" ").includes("Write"));
   assert(claudeWrite.args.join(" ").includes("Edit"));
