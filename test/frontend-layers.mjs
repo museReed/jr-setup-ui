@@ -670,7 +670,7 @@ try {
   );
   assert.match(
     files.app,
-    /state\.envChecks = checks;\s*\n\s*forgetStaleInstalls\(checks\);/,
+    /state\.envChecks = checks;[\s\S]{0,200}forgetStaleInstalls\(checks\);/,
     "環境檢查回來要清",
   );
   assert.match(

@@ -1,7 +1,23 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// bootstrap 把「這份嚮導是從哪個分支抓的」寫在 .jr-source。
+//
+// 版本問題比想像中常見：學生跑的是幾天前抓的那份、或是我們請他驗某條分支卻抓成
+// main，而畫面上完全看不出來。package.json 的 version 是 0.0.0，幫不上忙。
+//
+// 住在 paths.js 而不是 run-registry.js：讀它的有兩邊——執行摘要那一行，以及環境檢查
+// （卡片上那顆鈴鐺要把它寫進回報）。而 env-check 不可以依賴 run-registry，那是轉接頭，
+// 領域不該知道 HTTP 存在（test/frontend-layers 有守這條）。
+export function readSourceMarker(readFile = readFileSync) {
+  try {
+    return readFile(new URL("../.jr-source", import.meta.url), "utf8").trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 // Playwright 驗證存的那張截圖。這裡與 verify-in-terminal.mjs 各有一份路徑會走鐘，
 // 所以定在這支共用檔裡，兩邊都從這裡拿。

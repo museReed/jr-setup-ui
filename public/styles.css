@@ -586,6 +586,37 @@ body {
   margin-right: auto;
 }
 
+/* 卡片右上角那顆鈴鐺：這一步卡住了就按它。
+   畫得很淡：它是退路不是動作，跟旁邊的狀態徽章比要退一階，滑上去才明顯。 */
+.card-report {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  margin-left: var(--space-2);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.card-report:hover {
+  border-color: var(--color-border);
+  color: var(--color-accent-hover);
+}
+
+.card-report svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* 段落狀態列底下那一句（目前只有技能包那一段用：上一輪留下的 skill）。
    用琥珀色而不是紅色：那不是壞掉，是「這裡有一件你可能不知道的事」。 */
 .section-notice {

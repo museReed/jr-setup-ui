@@ -10,6 +10,12 @@ import {
 } from "./tour.js";
 import { openWalkthrough } from "./walkthrough.js";
 import {
+  FEEDBACK_REPO,
+  issueBody,
+  issueTitle,
+  issueUrl,
+} from "./report.js";
+import {
   CONFIG_LANGUAGES,
   CARD_HINTS,
   EYE_ROW_ACTIONS,
@@ -132,6 +138,10 @@ const state = {
   // 上一輪工作坊留下的 skill。留在 state 裡而不是印完就算——那句話要在技能包那一段
   // 的段落狀態列上一直看得到（見 straySkillNotice）。
   straySkills: [],
+  // 卡片上那顆鈴鐺要寫進回報的兩件事：這台跑的是哪個分支，以及家目錄（用來把路徑
+  // 裡的使用者名稱換成 ~）。兩個都跟著環境檢查一起回來。
+  wizardSource: "unknown",
+  home: "",
   manualCheckedIds: new Set(),
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
@@ -833,6 +843,8 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
       renderWizard();
     },
+    // 卡片右上角那顆鈴鐺。開一個預先填好的回報頁面——只是打開，不替他送出。
+    onReport: () => openReport(card, status),
   };
   view.renderWizard({
     section,
@@ -1225,6 +1237,8 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
       toolSelectionValue(state.selectedTools),
     );
     state.envChecks = checks;
+    state.wizardSource = os.source ?? "unknown";
+    state.home = os.home ?? "";
     forgetStaleInstalls(checks);
     reportDuplicateInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
@@ -1432,6 +1446,36 @@ function duplicateCliNotice() {
       },
     ],
   };
+}
+
+// 卡片上那顆鈴鐺按下去做的事：把這一步的資訊整理成一份回報，開一個預先填好的
+// GitHub issue 頁面。
+//
+// ⚠️ 只是打開頁面，不會替學生送出。內容長什麼樣他在 GitHub 自己的畫面上看得到，
+// 確認了才按送出——log 不會在他不知情的情況下被發佈。這是刻意選的：那份東西裡有
+// 他的路徑、使用者名稱，甚至可能有裝置代碼。
+//
+// 家目錄在 report.js 裡換成 ~，但那只是降低風險，不是保證——所以文案裡也請他自己
+// 看一眼。
+function openReport(card, status) {
+  const body = issueBody({
+    card,
+    status: status?.text ?? "",
+    platform: view.elements.envOs.textContent ?? "",
+    source: state.wizardSource,
+    // 這一張卡自己的原始輸出。整包診斷資料（跨卡片）太長，塞不進網址——需要的話
+    // 學生按「複製診斷資料」再貼一次。
+    log: view.rawOutputText(),
+    sections: view.sectionLockStates(),
+    home: state.home,
+  });
+  const url = issueUrl(FEEDBACK_REPO, issueTitle(card), body);
+
+  view.addLine(
+    "已經幫你開一個回報頁面。上面那段內容可以自己改，確認之後再按 GitHub 的送出。",
+    "agent-status",
+  );
+  window.open(url, "_blank", "noopener");
 }
 
 async function checkConfigs() {

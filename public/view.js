@@ -909,6 +909,25 @@ function renderCard(model) {
   pill.textContent = model.status.text;
   pill.dataset.cardStatus = model.status.status;
   header.append(copy, pill);
+
+  // 每一張卡都有一顆鈴鐺：這一頁卡住了就按它，嚮導會把這一步的資訊整理好、開一個
+  // 預先填好的回報頁面。
+  //
+  // 為什麼在每一張卡上而不是整頁一顆：問題永遠是「某一步」出的，而學生講不清楚是
+  // 哪一步——按在哪張卡上，那張卡就是答案，不用他描述。
+  if (model.onReport !== undefined) {
+    const bell = document.createElement("button");
+    bell.type = "button";
+    bell.className = "card-report";
+    bell.dataset.cardReport = model.card.checkId ?? "";
+    bell.title = "這一步卡住了，回報給助教";
+    bell.setAttribute("aria-label", "這一步卡住了，回報給助教");
+    bell.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 1 0-12 0v5l-2 2h16l-2-2zM10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    bell.addEventListener("click", () => model.onReport());
+    header.append(bell);
+  }
+
   article.append(header);
 
   if (model.card.kind === "setup") {

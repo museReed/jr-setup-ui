@@ -12,6 +12,7 @@ import {
 } from "./execution-policy.js";
 import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
+import { readSourceMarker } from "./paths.js";
 import { findAllExecutables, resolveSpawn } from "./spawn-command.js";
 
 // 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
@@ -666,6 +667,20 @@ async function withDuplicateNote(pending, cmd) {
   };
 }
 
+// 網頁那邊需要的「這台機器是什麼」。
+//
+// source 與 home 是給卡片上那顆鈴鐺用的：回報要寫「這台跑的是哪個分支」，而 home
+// 是用來把路徑裡的使用者名稱換成 ~——那份回報會被貼到一個公開的 issue 上，而學生的
+// 使用者名稱常常是本名（C:\Users\Reed Chen）。
+function osInfo() {
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    source: readSourceMarker(),
+    home: homedir(),
+  };
+}
+
 export async function runEnvCheck(tools = []) {
   // 沒被選到的工具連查都不查，不只是畫面上藏起來——每一項都是一次 spawn。
   const wanted = new Set(checksForTools(CHECKS, tools).map((check) => check.id));
@@ -707,12 +722,12 @@ export async function runEnvCheck(tools = []) {
     const checks = await Promise.all(checksToRun);
 
     return {
-      os: { platform: process.platform, arch: process.arch },
+      os: osInfo(),
       checks: checks.map(withActions),
     };
   } catch {
     return {
-      os: { platform: process.platform, arch: process.arch },
+      os: osInfo(),
       checks: checksForTools(CHECKS, tools).map(({ id, label }) => ({
         id,
         label,
