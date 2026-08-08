@@ -129,6 +129,9 @@ const state = {
   // 已經自動重查過環境的那幾段。見 renderWizardNav 底下那段：每一段每次開頁只自動
   // 查一次，不設閘的話「重查 → 重畫 → 再重查」會變成無窮迴圈。
   autoRecheckedSections: new Set(),
+  // 上一輪工作坊留下的 skill。留在 state 裡而不是印完就算——那句話要在技能包那一段
+  // 的段落狀態列上一直看得到（見 straySkillNotice）。
+  straySkills: [],
   manualCheckedIds: new Set(),
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
@@ -845,6 +848,7 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = index;
       renderWizard();
     },
+    sectionNotice: straySkillNotice(),
     // 只在「這一段的最後一張已經做完」時才列。還沒做完的話，擋著的就是眼前這張，
     // 再列一次只是噪音；而那時進度條底下多一句話也會蓋掉他正在做的事。
     sectionBlockers: {
@@ -1319,6 +1323,7 @@ function reportDuplicateInstalls(checks) {
 const reportedStrays = new Set();
 
 function reportStraySkills(strays) {
+  state.straySkills = strays;
   const fresh = strays.filter((stray) => !reportedStrays.has(stray.path));
 
   if (fresh.length === 0) {
@@ -1343,6 +1348,27 @@ function reportStraySkills(strays) {
   for (const stray of fresh) {
     view.addRawLine(`殘留的 skill：${stray.path}`);
   }
+}
+
+// 段落狀態列底下那一句，只掛在技能包那一段。
+//
+// 那是學生正在想「我有哪些 skill」的時刻，也是這句話唯一有用的地方。印在終端裡等於
+// 沒說：開頁那一刻他在看第一張卡，等走到這一段，那幾行早就被後面的輸出推掉了
+// （而且終端是每張卡各自一份）。
+//
+// 話講成事實，不下判斷：那個資料夾也可能是他自己裝的 skill，我們分不出來。
+function straySkillNotice() {
+  if (state.activeSectionId !== "skills" || state.straySkills.length === 0) {
+    return null;
+  }
+
+  const names = state.straySkills.map((stray) => stray.name).join("、");
+
+  return {
+    text: `這台機器上還有 ${state.straySkills.length} 個不是這一輪發的 skill：${names}`,
+    detail:
+      "自己裝的就不用理它。如果是上一輪工作坊留下來的，可以把那個資料夾刪掉——它現在仍然會被載入。完整路徑在「看原始輸出」裡。",
+  };
 }
 
 async function checkConfigs() {
