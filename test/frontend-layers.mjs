@@ -722,21 +722,33 @@ try {
   );
   ok("進不了下一段時，進度條底下指名是哪幾張擋著、而且點得過去");
 
-  // 上一輪工作坊留下的 skill 要講在技能包那一段的段落狀態列，不能只印在終端——
-  // 終端是「現在正在做什麼」，開頁那一刻學生在看第一張卡，等他走到這一段那幾行
-  // 早就被推掉了（而且終端是每張卡各自一份）。
+  // 上一輪工作坊留下的 skill 要講在段落狀態列，不能只印在終端——終端是「現在正在
+  // 做什麼」，開頁那一刻學生在看第一張卡，等他走到技能包那一段那幾行早就被推掉了
+  //（而且終端是每張卡各自一份）。
+  //
+  // 出現在第一頁與技能包兩段（Reed 指定）：回訪的學生應該在動手裝任何東西之前就看到。
+  // 中間那幾段不放，免得同一句話跟著他一路走。
   assert.match(
     files.app,
-    /state\.activeSectionId !== "skills" \|\| state\.straySkills\.length === 0/,
-    "那句話只掛在技能包那一段，而且沒有殘留時不出現",
+    /const STRAY_SKILL_SECTIONS = new Set\(\["env", "skills"\]\)/,
+    "第一頁與技能包兩段都要出現",
   );
-  assert.match(files.app, /sectionNotice: straySkillNotice\(\)/);
-  assert.match(files.view, /function renderSectionNotice\(notice\)/);
+  assert.match(
+    files.app,
+    /!STRAY_SKILL_SECTIONS\.has\(state\.activeSectionId\) \|\|\s*\n\s*state\.straySkills\.length === 0/,
+    "沒有殘留時不出現",
+  );
+  // 第一頁上兩則可能同時成立，所以傳的是陣列——只留一則的話另一則永遠沒機會出現。
+  assert.match(
+    files.app,
+    /sectionNotices: \[straySkillNotice\(\), duplicateCliNotice\(\)\]/,
+  );
+  assert.match(files.view, /function renderSectionNotices\(notices\)/);
   assert(
     !/renderSectionNotice/.test(files.app),
     "app 不自己畫，只把資料交給 view",
   );
-  ok("上一輪留下的 skill 講在技能包那一段的段落狀態列上");
+  ok("上一輪留下的 skill 在第一頁與技能包兩段都講，兩則提醒可以並存");
 
   // ⚠️ 搬走舊 skill 一定是一個一個來，永遠不能有「全部搬走」。
   //

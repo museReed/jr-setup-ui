@@ -1203,34 +1203,43 @@ function renderSectionBlockers(model) {
   }
 }
 
-// 段落狀態列底下那一句。目前只有一個用途：技能包那一段提醒上一輪留下的 skill。
+// 段落狀態列底下那幾句：上一輪工作坊留下、而且會干擾這一輪的東西。
 //
 // 為什麼不印在終端就好——終端是「現在正在做什麼」，每張卡各自一份、而且會被後面的
-// 輸出推掉。這句話要在學生正想著「我有哪些 skill」的時候還在畫面上。
-function renderSectionNotice(notice) {
+// 輸出推掉。這幾句要在學生看得到的地方一直待著。
+//
+// 收成一個陣列而不是單一則：第一頁上「重複安裝的 CLI」與「上一輪的 skill」可能同時
+// 成立，只留一則的話另一則就永遠沒機會出現。
+function renderSectionNotices(notices) {
   const host = elements.sectionNotice;
 
   if (host === null) {
     return;
   }
 
+  const items = (notices ?? []).filter((notice) => notice != null);
   host.replaceChildren();
-  host.hidden = notice == null;
+  host.hidden = items.length === 0;
 
-  if (notice == null) {
-    return;
+  for (const notice of items) {
+    host.append(sectionNoticeElement(notice));
   }
+}
+
+function sectionNoticeElement(notice) {
+  const box = document.createElement("div");
+  box.className = "section-notice-item";
 
   const text = document.createElement("span");
   text.className = "section-notice-text";
   text.textContent = notice.text;
-  host.append(text);
+  box.append(text);
 
   if (notice.detail) {
     const detail = document.createElement("small");
     detail.className = "section-notice-detail";
     detail.textContent = notice.detail;
-    host.append(detail);
+    box.append(detail);
   }
 
   // 清理那顆按鈕就放在講這件事的那一句旁邊，不另外開一張卡：學生看到問題的那一刻
@@ -1241,14 +1250,16 @@ function renderSectionNotice(notice) {
     button.className = "ds-btn ds-btn-sm section-notice-action";
     button.textContent = action.label;
     button.addEventListener("click", () => action.onClick());
-    host.append(button);
+    box.append(button);
   }
+
+  return box;
 }
 
 export function renderWizard(model) {
   elements.sectionStatus.textContent = model.sectionStatus;
   showSection(model.section.id);
-  renderSectionNotice(model.sectionNotice);
+  renderSectionNotices(model.sectionNotices);
   renderMilestones(model.section.id, model.milestones, model.onMilestoneSelect);
   renderSectionBlockers(model.sectionBlockers);
   renderCard(model.cardModel);
