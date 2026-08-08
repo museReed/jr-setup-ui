@@ -845,6 +845,18 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = index;
       renderWizard();
     },
+    // 只在「這一段的最後一張已經做完」時才列。還沒做完的話，擋著的就是眼前這張，
+    // 再列一次只是噪音；而那時進度條底下多一句話也會蓋掉他正在做的事。
+    sectionBlockers: {
+      items:
+        currentIndex >= cardSection.cards.length - 1 && cardDone
+          ? incompleteCards(cardSection.cards, verified)
+          : [],
+      onSelect: (index) => {
+        state.viewingCardIndex[state.activeSectionId] = index;
+        renderWizard();
+      },
+    },
   });
   renderControls();
   // 分頁的鎖跟著一起更新。原本只有勾選、換工具、點分頁才會重算，於是「最後一張

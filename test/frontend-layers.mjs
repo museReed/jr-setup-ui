@@ -702,6 +702,26 @@ try {
   );
   ok("走到一段最後一張而下一段還鎖著時，自動重查一次（每段只一次）");
 
+  // 重查救不了「真的還有卡沒做完」那種——那時進度條底下要指名是哪幾張，並且點得過去。
+  // 只在最後一張已經做完時才列：還沒做完的話擋著的就是眼前這張，再列一次只是噪音。
+  assert.match(
+    files.app,
+    /sectionBlockers: \{[\s\S]{0,300}currentIndex >= cardSection\.cards\.length - 1 && cardDone/,
+    "阻礙清單只在這一段的最後一張做完之後才出現",
+  );
+  assert.match(
+    files.app,
+    /sectionBlockers: \{[\s\S]{0,400}incompleteCards\(cardSection\.cards, verified\)/,
+    "列的是這一段裡還沒完成的卡",
+  );
+  // 跟其他 DOM 一樣，畫在 view 裡、app 只給資料。
+  assert.match(files.view, /function renderSectionBlockers\(model\)/);
+  assert(
+    !/renderSectionBlockers/.test(files.app),
+    "app 不自己畫，只把資料交給 view",
+  );
+  ok("進不了下一段時，進度條底下指名是哪幾張擋著、而且點得過去");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),
