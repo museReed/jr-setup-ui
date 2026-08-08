@@ -15,6 +15,8 @@ import {
   checkAgentHooks,
   checkCopyStep,
   checkTabSync,
+  legacyCodexScanReport,
+  legacyCodexSkillDirs,
   probeHook,
   resolveBash,
   scanStraySkills,
@@ -555,6 +557,118 @@ process.stdin.on("end", () => {
     "只看嚮導自己要寫的資料夾，學生自己裝的一支都不能碰",
   );
   ok("學生自己裝的 skill 不會被列進要搬走的清單");
+
+  // ⚠️ 第三條規則：codex 的 skill 搬過家（~/.codex/skills → ~/.agents/skills），舊路徑
+  // 那幾支還在原地而 codex 不再讀它們。
+  //
+  // 這一組刻意讓新落點是空的——那正是漏掉的那種機器：wizardSkillDirs 誠實回報 0、
+  // 第一頁整個安靜，看起來像乾淨的，而學生的 ~/.codex/skills 裡躺著上一輪的 handoff。
+  const legacyCodexRoot = path.join(skillRoot, ".codex", "skills");
+  mkdirSync(path.join(legacyCodexRoot, "handoff"), { recursive: true });
+  writeFileSync(
+    path.join(legacyCodexRoot, "handoff", "SKILL.md"),
+    "# 上一輪裝在舊路徑的\n",
+  );
+  // 學生自己放在舊路徑的東西：不在這一輪發的名單裡，永遠不能被列進來。
+  mkdirSync(path.join(legacyCodexRoot, "my-own-codex-thing"), { recursive: true });
+  writeFileSync(
+    path.join(legacyCodexRoot, "my-own-codex-thing", "SKILL.md"),
+    "# 學生自己的\n",
+  );
+  // 同名的空資料夾不算 skill——沒有 SKILL.md 就不該被搬走。
+  mkdirSync(path.join(legacyCodexRoot, "vault-sync"), { recursive: true });
+
+  const codexSteps = [
+    {
+      id: "skill-codex-handoff",
+      label: "handoff（Codex）",
+      kind: "skill",
+      agent: "codex",
+      files: [
+        {
+          target: `${skillRoot}/.agents/skills/handoff/SKILL.md`.replaceAll("\\", "/"),
+        },
+      ],
+    },
+    {
+      id: "skill-codex-vault-sync",
+      label: "vault-sync（Codex）",
+      kind: "skill",
+      agent: "codex",
+      files: [
+        {
+          target:
+            `${skillRoot}/.agents/skills/vault-sync/SKILL.md`.replaceAll("\\", "/"),
+        },
+      ],
+    },
+    // claude 那半不該被拿去舊路徑底下比對——那是 codex 才有的搬家。這一支只發給
+    // claude，名字卻剛好也躺在 codex 的舊路徑底下（下面建了那個資料夾）。
+    {
+      id: "skill-claude-only",
+      label: "只發給 claude 的",
+      kind: "skill",
+      agent: "claude",
+      files: [
+        {
+          target: `${claudeSkills}/claude-only-thing/SKILL.md`.replaceAll("\\", "/"),
+        },
+      ],
+    },
+  ];
+
+  mkdirSync(path.join(legacyCodexRoot, "claude-only-thing"), { recursive: true });
+  writeFileSync(
+    path.join(legacyCodexRoot, "claude-only-thing", "SKILL.md"),
+    "# 名字撞到但只發給 claude 的\n",
+  );
+
+  const legacyFound = legacyCodexSkillDirs(codexSteps, legacyCodexRoot);
+  assert.deepEqual(
+    legacyFound.map((skill) => skill.name),
+    ["handoff"],
+  );
+  ok("codex 舊路徑底下、我們自己發過的那幾支抓得到");
+
+  assert(
+    !legacyFound.some((skill) => skill.name === "my-own-codex-thing"),
+    "學生自己放在舊路徑的 skill 一支都不能碰",
+  );
+  ok("學生自己放在 codex 舊路徑的 skill 不會被列進來");
+
+  assert(
+    !legacyFound.some((skill) => skill.name === "vault-sync"),
+    "沒有 SKILL.md 的同名空資料夾不算一支 skill",
+  );
+  ok("舊路徑底下沒有 SKILL.md 的空資料夾不會被列進來");
+
+  assert(
+    !legacyFound.some((skill) => skill.name === "claude-only-thing"),
+    "只發給 claude 的名字不該拿去 codex 的舊路徑底下比對",
+  );
+  ok("只發給 claude 的 skill 不會被拿去舊路徑比對");
+
+  // 這條是整個修正的理由：同一台機器上，新落點是空的（所以 wizardSkillDirs 回 0）、
+  // 舊路徑有東西。兩條規則要各自成立，不能靠對方講話。
+  assert.deepEqual(
+    wizardSkillDirs(codexSteps),
+    [],
+    "這棵樹的新落點是空的——第一頁只靠 wizardSkills 的話會整個安靜",
+  );
+  ok("新落點空、舊路徑有東西的機器上，只有舊路徑那條會講話");
+
+  // 真家目錄那一版：掃描範圍與比對的名字要寫得出來，否則「查過、沒有」跟「沒查」
+  // 在原始輸出裡分不出來（理由同 strayScanReport）。
+  const legacyScan = legacyCodexScanReport("zh-TW");
+  assert(
+    legacyScan.root.endsWith("/.codex/skills"),
+    "掃的要是 codex 搬家前的那個路徑",
+  );
+  assert(
+    legacyScan.names.length > 0,
+    "比對的名字不能是空的，否則等於什麼都沒查",
+  );
+  ok("codex 舊路徑掃描連掃描範圍與名單一起回報");
 
   // ⚠️ 合併那顆指向「開終端」那條 action，不是背景那條。
   //

@@ -10,6 +10,7 @@ import {
   terminateRun,
 } from "./run-registry.js";
 import {
+  legacyCodexScanReport,
   runConfigCheck,
   scanWizardSkills,
   strayScanReport,
@@ -227,6 +228,7 @@ export async function startServer({
       strayScan: { roots: scan.roots, retired: scan.retired },
       // 一個工具都沒選也要回：這條提示掛在第一頁，而第一頁正是還沒選工具的那一刻。
       wizardSkills: scanWizardSkills(lang),
+      legacyCodexSkills: legacyCodexScanReport(lang),
     });
     return;
   }

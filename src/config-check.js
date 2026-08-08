@@ -24,7 +24,7 @@ import {
   stepsForTools,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
-import { RETIRED_SKILLS } from "./legacy.js";
+import { RETIRED_SKILLS, legacyCodexSkillRoot } from "./legacy.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -1163,6 +1163,69 @@ export function wizardSkillDirs(steps) {
   return found;
 }
 
+// Codex skill 的舊落點 ~/.codex/skills 底下，還躺著我們自己發過的哪幾支。
+//
+// ⚠️ 這是第三條規則，跟前兩條都不一樣，三條不要混在一起看：
+//
+//   straySkillDirs        名字退場了，而資料夾還在會被讀到
+//   wizardSkillDirs       我等一下要寫的就是這個資料夾，而它已經有東西了
+//   legacyCodexSkillDirs  整個根目錄已經不會被讀到，而我們自己發的東西還躺在那裡
+//
+// 為什麼值得單獨講一條：搬家之後舊資料夾原地留著，codex 不再讀它。它不會跟新的打架
+// ——載不到就是載不到——但學生看得到那個資料夾、行為卻沒出現，那種落差他自己查不出來。
+// 而且 wizardSkillDirs 對這台機器會誠實地回報 0（新落點確實還是空的），第一頁因此
+// 整個安靜，看起來像「這台是乾淨的」。
+//
+// 範圍只有「我們自己發的名字」。學生自己放在 ~/.codex/skills 的東西不進入判斷——
+// 那是 legacy.js 第一版被推翻的教訓，不要再走回去。
+export function legacyCodexSkillDirs(steps, root) {
+  const found = [];
+
+  for (const name of codexWorkshopSkillNames(steps)) {
+    const dir = path.join(root, name);
+
+    // 跟 straySkillDirs 同一個把關：沒有 SKILL.md 就不是一個 skill，同名的空資料夾
+    // 不該被搬走。
+    if (!existsSync(path.join(dir, "SKILL.md"))) {
+      continue;
+    }
+
+    found.push({ name, path: dir });
+  }
+
+  return found;
+}
+
+// 這一輪發給 codex 的工作坊 skill 叫什麼名字。名字從 skillDirsOf 算出來而不是另外
+// 列一份：兩邊各寫一份的話，改了發哪幾支之後這裡會忘記跟上。
+//
+// 只認 kind === "skill"（工作坊自己發的）。第三方那幾支是 npx 裝的，落點由它們自己
+// 決定，不是我們搬過家的那個路徑。
+function codexWorkshopSkillNames(steps) {
+  return [
+    ...new Set(
+      steps
+        .filter((step) => step.kind === "skill" && step.agent === "codex")
+        .flatMap((step) => skillDirsOf(step).map((dir) => path.basename(dir))),
+    ),
+  ];
+}
+
+// 同一次掃描，連「掃了哪裡、比對了哪些名字」一起回去——理由同 strayScanReport：
+// 沒抓到東西時，log 裡要分得出「查過、沒有」跟「這段程式沒被呼叫到」。
+export function legacyCodexScanReport(lang) {
+  const steps = stepsForTools(["claude", "codex"]).map((id) =>
+    describeStep(id, { lang, home: HOME }),
+  );
+  const root = legacyCodexSkillRoot(HOME);
+
+  return {
+    root,
+    names: codexWorkshopSkillNames(steps),
+    found: legacyCodexSkillDirs(steps, root),
+  };
+}
+
 // 這一步會在 skills 根目錄底下佔用哪幾個資料夾。
 function skillDirsOf(step) {
   if (step.kind === "skill") {
@@ -1258,6 +1321,9 @@ export async function runConfigCheck({ tools, lang }) {
     strayScan: { roots: scan.roots, retired: scan.retired },
     // 第一頁那條「先搬到隔離區再裝」用的：嚮導要寫的資料夾裡，哪幾個已經有東西了。
     wizardSkills: scanWizardSkills(lang),
+    // 第一頁那條「codex 已經不讀那裡了」用的。跟上面那條會同時成立也會各自成立：
+    // 舊路徑有、新落點空的機器，只有這一條會講話。
+    legacyCodexSkills: legacyCodexScanReport(lang),
   };
 }
 
