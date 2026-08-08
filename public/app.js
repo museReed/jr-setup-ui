@@ -862,7 +862,11 @@ function renderWizard() {
     },
     // 第一頁上兩則可能同時成立（機器上既有上一輪的 skill、又有兩份 CLI），所以是
     // 一個陣列不是一則——只留一則的話另一則永遠沒機會出現。
-    sectionNotices: [straySkillNotice(), duplicateCliNotice()],
+    sectionNotices: [
+      straySkillNotice(),
+      resetSkillsNotice(),
+      duplicateCliNotice(),
+    ],
     // 只在「這一段的最後一張已經做完」時才列。還沒做完的話，擋著的就是眼前這張，
     // 再列一次只是噪音；而那時進度條底下多一句話也會蓋掉他正在做的事。
     sectionBlockers: {
@@ -1380,6 +1384,44 @@ function reportStraySkills(strays) {
 // 第三段才發現自己機器上還躺著上一輪的東西。技能包那一段仍然留著——那是他真的在想
 // 「我有哪些 skill」的時刻。中間那幾段不放，免得同一句話跟著他一路走。
 const STRAY_SKILL_SECTIONS = new Set(["env", "skills"]);
+
+// 回訪學生要的那一顆：工作坊自己那幾支 skill 整個換新（舊的搬走、重裝一份乾淨的）。
+//
+// 覆蓋不夠——安裝只寫我們現在發的那幾個檔案，舊版留下的其他東西會一直躺在同一個
+// 資料夾裡，而檢查只比對我們發的那幾個，看不到它們。Claude 載入 skill 時看的是整個
+// 資料夾。
+//
+// 只在技能包那一段、而且真的已經有裝過的時候才出現：全新的機器沒有東西要換新，
+// 那顆按鈕只會讓人以為自己漏了一步。
+function resetSkillsNotice() {
+  if (state.activeSectionId !== "skills") {
+    return null;
+  }
+
+  const installed = (state.lastChecks ?? []).filter(
+    (check) => check.id.startsWith("skill-") && check.status !== "missing",
+  );
+
+  if (installed.length === 0) {
+    return null;
+  }
+
+  return {
+    text: "上過課的人：可以把工作坊的 skill 整個換新一份",
+    detail:
+      "安裝只會覆蓋我們現在發的那幾個檔案，舊版留下的其他東西會留在同一個資料夾裡，而 Claude 載入時看的是整個資料夾。這顆會把舊的搬到隔離區（不是刪除）再裝一份乾淨的。你自己裝的 skill 不會被碰到。",
+    actions: [
+      {
+        label: "把工作坊的 skill 換新",
+        onClick: () =>
+          run("reset-workshop-skills", undefined, null, {
+            lang: state.selectedLanguage,
+            tools: toolSelectionValue(state.selectedTools),
+          }),
+      },
+    ],
+  };
+}
 
 function straySkillNotice() {
   if (

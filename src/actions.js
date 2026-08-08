@@ -48,6 +48,10 @@ const uninstallLegacyCliScript = moduleFile(
   "../scripts/uninstall-legacy-cli.mjs",
   import.meta.url,
 );
+const resetWorkshopSkillsScript = moduleFile(
+  "../scripts/reset-workshop-skills.mjs",
+  import.meta.url,
+);
 const openVaultRepoScript = moduleFile(
   "../scripts/open-vault-repo.mjs",
   import.meta.url,
@@ -285,6 +289,27 @@ Object.assign(actions, {
       `--name=${name}`,
     ],
     description: "把指定的一個舊 skill 資料夾搬到隔離區（不刪除）。",
+  },
+  // 回訪學生要的那顆：工作坊自己那幾支 skill 整個換新。
+  //
+  // 覆蓋不夠——安裝只寫我們現在發的那幾個檔案，舊版留下的其他東西會一直躺在同一個
+  // 資料夾裡，而檢查只比對我們發的那幾個，看不到它們。Claude 載入 skill 時看的是
+  // 整個資料夾。
+  //
+  // 這顆是「全部一起」而前面那顆搬走殘留是「一個一個」，差別在範圍是不是我們自己
+  // 定義的：這裡動到的名字全部來自 stepsForTools，學生自己裝的碰不到，而且結局是
+  // 「你手上是這一版」——那本來就是嚮導要做的事。
+  "reset-workshop-skills": {
+    kind: "fixed",
+    label: "把工作坊的 skill 換新",
+    cmd: process.execPath,
+    options: { lang: LANGUAGES, tools: ["claude", "codex", "claude,codex"] },
+    buildArgs: ({ lang, tools }) => [
+      resetWorkshopSkillsScript,
+      `--lang=${lang}`,
+      `--tools=${tools}`,
+    ],
+    description: "把工作坊的 skill 舊資料夾搬到隔離區，再重裝一份乾淨的。",
   },
   "uninstall-legacy-cli": {
     kind: "fixed",
