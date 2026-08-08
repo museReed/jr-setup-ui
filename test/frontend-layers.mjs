@@ -722,6 +722,22 @@ try {
   );
   ok("進不了下一段時，進度條底下指名是哪幾張擋著、而且點得過去");
 
+  // 上一輪工作坊留下的 skill 要講在技能包那一段的段落狀態列，不能只印在終端——
+  // 終端是「現在正在做什麼」，開頁那一刻學生在看第一張卡，等他走到這一段那幾行
+  // 早就被推掉了（而且終端是每張卡各自一份）。
+  assert.match(
+    files.app,
+    /state\.activeSectionId !== "skills" \|\| state\.straySkills\.length === 0/,
+    "那句話只掛在技能包那一段，而且沒有殘留時不出現",
+  );
+  assert.match(files.app, /sectionNotice: straySkillNotice\(\)/);
+  assert.match(files.view, /function renderSectionNotice\(notice\)/);
+  assert(
+    !/renderSectionNotice/.test(files.app),
+    "app 不自己畫，只把資料交給 view",
+  );
+  ok("上一輪留下的 skill 講在技能包那一段的段落狀態列上");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

@@ -52,6 +52,10 @@
                是哪一個瞬間算錯的（見 view.js 的 lockDiagnostics）。 -->
           <button type="button" id="copy-diagnostics" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h9v11H9zM6 15H5V4h10v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>複製診斷資料</span></button>
         </div>
+        <!-- 上一輪工作坊留下的 skill。只在技能包那一段出現：那是學生正在想「我有哪些
+             skill」的時刻，也是那句話唯一有用的地方。印在終端裡沒人會看到——開頁那一刻
+             他在看第一張卡，等走到這一段早就被推掉了。 -->
+        <div id="section-notice" class="section-notice" hidden></div>
         <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
           <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
           <!-- 走在進度條上的那隻。原本是設計系統的小鴨（SVG，跟著主題變色），

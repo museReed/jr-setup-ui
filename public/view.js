@@ -26,6 +26,7 @@ const elements = {
   sectionPanel: document.querySelector("[data-section-panel]"),
   sectionStatus: document.querySelector("#section-status"),
   sectionBlockers: document.querySelector("#section-blockers"),
+  sectionNotice: document.querySelector("#section-notice"),
   replayTour: document.querySelector("#replay-tour"),
   copyDiagnostics: document.querySelector("#copy-diagnostics"),
   copyRawOutput: document.querySelector("#copy-raw-output"),
@@ -1202,9 +1203,41 @@ function renderSectionBlockers(model) {
   }
 }
 
+// 段落狀態列底下那一句。目前只有一個用途：技能包那一段提醒上一輪留下的 skill。
+//
+// 為什麼不印在終端就好——終端是「現在正在做什麼」，每張卡各自一份、而且會被後面的
+// 輸出推掉。這句話要在學生正想著「我有哪些 skill」的時候還在畫面上。
+function renderSectionNotice(notice) {
+  const host = elements.sectionNotice;
+
+  if (host === null) {
+    return;
+  }
+
+  host.replaceChildren();
+  host.hidden = notice == null;
+
+  if (notice == null) {
+    return;
+  }
+
+  const text = document.createElement("span");
+  text.className = "section-notice-text";
+  text.textContent = notice.text;
+  host.append(text);
+
+  if (notice.detail) {
+    const detail = document.createElement("small");
+    detail.className = "section-notice-detail";
+    detail.textContent = notice.detail;
+    host.append(detail);
+  }
+}
+
 export function renderWizard(model) {
   elements.sectionStatus.textContent = model.sectionStatus;
   showSection(model.section.id);
+  renderSectionNotice(model.sectionNotice);
   renderMilestones(model.section.id, model.milestones, model.onMilestoneSelect);
   renderSectionBlockers(model.sectionBlockers);
   renderCard(model.cardModel);

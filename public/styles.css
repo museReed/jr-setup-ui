@@ -586,6 +586,31 @@ body {
   margin-right: auto;
 }
 
+/* 段落狀態列底下那一句（目前只有技能包那一段用：上一輪留下的 skill）。
+   用琥珀色而不是紅色：那不是壞掉，是「這裡有一件你可能不知道的事」。 */
+.section-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-warn);
+  border-radius: var(--r-sm);
+  background: var(--amber-1);
+}
+
+.section-notice-text {
+  color: var(--amber-6);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.section-notice-detail {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
 /* 進不了下一段時，擋著的是哪幾張。掛在進度條底下：那條說的是「這一段還剩多少」，
    這一列說的是「剩的是哪幾張」——同一件事的兩半，放在一起才讀得順。
    小人走在進度條上會超出邊界，所以上緣要留夠的空隙，不然會被牠壓到。 */
