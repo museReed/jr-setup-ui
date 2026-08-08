@@ -741,7 +741,7 @@ try {
   // 第一頁上兩則可能同時成立，所以傳的是陣列——只留一則的話另一則永遠沒機會出現。
   assert.match(
     files.app,
-    /sectionNotices: \[straySkillNotice\(\), duplicateCliNotice\(\)\]/,
+    /sectionNotices: \[[\s\S]{0,200}straySkillNotice\(\),[\s\S]{0,200}duplicateCliNotice\(\),?\s*\]/,
   );
   assert.match(files.view, /function renderSectionNotices\(notices\)/);
   assert(
