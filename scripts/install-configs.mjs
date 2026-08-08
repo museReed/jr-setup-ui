@@ -411,20 +411,19 @@ async function claudeHudStep(step) {
     "utf8",
   );
   const filled = template.replace("{RUNTIME}", process.execPath);
-  // Windows：腳本落地成一支 .ps1，settings.json 裡只留 -File 加路徑。整段塞進一行
-  // 指令的話，內層的單引號與帶空白的 node 路徑會被 cmd.exe 咬掉（見 config-install
-  // 的 scriptTarget）。BOM 不能省——PowerShell 5.1 沒有 BOM 就把中文註解當 ANSI 讀。
+  // Windows：腳本落地成一支 .mjs，settings.json 裡只留「node 的路徑 + 腳本的路徑」，
+  // 兩個都用引號包好，沒有東西需要跳脫。走到這個形狀的過程見
+  // config-install.js 的 scriptTarget 與那支 template 開頭。
+  //
+  // .mjs 不需要 BOM——Node 一律當 UTF-8 讀。（.ps1 那版需要，那是 PowerShell 5.1
+  // 沒有 BOM 就把中文當 ANSI 的問題，換掉入口之後這個坑就不存在了。）
   let command;
 
   if (step.scriptTarget) {
     await mkdir(path.dirname(step.scriptTarget), { recursive: true });
-    await writeFile(
-      step.scriptTarget,
-      `﻿${filled.replace(/^﻿/, "")}`,
-      "utf8",
-    );
+    await writeFile(step.scriptTarget, filled, "utf8");
     logProgress(`狀態列腳本已寫進 ${step.scriptTarget}`);
-    command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${step.scriptTarget.replaceAll("/", "\\")}"`;
+    command = `"${process.execPath}" "${step.scriptTarget.replaceAll("/", "\\")}"`;
   } else {
     command = filled.trim();
   }

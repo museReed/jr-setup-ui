@@ -758,22 +758,27 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         previousTarget: `${claudeDir}/plugins/claude-hud/previous-statusline.txt`,
         // cache 路徑第一層是 marketplace 名、第二層才是 plugin 名，中間那層不能省。
         cacheRoot: `${claudeDir}/plugins/cache`,
-        // 兩個平台的狀態列指令長得完全不一樣：mac 是一段 bash（用 ls + sort
-        // 找最新版），Windows 是一支 PowerShell 腳本（Get-ChildItem + [version] 排序）。
-        // 共通的只有「{RUNTIME} 換成這台機器的 node 絕對路徑」這件事。
+        // 兩個平台的狀態列差在「誰當入口」：mac 是一行 bash（用 ls + sort 找最新版，
+        // {RUNTIME} 換成這台機器的 node 絕對路徑），Windows 是一支 node 腳本，
+        // settings.json 裡只留「node 的路徑 + 腳本的路徑」。
         commandTemplate:
           platform === "win32"
-            ? "claude-code/claude-hud/statusline.ps1.template"
+            ? "claude-code/claude-hud/statusline.mjs.template"
             : "claude-code/claude-hud/statusline.sh.template",
-        // Windows 上那段不能塞進 settings.json 當成一行指令：它含單引號、$ 變數與一個
-        // 帶空白的 node 路徑，而 Claude Code 會把整條交給 cmd.exe 再解析一次，引號
-        // 互相打架就整條不啟動——失敗還是安靜的（VM 實測：狀態列不出現、沒有錯誤）。
+        // Windows 這條走了兩輪才到位，理由寫在 statusline.mjs.template 開頭：
         //
-        // 所以落地成一支真的 .ps1，settings.json 裡只留 -File 加一個路徑。
-        // 跟命名 hook 的 Windows 薄殼同一招。
+        //   一行 powershell -Command   引號被下一層 shell 咬掉，整條不啟動
+        //   powershell -File 一支 .ps1  手動跑得出來，Claude Code 裡仍然空白
+        //                              （ARM64 上 powershell 冷啟動 1～2 秒，而狀態列
+        //                                每 5 秒跑一次，來不及在 timeout 前吐出東西）
+        //   node 一支 .mjs             ← 現在這個。一個程序、啟動快一個數量級、
+        //                                指令裡只剩兩個被引號包好的絕對路徑
+        //
+        // 對照組實測：同一時間把指令換成 `cmd /c echo PROBE-OK`，狀態列當場出現
+        // PROBE-OK——所以機制是活的，問題在 PowerShell 那一層。
         scriptTarget:
           platform === "win32"
-            ? `${claudeDir}/plugins/claude-hud/statusline.ps1`
+            ? `${claudeDir}/plugins/claude-hud/statusline.mjs`
             : null,
       };
 
