@@ -138,6 +138,9 @@ const state = {
   // 上一輪工作坊留下的 skill。留在 state 裡而不是印完就算——那句話要在技能包那一段
   // 的段落狀態列上一直看得到（見 straySkillNotice）。
   straySkills: [],
+  // 嚮導這一輪要裝、而機器上已經有的 skill。回訪學生幾乎必中——上一輪裝的就是同樣
+  // 那幾支。第一頁那條「先搬到隔離區再裝」讀的是它（見 resetSkillsNotice）。
+  wizardSkills: [],
   // 卡片上那顆鈴鐺要寫進回報的兩件事：這台跑的是哪個分支，以及家目錄（用來把路徑
   // 裡的使用者名稱換成 ~）。兩個都跟著環境檢查一起回來。
   wizardSource: "unknown",
@@ -1244,6 +1247,7 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     state.wizardSource = os.source ?? "unknown";
     state.home = os.home ?? "";
     forgetStaleInstalls(checks);
+    reportCopyScan(checks);
     reportDuplicateInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
@@ -1321,6 +1325,54 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
 const ENV_REFRESH_ACTIONS = new Set(["uninstall-legacy-cli"]);
 
 const reportedDuplicates = new Set();
+const reportedCopyScans = new Set();
+
+// 舊版並存檢查的完整結果，寫進「看原始輸出」——找到幾份都寫，包含只有一份、一份
+// 都沒有。
+//
+// 只寫 ≥2 份的話，一台乾淨機器的原始輸出裡什麼都沒有：「查過、沒有並存」跟「這個
+// 檢查根本沒跑到」在畫面上分不出來。真機驗收要先確認的正是後者（Reed 指定）。
+//
+// 白話終端那半不動，仍然只有真的有並存時才講話（見 reportDuplicateInstalls）——
+// 沒事就不要在學生的終端裡留一句他看不懂又不用理的話。
+//
+// key 收整份清單而不是只收 id：路徑變了（他把 npm 那份移掉了）要重寫一次，而狀態
+// 沒變的重查——登入輪詢每幾秒就一次——不該一直往 log 裡疊。
+function reportCopyScan(checks) {
+  const scanned = checks.filter((check) => Array.isArray(check.copies));
+
+  if (scanned.length === 0) {
+    return;
+  }
+
+  const key = scanned
+    .map((check) => `${check.id}:${check.npmInstalled}:${check.copies.join("|")}`)
+    .join(";");
+
+  if (reportedCopyScans.has(key)) {
+    return;
+  }
+
+  reportedCopyScans.add(key);
+  view.addRawLine("— 舊版檢查（上一輪工作坊是用 npm install -g 裝的）—");
+
+  for (const check of scanned) {
+    const copies = check.copies;
+    // npm 那一句排在份數前面：它才是判準，份數只是佐證。
+    view.addRawLine(
+      `${check.label}：${check.npmPackage} ${
+        check.npmInstalled ? "在 npm 全域裡 ← 舊版" : "不在 npm 全域裡"
+      }`,
+    );
+    view.addRawLine(
+      `  PATH 上找到 ${copies.length} 份${copies.length > 1 ? "（有並存）" : ""}`,
+    );
+
+    for (const found of copies) {
+      view.addRawLine(`    ${found}`);
+    }
+  }
+}
 
 function reportDuplicateInstalls(checks) {
   for (const check of checks) {
@@ -1340,6 +1392,71 @@ function reportDuplicateInstalls(checks) {
     for (const found of paths) {
       view.addRawLine(`${check.label}：${found}`);
     }
+  }
+}
+
+const reportedStrayScans = new Set();
+
+// 停發 skill 的殘留掃描，掃完就寫一次進「看原始輸出」——有沒有抓到東西都寫。
+//
+// 這個檢查比並存那個更看不出來：RETIRED_SKILLS 今天是空的（git 歷史裡沒有任何 skill
+// 被停發或改名過，見 src/legacy.js），所以 strays 永遠是空陣列，畫面上永遠什麼都
+// 不出現。那是正確的結果，但它跟「這段程式根本沒被呼叫到」長得一模一樣。
+//
+// 所以把掃描範圍也印出來：掃了哪幾個根目錄、比對了哪幾個名字。名單是空的時候那句
+// 「0 個名字」本身就是答案——驗收的人看到它，就知道檢查跑了、而且沒有東西可比。
+function reportStrayScan(scan, strays) {
+  if (scan === null || scan === undefined) {
+    return;
+  }
+
+  const roots = scan.roots ?? [];
+  const retired = scan.retired ?? [];
+  const key = `${roots.join("|")}::${retired.join("|")}::${strays.length}`;
+
+  if (reportedStrayScans.has(key)) {
+    return;
+  }
+
+  reportedStrayScans.add(key);
+  view.addRawLine("— 停發 skill 殘留檢查 —");
+  view.addRawLine(`掃了 ${roots.length} 個 skills 根目錄：`);
+
+  for (const root of roots) {
+    view.addRawLine(`  ${root}`);
+  }
+
+  view.addRawLine(
+    retired.length === 0
+      ? "比對的停發名單：0 個名字（這一輪沒有任何 skill 被停發，所以不會有殘留）"
+      : `比對的停發名單：${retired.join("、")}`,
+  );
+  view.addRawLine(
+    strays.length === 0 ? "結果：沒有殘留" : `結果：${strays.length} 個殘留`,
+  );
+}
+
+const reportedWizardSkills = new Set();
+
+// 嚮導要裝、而機器上已經有的 skill：存進 state（第一頁那條提示讀它），並且掃完就
+// 把結果寫進「看原始輸出」——有沒有抓到都寫。
+//
+// 一支都沒抓到時那句「0 支」才是真正有用的一行：它證明這個掃描跑過，而不是壞掉。
+function reportWizardSkills(skills) {
+  state.wizardSkills = skills;
+  const key = skills.map((skill) => skill.path).join("|");
+
+  if (reportedWizardSkills.has(key)) {
+    return;
+  }
+
+  reportedWizardSkills.add(key);
+  view.addRawLine("— 嚮導要裝的 skill：機器上已經有的 —");
+  view.addRawLine(`找到 ${skills.length} 支`);
+
+  for (const skill of skills) {
+    const source = skill.kind === "workshop" ? "工作坊" : "第三方";
+    view.addRawLine(`  [${source}/${skill.agent}] ${skill.name} → ${skill.path}`);
   }
 }
 
@@ -1385,34 +1502,44 @@ function reportStraySkills(strays) {
 // 「我有哪些 skill」的時刻。中間那幾段不放，免得同一句話跟著他一路走。
 const STRAY_SKILL_SECTIONS = new Set(["env", "skills"]);
 
-// 回訪學生要的那一顆：工作坊自己那幾支 skill 整個換新（舊的搬走、重裝一份乾淨的）。
+// 回訪學生要的那一顆：嚮導這一輪要裝的 skill，機器上已經有的先搬到隔離區再裝。
 //
 // 覆蓋不夠——安裝只寫我們現在發的那幾個檔案，舊版留下的其他東西會一直躺在同一個
 // 資料夾裡，而檢查只比對我們發的那幾個，看不到它們。Claude 載入 skill 時看的是整個
 // 資料夾。
 //
-// 只在技能包那一段、而且真的已經有裝過的時候才出現：全新的機器沒有東西要換新，
-// 那顆按鈕只會讓人以為自己漏了一步。
+// ⚠️ 這一條掛在第一頁（環境），不是技能包那一段——Reed 拍板。理由是時機：走到技能包
+// 那一段的時候，安裝已經一路覆蓋過去了，那顆按鈕變成事後補救。第一頁是他還沒動手裝
+// 任何東西的那一刻，先清乾淨再裝才是它真正有用的地方。技能包那一段原本那一顆同時
+// 拿掉——同一件事只留一個入口，兩顆的行為遲早會走鐘。
+//
+// ⚠️ 範圍是「嚮導要寫的資料夾」，不是「不在這一輪名單裡的東西」。學生自己裝的 skill
+// 永遠不進入判斷——那是 legacy.js 第一版被推翻的教訓，不要再走回去。
 function resetSkillsNotice() {
-  if (state.activeSectionId !== "skills") {
+  if (state.activeSectionId !== "env" || state.wizardSkills.length === 0) {
     return null;
   }
 
-  const installed = (state.lastChecks ?? []).filter(
-    (check) => check.id.startsWith("skill-") && check.status !== "missing",
+  const names = state.wizardSkills.map((skill) => skill.name).join("、");
+  // 第三方那幾支（npx skills add 裝的）重裝要連得上網，講清楚才不會斷網時卡住。
+  const external = state.wizardSkills.filter(
+    (skill) => skill.kind === "external",
   );
-
-  if (installed.length === 0) {
-    return null;
-  }
+  const networkNote =
+    external.length === 0
+      ? ""
+      : `其中 ${external.length} 支是從網路上抓的（${external
+          .map((skill) => skill.name)
+          .join("、")}），重裝需要連得上網。`;
 
   return {
-    text: "上過課的人：可以把工作坊的 skill 整個換新一份",
+    text: `這台機器上已經有 ${state.wizardSkills.length} 支嚮導要裝的 skill：${names}`,
     detail:
-      "安裝只會覆蓋我們現在發的那幾個檔案，舊版留下的其他東西會留在同一個資料夾裡，而 Claude 載入時看的是整個資料夾。這顆會把舊的搬到隔離區（不是刪除）再裝一份乾淨的。你自己裝的 skill 不會被碰到。",
+      "它們多半是上一輪工作坊裝的。直接安裝只會覆蓋我們現在發的那幾個檔案，舊版留下的其他東西會留在同一個資料夾裡，而 Claude 載入時看的是整個資料夾。按下面那顆會先把舊的搬到隔離區（不是刪除，路徑會印在「看原始輸出」裡）再裝一份乾淨的。你自己裝的 skill 不會被碰到。" +
+      networkNote,
     actions: [
       {
-        label: "把工作坊的 skill 換新",
+        label: "先搬到隔離區，再裝乾淨的",
         onClick: () =>
           run("reset-workshop-skills", undefined, null, {
             lang: state.selectedLanguage,
@@ -1454,30 +1581,44 @@ function straySkillNotice() {
   };
 }
 
-// 環境段的同一件事：同一支 CLI 有兩份時，正在用的不一定是新的那份。
+// 第一頁的另一條：上一輪用 `npm install -g` 裝的 claude / codex 還在。
 //
-// 按鈕只在真的有兩份時才出現，而且移除那支腳本自己會再問 npm 一次——npm 說它沒有
-// 那個套件就什麼都不做。兩份可能都不是 npm 裝的（例如他自己編的），那不該我們來動。
+// ⚠️ 判準是 npmInstalled（伺服器那邊問過 npm ls -g），不是「PATH 上有幾份」。
+// 原本看份數的寫法漏掉最重要的一種機器：只有 npm 那一份、沒有新版——那一列是綠的、
+// 只有一份、看起來毫無問題，但他用的是上一輪的舊版，而且嚮導不會去裝新的
+//（Reed 這台的 codex 正是這樣，改判準之前完全不會被指出來）。
+//
+// 移除那支腳本自己會再問 npm 一次，兩邊同一個判準——畫面上說有、按下去卻說沒有，
+// 是最傷信任的一種不一致。
 function duplicateCliNotice() {
   if (state.activeSectionId !== "env") {
     return null;
   }
 
-  const duplicated = (state.envChecks ?? []).filter(
-    (check) => (check.duplicates ?? []).length > 1,
+  const legacy = (state.envChecks ?? []).filter(
+    (check) => check.npmInstalled === true,
   );
 
-  if (duplicated.length === 0) {
+  if (legacy.length === 0) {
     return null;
   }
+
+  // 兩種機器要講不一樣的話：只有舊版的那台是「你現在用的就是舊的」，兩份都有的
+  // 那台是「跑起來的不一定是新的」。混成同一句的話，前者會以為自己沒事。
+  const onlyLegacy = legacy.filter(
+    (check) => (check.copies ?? []).length < 2,
+  );
 
   return {
     // 方向詞要跟真的位置一致。按鈕排在這段文字的下面（.section-notice 是直排的
     // flex），原本寫「按右邊那顆」——這個 repo 修過好幾次同一種錯：文案把學生指向
     // 一個不存在的位置，他就開始找、找不到就以為畫面壞了。
-    text: `${duplicated.map((check) => check.label).join("、")} 在這台機器上不只一份`,
+    text: `${legacy.map((check) => check.label).join("、")} 是上一輪用 npm 裝的舊版`,
     detail:
-      "正在用的是 PATH 裡排在最前面那一份，不一定是最新的。上一輪工作坊是用 npm 裝的，按下面那顆會把 npm 那一份移除（可逆：npm install -g 就裝得回來）。完整路徑在「看原始輸出」裡。",
+      (onlyLegacy.length === legacy.length
+        ? "這台機器上只有 npm 那一份，所以你現在用的就是上一輪的舊版——嚮導看它跑得起來，不會另外幫你裝新的。"
+        : "新舊兩份可以並存，跑起來的是 PATH 裡排在最前面那一份，不一定是新的。") +
+      "按下面那顆會把 npm 那一份移除（可逆：npm install -g 就裝得回來），移除完再按各列的安裝鍵裝新版。完整路徑在「看原始輸出」裡。",
     actions: [
       {
         label: "移除 npm 裝的舊版",
@@ -1540,7 +1681,11 @@ async function checkConfigs() {
     // 排在後面的話，這一次畫的是上一輪的清單，而畫完之後沒有人再畫一次——學生把
     // skill 搬走了，那條提示照樣掛在那裡（VM 實測）。環境那半本來就是這個順序，
     // 所以重複安裝那條會正常消失，兩邊對照就看得出來是順序的問題。
+    reportStrayScan(result.strayScan, result.strays ?? []);
     reportStraySkills(result.strays ?? []);
+    // ⚠️ 這一行同樣要排在 renderWizard 前面：它是第一頁那條「先搬到隔離區」的資料
+    // 來源。排在後面的話，搬完之後那條提示還會掛著（跟殘留那條同一個坑）。
+    reportWizardSkills(result.wizardSkills ?? []);
     state.availableActions = new Set([
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),

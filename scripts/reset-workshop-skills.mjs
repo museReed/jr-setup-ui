@@ -6,8 +6,13 @@
 // 同一個資料夾裡——例如以前有、現在沒有的附屬檔——而檢查只逐字比對我們發的那幾個，
 // 完全看不到它們。Claude 載入 skill 時看的是整個資料夾。
 //
-// ⚠️ 只碰工作坊自己發的那幾個名字（stepsForTools 列出來的 skill 步驟）。學生自己裝的
-// skill 一個都不會被動到。
+// ⚠️ 只碰嚮導自己要裝的那幾個資料夾（stepsForTools 列出來的 skill 與 external-skill
+// 步驟）。學生自己裝的 skill 一個都不會被動到。
+//
+// external-skill（npx skills add 裝的第三方 skill）也在範圍裡——Reed 拍板。它們跟
+// 工作坊自己那幾支一樣是「覆蓋不刪」，舊版留下的檔案照樣會被 Claude 載入。代價是
+// 重裝要連得上網（npx 會去抓），斷網時那幾支會失敗而工作坊那幾支不會——所以下面
+// 分開報結果，不要讓一支第三方的失敗看起來像整批都壞了。
 //
 // ⚠️ 搬，不是刪。學生可能改過那支 skill——改動會原封不動留在隔離區裡，路徑印在下面。
 import { spawn } from "node:child_process";
@@ -34,9 +39,18 @@ const tools = arg("tools", "claude").split(",");
 const lang = arg("lang", "zh-TW");
 const home = homedir();
 
-// skill 步驟的落點資料夾。第一個檔案一定是 <資料夾>/SKILL.md（見 config-install 的
+// 這一步的落點資料夾。
+//
+// 工作坊自己那幾支：第一個檔案一定是 <資料夾>/SKILL.md（見 config-install 的
 // skillStep），附屬檔案都在同一個資料夾底下。
+//
+// 第三方那幾支：marker 就是落點目錄本身。Playwright（Claude）那筆例外——它是寫進
+// ~/.claude.json 的 MCP 設定，沒有目錄，所以那個 includes("/skills/") 要留著。
 function skillDirOf(step) {
+  if (step.kind === "external-skill") {
+    return step.marker?.includes("/skills/") ? step.marker : null;
+  }
+
   const skillFile = (step.files ?? []).find((file) =>
     file.target.endsWith("/SKILL.md"),
   );
@@ -45,7 +59,9 @@ function skillDirOf(step) {
 
 const steps = stepsForTools(tools)
   .map((id) => describeStep(id, { lang, home }))
-  .filter((step) => step.kind === "skill");
+  .filter(
+    (step) => step.kind === "skill" || step.kind === "external-skill",
+  );
 const existing = steps
   .map((step) => ({ step, dir: skillDirOf(step) }))
   .filter(({ dir }) => dir !== null && existsSync(dir));
@@ -93,6 +109,13 @@ for (const { step } of existing) {
   if (code !== 0) {
     failed = true;
     console.error(`  ${step.label} 重裝失敗（exit ${code}）`);
+
+    // 第三方那幾支是 npx 去網路上抓的，最常見的失敗原因就是連不上。分開講，
+    // 不然學生看到「重裝失敗」會以為整批都壞了，而工作坊自己那幾支其實好好的。
+    if (step.kind === "external-skill") {
+      console.error("    這一支是從網路上抓的，連不上網時會失敗。");
+      console.error(`    舊的那份還在隔離區，路徑在下面——搬得回來。`);
+    }
   }
 }
 

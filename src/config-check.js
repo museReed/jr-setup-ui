@@ -768,7 +768,13 @@ export async function checkAgentHooks(step, materials) {
 // skill 只有一個檔案，但「檔案在」照樣不等於「是這一版」——auto-rename 的 SKILL.md
 // 還要把 $HOME 換成絕對路徑才叫得動命名腳本，換錯或沒換都是安裝完看起來正常、
 // 用起來被權限層擋下。所以比對的是「套過代換的原始素材」。
+// target 只給「看原始輸出」用，畫面上的那一列不讀它。
+//
+// 沒裝的時候 detail 只有「尚未安裝」三個字——那句話沒有講「我去哪裡找過」，所以
+// 學生（和驗收的人）分不出「查過那個路徑、真的沒有」跟「根本沒查到那一支」。已裝
+// 的那條路本來就把路徑寫進 detail 了，這裡是把另外三條補齊。
 export async function checkSkill(step, materials) {
+  const target = step.files[0]?.target ?? null;
   const missing = step.files.filter((file) => !existsSync(file.target));
 
   if (missing.length > 0) {
@@ -777,6 +783,7 @@ export async function checkSkill(step, materials) {
       label: step.label,
       status: "missing",
       detail: "尚未安裝",
+      target,
     };
   }
 
@@ -789,6 +796,7 @@ export async function checkSkill(step, materials) {
         label: step.label,
         status: "warn",
         detail: "嚮導內建的素材不完整，請重新下載嚮導",
+        target,
       };
     }
 
@@ -803,6 +811,7 @@ export async function checkSkill(step, materials) {
         label: step.label,
         status: "warn",
         detail: "裝的是舊版——重跑安裝，然後開新的 session",
+        target,
       };
     }
   }
@@ -812,6 +821,7 @@ export async function checkSkill(step, materials) {
     label: step.label,
     status: "ok",
     detail: `已安裝 → ${step.files[0].target}`,
+    target,
   };
 }
 
@@ -1067,14 +1077,7 @@ export function checkDemo(step) {
 //（readdir 的 isDirectory() 對 symlink 回 false，Reed 那台的 html-debug-overlay 就是
 // 這樣被跳過的）。既然要找的名字是已知的，直接問就好，也順便沒有那個死角。
 export function straySkillDirs(steps, retired = RETIRED_SKILLS) {
-  const roots = new Set();
-
-  for (const step of steps) {
-    for (const dir of skillDirsOf(step)) {
-      roots.add(path.dirname(dir));
-    }
-  }
-
+  const roots = straySkillRoots(steps);
   const strays = [];
 
   for (const root of roots) {
@@ -1091,6 +1094,70 @@ export function straySkillDirs(steps, retired = RETIRED_SKILLS) {
   }
 
   return strays;
+}
+
+// 掃描會看的那幾個 skills 根目錄。抽出來是為了讓原始輸出寫得出「掃了哪裡」——沒有
+// 這一句的話，一台沒有殘留的機器上，log 裡看不出這個檢查跑過。
+export function straySkillRoots(steps) {
+  const roots = new Set();
+
+  for (const step of steps) {
+    for (const dir of skillDirsOf(step)) {
+      roots.add(path.dirname(dir));
+    }
+  }
+
+  return [...roots];
+}
+
+// 這一輪嚮導會裝的每一支 skill，以及它在這台機器上是不是已經有了。
+//
+// ⚠️ 跟 straySkillDirs 是兩條不同的規則，不要混在一起看：
+//
+//   straySkillDirs   「已經停發的名字」還躺在機器上。名單（RETIRED_SKILLS）是空的，
+//                    所以實務上抓不到東西——那是對的，從來沒有 skill 被停發過。
+//   scanWizardSkills 「我等一下要寫的就是這個資料夾」而它已經有東西了。回訪學生
+//                    幾乎必中，因為上一輪裝的就是同樣那幾支。
+//
+// 為什麼第一頁就要抓：安裝是覆蓋，只寫我們現在發的那幾個檔案。上一輪留下的其他檔案
+// 會留在同一個資料夾裡，而 Claude 載入 skill 時看的是整個資料夾。先搬走再裝，那個
+// 資料夾才真的只有這一輪的東西。
+//
+// 兩個 agent 一起掃，不跟著這次選了哪些工具走（理由同 scanStraySkills）：他機器上
+// 躺著什麼，跟他這次打算用哪一個工具無關。
+export function scanWizardSkills(lang) {
+  return wizardSkillDirs(
+    stepsForTools(["claude", "codex"]).map((id) =>
+      describeStep(id, { lang, home: HOME }),
+    ),
+  );
+}
+
+// 上面那個的純函式版本：吃步驟、吐「已經在那裡」的清單。抽出來才測得到——
+// scanWizardSkills 讀的是真的家目錄，測試在別人的機器上會抓到不一樣的東西。
+export function wizardSkillDirs(steps) {
+  const found = [];
+
+  for (const step of steps) {
+    for (const dir of skillDirsOf(step)) {
+      if (!existsSync(dir)) {
+        continue;
+      }
+
+      found.push({
+        id: step.id,
+        label: step.label,
+        name: path.basename(dir),
+        path: dir,
+        // 工作坊自己發的（materials 裡的檔案）跟第三方的（npx skills add 裝的）重裝
+        // 方式不一樣，畫面上也要講得出差別——第三方那幾支要連得上網才回得來。
+        kind: step.kind === "skill" ? "workshop" : "external",
+        agent: dir.includes("/.agents/") ? "codex" : "claude",
+      });
+    }
+  }
+
+  return found;
 }
 
 // 這一步會在 skills 根目錄底下佔用哪幾個資料夾。
@@ -1119,11 +1186,25 @@ function skillDirsOf(step) {
 // 誤報的疑慮靠另一件事解掉：「這一輪發的」那份名單也用全部工具的，所以 codex 這一輪
 // 正在發的 skill 不會因為沒被選到而被講成殘留。
 export function scanStraySkills(lang) {
-  return straySkillDirs(
-    stepsForTools(["claude", "codex"]).map((id) =>
-      describeStep(id, { lang, home: HOME }),
-    ),
+  return strayScanReport(lang).strays;
+}
+
+// 同一次掃描，但連「掃了哪裡、比對了哪些名字」一起回去。
+//
+// 網頁拿它寫進「看原始輸出」。RETIRED_SKILLS 今天是空的，所以 strays 永遠是空陣列
+// ——只回結果的話，log 裡什麼都沒有，而「查過但沒有殘留」跟「這個檢查根本沒跑」在
+// 畫面上完全分不出來。retired 一起回去，那句「名單是空的」才是學生（和驗收的人）
+// 看得到的事實，而不是只寫在 legacy.js 的註解裡。
+export function strayScanReport(lang) {
+  const steps = stepsForTools(["claude", "codex"]).map((id) =>
+    describeStep(id, { lang, home: HOME }),
   );
+
+  return {
+    roots: straySkillRoots(steps),
+    retired: [...RETIRED_SKILLS],
+    strays: straySkillDirs(steps),
+  };
 }
 
 export async function runConfigCheck({ tools, lang }) {
@@ -1163,11 +1244,17 @@ export async function runConfigCheck({ tools, lang }) {
     }
   }
 
+  const scan = strayScanReport(lang);
+
   return {
     lang,
     tools,
     checks: checks.map(withActions),
-    strays: scanStraySkills(lang),
+    strays: scan.strays,
+    // 掃描範圍另外帶一份給「看原始輸出」用。strays 是結果，這個是「查了什麼」。
+    strayScan: { roots: scan.roots, retired: scan.retired },
+    // 第一頁那條「先搬到隔離區再裝」用的：嚮導要寫的資料夾裡，哪幾個已經有東西了。
+    wizardSkills: scanWizardSkills(lang),
   };
 }
 

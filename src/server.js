@@ -9,7 +9,11 @@ import {
   runAction,
   terminateRun,
 } from "./run-registry.js";
-import { runConfigCheck, scanStraySkills } from "./config-check.js";
+import {
+  runConfigCheck,
+  scanWizardSkills,
+  strayScanReport,
+} from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
 import { contentDir, VERIFY_SHOT_AGENTS, verifyShotPath } from "./paths.js";
@@ -213,11 +217,16 @@ export async function startServer({
   if (tools.length === 0) {
     // 一個工具都沒選時沒有步驟可查，但殘留掃描照樣要跑：「我機器上還躺著上一輪的
     // 東西」跟他這次打算用哪一個工具無關，而這正是他還在第一張卡上的那一刻。
+    const scan = strayScanReport(lang);
+
     sendJson(response, 200, {
       lang,
       tools,
       checks: [],
-      strays: scanStraySkills(lang),
+      strays: scan.strays,
+      strayScan: { roots: scan.roots, retired: scan.retired },
+      // 一個工具都沒選也要回：這條提示掛在第一頁，而第一頁正是還沒選工具的那一刻。
+      wizardSkills: scanWizardSkills(lang),
     });
     return;
   }

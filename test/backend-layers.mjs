@@ -160,6 +160,55 @@ try {
     "sse.js 不依賴任何一層——它只是事件格式",
   );
   ok("sse.js 是純協定層，不依賴任何人");
+
+  // 找到幾份都要把結果帶回去，包含 0 份與 1 份，而且 npmInstalled 一律是布林值。
+  //
+  // 兩件事都是「這個檢查真的跑過」的證據：duplicates 只有 ≥2 份時才有，所以一台
+  // 沒有並存的機器上，網頁完全收不到任何痕跡——「查過但沒事」跟「根本沒查」分不
+  // 出來。這幾條釘住那個提前 return，改回去就會紅。
+  const envCheck = read("env-check.js");
+  assert.match(
+    envCheck,
+    /if \(check\.status !== "ok" \|\| found\.length < 2\) \{\s*\n\s*return \{ \.\.\.check, \.\.\.legacy \};/,
+    "withDuplicateNote 不管找到幾份都要把 legacy 那組欄位帶回去",
+  );
+  assert.match(
+    envCheck,
+    /npmInstalled: \(await npmPackages\)\.has\(npmPackage\)/,
+    "npmInstalled 要一律算出來，不能有就帶、沒有就省略",
+  );
+  ok("舊版檢查的結果一定回得去，沒有並存時也一樣");
+
+  // ⚠️ npm 舊版的判準只能有一個：問 npm。畫面上那條提示與移除腳本要用同一句話，
+  // 不然會出現「畫面說有、按下去說沒有」——最傷信任的那種不一致。
+  //
+  // 而且看路徑會漏掉最重要的一種機器：只有 npm 那一份、沒有新版。那一列是綠的、
+  // 只有一份，看起來毫無問題，但他用的就是上一輪的舊版。
+  assert.match(
+    envCheck,
+    /npm ls -g --depth=0 --json|"ls", "-g", "--depth=0", "--json"/,
+    "npm 舊版的判準要問 npm 本人，不是看路徑猜",
+  );
+  const uninstall = readFileSync(
+    new URL("../scripts/uninstall-legacy-cli.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    uninstall,
+    /"ls", "-g", "--depth=0", "--json"/,
+    "移除腳本要跟環境檢查用同一個判準",
+  );
+  ok("npm 舊版的判準只有一個，畫面與移除腳本共用");
+
+  // 兩條 /configs 分支都要帶掃描範圍。少一條的話，「一個工具都沒選」那條路上的
+  // 原始輸出就會看不到殘留檢查——而那正是回訪學生剛開頁的那一刻。
+  assert.equal(
+    [...server.matchAll(/strayScan:/g)].length,
+    1,
+    "沒選工具那條分支也要回 strayScan",
+  );
+  assert.match(server, /strayScanReport\(lang\)/);
+  ok("殘留掃描的範圍在兩條 /configs 分支上都回得去");
 } catch (error) {
   console.log(`not ok - ${error.message}`);
   process.exitCode = 1;

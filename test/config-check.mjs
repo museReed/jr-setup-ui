@@ -19,7 +19,10 @@ import {
   resolveBash,
   scanStraySkills,
   straySkillDirs,
+  straySkillRoots,
+  strayScanReport,
   wiredToScript,
+  wizardSkillDirs,
 } from "../src/config-check.js";
 import {
   describeStep,
@@ -454,6 +457,102 @@ process.stdin.on("end", () => {
   );
   assert.deepEqual(scanStraySkills("zh-TW"), []);
   ok("退場名單目前是空的，真機上不會標出任何東西");
+
+  // 掃描要回報「掃了哪裡、比對了哪些名字」，不是只回結果。
+  //
+  // 名單是空的時候 strays 永遠是空陣列，而「查過、沒有殘留」跟「這段程式根本沒被
+  // 呼叫到」在原始輸出裡長得一模一樣。roots 與 retired 就是用來分辨這兩件事的——
+  // 網頁把它們寫進「看原始輸出」，真機驗收才驗得到這個檢查有沒有跑。
+  const scan = strayScanReport("zh-TW");
+  assert.deepEqual(scan.strays, []);
+  assert(scan.roots.length > 0, "掃描範圍不能是空的，否則等於什麼都沒查");
+  assert.deepEqual(scan.retired, RETIRED_SKILLS);
+  ok("殘留掃描連掃描範圍一起回報，沒抓到東西時也看得出它跑過");
+
+  // 兩個 agent 的根目錄都要在範圍裡——第一次進來預設只選 claude，但掃描不跟著選擇走。
+  assert(
+    scan.roots.some((root) => root.includes(path.join(".claude", "skills"))),
+    "claude 那半的 skills 根目錄要在掃描範圍裡",
+  );
+  assert(
+    scan.roots.some((root) => root.includes(path.join(".agents", "skills"))),
+    "codex 那半的 skills 根目錄要在掃描範圍裡",
+  );
+  ok("掃描範圍涵蓋兩個 agent 的 skills 根目錄");
+
+  // roots 是掃描範圍的唯一來源，straySkillDirs 跟報告都走它——兩邊各算一次的話，
+  // 畫面上寫的範圍會跟實際掃的範圍慢慢走鐘。
+  assert.deepEqual(
+    straySkillRoots(steps),
+    [path.dirname(path.join(claudeSkills, "handoff"))],
+  );
+  ok("掃描範圍由 straySkillRoots 單一來源算出來");
+
+  // ⚠️ 第一頁那條「先搬到隔離區再裝」用的是另一條規則，跟殘留完全不同：
+  // 殘留看的是「已經停發的名字」（名單空的，抓不到東西），這裡看的是「我等一下要
+  // 寫的就是這個資料夾，而它已經有東西了」。回訪學生幾乎必中。
+  const codexSkillRoot = path.join(skillRoot, ".agents", "skills");
+  const wizardSteps = [
+    {
+      id: "skill-handoff",
+      label: "handoff（Claude）",
+      kind: "skill",
+      files: [
+        { target: `${claudeSkills}/handoff/SKILL.md`.replaceAll("\\", "/") },
+      ],
+    },
+    // 還沒裝的那一支不該出現在清單裡——沒東西可搬。
+    {
+      id: "skill-not-here",
+      label: "還沒裝的",
+      kind: "skill",
+      files: [
+        { target: `${claudeSkills}/not-here/SKILL.md`.replaceAll("\\", "/") },
+      ],
+    },
+    // 第三方那幾支（npx skills add 裝的）也在範圍裡（Reed 拍板）。
+    {
+      id: "ext-frontend-design-codex",
+      label: "frontend-design（Codex）",
+      kind: "external-skill",
+      marker: `${codexSkillRoot}/old-codex-thing`.replaceAll("\\", "/"),
+    },
+    // Playwright 那筆是寫進 ~/.claude.json 的 MCP 設定，沒有目錄——不能被當成
+    // 一個要搬走的資料夾。
+    {
+      id: "ext-playwright-claude",
+      label: "Playwright（Claude）",
+      kind: "external-skill",
+      marker: undefined,
+    },
+  ];
+
+  const wizardFound = wizardSkillDirs(wizardSteps);
+  assert.deepEqual(
+    wizardFound.map((skill) => skill.name),
+    ["handoff", "old-codex-thing"],
+  );
+  ok("嚮導要裝、而機器上已經有的 skill 抓得到，沒裝的與沒有目錄的都不算");
+
+  // 工作坊自己那幾支跟第三方要分得出來：第三方重裝要連得上網，畫面上得講。
+  assert.deepEqual(
+    wizardFound.map((skill) => skill.kind),
+    ["workshop", "external"],
+  );
+  // agent 判斷靠落點在哪個根目錄，隔離區才分得開同名的兩支。
+  assert.deepEqual(
+    wizardFound.map((skill) => skill.agent),
+    ["claude", "codex"],
+  );
+  ok("工作坊與第三方、claude 與 codex 都分得出來");
+
+  // ⚠️ 學生自己裝的 skill 永遠不進入判斷——這正是 legacy.js 第一版被推翻的教訓。
+  // 上面那棵樹裡有 my-own-thing，它不在嚮導的步驟裡，所以永遠不該出現。
+  assert(
+    !wizardFound.some((skill) => skill.name === "my-own-thing"),
+    "只看嚮導自己要寫的資料夾，學生自己裝的一支都不能碰",
+  );
+  ok("學生自己裝的 skill 不會被列進要搬走的清單");
 
   // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
   //
