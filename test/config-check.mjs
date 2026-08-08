@@ -16,6 +16,7 @@ import {
   checkTabSync,
   probeHook,
   resolveBash,
+  straySkillDirs,
   wiredToScript,
 } from "../src/config-check.js";
 import {
@@ -358,6 +359,51 @@ process.stdin.on("end", () => {
   // mac 沒有腳本檔，那一列本來就是一行指令，一律當通過。
   assert.equal(wiredToScript("bash -c '...'", null), true, "mac 不受這條限制");
   ok("Windows 的狀態列必須指到落地的 .ps1，舊的一行寫法會被判成要重裝");
+
+  // 上過舊一輪工作坊的機器上，改名或停發的 skill 會留在那裡——skill 是覆蓋不刪除的，
+  // 而 Claude 照樣會載入它。hook 註冊、rc 區塊、Codex 的舊 key 都有主動清理，skill 沒有。
+  const skillRoot = path.join(dir, "skills");
+  const claudeSkills = path.join(skillRoot, ".claude", "skills");
+  mkdirSync(path.join(claudeSkills, "handoff"), { recursive: true });
+  writeFileSync(path.join(claudeSkills, "handoff", "SKILL.md"), "# 這一輪有發\n");
+  mkdirSync(path.join(claudeSkills, "old-namer"), { recursive: true });
+  writeFileSync(path.join(claudeSkills, "old-namer", "SKILL.md"), "# 上一輪的\n");
+  // `_shared` 那種底線開頭的是附屬檔案的家，不是一個 skill。
+  mkdirSync(path.join(claudeSkills, "_shared"), { recursive: true });
+  writeFileSync(path.join(claudeSkills, "_shared", "SKILL.md"), "# 不算\n");
+  // 沒有 SKILL.md 的資料夾不算——別把學生隨手放的東西講成殘留。
+  mkdirSync(path.join(claudeSkills, "notes"), { recursive: true });
+
+  const strays = straySkillDirs([
+    {
+      kind: "skill",
+      files: [{ target: `${claudeSkills}/handoff/SKILL.md`.replaceAll("\\", "/") }],
+    },
+  ]);
+  assert.deepEqual(
+    strays.map((stray) => stray.name),
+    ["old-namer"],
+  );
+  ok("掃得出上一輪留下的 skill，_shared 與沒有 SKILL.md 的資料夾不算");
+
+  // 學生只選了 Claude 時，~/.agents/skills 底下那些 codex skill 不該被講成多餘的
+  // ——那個根目錄這一輪根本沒有步驟指過去。
+  const codexSkills = path.join(skillRoot, ".agents", "skills");
+  mkdirSync(path.join(codexSkills, "handoff"), { recursive: true });
+  writeFileSync(path.join(codexSkills, "handoff", "SKILL.md"), "# codex 的\n");
+  assert.equal(
+    straySkillDirs([
+      {
+        kind: "skill",
+        files: [
+          { target: `${claudeSkills}/handoff/SKILL.md`.replaceAll("\\", "/") },
+        ],
+      },
+    ]).some((stray) => stray.path.includes(".agents")),
+    false,
+    "沒有步驟指過去的根目錄不掃",
+  );
+  ok("只掃這一輪真的有步驟指過去的 skills 根目錄");
 
   // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
   //
