@@ -25,6 +25,7 @@ const elements = {
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
   sectionPanel: document.querySelector("[data-section-panel]"),
   sectionStatus: document.querySelector("#section-status"),
+  sectionBlockers: document.querySelector("#section-blockers"),
   replayTour: document.querySelector("#replay-tour"),
   copyDiagnostics: document.querySelector("#copy-diagnostics"),
   copyRawOutput: document.querySelector("#copy-raw-output"),
@@ -1164,10 +1165,48 @@ export function renderWizardNav({ prev, next }) {
   renderNavButton(elements.wizardNext, next, "next");
 }
 
+// 進不了下一段時，擋著的是哪幾張。掛在進度條底下——那是「這一段還剩多少」的所在地，
+// 而這句話講的正是同一件事的另一半。
+//
+// 只在「這一段的最後一張已經做完」時才給（見 app.js）。學生站在最後一張、卡片寫著
+// 「已完成」，畫面上卻連一顆按鈕都沒有——那一刻他需要的是指名，不是「這段還沒做完」
+// 這種要他自己一張張往回翻的話（VM 實測）。
+function renderSectionBlockers(model) {
+  const host = elements.sectionBlockers;
+
+  if (host === null) {
+    return;
+  }
+
+  const items = model?.items ?? [];
+  host.replaceChildren();
+  host.hidden = items.length === 0;
+
+  if (items.length === 0) {
+    return;
+  }
+
+  const label = document.createElement("span");
+  label.className = "section-blockers-label";
+  label.textContent = `還有 ${items.length} 張沒完成，做完才能進下一段：`;
+  host.append(label);
+
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ds-btn ds-btn-sm section-blockers-item";
+    // 帶上第幾張：學生翻回去找的時候，序號比名稱好用。
+    button.textContent = `第 ${item.index + 1} 張 ${item.label}`;
+    button.addEventListener("click", () => model.onSelect(item.index));
+    host.append(button);
+  }
+}
+
 export function renderWizard(model) {
   elements.sectionStatus.textContent = model.sectionStatus;
   showSection(model.section.id);
   renderMilestones(model.section.id, model.milestones, model.onMilestoneSelect);
+  renderSectionBlockers(model.sectionBlockers);
   renderCard(model.cardModel);
 }
 

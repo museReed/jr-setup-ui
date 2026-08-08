@@ -586,6 +586,35 @@ body {
   margin-right: auto;
 }
 
+/* 進不了下一段時，擋著的是哪幾張。掛在進度條底下：那條說的是「這一段還剩多少」，
+   這一列說的是「剩的是哪幾張」——同一件事的兩半，放在一起才讀得順。
+   小人走在進度條上會超出邊界，所以上緣要留夠的空隙，不然會被牠壓到。 */
+.section-blockers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.section-blockers-label {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* 畫成次要的：這一列是「你還差這些」，不是「按這裡前進」。畫得太搶眼會讓學生
+   以為那才是主要動作。 */
+.section-blockers-item {
+  background: var(--color-bg-inset);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.section-blockers-item:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+}
+
 /* driver.js 的泡泡預設是白底藍鈕，跟這頁的暗色卡片不同世界。長相全部拉回
    設計系統的變數，只留它的定位與遮罩邏輯。 */
 .driver-popover.jr-tour {

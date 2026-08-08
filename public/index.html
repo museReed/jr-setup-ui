@@ -64,6 +64,10 @@
             </div>
           </div>
         </div>
+        <!-- 進不了下一段時，擋著的是哪幾張。只在這一段的最後一張做完之後才出現——
+             學生站在最後一張、卡片寫著「已完成」，畫面上卻沒有下一步，那一刻才需要
+             有人指名（VM 實測：他手動按了重查才知道是別張卡的事）。 -->
+        <div id="section-blockers" class="section-blockers" hidden></div>
       </div>
       </div>
 
