@@ -66,7 +66,10 @@ async function sameAsSource(materials, step) {
 // 自己加的東西不影響，因為只檢查有沒有，不檢查有沒有多。
 //
 // TOML 的 # 是註解，可以不算；Markdown 的 # 是標題，是實質內容，不能丟。
-async function containsSourceContent(materials, step) {
+// 匯出的原因：開終端合併那支腳本要用同一個判準等「合併完成了沒」。
+// 各寫一份的話，畫面上說已完成、腳本還在等（或反過來），而那兩個判斷本來就該是
+// 同一句話。
+export async function containsSourceContent(materials, step) {
   const source = path.join(materials, step.source);
 
   if (!existsSync(source) || !existsSync(step.target)) {
@@ -1270,7 +1273,9 @@ export function withActions(check) {
       (check.status === "ok" && check.reinstallable !== true)
         ? null
         : "install-config-step",
-    mergeAction: check.needsMerge === true ? "merge-config-step" : null,
+    // 開終端那條，不是背景那條（見 actions.js 的註解：背景跑看不到授權框，
+    // 也答不了 agent 中途的提問）。
+    mergeAction: check.needsMerge === true ? "merge-in-terminal" : null,
     // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端
     // 視窗讓學生看，程式判定不了，所以一定配一個 eye 說明。
     verifyAction:

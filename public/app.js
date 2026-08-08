@@ -590,7 +590,7 @@ function renderWizard() {
                 action: EYE_ROW_ACTIONS[card.checkId].action,
                 dataName: "verifyAction",
                 text: mergePending
-                  ? "先按「用 AI 合併」"
+                  ? "先按「開終端用 AI 合併」"
                   : EYE_ROW_ACTIONS[card.checkId].text,
                 rowId: `eye-${card.checkId}`,
                 step: `eye-${card.checkId}`,
@@ -603,7 +603,7 @@ function renderWizard() {
           action: check.verifyAction,
           dataName: "verifyAction",
           text: mergePending
-            ? "先按「用 AI 合併」"
+            ? "先按「開終端用 AI 合併」"
             : verified.has(check.id)
               ? "重跑驗證"
               : "驗證",
@@ -1878,7 +1878,11 @@ async function handleDone(
   if (
     step !== null &&
     step !== undefined &&
-    (action.startsWith("install-") || action === "merge-config-step")
+    (action.startsWith("install-") ||
+      action === "merge-config-step" ||
+      // 開終端那條也算「這一步動過了」。漏掉的話合併完成了卻不算已安裝，那張卡的
+      // 徽章會停在「未安裝」——而檔案其實已經併好了。
+      action === "merge-in-terminal")
   ) {
     state.installedSteps.add(step);
   }

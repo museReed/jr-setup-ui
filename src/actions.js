@@ -40,6 +40,10 @@ const verifyInTerminalScript = moduleFile(
   "../scripts/verify-in-terminal.mjs",
   import.meta.url,
 );
+const mergeInTerminalScript = moduleFile(
+  "../scripts/merge-in-terminal.mjs",
+  import.meta.url,
+);
 const quarantineSkillsScript = moduleFile(
   "../scripts/quarantine-skills.mjs",
   import.meta.url,
@@ -375,9 +379,42 @@ Object.assign(actions, {
       "叫真的 Claude 跑一次，確認命名 hook 有被觸發、名字有寫進檔案。" +
       "終端標題那一格 headless 驗不到，輸出會請學生回自己的終端看一眼。",
   },
+  // 合併改成開一個真的終端視窗（Reed 指定）。背景那條留在下面，理由見它的註解。
+  //
+  // 為什麼要換：Codex 的 Windows 沙箱第一次用會跳系統授權框，那個框跳在嚮導視窗
+  // 後面，學生順手關掉——嚮導只拿到 `ShellExecuteExW failed: 1223`（使用者取消），
+  // 畫面上是一張沒頭沒尾的紅卡。agent 中途要批准寫入時也一樣，背景那條沒有人可以
+  // 回答。真機實測一次失敗的合併跑了 7 分鐘、53 萬 tokens，全在重試同一件做不到的
+  // 事，而學生完全看不到。
+  //
+  // 開視窗之後那支腳本會輪詢檔案，等工作坊那段真的進去了才回報完成——判準跟畫面上
+  // 那一列用的是同一個函式，不是各寫一份。
+  "merge-in-terminal": {
+    kind: "fixed",
+    label: "開終端用 AI 合併",
+    cmd: process.execPath,
+    options: {
+      step: STEP_IDS,
+      lang: LANGUAGES,
+      tools: ["claude", "codex", "claude,codex"],
+    },
+    buildArgs: ({ step, lang, tools }) => [
+      mergeInTerminalScript,
+      `--step=${step}`,
+      `--lang=${lang}`,
+      `--tools=${tools}`,
+    ],
+    description:
+      "開一個真的終端視窗，讓 AI 在裡面合併設定——學生看得到授權框、也答得了它的問題。",
+  },
+  // ⚠️ 背景版本留著但畫面上已經不用它（config-check 的 mergeAction 指向上面那個）。
+  //
+  // 不刪的理由：它是唯一一條「不開視窗就能合併」的路。哪天要做無人值守的批次安裝
+  // （例如教室統一佈署），那時要的是這一條。刪掉之後再寫回來，會連同上面那幾個
+  // engine / permission 的判斷一起重推一次。
   "merge-config-step": {
     kind: "agent",
-    label: "用 AI 幫我合併",
+    label: "用 AI 幫我合併（背景，畫面上已改用開終端那條）",
     // 用哪個 agent 跟著第一張卡的工具選擇走，不寫死（Reed 指定）。
     //
     // 原本一律用 claude。選「只要 Codex」的學生機器上根本沒有 claude——那組檢查

@@ -22,6 +22,7 @@ import {
   straySkillRoots,
   strayScanReport,
   wiredToScript,
+  withActions,
   wizardSkillDirs,
 } from "../src/config-check.js";
 import {
@@ -31,6 +32,7 @@ import {
 } from "../src/config-install.js";
 import { RETIRED_SKILLS } from "../src/legacy.js";
 import { materialsDir } from "../src/paths.js";
+import { openTerminal } from "../src/terminal-window.js";
 
 const MATERIALS = materialsDir();
 
@@ -553,6 +555,33 @@ process.stdin.on("end", () => {
     "只看嚮導自己要寫的資料夾，學生自己裝的一支都不能碰",
   );
   ok("學生自己裝的 skill 不會被列進要搬走的清單");
+
+  // ⚠️ 合併那顆指向「開終端」那條 action，不是背景那條。
+  //
+  // 指錯的話畫面上按鈕還在、也跑得動，但又回到「授權框跳在嚮導後面、學生看不到也
+  // 答不了」的狀態——那正是這次要修掉的東西。
+  assert.equal(
+    withActions({ id: "claude-md", needsMerge: true }).mergeAction,
+    "merge-in-terminal",
+  );
+  assert.equal(
+    withActions({ id: "claude-md", needsMerge: false }).mergeAction,
+    null,
+  );
+  ok("需要合併時給的是開終端那條，不需要時不給按鈕");
+
+  // 開視窗的指令只有兩種形狀，而且不能寫死在兩個地方（見 src/terminal-window.js）。
+  assert.equal(openTerminal("C:\\tmp\\x.ps1", "win32").cmd, "cmd.exe");
+  assert(openTerminal("C:\\tmp\\x.ps1", "win32").args.includes("wt.exe"));
+  // Restricted 是 Windows 預設值，少了這兩個參數新視窗會直接紅字「running scripts
+  // is disabled」，而嚮導這邊拿到的 exit code 還是 0（cmd start 一開完就回來）。
+  assert(openTerminal("C:\\tmp\\x.ps1", "win32").args.includes("-ExecutionPolicy"));
+  assert(openTerminal("C:\\tmp\\x.ps1", "win32").args.includes("Bypass"));
+  assert.deepEqual(openTerminal("/tmp/x.command", "darwin"), {
+    cmd: "open",
+    args: ["/tmp/x.command"],
+  });
+  ok("開終端的指令兩個平台各一種，Windows 那條帶 ExecutionPolicy Bypass");
 
   // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
   //

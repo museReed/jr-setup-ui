@@ -15,6 +15,12 @@ const source = readFileSync(
   path.join(repoRoot, "scripts/verify-in-terminal.mjs"),
   "utf8",
 );
+// 開視窗那一段搬去共用模組了（合併那支也要開一模一樣的視窗）。這條規則跟著搬，
+// 不是跟著刪——它擋的是「新視窗一跑就被執行原則擋下來」，那件事沒有變。
+const terminalWindow = readFileSync(
+  path.join(repoRoot, "src/terminal-window.js"),
+  "utf8",
+);
 
 assert(
   source.includes("-ArgumentList @("),
@@ -34,11 +40,17 @@ console.log("ok - 終端啟動腳本用陣列傳參數，不靠引號");
 // 裡面，所以標題同步那一格等於根本沒在驗。
 //
 // Bypass 只影響那一個行程，不動機器設定。機器本身的執行原則另有一張卡在管。
-for (const spawnSite of [
-  /"powershell\.exe",\s*\n\s*"-NoExit",[\s\S]*?"-ExecutionPolicy",\s*\n\s*"Bypass",/,
-  /Start-Process powershell\.exe -ArgumentList @\('-NoProfile','-ExecutionPolicy','Bypass','-File'/,
+for (const [where, spawnSite] of [
+  [
+    terminalWindow,
+    /"powershell\.exe",\s*\n\s*"-NoExit",[\s\S]*?"-ExecutionPolicy",\s*\n\s*"Bypass",/,
+  ],
+  [
+    source,
+    /Start-Process powershell\.exe -ArgumentList @\('-NoProfile','-ExecutionPolicy','Bypass','-File'/,
+  ],
 ]) {
-  assert.match(source, spawnSite);
+  assert.match(where, spawnSite);
 }
 console.log("ok - 自己 spawn 的 PowerShell 腳本一律帶 Bypass，不依賴機器設定");
 

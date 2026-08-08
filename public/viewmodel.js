@@ -162,7 +162,9 @@ export function agentNameFor(action, tools = null, step = null) {
     return "";
   }
 
-  if (action === "merge-config-step") {
+  // 兩個 id 都認：畫面上用的是開終端那條，背景那條留著給無人值守的批次安裝
+  // （見 actions.js）。只認一個的話，另一條路上的輸出會掛著錯的名字。
+  if (action === "merge-config-step" || action === "merge-in-terminal") {
     // 跟 actions.js 的 engine 同一條規矩：誰家的設定就是誰在跑。少改一處的話，
     // 畫面上的名字會跟實際動手的那一支對不上（Reed 實測：Codex 那張卡印著 Claude）。
     const selected = String(tools ?? "").split(",");
@@ -493,7 +495,10 @@ export function configRowModel(
     buttons.push({
       action: check.mergeAction,
       dataName: "mergeAction",
-      text: "用 AI 合併",
+      // 字要跟實際發生的事一致：按下去會跳出一個終端視窗。寫「用 AI 合併」的話，
+      // 突然冒出來的視窗看起來像出事了——這個 repo 修過好幾次同一種錯，文案讓學生
+      // 預期 A、實際發生 B，他就開始懷疑畫面壞了。
+      text: "開終端用 AI 合併",
       step: check.id,
     });
   }
@@ -1058,7 +1063,7 @@ export function terminalOutcomeLines({
           // 設計系統只有 prompt / ok / err 三個修飾 class，沒有 warn——用不存在的
           // class 不會報錯，只會靜靜地沒有樣式。這句不是錯誤，是「還要你做一件事」。
           className: "ds-term-line ds-term-line--prompt",
-          text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按「重跑驗證」。`,
+          text: `已有你自己的${label}，沒有覆蓋。請按「開終端用 AI 合併」把工作坊的設定併進去，再按「重跑驗證」。`,
         },
       ];
     }

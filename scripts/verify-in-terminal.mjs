@@ -17,20 +17,22 @@
 // LLM 去判：那是拿不確定性去換一件字串比對就能確定的事。
 import { spawn } from "node:child_process";
 import {
-  chmodSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import { describeStep, VAULT_DIR } from "../src/config-install.js";
 import { findObsidianApp } from "../src/config-check.js";
 import { materialsDir, verifyShotPath } from "../src/paths.js";
+import {
+  openTerminal,
+  writeLauncher as writeTerminalLauncher,
+} from "../src/terminal-window.js";
 
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
@@ -504,52 +506,15 @@ function writeLauncher(prompt) {
         ? agent
         : `${agent} '${prompt}'`;
 
-  if (process.platform === "win32") {
-    const file = path.join(tmpdir(), `jr-verify-${stamp}.ps1`);
-    const setEnv = envLines
-      .map(([name, value]) => `$env:${name} = '${value}'`)
-      .join("\n");
-    // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    writeFileSync(file, `\ufeff${setEnv}\n${body}\n`, "utf8");
-    return file;
-  }
-
-  const file = path.join(tmpdir(), `jr-verify-${stamp}.command`);
-  const setEnv = envLines
-    .map(([name, value]) => `export ${name}='${value}'`)
-    .join("\n");
-  // -i 讓 zsh 讀 ~/.zshrc，wrapper 才會存在。
-  writeFileSync(file, `#!/bin/zsh -i\n${setEnv}\n${body}\n`);
-  chmodSync(file, 0o755);
-  return file;
-}
-
-function openTerminal(launcher) {
-  if (process.platform === "win32") {
-    return {
-      cmd: "cmd.exe",
-      args: [
-        "/c",
-        "start",
-        "",
-        "wt.exe",
-        "powershell.exe",
-        "-NoExit",
-        // 我們自己寫出來的臨時腳本，不該看機器的執行原則臉色。Windows 預設是
-        // Restricted，新開的視窗會直接紅字「running scripts is disabled」，而嚮導這
-        // 邊看到的 exit code 還是 0——因為 cmd start 一開完就回來了（VM 實測）。
-        //
-        // Bypass 只影響這一個行程，不動機器設定。順帶把 profile 也救回來：Restricted
-        // 連 profile 都不載入，wrapper 就住在裡面，不載入等於整個標題同步沒在驗。
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        launcher,
-      ],
-    };
-  }
-
-  return { cmd: "open", args: [launcher] };
+  // 寫檔那一段搬去 src/terminal-window.js 了：合併那支
+  // （scripts/merge-in-terminal.mjs）要開一模一樣的視窗，各留一份的話，兩邊踩過的坑
+  // （BOM、不跳 profile、ExecutionPolicy Bypass）遲早只有一邊會修到。
+  return writeTerminalLauncher({
+    body,
+    env: Object.fromEntries(envLines),
+    prefix: "jr-verify",
+    stamp,
+  });
 }
 
 // 副產物出現了嗎？出現就回傳判定過的證據，還沒有就回 null。
