@@ -63,6 +63,30 @@ assert(claudeDarwin.args[1].includes("grep -qF"));
 assert(!codexDarwin.args[1].includes(".zshrc"));
 ok("claude 由嚮導冪等補 .zshrc，codex 的 PATH 交給它自己處理");
 
+// Windows 是同一件事、換成登錄檔。claude 的安裝器不寫永久 PATH（Windows VM 實測：
+// claude.exe 在 %USERPROFILE%\.local\bin，登錄檔的 User Path 裡沒有那個目錄），於是
+// 學生開新分頁打 claude 說找不到指令，而 tab-sync 寫進 profile 的包裝函式第一行就
+// 是去找真的 claude.exe，找不到直接噴紅字。
+//
+// env-path.js 那份保險只救得了嚮導自己 spawn 的子程序，救不了學生的新視窗。
+const claudeWinScript = claudeWindows.args.at(-1);
+assert(claudeWinScript.includes("SetEnvironmentVariable('Path'"));
+assert(claudeWinScript.includes("'User'"));
+assert(claudeWinScript.includes(".local\\bin"));
+// 冪等：已經在裡面就不再追加，否則重裝會長出第二筆一模一樣的目錄。
+assert(claudeWinScript.includes("-ieq"));
+assert(claudeWinScript.includes("TrimEnd('\\')"));
+// codex 自己會寫登錄檔，嚮導不插手——兩支的差異要各自鎖住。
+assert(
+  !resolveInstaller("codex", "win32").args.at(-1).includes("SetEnvironmentVariable"),
+);
+ok("Windows 的 claude 由嚮導冪等補使用者 PATH，codex 交給它自己寫");
+
+// $ErrorActionPreference = 'Stop' 是 macOS 那半 pipefail 的對稱：沒有它，irm 失敗時
+// iex 讀到空輸入會正常結束，整條回 exit 0——沒裝成功卻回報成功。
+assert(claudeWinScript.includes("$ErrorActionPreference = 'Stop'"));
+ok("Windows 的 claude 安裝失敗不會假裝成功");
+
 // 沒有這個變數，安裝器會問「Start Codex now?」——問句寫到 /dev/tty，也就是學生
 // 沒在看的那個終端機，然後停在那裡等永遠不會來的輸入。網頁輸入框寫的是 stdin，
 // 救不了。

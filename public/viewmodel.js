@@ -511,7 +511,13 @@ export function configRowModel(
     // 「再 check 一次」一直都在（只要這一列有得驗）。既然拿掉了會閃現的「驗證」
     // 按鈕，這顆就是學生唯一的重驗入口，不能等驗過一次才出現——上一輪重新整理
     // 之後就沒有安裝事件可以接，會變成完全驗不了。
-    showRetest: check.verifyAction != null && check.noInstall !== true,
+    // 等著合併的列不給驗證入口：那顆按下去驗的是一份還沒併進去的設定，會拿到一個
+    // 跟列上「需要合併」互相矛盾的結果。合併完檢查會重跑，needsMerge 消失，這顆
+    // 自己就回來了。
+    showRetest:
+      check.verifyAction != null &&
+      check.noInstall !== true &&
+      check.needsMerge !== true,
     guidance: guidanceModel({
       step: check.id,
       status,
@@ -893,6 +899,9 @@ export function checklistGroups({
     // 沒」，而它唯一的達成方式就是安裝。所以剛裝完也要當場打勾，不等下一次伺服器
     // 檢查回來——不然會出現「終端印安裝成功、這一列還寫尚未安裝」（VM 實測，
     // 合併卡的第一列）。
+    //
+    // 這份記憶只該活到下一次檢查回來為止：新的結果說 missing 時，那一筆會在
+    // app.js 的 forgetStaleInstalls 被清掉，這裡不必再擋一次。
     const settled = checked || installedCheckIds.has(candidate.id);
 
     system.push({
@@ -1151,6 +1160,16 @@ export function installVerificationFollowUp({ action, result, check }) {
     (result.exitCode !== 0 && result.benign !== true) ||
     check?.verifyAction == null
   ) {
+    return "none";
+  }
+
+  // 還沒合併就不接驗證。protectExisting 的檔案（codex 的 config.toml / AGENTS.md、
+  // CLAUDE.md）安裝時刻意什麼都不做，腳本照樣 exit 0——照著 exit code 往下接，
+  // 學生會被直接帶進終端去驗一份根本還沒併進去的設定（VM 實測 codex-config：
+  // 沒按「用 AI 合併」就跑了規矩與回話風格的測試）。
+  //
+  // 正確的順序是：合併 → 檢查重跑 → needsMerge 消失 → 才輪到驗證。
+  if (check.needsMerge === true) {
     return "none";
   }
 

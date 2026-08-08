@@ -410,7 +410,24 @@ async function claudeHudStep(step) {
     path.join(MATERIALS, step.commandTemplate),
     "utf8",
   );
-  const command = template.trim().replace("{RUNTIME}", process.execPath);
+  const filled = template.replace("{RUNTIME}", process.execPath);
+  // Windows：腳本落地成一支 .mjs，settings.json 裡只留「node 的路徑 + 腳本的路徑」，
+  // 兩個都用引號包好，沒有東西需要跳脫。走到這個形狀的過程見
+  // config-install.js 的 scriptTarget 與那支 template 開頭。
+  //
+  // .mjs 不需要 BOM——Node 一律當 UTF-8 讀。（.ps1 那版需要，那是 PowerShell 5.1
+  // 沒有 BOM 就把中文當 ANSI 的問題，換掉入口之後這個坑就不存在了。）
+  let command;
+
+  if (step.scriptTarget) {
+    await mkdir(path.dirname(step.scriptTarget), { recursive: true });
+    await writeFile(step.scriptTarget, filled, "utf8");
+    logProgress(`狀態列腳本已寫進 ${step.scriptTarget}`);
+    command = `"${process.execPath}" "${step.scriptTarget.replaceAll("/", "\\")}"`;
+  } else {
+    command = filled.trim();
+  }
+
   const settings = await readSettings(step.settingsTarget);
   const previous = settings.statusLine?.command;
 

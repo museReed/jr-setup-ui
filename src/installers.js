@@ -37,13 +37,42 @@ const CODEX_DARWIN_SCRIPT = [
 //
 // ⚠️ 讀過兩支 .ps1 之後才敢寫的差異，不要照著 macOS 那半類推：
 //   claude  下載 claude.exe 再跑 `claude.exe install`，落點 %USERPROFILE%\.local\bin。
-//           它有沒有把那個目錄寫進登錄檔，腳本裡看不出來 → env-path.js 補一份保險。
+//           **它不寫永久 PATH**（Windows VM 實測確認：claude.exe 在，登錄檔的
+//           User Path 裡沒有那個目錄，只有安裝當下那個視窗看得到）→ 嚮導自己補。
 //   codex   自己把目錄寫進登錄檔的 User Path（SetEnvironmentVariable(..., "User")），
 //           嚮導既有的「重讀登錄檔」機制就抓得到，不用插手。
 //
 // -NoProfile：學生的 PowerShell profile 可能印東西或改 PATH，安裝不該受它影響。
 // 指令內容照兩家官方文件寫的形狀，包含 codex 那個 -ExecutionPolicy Bypass。
-const CLAUDE_WIN32_COMMAND = "irm https://claude.ai/install.ps1 | iex";
+
+// claude 裝完要補的那一段：把 %USERPROFILE%\.local\bin 寫進登錄檔的 User Path。
+//
+// env-path.js 那份保險只救得了嚮導自己 spawn 的子程序——學生自己開的新分頁讀的是
+// 登錄檔，那裡沒有就是沒有。實測的症狀：安裝那一列全綠，學生開新分頁打 claude 卻說
+// 找不到指令；而 tab-sync 寫進 PowerShell profile 的 claude 包裝函式第一行就是去找
+// 真的 claude.exe，找不到直接炸，於是每開一個視窗都先噴一段紅字。
+//
+// 這是 macOS 那半 ensureZshrcPath 的對稱動作，只是換成登錄檔。
+//
+// 比對前先把尾端的反斜線去掉、再不分大小寫比：Windows 的路徑兩者都不算數，直接比
+// 字串會在重裝時長出第二筆一模一樣的目錄。
+const CLAUDE_WIN32_PATH_FIX = [
+  "$bin = Join-Path $env:USERPROFILE '.local\\bin'",
+  "$user = [Environment]::GetEnvironmentVariable('Path','User')",
+  "$parts = @(); if ($user) { $parts = @($user -split ';' | Where-Object { $_.Trim() }) }",
+  "$has = $parts | Where-Object { $_.TrimEnd('\\') -ieq $bin.TrimEnd('\\') }",
+  "if ($has) { Write-Host \"$bin 已經在使用者 PATH 裡\" }",
+  "else { [Environment]::SetEnvironmentVariable('Path', (($parts + $bin) -join ';'), 'User');" +
+    " Write-Host \"已把 $bin 寫進使用者 PATH，新開的視窗才叫得動 claude\" }",
+].join("\n");
+
+// $ErrorActionPreference = 'Stop' 是 macOS 那半 `set -eo pipefail` 的對稱：沒有它，
+// irm 失敗時 iex 讀到空輸入會正常結束，整條回 exit 0——沒裝成功卻回報成功。
+const CLAUDE_WIN32_COMMAND = [
+  "$ErrorActionPreference = 'Stop'",
+  "irm https://claude.ai/install.ps1 | iex",
+  CLAUDE_WIN32_PATH_FIX,
+].join("\n");
 const CODEX_WIN32_COMMAND = "irm https://chatgpt.com/codex/install.ps1 | iex";
 
 // 每一條 winget 都帶 --disable-interactivity：不准它停下來等人回答。

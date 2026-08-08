@@ -576,7 +576,7 @@ try {
   // 而驗證會失敗、環境也會變，學生要能在原地再驗一次。
   assert.match(
     files.app,
-    /text: verified\.has\(check\.id\) \? "重跑驗證" : "驗證",/,
+    /verified\.has\(check\.id\)\s*\n?\s*\? "重跑驗證"\s*\n?\s*: "驗證",/,
     "驗過的那一格按鈕留著，文案改成重跑驗證",
   );
   assert(
@@ -584,6 +584,46 @@ try {
     "驗過就把按鈕收掉的舊規則要拿掉",
   );
   ok("一個驗證放卡片底下、多個放各自那一格；驗過的改叫重跑驗證");
+
+  // 解鎖「下一張」看的是這張卡上每一列該驗的，不是主 check 那一列。合併卡有兩個
+  // 驗證，原本只看 card.checkId——驗完其中一個就走得掉，另一個從沒跑過（VM 實測）。
+  assert.match(
+    files.app,
+    /const verifyRequiredChecks = cardChecks\.filter\(/,
+    "該驗的是這張卡上的每一列",
+  );
+  assert(
+    !/card\.check\?\.verifyAction != null \|\| card\.check\?\.eyeCheck != null/.test(
+      files.app,
+    ),
+    "只看主 check 那一列的舊規則要拿掉",
+  );
+  // 「跑過」不夠，要「沒失敗」：原本失敗也算放行，於是徽章寫著失敗、箭頭卻是亮的。
+  assert.match(
+    files.app,
+    /state\.verificationAttempted\.has\(check\.id\) &&\s*\n?\s*!state\.failedVerificationSteps\.has\(check\.id\)/,
+    "驗證失敗不算跑過，不放行下一張",
+  );
+  // 鎖住不等於關死：失敗時給一顆寫明白的「先跳過這張」。它不慶祝、不算完成，
+  // 只登記在 skippedCards 裡讓學生走得掉。
+  assert.match(files.app, /state\.skippedCards\.add\(cardId\)/, "跳過要登記");
+  assert.match(
+    files.app,
+    /const canSkip =\s*\n?\s*card\.kind === "config" && !nextUnlocked && verificationFailedHere;/,
+    "只有「被鎖住而且原因是驗證失敗」才給逃生口",
+  );
+  assert.match(
+    files.app,
+    /celebrate: false/,
+    "逃生那顆不放解鎖特效——慶祝一件沒做成的事會讓學生以為自己過了",
+  );
+  // 重驗＝上一輪的結論作廢，那顆通行證也跟著失效。
+  assert.match(
+    files.app,
+    /state\.skippedCards\.delete\(stepId\)/,
+    "重驗會把跳過的紀錄一起清掉",
+  );
+  ok("驗證失敗鎖住下一張，只留一顆不慶祝的「先跳過這張」");
 
   // 格內那顆「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論忘掉，
   // 那一格退回未勾，再照這一次的結果打勾。
@@ -602,6 +642,43 @@ try {
     "清過重畫之後不能再把舊的 button 傳下去",
   );
   ok("格內的重跑驗證會先把那一格的勾退掉，跟底下那顆同一套");
+
+  // 「這一格從頭看一次」不等於「這一列重驗一次」。眼睛那顆與人工步驟那顆按下去只
+  // 該退學生手上的勾，不能碰程式那半——原本兩條都走 forgetVerification(card.checkId)，
+  // 於是行為驗證 5 條全過之後按一下「開終端驗證」，那個結論就被洗掉，清單那一格
+  // 永遠停在「還沒實際跑跑看」（Reed 貼的 log）。
+  assert.match(
+    files.app,
+    /function forgetManualChecked\(ids\)/,
+    "要有一個只退勾、不碰驗證結論的函式",
+  );
+  assert(
+    !/forgetVerification\(card\.checkId/.test(files.app),
+    "眼睛與人工步驟那兩顆不能再拿整列的 forgetVerification 去清",
+  );
+  assert.match(files.app, /forgetManualChecked\(\[step\]\);/, "眼睛那顆只退這一格");
+  assert.match(files.app, /forgetManualChecked\(ids\);/, "人工步驟那顆只退那一步");
+  ok("眼睛與人工步驟只退自己那幾格的勾，不洗掉程式那半的驗證");
+
+  // 「按過安裝」的樂觀記憶只該撐住結果回來之前那幾秒。新的檢查說 missing 還留著的
+  // 話，同一格會同時是「打勾 + 未安裝 + 一顆安裝鍵」，計數還寫 3/3（Windows VM
+  // 實測 git）。兩份檢查結果回來時都要清。
+  assert.match(
+    files.app,
+    /function forgetStaleInstalls\(checks\)[\s\S]{0,300}state\.installedSteps\.delete\(check\.id\)/,
+    "檢查回報 missing 時要把樂觀記憶清掉",
+  );
+  assert.match(
+    files.app,
+    /state\.envChecks = checks;\s*\n\s*forgetStaleInstalls\(checks\);/,
+    "環境檢查回來要清",
+  );
+  assert.match(
+    files.app,
+    /state\.lastChecks = result\.checks;\s*\n\s*forgetStaleInstalls\(result\.checks\);/,
+    "設定檢查回來也要清",
+  );
+  ok("檢查回報 missing 就把「按過安裝」的樂觀記憶清掉");
 
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(

@@ -838,6 +838,25 @@ export async function checkExternalSkill(step) {
   };
 }
 
+// 那一行到底有沒有指到我們寫的那支腳本。只在有 scriptTarget 的平台（Windows）成立；
+// mac 沒有腳本檔，那一列本來就是一行指令，一律當通過。
+//
+// 兩邊都正規化成小寫、正斜線再比：settings.json 裡是反斜線，而路徑大小寫在 Windows
+// 上不算數——不正規化的話會把裝對的機器判成沒裝（跟 Obsidian 筆記庫名單踩過的
+// 是同一個坑）。腳本檔本身也要在：指令指到一個不存在的檔案跟沒接上是同一件事。
+export function wiredToScript(command, scriptTarget) {
+  if (scriptTarget === null || scriptTarget === undefined) {
+    return true;
+  }
+
+  const normalize = (value) => value.replaceAll("\\", "/").toLowerCase();
+
+  return (
+    normalize(command).includes(normalize(scriptTarget)) &&
+    existsSync(scriptTarget)
+  );
+}
+
 // claude-hud 的三個檢查點（docs/claude-hud-card.md §6.2）：
 //
 //   1. settings.json 的 statusLine 指到 claude-hud，而且 refreshInterval 是 5
@@ -847,6 +866,11 @@ export async function checkExternalSkill(step) {
 //      改掉的話這裡會抓到）
 //
 // 不比對 statusLine 指令全文：那串裡有這台機器專屬的 node 路徑。
+//
+// Windows 例外：那一列必須是「-File 指到我們寫的那支 .ps1」的形狀。舊版把整段
+// PowerShell 塞進 settings.json 當一行指令，跑不起來（見 docs/claude-hud-card.md
+// §4.2），而那一行裡也有 claude-hud 字樣——只認字樣的話，已經裝過舊版的機器永遠是
+// 綠的、沒有安裝鍵，狀態列卻永遠不出現（Windows VM 實測）。
 export async function checkClaudeHud(step) {
   const settings = existsSync(step.settingsTarget)
     ? JSON.parse(await readFile(step.settingsTarget, "utf8"))
@@ -855,7 +879,8 @@ export async function checkClaudeHud(step) {
   const wired =
     typeof command === "string" &&
     command.includes("claude-hud") &&
-    settings.statusLine?.refreshInterval === CLAUDE_HUD.refreshInterval;
+    settings.statusLine?.refreshInterval === CLAUDE_HUD.refreshInterval &&
+    wiredToScript(command, step.scriptTarget);
   const enabled = settings.enabledPlugins?.[CLAUDE_HUD.plugin] === true;
   const config = existsSync(step.configTarget)
     ? JSON.parse(await readFile(step.configTarget, "utf8"))
@@ -869,9 +894,15 @@ export async function checkClaudeHud(step) {
           )
         : config[key] === value,
     );
+  // 「接上了但是舊寫法」跟「根本沒接」要講不一樣的話：前者畫面上什麼都不缺，學生
+  // 只會看到一句「還沒接上」然後想「我明明裝過了」。
+  const outdated =
+    typeof command === "string" &&
+    command.includes("claude-hud") &&
+    !wiredToScript(command, step.scriptTarget);
   const missing = [
     ...(enabled ? [] : ["plugin 還沒裝起來"]),
-    ...(wired ? [] : ["狀態列還沒接上"]),
+    ...(wired ? [] : [outdated ? "狀態列是舊的寫法，在 Windows 上跑不起來" : "狀態列還沒接上"]),
     ...(styled ? [] : ["版面設定還沒寫好"]),
   ];
 

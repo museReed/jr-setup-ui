@@ -8,7 +8,7 @@
 > - 安裝 `scripts/install-configs.mjs` 的 `claudeHudStep`
 > - 檢查 `src/config-check.js` 的 `checkClaudeHud`
 > - statusLine 指令原文 `materials/claude-code/claude-hud/statusline.sh.template`（mac）
->   與 `statusline.ps1.template`（Windows）
+>   與 `statusline.mjs.template`（Windows）
 > - 學生看的步驟 `content/walkthroughs/eye-claude-hud.json`
 
 ---
@@ -129,10 +129,38 @@ setup 會依環境產生不同指令，一鍵版必須**在安裝當下重新偵
 在安裝當下換成偵測到的 runtime 絕對路徑。**不要把這串寫進 JS 字串**——它有大量 `"`、`'`
 與 `\`，每一層逃脫都是一個壞掉的機會。
 
-Windows 那份（`statusline.ps1.template`）做同樣三件事，換成 PowerShell 的寫法：
-寬度從 `$Host.UI.RawUI.WindowSize.Width` 取（包在 try/catch 裡，取不到就跳過）、
-用 `Get-ChildItem` 掃同一個 cache 結構、版號用 `[version]` 轉型排序取最後一個。
-兩份共通的只有「`{RUNTIME}` 換成這台機器的 node 絕對路徑」這件事。
+**Windows 那份不是 PowerShell，是 node。** 原文在
+`materials/claude-code/claude-hud/statusline.mjs.template`，落地成
+`~/.claude/plugins/claude-hud/statusline.mjs`，`settings.json` 裡只留兩個被引號包好的
+絕對路徑：
+
+```
+"C:\Program Files\nodejs\node.exe" "C:\Users\<你>\.claude\plugins\claude-hud\statusline.mjs"
+```
+
+它做的事跟 mac 那份一樣（算寬度、掃 cache 找最新版、把 stdin/stdout 接給
+`dist/index.js`），只是換成 node 寫。
+
+### 為什麼不是 PowerShell —— 走了兩輪才到這裡
+
+| 形狀 | 結果 |
+|---|---|
+| 一行 `powershell -Command "..."` | 那一行同時有單引號、`$` 變數、還有一個帶空白的 node 路徑，Claude Code 會再經一層 shell，引號互相打架，指令根本沒啟動 |
+| `powershell -File` 一支 `.ps1` | 手動跑得出狀態列，Claude Code 裡仍然空白。ARM64 VM 上 `powershell.exe` 冷啟動 1～2 秒，而狀態列每 5 秒跑一次——來不及在 timeout 前吐出東西 |
+| `node` 一支 `.mjs` | ✅ 一個入口、啟動快一個數量級、指令裡沒有東西需要跳脫 |
+
+**決定性的對照組**：同一時間把指令換成 `cmd /c echo PROBE-OK`，狀態列當場出現
+`PROBE-OK`。所以 statusLine 機制是活的，慢掉／被咬掉的是 PowerShell 那一層。**不要退回去。**
+
+當初用 PowerShell 沒有 Windows 專屬的理由，只是 mac 用 bash、Windows 就對稱地用它。
+那支腳本做的三件事沒有一件需要 PowerShell 的能力，而 `$Host.UI.RawUI.WindowSize.Width`
+那段其實一直在走 catch——Claude Code 把 stdout 導向管線，非互動的 `-File` 沒有 console。
+
+⚠️ **`.mjs` 裡是 spawn 子程序跑 `dist/index.js`，不是 `import()`。** 少一個程序當然更快，
+但那支 bundle 是別人打包的，CJS 常用 `require.main === module` 決定要不要跑主流程——用
+`import` 載入時那個判斷是 false，什麼都不做，而且一樣沒有錯誤訊息。
+
+`.mjs` 不需要 BOM（Node 一律當 UTF-8 讀）。BOM 那個坑是 `.ps1` 才有的，換掉入口就不存在了。
 
 這串在做三件事：
 
@@ -264,7 +292,7 @@ printf '{}' | bash -c '<§4.2 的指令>'
 | 幽靈安裝 | cache 有但 registry 沒有（或反過來） | 安裝前先對照 `plugins/cache/*/claude-hud` 與 `installed_plugins.json`，不一致就先清乾淨 |
 | Linux 跨檔案系統 | `EXDEV: cross-device link not permitted` | 舊版 Claude Code 的 bug，優先升級；否則 `TMPDIR=~/.cache/tmp` |
 | 學生已有其他狀態列 | 一鍵會蓋掉別人的設定 | §5.2 步驟 6 的檢查 |
-| Windows | 這份文件只驗證過 macOS | 已實作（`statusline.ps1.template`）但**還沒在 Windows 上跑過**。BOM 那個坑不成立：設定檔是嚮導用 Node 寫的，不是 PowerShell |
+| Windows 用 PowerShell 當入口 | 狀態列不出現，沒有錯誤訊息，四個檢查點還全綠 | 引號會被下一層 shell 咬掉；就算改成 `-File` 也還有冷啟動 1～2 秒的 timeout 問題。**改用 node 當入口**，見 §4.2（Windows VM 實測兩輪） |
 | 串接指令 hook | 無 | 本機的 `block-chained-bash` hook 只擋 Claude 發出的 Bash 呼叫，**不影響 statusLine** —— 那是 Claude Code 自己 spawn 的子程序。實測正常 |
 
 ---

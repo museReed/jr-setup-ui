@@ -123,6 +123,9 @@ const state = {
   failedSteps: new Set(),
   resultTexts: new Map(),
   deferredVerificationSteps: new Set(),
+  // 驗證失敗、學生按了「先跳過這張」的卡。只放行「下一張」，不算完成——徽章、圓點、
+  // 進度條走的仍然是 cardIsComplete，跳過的卡在那裡照樣是失敗。
+  skippedCards: new Set(),
   manualCheckedIds: new Set(),
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
@@ -190,8 +193,25 @@ function forgetVerification(stepId, manualIds = []) {
   state.failedVerificationSteps.delete(stepId);
   state.verificationAttempted.delete(stepId);
   state.deferredVerificationSteps.delete(stepId);
+  // 重驗＝他回來把這張卡做完了，那顆「先跳過」的通行證跟著上一輪的結論一起作廢。
+  state.skippedCards.delete(stepId);
 
-  for (const id of [`eye-${stepId}`, ...manualIds]) {
+  forgetManualChecked([`eye-${stepId}`, ...manualIds]);
+
+  api
+    .forgetVerification(stepId)
+    .catch((error) => view.addLine(`無法清除舊的驗證結果：${error.message}`, "failed"));
+}
+
+// 只退學生手上那幾格的勾，程式那半原封不動。
+//
+// 眼睛那一格按「開終端驗證」是「這一格從頭看一次」，不是「這一列重驗一次」。原本
+// 走的是整列的那一版（拿卡片的 checkId 去清），於是行為驗證 5 條全過、終端印著「驗證
+// 通過」，學生接著按開終端看狀態列，那個結論就被一起刪掉——清單上那一格永遠回到
+// 「還沒實際跑跑看」（Reed 貼的 log：兩次 verify-behavior 都過，中間夾一次
+// verify-in-terminal，之後就沒勾了）。
+function forgetManualChecked(ids) {
+  for (const id of ids) {
     state.manualCheckedIds.delete(id);
     state.completedGateIds.delete(id);
   }
@@ -199,13 +219,27 @@ function forgetVerification(stepId, manualIds = []) {
   api
     .saveManualChecked([...state.manualCheckedIds])
     .catch((error) => view.addLine(`無法保存勾選：${error.message}`, "failed"));
-  api
-    .forgetVerification(stepId)
-    .catch((error) => view.addLine(`無法清除舊的驗證結果：${error.message}`, "failed"));
 }
 
 // 程式那半過了就記，不管那一列有沒有眼睛勾選框——清單第一格要立刻反映終端剛印的
 // 「驗證成功」，不能等學生勾完眼睛才一起變。
+// installedSteps 是「這一輪按過安裝」的樂觀記憶，用途只有一個：撐住「終端印了安裝
+// 成功」到「下一次檢查回來」之間那幾秒，不然那一列會停在「尚未安裝」。
+//
+// 但它只該活到結果回來為止。新的結果說 missing 還留著的話，同一格會同時是「打勾」
+// 與「未安裝」，旁邊還有一顆安裝鍵，右上角計數照樣寫 3/3——三個地方各講各的
+// （Windows VM 實測 git：winget 印 Successfully installed，探測仍抓不到）。
+//
+// 只清 missing 那幾筆：ok 不用清（權威狀態自己就會打勾），warn 也不清（那是「裝了
+// 但有問題」，不是沒裝）。
+function forgetStaleInstalls(checks) {
+  for (const check of checks) {
+    if (check.status === "missing") {
+      state.installedSteps.delete(check.id);
+    }
+  }
+}
+
 async function rememberBehaviorVerified(step) {
   state.behaviorVerifiedSteps.add(step);
 
@@ -416,24 +450,48 @@ function renderWizard() {
         (card.kind === "config" && check.noInstall === true) ||
         (state.installedSteps.has(check.id) && check.status !== "missing"),
     );
-  const verificationRequired =
-    card.check?.verifyAction != null || card.check?.eyeCheck != null;
+  // 「該驗的」是這張卡上的每一列，不是主 check 那一列。合併的卡有兩個驗證
+  // （「一次只跑一個指令」與「常用指令不用每次問你」），原本只看 card.checkId，
+  // 於是驗完其中一個就解鎖下一張，另一個從沒跑過也走得掉（VM 實測截圖）。
+  const verifyRequiredChecks = cardChecks.filter(
+    (check) => check.verifyAction != null || check.eyeCheck != null,
+  );
+  const verificationRequired = verifyRequiredChecks.length > 0;
+  // 「跑過」不夠，要「沒失敗」。原本失敗也算放行——於是徽章寫著「失敗」、兩列都寫
+  // 「自動驗證沒有通過」，箭頭卻是亮的，看起來像做完了（Reed 截圖）。
+  //
+  // 但不能只認 verified：開終端那種驗證程式判不了，跑完不會留下 verified，只留下
+  // 一筆 attempted。所以條件是「試過而且沒被記成失敗」。
   const verificationAttempted =
     !verificationRequired ||
-    verified.has(card.checkId) ||
-    state.verificationAttempted.has(card.checkId);
+    verifyRequiredChecks.every(
+      (check) =>
+        verified.has(check.id) ||
+        (state.verificationAttempted.has(check.id) &&
+          !state.failedVerificationSteps.has(check.id)),
+    );
+  // 驗證失敗鎖住往前的路，但不能把人關死：環境真的過不了的學生要有一條出口。
+  // 那條出口是一顆寫明白的「先跳過這張」，不是把箭頭留在那裡假裝一切正常。
+  const verificationFailedHere = verifyRequiredChecks.some((check) =>
+    state.failedVerificationSteps.has(check.id),
+  );
   const nextUnlocked =
     card.kind === "setup"
       ? true
       : card.kind === "env"
         ? cardIsComplete(card, verified, state.manualCheckedIds) &&
           groups.manual.every((item) => item.checked)
-        : nextCardUnlocked({
-          installed,
-          verificationRequired,
-          verificationAttempted,
-          manualItems: groups.manual,
-        });
+        : state.skippedCards.has(card.checkId) ||
+          nextCardUnlocked({
+            installed,
+            verificationRequired,
+            verificationAttempted,
+            manualItems: groups.manual,
+          });
+  // 只在「真的被鎖住、而且鎖住的原因是驗證失敗」時給出口。人工項沒勾、還沒安裝
+  // 那種不給——那些他自己按得動，給了只是繞過去。
+  const canSkip =
+    card.kind === "config" && !nextUnlocked && verificationFailedHere;
   // 「這張卡完成了嗎」全站只有一個答案：cardIsComplete。
   //
   // 這裡原本另外收三條路：
@@ -468,6 +526,10 @@ function renderWizard() {
   // 一個指令」的終端）。一顆按鈕說謊比少一顆按鈕更糟。
   const verifyChecks = cardChecks.filter((check) => check.verifyAction != null);
   const perRowVerify = verifyChecks.length > 1;
+  // 這張卡上還有檔案在等 AI 合併。驗證要等合併做完——驗一份還沒併進去的設定，拿到的
+  // 結果跟列上那句「需要合併」互相矛盾，學生只能挑一句相信（VM 實測 codex-config：
+  // 沒按「用 AI 合併」就跑了規矩與回話風格的測試）。
+  const mergePending = cardChecks.some((check) => check.needsMerge === true);
   let row =
     card.kind === "env"
       ? envCardRowModel(card, state.installedSteps)
@@ -508,19 +570,27 @@ function renderWizard() {
               {
                 action: EYE_ROW_ACTIONS[card.checkId].action,
                 dataName: "verifyAction",
-                text: EYE_ROW_ACTIONS[card.checkId].text,
+                text: mergePending
+                  ? "先按「用 AI 合併」"
+                  : EYE_ROW_ACTIONS[card.checkId].text,
                 rowId: `eye-${card.checkId}`,
                 step: `eye-${card.checkId}`,
                 options: EYE_ROW_ACTIONS[card.checkId].options ?? undefined,
+                disabled: mergePending,
               },
             ]
           : []),
         ...(perRowVerify ? verifyChecks : []).map((check) => ({
           action: check.verifyAction,
           dataName: "verifyAction",
-          text: verified.has(check.id) ? "重跑驗證" : "驗證",
+          text: mergePending
+            ? "先按「用 AI 合併」"
+            : verified.has(check.id)
+              ? "重跑驗證"
+              : "驗證",
           checkId: check.id,
           step: check.id,
+          disabled: mergePending,
           // 欄位名是 options 不是 extra——actionButton 傳給 onActionClick 的第四個
           // 參數讀的是 spec.options（view.js 的 actionButton）。
           options: check.verifyOptions,
@@ -573,7 +643,9 @@ function renderWizard() {
       const ids = (step?.items ?? []).map((item) => item.id);
 
       if (ids.length > 0) {
-        forgetVerification(card.checkId, ids);
+        // 一樣只退這一步的勾。開一個新視窗重做那兩件事，跟這一列程式那半驗過沒
+        // 驗過是兩回事。
+        forgetManualChecked(ids);
 
         if (ids.includes("fullscreen-copy")) {
           state.pasteProofValue = "";
@@ -645,7 +717,9 @@ function renderWizard() {
         // resets 的那幾格＝「按下去這一格從頭看一次」，所以勾先退掉。開瀏覽器
         // 去看遠端不算重看——那一格勾過了還把它退掉，學生會以為自己剛才白勾了。
         if (EYE_ROW_ACTIONS[card.checkId]?.resets === true) {
-          forgetVerification(card.checkId, [step]);
+          // 只退這一格的勾。這一列程式那半的結論（行為驗證）跟這一格無關，
+          // 拿 forgetVerification 去清會把剛剛驗過的 5 條一起洗掉。
+          forgetManualChecked([step]);
           view.addLine("先清掉這一格的勾，開一個新的視窗給你看。", "agent-status");
           renderWizard();
           run(action, undefined, null, extra);
@@ -774,7 +848,15 @@ function renderWizard() {
   // 卡驗過了」的當下沒有人去看鎖狀態——下一段其實已經開了，畫面上還鎖著，等學生
   // 去點才發現。開鎖動畫也因此永遠錯過那一刻（VM 實測）。
   const lockStates = renderNavigation();
-  renderWizardNav({ cardSection, currentIndex, nextUnlocked, lockStates, onNext: cardModel.onNext });
+  renderWizardNav({
+    cardSection,
+    currentIndex,
+    nextUnlocked,
+    canSkip,
+    cardId: card.checkId,
+    lockStates,
+    onNext: cardModel.onNext,
+  });
   // 導覽排在最後：翻頁按鈕這時候才決定要不要露臉，太早問會指到一顆還 hidden 的
   // 按鈕，泡泡就貼到畫面左上角去了。
   onCardRendered({
@@ -788,12 +870,33 @@ function renderWizard() {
 
 // 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
 //
+// 驗證失敗時那一顆逃生按鈕。跟「下一張」共用同一個位置，但講的是別件事，所以字要
+// 不一樣、不放解鎖特效（慶祝一件沒做成的事很怪），也不畫成主要動作。
+//
+// 按下去先把這張卡登記成「跳過」——下次回到這張，那顆按鈕就是正常的「下一張」，
+// 不用再按一次逃生。完成與否仍然由 cardIsComplete 說了算，跳過的卡照樣是失敗。
+function skipNavSpec(cardId, label, onSkip) {
+  return {
+    show: true,
+    label,
+    secondary: true,
+    celebrate: false,
+    onClick: () => {
+      if (cardId !== null) state.skippedCards.add(cardId);
+      view.addLine(`先跳過這一張，之後可以回來再驗一次。`, "agent-status");
+      onSkip();
+    },
+  };
+}
+
 // 走到一段的最後一張時，「下一張」換成「下一段：⋯」——那一段做完了，下一步是換段，
 // 不是回頭去點上面的分頁。點下去落在新那段的第一張。
 function renderWizardNav({
   cardSection,
   currentIndex,
   nextUnlocked,
+  canSkip = false,
+  cardId = null,
   lockStates,
   onNext,
 }) {
@@ -821,13 +924,22 @@ function renderWizardNav({
         goToSection(previousSection.id, "last");
       },
     },
+    // 驗證失敗被鎖住時，那個位置換成一顆說實話的「先跳過這張」：它不慶祝、也不
+    // 把卡片記成完成，只是承認學生現在過不了、讓他先往下走。原本這裡是「失敗也
+    // 照樣顯示下一張」，箭頭跟旁邊那顆紅色的「失敗」徽章互相打架（Reed 截圖）。
     next: atLast
-      ? {
-          show: nextSectionOpen,
-          label: `下一段：${nextSection?.title ?? ""}`,
-          onClick: () => goToSection(nextSection.id, "first"),
-        }
-      : { show: nextUnlocked, label: "下一張", onClick: onNext },
+      ? canSkip && !nextSectionOpen
+        ? skipNavSpec(cardId, `先跳過，${nextSection === undefined ? "留在這一段" : `往下一段：${nextSection.title}`}`, () => {
+            if (nextSection !== undefined) goToSection(nextSection.id, "first");
+          })
+        : {
+            show: nextSectionOpen,
+            label: `下一段：${nextSection?.title ?? ""}`,
+            onClick: () => goToSection(nextSection.id, "first"),
+          }
+      : canSkip
+        ? skipNavSpec(cardId, "先跳過這張", onNext)
+        : { show: nextUnlocked, label: "下一張", onClick: onNext },
   });
 }
 
@@ -1069,6 +1181,7 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
       toolSelectionValue(state.selectedTools),
     );
     state.envChecks = checks;
+    forgetStaleInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
     // renderWizard 畫出來的清單還是退勾的狀態，而後面沒有人再畫一次——畫面就停在
@@ -1145,6 +1258,7 @@ async function checkConfigs() {
   try {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
+    forgetStaleInstalls(result.checks);
     state.availableActions = new Set([
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),

@@ -147,6 +147,29 @@ try {
   assert.match(windowsTabSync.rcBlock, /-NoNewWindow/);
   ok("Windows watcher 用 -NoNewWindow 起，跟終端共用同一個 console");
 
+  // Windows 的狀態列走了兩輪才到位（VM 實測，兩次都是安靜地不出現）：
+  //
+  //   一行 powershell -Command   引號被下一層 shell 咬掉，整條不啟動
+  //   powershell -File 一支 .ps1  手動跑得出來，Claude Code 裡仍然空白
+  //                              （ARM64 上 powershell 冷啟動 1～2 秒，狀態列每 5 秒
+  //                                跑一次，來不及在 timeout 前吐出東西）
+  //   node 一支 .mjs             ← 現在這個
+  //
+  // 對照組：同時把指令換成 `cmd /c echo PROBE-OK`，狀態列當場出現 PROBE-OK，
+  // 所以機制是活的、問題在 PowerShell 那一層。不要再退回去。
+  const hudWin = describeStep("claude-hud", { ...AT, platform: "win32" });
+  assert.equal(
+    hudWin.commandTemplate,
+    "claude-code/claude-hud/statusline.mjs.template",
+  );
+  assert.equal(
+    hudWin.scriptTarget,
+    `${HOME}/.claude/plugins/claude-hud/statusline.mjs`,
+  );
+  const hudMac = describeStep("claude-hud", { ...AT, platform: "darwin" });
+  assert.equal(hudMac.scriptTarget, null, "mac 那條照舊直接寫進 settings.json");
+  ok("Windows 的狀態列由 node 當入口，mac 維持一行 bash");
+
   const claudeHooks = describeStep("claude-namer", { ...AT, platform: "linux" });
   const claudeMonitor = describeStep("claude-monitor", {
     ...AT,
