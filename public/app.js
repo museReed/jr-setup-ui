@@ -1450,6 +1450,11 @@ async function checkConfigs() {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
     forgetStaleInstalls(result.checks);
+    // ⚠️ 這一行要排在 renderWizard 前面：它是畫面上那條琥珀色提示的資料來源。
+    // 排在後面的話，這一次畫的是上一輪的清單，而畫完之後沒有人再畫一次——學生把
+    // skill 搬走了，那條提示照樣掛在那裡（VM 實測）。環境那半本來就是這個順序，
+    // 所以重複安裝那條會正常消失，兩邊對照就看得出來是順序的問題。
+    reportStraySkills(result.strays ?? []);
     state.availableActions = new Set([
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
@@ -1458,7 +1463,6 @@ async function checkConfigs() {
     view.renderConfigSummary(
       configSummary(result.checks, state.verifiedSteps),
     );
-    reportStraySkills(result.strays ?? []);
   } catch (error) {
     view.renderConfigFailure(error.message);
   } finally {

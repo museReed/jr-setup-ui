@@ -750,6 +750,21 @@ try {
   );
   ok("上一輪留下的 skill 在第一頁與技能包兩段都講，兩則提醒可以並存");
 
+  // 那兩則提示的資料來源都要在 renderWizard 之前更新。排在後面的話，這一次畫的是
+  // 上一輪的清單，而畫完之後沒有人再畫一次——學生把 skill 搬走了，提示照樣掛著
+  //（VM 實測：環境那半順序是對的所以正常消失，規則檔那半反了）。
+  assert.match(
+    files.app,
+    /reportStraySkills\(result\.strays \?\? \[\]\);[\s\S]{0,300}renderWizard\(\)/,
+    "殘留清單要在重畫之前更新",
+  );
+  assert.match(
+    files.app,
+    /reportDuplicateInstalls\(checks\);[\s\S]{0,400}renderWizard\(\)/,
+    "重複安裝的清單也要在重畫之前更新",
+  );
+  ok("提示的資料在重畫之前就更新，做完動作那條才消得掉");
+
   // ⚠️ 搬走舊 skill 一定是一個一個來，永遠不能有「全部搬走」。
   //
   // 我們分不出「上一輪發的」與「他自己裝的」，而多數人兩種都有（實測一台真的機器上
