@@ -102,8 +102,17 @@ function resolveOptions(action, provided) {
 
   for (const [name, allowed] of Object.entries(schema)) {
     const value = provided[name];
+    // 絕大多數選項是固定字串的白名單。少數不可能窮舉的（例如「要搬走哪一個 skill」，
+    // 那個名字是學生機器上的資料夾名）改用一個函式驗證器——它仍然是白名單，只是規則
+    // 寫成形狀而不是清單。
+    //
+    // ⚠️ 通過這裡不代表可以直接拿去組路徑。用得到這種選項的那支腳本一律要再比對一次
+    // 「這個名字真的在我自己偵測出來的清單裡」，兩層都過才動手（見
+    // scripts/quarantine-skills.mjs）。
+    const passes =
+      typeof allowed === "function" ? allowed(value) : allowed.includes(value);
 
-    if (!allowed.includes(value)) {
+    if (!passes) {
       throw new Error(`options.${name} 不在允許的值裡`);
     }
 

@@ -738,6 +738,24 @@ try {
   );
   ok("上一輪留下的 skill 講在技能包那一段的段落狀態列上");
 
+  // ⚠️ 搬走舊 skill 一定是一個一個來，永遠不能有「全部搬走」。
+  //
+  // 我們分不出「上一輪發的」與「他自己裝的」，而多數人兩種都有（實測一台真的機器上
+  // 14 個 skill 裡有 9 個會被判成殘留）。一顆按鈕把他自己寫的東西一起搬走，比留著
+  // 殘留糟糕得多。這條規則比畫面好不好看重要，所以釘在測試裡。
+  assert.match(
+    files.app,
+    /actions: state\.straySkills\.map\(\(stray\) => \(\{[\s\S]{0,300}name: stray\.name,/,
+    "每一個殘留各自一顆按鈕，而且要指名",
+  );
+  assert(
+    !/quarantine-skills[\s\S]{0,200}straySkills\.map\(\(stray\) => stray\.name\)\.join/.test(
+      files.app,
+    ),
+    "不能把整份清單一次送出去",
+  );
+  ok("搬走舊 skill 一個一個來，沒有「全部搬走」");
+
   // server 沒把新檔案加進靜態白名單的話，瀏覽器載入時 404，而畫面只會整片空白。
   const server = readFileSync(
     new URL("../src/server.js", import.meta.url),

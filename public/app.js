@@ -848,7 +848,8 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = index;
       renderWizard();
     },
-    sectionNotice: straySkillNotice(),
+    // 一次只講一件事：兩段各自只會有一種提醒，不會互搶。
+    sectionNotice: straySkillNotice() ?? duplicateCliNotice(),
     // 只在「這一段的最後一張已經做完」時才列。還沒做完的話，擋著的就是眼前這張，
     // 再列一次只是噪音；而那時進度條底下多一句話也會蓋掉他正在做的事。
     sectionBlockers: {
@@ -1367,7 +1368,53 @@ function straySkillNotice() {
   return {
     text: `這台機器上還有 ${state.straySkills.length} 個不是這一輪發的 skill：${names}`,
     detail:
-      "自己裝的就不用理它。如果是上一輪工作坊留下來的，可以把那個資料夾刪掉——它現在仍然會被載入。完整路徑在「看原始輸出」裡。",
+      "自己裝的就不用理它——這個清單分不出「上一輪留下的」與「你自己加的」。確定是上一輪的才按，一次搬一個，而且是搬到隔離區不是刪除。完整路徑在「看原始輸出」裡。",
+    // ⚠️ 一個一個來，沒有「全部搬走」。
+    //
+    // 原本做成一顆全清的按鈕，那是錯的：多數人自己也裝了 skill（實測自己這台 14 個
+    // 裡有 9 個會被判成殘留）。一顆按鈕把他自己寫的東西一起搬走，比留著殘留糟糕得多。
+    actions: state.straySkills.map((stray) => ({
+      label: `搬走 ${stray.name}`,
+      onClick: () =>
+        run("quarantine-skills", undefined, null, {
+          lang: state.selectedLanguage,
+          tools: toolSelectionValue(state.selectedTools),
+          name: stray.name,
+        }),
+    })),
+  };
+}
+
+// 環境段的同一件事：同一支 CLI 有兩份時，正在用的不一定是新的那份。
+//
+// 按鈕只在真的有兩份時才出現，而且移除那支腳本自己會再問 npm 一次——npm 說它沒有
+// 那個套件就什麼都不做。兩份可能都不是 npm 裝的（例如他自己編的），那不該我們來動。
+function duplicateCliNotice() {
+  if (state.activeSectionId !== "env") {
+    return null;
+  }
+
+  const duplicated = (state.envChecks ?? []).filter(
+    (check) => (check.duplicates ?? []).length > 1,
+  );
+
+  if (duplicated.length === 0) {
+    return null;
+  }
+
+  return {
+    text: `${duplicated.map((check) => check.label).join("、")}在這台機器上不只一份`,
+    detail:
+      "正在用的是 PATH 裡排在最前面那一份，不一定是最新的。上一輪工作坊是用 npm 裝的，按右邊那顆會把 npm 那一份移除（可逆：npm install -g 就裝得回來）。完整路徑在「看原始輸出」裡。",
+    actions: [
+      {
+        label: "移除 npm 裝的舊版",
+        onClick: () =>
+          run("uninstall-legacy-cli", undefined, null, {
+            tools: toolSelectionValue(state.selectedTools),
+          }),
+      },
+    ],
   };
 }
 

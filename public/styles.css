@@ -611,6 +611,20 @@ body {
   line-height: var(--lh-normal);
 }
 
+/* 清理那顆：畫成次要的，而且靠左跟著文字走。它不是「往前一步」，是「你可以順手
+   處理掉這件事」——畫得太搶眼會讓學生以為不按不行。 */
+.section-notice-action {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  background: var(--color-bg-elevated);
+  border-color: var(--color-warn);
+  color: var(--amber-6);
+}
+
+.section-notice-action:hover {
+  background: var(--amber-2);
+}
+
 /* 進不了下一段時，擋著的是哪幾張。掛在進度條底下：那條說的是「這一段還剩多少」，
    這一列說的是「剩的是哪幾張」——同一件事的兩半，放在一起才讀得順。
    小人走在進度條上會超出邊界，所以上緣要留夠的空隙，不然會被牠壓到。 */
