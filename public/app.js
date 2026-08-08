@@ -141,6 +141,9 @@ const state = {
   // 嚮導這一輪要裝、而機器上已經有的 skill。回訪學生幾乎必中——上一輪裝的就是同樣
   // 那幾支。第一頁那條「先搬到隔離區再裝」讀的是它（見 resetSkillsNotice）。
   wizardSkills: [],
+  // Codex skill 的舊落點（~/.codex/skills）底下還躺著我們發過的哪幾支。跟上面那條
+  // 各自成立：新落點是空的機器上，只有這一條會講話（見 legacyCodexNotice）。
+  legacyCodexSkills: [],
   // 卡片上那顆鈴鐺要寫進回報的兩件事：這台跑的是哪個分支，以及家目錄（用來把路徑
   // 裡的使用者名稱換成 ~）。兩個都跟著環境檢查一起回來。
   wizardSource: "unknown",
@@ -868,6 +871,7 @@ function renderWizard() {
     sectionNotices: [
       straySkillNotice(),
       resetSkillsNotice(),
+      legacyCodexNotice(),
       duplicateCliNotice(),
     ],
     // 只在「這一段的最後一張已經做完」時才列。還沒做完的話，擋著的就是眼前這張，
@@ -1460,6 +1464,39 @@ function reportWizardSkills(skills) {
   }
 }
 
+const reportedLegacyCodexScans = new Set();
+
+// codex 舊路徑掃描的完整結果，寫進「看原始輸出」——包含一支都沒找到。
+//
+// 這個檢查存在的原因就是「新落點是空的、第一頁整個安靜」那種機器，所以它自己更不能
+// 是安靜的：沒有這幾行的話，「查過舊路徑、乾淨」跟「根本沒查舊路徑」在畫面上一模
+// 一樣，而後者正是這次要修掉的東西。root 一起寫出來，驗收的人才看得到掃的是哪裡。
+function reportLegacyCodexScan(scan) {
+  if (scan === undefined || scan === null) {
+    return;
+  }
+
+  const key = `${scan.root}|${scan.names.join("|")}|${scan.found.length}`;
+
+  if (reportedLegacyCodexScans.has(key)) {
+    return;
+  }
+
+  reportedLegacyCodexScans.add(key);
+  view.addRawLine("— Codex skill 舊路徑（搬家前的 ~/.codex/skills）—");
+  view.addRawLine(`掃了 ${scan.root}`);
+  view.addRawLine(`比對這一輪發的 ${scan.names.length} 個名字`);
+  view.addRawLine(
+    scan.found.length === 0
+      ? "  結果：沒有殘留"
+      : `  結果：${scan.found.length} 支還在舊路徑`,
+  );
+
+  for (const skill of scan.found) {
+    view.addRawLine(`    ${skill.path}`);
+  }
+}
+
 const reportedStrays = new Set();
 
 function reportStraySkills(strays) {
@@ -1555,6 +1592,39 @@ function resetSkillsNotice() {
   };
 }
 
+// 第一頁的第三條：codex 的 skill 搬過家，上一輪裝在舊路徑的那幾支還躺在那裡。
+//
+// 為什麼要單獨一條，而不是併進上面那條：這台機器的新落點（~/.agents/skills）可能是
+// 空的——那時 resetSkillsNotice 會誠實地不出現，整個第一頁安靜，看起來像「這台乾淨」。
+// 而學生看得到 ~/.codex/skills 裡有 handoff，卻怎麼用都沒有反應。
+//
+// ⚠️ 這一條不接「換新」那顆按鈕，只接「搬走」：新落點那份是嚮導這一輪自己會裝的，
+// 舊路徑這幾支沒有對應的重裝動作——它們就是要離開，不是要換一份。
+function legacyCodexNotice() {
+  if (state.activeSectionId !== "env" || state.legacyCodexSkills.length === 0) {
+    return null;
+  }
+
+  const names = state.legacyCodexSkills.map((skill) => skill.name).join("、");
+
+  return {
+    text: `Codex 的舊路徑底下還躺著 ${state.legacyCodexSkills.length} 支上一輪的 skill：${names}`,
+    detail:
+      "Codex 換過 skill 的位置：舊版讀 ~/.codex/skills，現在讀的是 ~/.agents/skills。搬家是換一個地方讀，不是把舊的搬過去——那幾支還在原地，而 codex 已經不會載入它們了。它們不會跟新的打架，但你看得到資料夾、行為卻沒出現，那種落差很難自己查。按下面那顆會把它搬到隔離區（不是刪除，路徑會印在「看原始輸出」裡）。這一輪的 skill 嚮導等一下會裝到新的位置，不用你自己搬過去。你自己放在那裡的東西不會被碰到。",
+    // 一個一個搬，理由同 straySkillNotice：搬走的不可逆感很強，而他可能改過其中某一支。
+    actions: state.legacyCodexSkills.map((skill) => ({
+      label: `搬走 ${skill.name}`,
+      onClick: () =>
+        run("quarantine-skills", undefined, null, {
+          lang: state.selectedLanguage,
+          tools: toolSelectionValue(state.selectedTools),
+          name: skill.name,
+          scope: "legacy-codex",
+        }),
+    })),
+  };
+}
+
 function straySkillNotice() {
   if (
     !STRAY_SKILL_SECTIONS.has(state.activeSectionId) ||
@@ -1581,6 +1651,9 @@ function straySkillNotice() {
           lang: state.selectedLanguage,
           tools: toolSelectionValue(state.selectedTools),
           name: stray.name,
+          // 同一個名字可能同時躺在兩個地方（停發的名字、codex 的舊路徑），所以要講明
+          // 這一顆搬的是哪一份——腳本照 scope 重跑對應的那個偵測。
+          scope: "stray",
         }),
     })),
   };
@@ -1701,6 +1774,7 @@ async function checkConfigs() {
     // 所以重複安裝那條會正常消失，兩邊對照就看得出來是順序的問題。
     state.straySkills = result.strays ?? [];
     state.wizardSkills = result.wizardSkills ?? [];
+    state.legacyCodexSkills = result.legacyCodexSkills?.found ?? [];
     state.availableActions = new Set([
       "diagnose-naming-block",
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
@@ -1718,6 +1792,7 @@ async function checkConfigs() {
     reportStrayScan(result.strayScan, result.strays ?? []);
     reportStraySkills(result.strays ?? []);
     reportWizardSkills(result.wizardSkills ?? []);
+    reportLegacyCodexScan(result.legacyCodexSkills);
     view.renderConfigSummary(
       configSummary(result.checks, state.verifiedSteps),
     );

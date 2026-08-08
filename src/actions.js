@@ -280,17 +280,23 @@ Object.assign(actions, {
     //
     // 名字只擋形狀（不含斜線、點、空白），真正的把關在腳本裡：那個名字必須出現在它
     // 自己重跑一次的偵測結果裡才會動手。
+    //
+    // ⚠️ scope 是「搬哪一份」，不是裝飾：同一個名字可能同時躺在停發清單與 codex 的
+    // 舊路徑底下，而那是兩個不同的資料夾。腳本照 scope 重跑對應的那一個偵測——沒有
+    // 這個參數的話，兩種殘留只搬得動先被找到的那一份。
     options: {
       lang: LANGUAGES,
       tools: ["claude", "codex", "claude,codex"],
       name: (value) =>
         typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value),
+      scope: ["stray", "legacy-codex"],
     },
-    buildArgs: ({ lang, tools, name }) => [
+    buildArgs: ({ lang, tools, name, scope }) => [
       quarantineSkillsScript,
       `--lang=${lang}`,
       `--tools=${tools}`,
       `--name=${name}`,
+      `--scope=${scope}`,
     ],
     description: "把指定的一個舊 skill 資料夾搬到隔離區（不刪除）。",
   },

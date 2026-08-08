@@ -21,6 +21,23 @@ export const LEGACY_NPM_PACKAGES = {
   codex: "@openai/codex",
 };
 
+// Codex 的 skill 搬過家：舊版讀 ~/.codex/skills，現在的官方 user 目錄是 ~/.agents/skills。
+//
+// 搬家是「換一個地方讀」，不是「把舊的搬過去」——上一輪裝在舊路徑的那幾支原地留著，
+// 而 codex 已經不看它們了。它們不會打架（載不到就是載不到），但會製造一種很難查的
+// 誤會：學生看得到資料夾，行為卻沒有出現。
+//
+// ⚠️ 這條跟 RETIRED_SKILLS 是兩種退場，不要合併：
+//
+//   RETIRED_SKILLS         名字退場——資料夾還在會被讀到，所以要搬走
+//   LEGACY_CODEX_SKILL_ROOT 位置退場——整個根目錄已經不會被讀到
+//
+// 判準只認「我們自己發過的名字出現在舊路徑底下」。學生自己放在 ~/.codex/skills 的
+// 東西不進入判斷（legacy.js 第一版被推翻的教訓，見下面 RETIRED_SKILLS 的註解）。
+export function legacyCodexSkillRoot(home) {
+  return `${home}/.codex/skills`;
+}
+
 // 工作坊發過、但這一輪已經不發的 skill 名字。
 //
 // ⚠️ 可以被標成殘留的東西，只有這份名單裡的名字。學生自己裝的 skill 永遠不進入判斷。
