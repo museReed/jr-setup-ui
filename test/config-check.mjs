@@ -16,6 +16,7 @@ import {
   checkTabSync,
   probeHook,
   resolveBash,
+  scanStraySkills,
   straySkillDirs,
   wiredToScript,
 } from "../src/config-check.js";
@@ -386,8 +387,7 @@ process.stdin.on("end", () => {
   );
   ok("掃得出上一輪留下的 skill，_shared 與沒有 SKILL.md 的資料夾不算");
 
-  // 學生只選了 Claude 時，~/.agents/skills 底下那些 codex skill 不該被講成多餘的
-  // ——那個根目錄這一輪根本沒有步驟指過去。
+  // 這一層只掃「傳進來的 steps 指到的根目錄」——誰決定要掃哪幾個根，是上一層的事。
   const codexSkills = path.join(skillRoot, ".agents", "skills");
   mkdirSync(path.join(codexSkills, "handoff"), { recursive: true });
   writeFileSync(path.join(codexSkills, "handoff", "SKILL.md"), "# codex 的\n");
@@ -401,9 +401,30 @@ process.stdin.on("end", () => {
       },
     ]).some((stray) => stray.path.includes(".agents")),
     false,
-    "沒有步驟指過去的根目錄不掃",
+    "沒有傳進來的根目錄不掃",
   );
-  ok("只掃這一輪真的有步驟指過去的 skills 根目錄");
+  ok("straySkillDirs 只掃傳進來的 steps 指到的那幾個根目錄");
+
+  // 而上一層一律看兩個 agent 的根目錄，不跟著這次選了哪些工具走。
+  //
+  // 跟著選擇走的話，第一次進來（預設只選 claude）就掃不到 ~/.agents/skills——上一輪
+  // 用 codex 的學員一開始看不到自己機器上的 codex 舊 skill，要等他去選了 codex 才會
+  // 出現（Reed 指出）。而「我機器上還躺著上一輪的東西」跟他這次要用哪一個工具無關。
+  //
+  // 誤報靠「這一輪發的名單也用全部工具的」解掉：codex 這一輪正在發的 handoff 不能被
+  // 講成殘留。這裡兩件事一起驗。
+  const scanned = scanStraySkills("zh-TW");
+  assert.equal(
+    typeof scanned.every === "function",
+    true,
+    "scanStraySkills 要回一個陣列",
+  );
+  assert.equal(
+    scanned.some((stray) => stray.name === "handoff"),
+    false,
+    "這一輪正在發的 skill 永遠不能被講成殘留",
+  );
+  ok("殘留掃描一律看兩個 agent 的根目錄，且不誤報這一輪發的");
 
   // 白名單是這條規則唯一的例外，而且是刻意的（Reed 拍板拿掉那格眼睛）。
   //
