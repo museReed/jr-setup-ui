@@ -101,6 +101,18 @@ Get-Command claude, codex -All | Select-Object Source
 ⚠️ 「npm 版與原生版並存會出問題」這件事**沒有實測過**，是從落點差異推出來的。目前的
 處理方式（講出來、不擋）正是為了這個不確定性。
 
+### mac 上這個情境本來就很少見
+
+macOS 的 `npm install -g` 會寫 `/usr/local/lib/node_modules`，而官方 .pkg 裝的 Node 把那個
+目錄留給 root——學生帳號直接 EACCES（這正是 `installers.js` 開頭寫的、當初放棄 npm 改用
+原生安裝器的理由）。所以 mac 上的舊生多半**沒有** npm 版的 claude／codex 可以並存。
+
+例外是他的 node 來自 nvm 或 Homebrew（全域目錄可寫），或是他當初用了 `sudo`。
+
+⚠️ 用 `sudo` 裝的那種，嚮導那顆「移除 npm 裝的舊版」會失敗——我們刻意不帶 sudo。
+它會把 npm 自己的 EACCES 印出來並回非零，**明確地失敗，不是靜靜地什麼都沒做**。那時
+請學生自己跑 `sudo npm uninstall -g <套件名>`。
+
 ## 給學生的四句話
 
 1. 跑一鍵指令，跟第一次上課時一樣
