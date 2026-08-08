@@ -1051,13 +1051,85 @@ export function checkDemo(step) {
   };
 }
 
+// 上過舊一輪工作坊的機器上，可能還躺著我們已經改名或停發的 skill——skill 是裝到
+// 固定路徑再覆蓋，只補不刪，所以那些資料夾會留下來，而且 Claude 照樣會載入它們。
+// hook 註冊、tab-sync 的 rc 區塊、Codex 的舊 key 都各自有主動清理的機制，skill 沒有。
+//
+// ⚠️ 只回報、不刪除，也不判斷對錯：那個資料夾可能是學生自己裝的 skill。這裡沒有辦法
+// 分辨「我們上一輪發的」與「他自己加的」——所以話要講成「這裡有幾個不是這一輪發的」，
+// 讓他自己決定，而不是替他決定。
+//
+// 只掃這一輪真的有步驟指過去的根目錄：學生只選了 Claude 時，~/.agents/skills 底下
+// 那些 codex skill 不該被講成多餘的。
+export function straySkillDirs(steps) {
+  const roots = new Map();
+
+  for (const step of steps) {
+    for (const dir of skillDirsOf(step)) {
+      const root = path.dirname(dir);
+      roots.set(root, [...(roots.get(root) ?? []), path.basename(dir)]);
+    }
+  }
+
+  const strays = [];
+
+  for (const [root, known] of roots) {
+    let entries;
+
+    try {
+      entries = readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      // `_shared` 那種底線開頭的是附屬檔案的家，不是一個 skill。
+      if (!entry.isDirectory() || entry.name.startsWith("_")) {
+        continue;
+      }
+
+      if (known.includes(entry.name)) {
+        continue;
+      }
+
+      // 沒有 SKILL.md 的資料夾不是 skill，別把學生隨手放的東西講成殘留。
+      if (!existsSync(path.join(root, entry.name, "SKILL.md"))) {
+        continue;
+      }
+
+      strays.push({ name: entry.name, path: path.join(root, entry.name) });
+    }
+  }
+
+  return strays;
+}
+
+// 這一步會在 skills 根目錄底下佔用哪幾個資料夾。
+function skillDirsOf(step) {
+  if (step.kind === "skill") {
+    return (step.files ?? [])
+      .map((file) => file.target)
+      .filter((target) => target.endsWith("/SKILL.md"))
+      .map((target) => path.dirname(target));
+  }
+
+  // 第三方 skill 的 marker 就是它的落點目錄（Playwright 那筆是 MCP 設定，沒有目錄）。
+  if (step.kind === "external-skill" && step.marker?.includes("/skills/")) {
+    return [step.marker];
+  }
+
+  return [];
+}
+
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
   const checks = [];
+  const steps = [];
 
   for (const id of ids) {
     const step = describeStep(id, { lang, home: HOME });
+    steps.push(step);
 
     if (step.kind === "output-style") {
       checks.push(await checkOutputStyle(materials, step));
@@ -1088,7 +1160,12 @@ export async function runConfigCheck({ tools, lang }) {
     }
   }
 
-  return { lang, tools, checks: checks.map(withActions) };
+  return {
+    lang,
+    tools,
+    checks: checks.map(withActions),
+    strays: straySkillDirs(steps),
+  };
 }
 
 // 一列檢查結果 → 那一列該掛哪幾顆按鈕。抽出來是為了測得到：ViewModel 吃的是這個

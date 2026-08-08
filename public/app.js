@@ -1281,6 +1281,41 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   }
 }
 
+// 上過舊一輪工作坊的機器上，可能還躺著我們已經改名或停發的 skill——skill 只覆蓋不
+// 刪除，所以那些資料夾會留下來，而且 Claude 照樣載入它們。
+//
+// 只講一次、只回報、不刪除：那個資料夾也可能是學生自己裝的 skill，我們分辨不出來。
+// 所以話要講成「這裡有幾個不是這一輪發的」，讓他自己決定。每次重查都印一次的話，
+// 那句話會在終端裡洗版，反而沒人看。
+const reportedStrays = new Set();
+
+function reportStraySkills(strays) {
+  const fresh = strays.filter((stray) => !reportedStrays.has(stray.path));
+
+  if (fresh.length === 0) {
+    return;
+  }
+
+  for (const stray of fresh) {
+    reportedStrays.add(stray.path);
+  }
+
+  view.addLine(
+    `這台機器上有 ${fresh.length} 個不是這一輪發的 skill：${fresh
+      .map((stray) => stray.name)
+      .join("、")}。`,
+    "agent-status",
+  );
+  view.addLine(
+    "自己裝的就不用理它。如果是上一輪工作坊留下來的，可以把它的資料夾刪掉——它現在仍然會被載入。",
+    "agent-status",
+  );
+
+  for (const stray of fresh) {
+    view.addRawLine(`殘留的 skill：${stray.path}`);
+  }
+}
+
 async function checkConfigs() {
   if (state.configCheckInProgress) {
     return;
@@ -1305,6 +1340,7 @@ async function checkConfigs() {
     view.renderConfigSummary(
       configSummary(result.checks, state.verifiedSteps),
     );
+    reportStraySkills(result.strays ?? []);
   } catch (error) {
     view.renderConfigFailure(error.message);
   } finally {
