@@ -8,15 +8,17 @@
 
 ## 狀態摘要
 
-1. **第一部分做完了**：CLI 解析改成「挑跑得動的那一支」，不是 PATH 上第一個。
-   新增 `findAllExecutables` / `pickRunnable`（純函式），三處跟著換判準。
+1. **第一部分做完了、而且真機驗過了**：CLI 解析改成「挑跑得動的那一支」，不是 PATH
+   上第一個。新增 `findAllExecutables` / `pickRunnable`（純函式），三處跟著換判準。
    實作由 codex exec 完成，spec 與 review 在 orchestrator 這邊。
+   **髒 Windows VM 驗收通過**：裝完 tab-sync、重開 PowerShell 後 `codex --version`
+   回 `codex-cli 0.147.0`（修之前是 250ms 快速失敗）。
 2. **髒環境腳本寫好了**：`scripts/seed-dirty-env.mjs`，一支跨 mac / Windows，
    七種污染。搭 `docs/dirty-vm-setup.md` 使用。
 3. **Windows VM 已經照那份文件弄髒過**，假 wrapper 確認生效（profile 第 4 行指向
    已刪的 npm 路徑，`codex --version` 250ms 快速失敗）。
-4. **正在查一個新問題**：第一次開頁時 `/env` 花了約 14 秒才回來（200 OK），
-   那段時間畫面上沒有環境卡片、setup 卡的「下一張」也消失。
+4. **第一次開頁很慢那件已經解完了**：`/env` 十幾秒（`8a5f64f`）與 `/configs` 序列執行
+   （`c555a79`）兩段都修了，Windows VM 驗收通過——第一眼就有卡片與「下一張」。
 
 ## 必讀檔案
 
@@ -29,7 +31,7 @@
 
 ## 下一步
 
-### 1. `/env` 那 14 秒 ✅ 已修（`8a5f64f`），但還有下半段
+### 1. 第一次開頁的等待 ✅ 兩段都修完、都驗過了
 
 **根因**：`spawnEnv()` 的快取寫在 `await` 之後，而環境檢查是十幾支探測**同時**進來的
 ——每一支都撲空、每一支都自己 spawn 一支 powershell 讀同一份登錄檔。單獨量一支 603ms
@@ -37,9 +39,10 @@
 
 **修法**：共用同一個 in-flight promise。**真機驗過：卡片一下就出現了。**
 
-⚠️ **但 Reed 回報「解鎖下一張還要等一段時間」，那條還沒找到。**
+當時還剩「解鎖下一張還要等一段時間」，那是 `/configs` 那條，見 1a——也修完了。
 
-已經量過、**排除掉**的（Windows VM，還原快照後）：
+當初量過、**排除掉**的（Windows VM，還原快照後）。留著是因為下次再遇到慢，
+這幾支不用重測：
 
 | 指令 | 耗時 |
 |---|---|
@@ -50,9 +53,9 @@
 | `powershell.exe … GetEnvironmentVariable` | 603ms ← 就是這支 × 13 |
 | `bash -c "exit 0"` | 327ms，而且**根本不在 PATH**（這台還沒裝 Git） |
 
-### 1a. 根因已找到：`/configs` 是序列跑的（**下一個 session 從這裡開始**）
+### 1a. `/configs` 是序列跑的 ✅ 已修（`c555a79`），VM 驗過
 
-`src/config-check.js:1059` 的 `runConfigCheck` 是一個 `for` 迴圈，31 項**每一項都 await**：
+`src/config-check.js` 的 `runConfigCheck` 原本是一個 `for` 迴圈，31 項**每一項都 await**：
 
 ```js
 for (const id of ids) {
@@ -65,19 +68,19 @@ for (const id of ids) {
 （`resolveBash()` 一支、`node` 一支、還有 `await spawnEnv()`）。排隊的話這些成本**相加**，
 併行的話是取最大值。
 
-**要做的兩件，缺一不可：**
+**做了的兩件（`c555a79`）：**
 
-1. **改成併行**——`Promise.all`，跟環境那半一致。⚠️ 注意 `checks` 的**順序**要保持跟
-   `ids` 一致（畫面上的卡片順序靠它），所以是 `Promise.all(ids.map(...))` 而不是
-   push 進陣列
-2. **給 hook 探測逾時保護**——`probeRegisteredHook`（:443）與 `probeHook`（:476）
-   目前**完全沒有逾時**，子行程不結束那個 Promise 就永遠不 resolve。
-   環境那半的 `runProbe` 有 `TIMEOUT_MS = 15000` 可以照抄形狀
+1. **改成併行**——`Promise.all(ids.map(...))`，跟環境那半一致。用 `map` 而不是 push
+   進陣列，是因為畫面上的卡片順序靠 `checks` 跟 `ids` 對齊
+2. **hook 探測補逾時**——`probeRegisteredHook` / `probeHook` 原本**完全沒有逾時**，
+   子行程不結束那個 Promise 就永遠不 resolve。抽一支 `settleProbe` 共用，
+   照 `runProbe` 給 `PROBE_TIMEOUT_MS = 15000`
+   - ⚠️ 逾時另外掛 `timedOut` 旗標。不然它跟「找不到 bash」同樣是 `exitCode: null`，
+     會被 `checkHook` 誤報成「這台機器沒有 bash」，還會再退回去跑一輪 `probeHook` 白等
 
-⚠️ **第 2 件比第 1 件重要**：併行只是快，逾時才是「不會無限期卡住」。只做併行的話，
-一支卡住還是拖垮整包。
+第 2 件比第 1 件重要：併行只是快，逾時才是「不會無限期卡住」。
 
-驗收：Windows VM 還原快照 → 跑嚮導 → 第一眼就要有卡片**與**「下一張」。
+驗收（已通過）：Windows VM 還原快照 → 跑嚮導 → 第一眼就有卡片**與**「下一張」。
 要數字的話 DevTools 得**先開好**再把網址貼進去（嚮導自己開的分頁沒有 DevTools）。
 
 ### 1b. 順帶要修的三件（方向已跟 Reed 對過，還沒動手）
@@ -140,5 +143,5 @@ $JrBranch = "rework/returning-students"; irm https://raw.githubusercontent.com/m
   來對——很多檔案（`src/legacy.js`、`src/codex-sandbox.js`、清理腳本）在這裡不存在
 - **mac VM 還沒弄髒過**。第一部分只改 Windows 那半（posix wrapper 刻意沒動），
   所以還不急，但 A2 之後就需要了
-- **`/env` 那 14 秒已修**（`8a5f64f`，`spawnEnv()` 共用 in-flight promise，真機驗過）。
-  剩下的「解鎖下一張還要等」是 `/configs` 那條，見上面第 1a 點
+- **第一次開頁的等待已經全部解掉**（`8a5f64f` + `c555a79`，兩段都在 Windows VM 驗過）。
+  下一輪如果又遇到慢，先看第 1 點那張「已排除」的耗時表，不用重測
