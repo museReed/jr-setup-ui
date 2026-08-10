@@ -5,6 +5,7 @@ import {
   findDeadWrappers,
   removeWrapperBlocks,
   shellProfilePaths,
+  shellWrapperStatus,
 } from "../src/shell-wrapper.js";
 
 function ok(description) {
@@ -110,6 +111,32 @@ try {
 
   assert.ok(shellProfilePaths("/Users/reed", "darwin").includes("/Users/reed/.zshrc"));
   ok("POSIX 掃得到 .zshrc");
+
+  const clean = shellWrapperStatus([]);
+  assert.equal(clean.status, "ok");
+  assert.equal(clean.fixLabel, undefined);
+  ok("沒問題時是綠的，也不長按鈕文字");
+
+  // 按鈕文字寫死 codex 的話，壞的是 claude 時卡片說 claude、按鈕說 codex。
+  const claudeOnly = shellWrapperStatus([
+    { command: "claude", deadPath: "/gone/claude" },
+  ]);
+  assert.equal(claudeOnly.status, "warn");
+  assert.equal(claudeOnly.fixLabel, "清除廢棄的 claude 引用");
+  assert.ok(claudeOnly.detail.includes("claude"));
+  assert.ok(!claudeOnly.detail.includes("codex"));
+  ok("只有 claude 壞掉時，按鈕與說明都只講 claude");
+
+  const both = shellWrapperStatus([
+    { command: "codex", deadPath: "/gone/codex" },
+    { command: "claude", deadPath: "/gone/claude" },
+    { command: "codex", deadPath: "/gone/codex2" },
+  ]);
+  assert.equal(both.fixLabel, "清除廢棄的 codex、claude 引用");
+  ok("兩支都壞掉時按鈕列出兩支，重複的不重複列");
+
+  assert.equal(both.installable, false);
+  ok("這一列不是「沒裝」，不該長出安裝按鈕");
 } catch (error) {
   console.error(error);
   process.exit(1);

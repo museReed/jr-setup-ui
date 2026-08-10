@@ -116,6 +116,29 @@ export function findDeadWrappers(content, { platform = process.platform, exists 
   return found;
 }
 
+// 找到的東西 → 那一列要說什麼。抽成純函式跟 ghosttyStatus / windowsTerminalStatus
+// 同一個形狀：文字要跟著「壞掉的是哪一支」變，寫在 async 的檢查裡就測不到了。
+export function shellWrapperStatus(dead) {
+  if (dead.length === 0) {
+    return { status: "ok", detail: "沒有舊設定擋在前面" };
+  }
+
+  const names = [...new Set(dead.map((block) => block.command))].join("、");
+
+  return {
+    status: "warn",
+    installable: false,
+    // 按鈕文字跟著壞掉的那一支變。寫死 codex 的話，profile 裡壞的是 claude 時，
+    // 卡片說 claude、按鈕說 codex，學生會以為按下去修的是別的東西。
+    fixLabel: `清除廢棄的 ${names} 引用`,
+    detail:
+      `你的設定檔裡有一個 ${names}，指到一個已經不在的檔案（${dead[0].deadPath}）。` +
+      `不清掉的話，${names} 裝完還是叫不動——之後每一張要你在終端機打 ${names} 的卡` +
+      `都會說「找不到指令」，但你去查又會發現它明明裝好了。` +
+      `按右邊清除廢棄的引用，安裝才走得完。`,
+  };
+}
+
 // 把整個函式連同它上面緊鄰的註解一起刪掉。只刪函式的話，留下來的那行
 // 「# === 假的舊 wrapper ... ===」會讓學生以為沒清乾淨。
 export function removeWrapperBlocks(content, blocks) {

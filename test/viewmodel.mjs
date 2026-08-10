@@ -1444,6 +1444,25 @@ try {
   );
   ok("執行原則是「修正」、登入狀態是「開始登入」");
 
+  // 迴歸：這張對照表原本只有 execution-policy 一個特例，其他一律「開始登入」——
+  // 新加的 shell-wrapper 那一列於是長出一顆寫著「開始登入」的清除鍵。
+  // 文字改由那一列自己給，因為它要指名壞掉的是 claude 還是 codex。
+  const wrapper = envRowModel({
+    id: "shell-wrapper",
+    label: "終端機裡的 claude / codex 是活的",
+    status: "warn",
+    detail: "你的設定檔裡有一個 codex，指到一個已經不在的檔案",
+    installAction: null,
+    fixAction: "fix-shell-wrapper",
+    fixLabel: "清除廢棄的 codex 引用",
+  });
+  assert.deepEqual(
+    wrapper.buttons.map((button) => button.text),
+    ["清除廢棄的 codex 引用"],
+  );
+  assert.equal(wrapper.buttons[0].checkId, "shell-wrapper");
+  ok("那一列自己給了 fixLabel 時，按鈕就用它的文字");
+
   // 修某一格的按鈕要說得出它修的是哪一格：畫面上它掛回那一格底下（見 view.js 的
   // inlineActions）。原本「未登入」在清單裡、按鈕在清單外的按鈕列，學生要自己把
   // 兩者連起來（Reed 實測）。

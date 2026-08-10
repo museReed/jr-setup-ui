@@ -238,7 +238,11 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: check.fixAction,
       dataName: "fixAction",
-      text: check.id === "execution-policy" ? "修正" : "開始登入",
+      // fixLabel 由後端那一列自己給——文字要跟著偵測結果變的（壞掉的是 claude
+      // 還是 codex）沒辦法寫在這張靜態對照表裡。沒給就照舊。
+      text:
+        check.fixLabel ??
+        (check.id === "execution-policy" ? "修正" : "開始登入"),
       // 這顆修的是哪一格。畫面上要把它擺回那一格旁邊——「未登入」在清單裡，按鈕卻
       // 在清單外的按鈕列，學生得自己把兩者連起來（Reed 實測）。
       checkId: check.id,

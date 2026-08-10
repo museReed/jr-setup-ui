@@ -210,7 +210,9 @@ Object.assign(actions, {
   // 兩個平台都要有：POSIX 那邊 .zshrc 一樣塞得進一個指向舊 npm 路徑的函式。
   "fix-shell-wrapper": {
     kind: "fixed",
-    label: "清除廢棄的 codex 引用",
+    // 畫面上那顆的文字由 env-check 的 fixLabel 決定（要指名壞掉的是哪一支）。
+    // 這裡是 action 註冊表的名字，兩支都可能，所以不指名。
+    label: "清除廢棄的引用",
     cmd: process.execPath,
     args: [fixShellWrapperScript, "--apply"],
     description:
