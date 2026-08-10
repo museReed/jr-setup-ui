@@ -28,6 +28,39 @@ import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
 
+// hook 探測會 spawn 子行程（bash / node）。子行程不結束的話 Promise 永遠不 resolve，
+// 整包 /configs 就無限期卡住——畫面上是「下一張」永遠不出現。照 env-check 的
+// runProbe 一樣給 15 秒上限。
+const PROBE_TIMEOUT_MS = 15000;
+
+// 兩支 hook 探測共用的收尾：逾時就砍掉子行程，並且回一個「跟『沒有 bash』分得開」
+// 的結果——exitCode 為 null 在下游代表「這台沒有 bash，改驗腳本本身」，逾時不是
+// 那件事，混在一起會給出誤導的說明。
+function settleProbe(child, resolve, label) {
+  let settled = false;
+
+  const finish = (result) => {
+    if (settled) {
+      return;
+    }
+
+    settled = true;
+    clearTimeout(timer);
+    resolve(result);
+  };
+
+  const timer = setTimeout(() => {
+    child.kill("SIGKILL");
+    finish({
+      exitCode: null,
+      stderr: `${label} 超過 ${PROBE_TIMEOUT_MS / 1000} 秒沒有結束`,
+      timedOut: true,
+    });
+  }, PROBE_TIMEOUT_MS);
+
+  return finish;
+}
+
 async function readJsonOrNull(target) {
   if (!existsSync(target)) {
     return null;
@@ -456,15 +489,17 @@ export function probeRegisteredHook(registeredCommand, command, env) {
       return;
     }
 
+    const finish = settleProbe(child, resolve, "hook 註冊指令");
+
     let stderr = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
     child.once("error", (error) =>
-      resolve({ exitCode: null, stderr: error.message }),
+      finish({ exitCode: null, stderr: error.message }),
     );
-    child.once("close", (exitCode) => resolve({ exitCode, stderr }));
+    child.once("close", (exitCode) => finish({ exitCode, stderr }));
     child.stdin.end(
       JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
     );
@@ -488,15 +523,17 @@ export function probeHook(hookPath, command) {
       return;
     }
 
+    const finish = settleProbe(child, resolve, "hook 腳本");
+
     let stderr = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
     child.once("error", (error) =>
-      resolve({ exitCode: null, stderr: error.message }),
+      finish({ exitCode: null, stderr: error.message }),
     );
-    child.once("close", (exitCode) => resolve({ exitCode, stderr }));
+    child.once("close", (exitCode) => finish({ exitCode, stderr }));
     child.stdin.end(
       JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
     );
@@ -552,6 +589,17 @@ async function checkHook(step, materials) {
       "echo a && echo b",
       await spawnEnv(),
     );
+
+    // 逾時要跟「找不到 bash」分開處理：兩者的 exitCode 都是 null，但逾時再退回去
+    // 跑腳本只會再等一輪，而且會給出「這台沒有 bash」這種假原因。
+    if (probe.timedOut === true) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: "已註冊，但實測探測逾時——這台機器上 hook 跑不完",
+      };
+    }
 
     // 真的一台 bash 都找不到時，退回直接跑腳本本身。那比不上「跑註冊的那條指令」
     // ——路徑寫壞就抓不到了——但總比把一句學生修不了的錯誤丟在畫面上好。
@@ -1054,39 +1102,45 @@ export function checkDemo(step) {
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools);
-  const checks = [];
 
-  for (const id of ids) {
-    const step = describeStep(id, { lang, home: HOME });
+  // 併行，跟 runEnvCheck 的 Promise.all 一致。序列跑的話 31 項裡那幾個會 spawn
+  // 子行程的（hook 探測是 bash 一支、node 一支、還有 spawnEnv）成本是相加的，
+  // 併行才是取最大值。
+  // ⚠️ 用 ids.map 而不是 push 進陣列：畫面上的卡片順序靠 checks 跟 ids 對齊，
+  // 誰先跑完就先 push 會把順序打亂。
+  const checks = await Promise.all(
+    ids.map(async (id) => {
+      const step = describeStep(id, { lang, home: HOME });
 
-    if (step.kind === "output-style") {
-      checks.push(await checkOutputStyle(materials, step));
-    } else if (step.kind === "hook") {
-      checks.push(await checkHook(step, materials));
-    } else if (step.kind === "allowlist") {
-      checks.push(await checkAllowlist(materials, step));
-    } else if (step.kind === "tab-sync") {
-      checks.push(await checkTabSync(step, materials));
-    } else if (step.kind === "agent-hooks") {
-      checks.push(await checkAgentHooks(step, materials));
-    } else if (step.kind === "skill") {
-      checks.push(await checkSkill(step, materials));
-    } else if (step.kind === "external-skill") {
-      checks.push(await checkExternalSkill(step));
-    } else if (step.kind === "claude-hud") {
-      checks.push(await checkClaudeHud(step));
-    } else if (step.kind === "vault-agent") {
-      checks.push(checkVaultAgent(step));
-    } else if (step.kind === "obsidian-app") {
-      checks.push(checkObsidianApp(step));
-    } else if (step.kind === "obsidian-vault") {
-      checks.push(await checkObsidianVault(step));
-    } else if (step.kind === "demo") {
-      checks.push(checkDemo(step));
-    } else {
-      checks.push(await checkCopyStep(materials, step));
-    }
-  }
+      if (step.kind === "output-style") {
+        return await checkOutputStyle(materials, step);
+      } else if (step.kind === "hook") {
+        return await checkHook(step, materials);
+      } else if (step.kind === "allowlist") {
+        return await checkAllowlist(materials, step);
+      } else if (step.kind === "tab-sync") {
+        return await checkTabSync(step, materials);
+      } else if (step.kind === "agent-hooks") {
+        return await checkAgentHooks(step, materials);
+      } else if (step.kind === "skill") {
+        return await checkSkill(step, materials);
+      } else if (step.kind === "external-skill") {
+        return await checkExternalSkill(step);
+      } else if (step.kind === "claude-hud") {
+        return await checkClaudeHud(step);
+      } else if (step.kind === "vault-agent") {
+        return checkVaultAgent(step);
+      } else if (step.kind === "obsidian-app") {
+        return checkObsidianApp(step);
+      } else if (step.kind === "obsidian-vault") {
+        return await checkObsidianVault(step);
+      } else if (step.kind === "demo") {
+        return checkDemo(step);
+      } else {
+        return await checkCopyStep(materials, step);
+      }
+    }),
+  );
 
   return { lang, tools, checks: checks.map(withActions) };
 }

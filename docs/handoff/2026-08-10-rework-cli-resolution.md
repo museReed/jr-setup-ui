@@ -140,4 +140,5 @@ $JrBranch = "rework/returning-students"; irm https://raw.githubusercontent.com/m
   來對——很多檔案（`src/legacy.js`、`src/codex-sandbox.js`、清理腳本）在這裡不存在
 - **mac VM 還沒弄髒過**。第一部分只改 Windows 那半（posix wrapper 刻意沒動），
   所以還不急，但 A2 之後就需要了
-- **`/env` 那 14 秒的根因還沒找到**，上面第 1 點是進行中的線索
+- **`/env` 那 14 秒已修**（`8a5f64f`，`spawnEnv()` 共用 in-flight promise，真機驗過）。
+  剩下的「解鎖下一張還要等」是 `/configs` 那條，見上面第 1a 點
