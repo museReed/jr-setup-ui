@@ -12,6 +12,10 @@ import {
 } from "./execution-policy.js";
 import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
+import {
+  findDeadWrappers,
+  shellProfilePaths,
+} from "./shell-wrapper.js";
 import { resolveSpawn } from "./spawn-command.js";
 
 // 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
@@ -63,6 +67,7 @@ export function checksForPlatform(platform) {
     { id: "gh-auth", label: "GitHub 登入狀態" },
     { id: "node", label: "Node.js" },
     { id: "python", label: "Python 3" },
+    { id: "shell-wrapper", label: "終端機裡的 claude / codex 是活的" },
   ];
 
   if (platform === "win32") {
@@ -286,6 +291,7 @@ function withActions(check) {
   const fixActions = {
     "execution-policy":
       check.status === "ok" ? null : "fix-execution-policy",
+    "shell-wrapper": check.status === "warn" ? "fix-shell-wrapper" : null,
     "claude-auth": check.status === "warn" ? "login-claude" : null,
     "codex-auth": check.status === "warn" ? "login-codex" : null,
     "gh-auth": check.status === "warn" ? "login-gh" : null,
@@ -527,6 +533,48 @@ async function checkPython() {
   return last;
 }
 
+// 這一列查的不是「裝了沒」，是「在你自己的終端機打得動嗎」。兩者會不一致：
+// 設定檔裡一個同名函式就能把裝好的執行檔整個蓋掉，而 PATH 上完全看不出異常。
+async function checkShellWrapper() {
+  const id = "shell-wrapper";
+  const label = "終端機裡的 claude / codex 是活的";
+  const dead = [];
+
+  for (const profile of shellProfilePaths(homedir())) {
+    if (!existsSync(profile)) {
+      continue;
+    }
+
+    try {
+      const content = await readFile(profile, "utf8");
+
+      for (const block of findDeadWrappers(content, { exists: existsSync })) {
+        dead.push({ ...block, profile });
+      }
+    } catch {
+      // 讀不到就當作沒問題。這一列是額外的保險，不該因為權限之類的意外
+      // 讓學生看到一個他修不了的紅燈。
+    }
+  }
+
+  if (dead.length === 0) {
+    return { id, label, status: "ok", detail: "沒有舊設定擋在前面" };
+  }
+
+  const names = [...new Set(dead.map((block) => block.command))].join("、");
+
+  return {
+    id,
+    label,
+    status: "warn",
+    installable: false,
+    detail:
+      `你的設定檔裡有一個 ${names}，指到一個已經不在的檔案（${dead[0].deadPath}）。` +
+      `不清掉的話，之後每一張叫你在終端機打 ${names} 的卡都會說「找不到指令」，` +
+      `但你去查又會發現它明明裝好了——按右邊那顆清掉就好。`,
+  };
+}
+
 async function checkClaudeAuth(installed) {
   const id = "claude-auth";
   const label = "Claude Code 登入狀態";
@@ -661,7 +709,14 @@ export async function runEnvCheck(tools = []) {
       checksToRun.push(codex, checkCodexAuth(codex));
     }
 
-    checksToRun.push(git, gh, checkGhAuth(gh), node, python);
+    checksToRun.push(
+      git,
+      gh,
+      checkGhAuth(gh),
+      node,
+      python,
+      checkShellWrapper(),
+    );
 
     if (process.platform === "win32") {
       checksToRun.unshift(checkExecutionPolicy());

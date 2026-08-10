@@ -1400,6 +1400,15 @@ export function installStatusMessage(action, result) {
     return { text: "已改為 RemoteSigned，狀態已更新。", failed: false };
   }
 
+  // 這一項跟其他修復不一樣：狀態雖然當場就變綠，但學生手上那個終端視窗還是舊的
+  // ——設定檔是開視窗時讀的。不講的話他會以為修好了，回去打指令還是失敗。
+  if (action === "fix-shell-wrapper") {
+    return {
+      text: "已清掉。要開一個新的終端視窗，改動才會生效。",
+      failed: false,
+    };
+  }
+
   return {
     text:
       result.benign === true
