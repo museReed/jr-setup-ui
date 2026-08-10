@@ -29,20 +29,32 @@
 
 ## 下一步
 
-### 1. 查完 `/env` 那 14 秒（進行中）
+### 1. `/env` 那 14 秒 ✅ 已修（`8a5f64f`），但還有下半段
 
-已排除：`codex --version` 只花 250ms（假 wrapper 是快速失敗，不是卡住）。
+**根因**：`spawnEnv()` 的快取寫在 `await` 之後，而環境檢查是十幾支探測**同時**進來的
+——每一支都撲空、每一支都自己 spawn 一支 powershell 讀同一份登錄檔。單獨量一支 603ms
+（暖機後的數字），十幾支併發就是十幾秒。
 
-還沒量的三支（都會碰網路，是主要嫌疑）——在 Windows VM 上跑：
+**修法**：共用同一個 in-flight promise。**真機驗過：卡片一下就出現了。**
 
-```powershell
-Measure-Command { claude auth status }
-Measure-Command { codex login status }
-Measure-Command { gh auth status }
-Measure-Command { claude --version }
-```
+⚠️ **但 Reed 回報「解鎖下一張還要等一段時間」，那條還沒找到。**
 
-查到之後要修的三件（已跟 Reed 對過方向，還沒動手）：
+已經量過、**排除掉**的（Windows VM，還原快照後）：
+
+| 指令 | 耗時 |
+|---|---|
+| `codex --version` | 250ms（假 wrapper 快速失敗，不是卡住） |
+| `claude auth status` | 591ms |
+| `codex login status` | 42ms |
+| `gh auth status` | 76ms |
+| `powershell.exe … GetEnvironmentVariable` | 603ms ← 就是這支 × 13 |
+| `bash -c "exit 0"` | 327ms，而且**根本不在 PATH**（這台還沒裝 Git） |
+
+下一步建議：直接量 `/configs` 那一筆的 Time（DevTools 要**先開好**再貼網址進去，
+嚮導自己開的分頁沒有 DevTools）。可疑的是 `src/config-check.js` 的
+`probeRegisteredHook` / `probeHook`——**它們完全沒有逾時保護**，子行程不結束就永遠等。
+
+### 1b. 順帶要修的三件（方向已跟 Reed 對過，還沒動手）
 
 1. **setup 卡的「下一張」不該受環境卡片存不存在影響**。它的 `nextUnlocked` 本來就是
    `true`，是「這一段的最後一張」那條路徑把按鈕吃掉的（`public/app.js` 的 `next:`）
