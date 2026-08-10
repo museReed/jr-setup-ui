@@ -154,6 +154,20 @@ export function withPath(base, value) {
   return env;
 }
 
+// 同一時間只讀一次登錄檔。
+//
+// ⚠️ 這個「同時只跑一次」不是效能潔癖，是修一個真的很痛的 bug：快取是**拿到結果之後**
+// 才寫的，而環境檢查是十幾支探測**同時**進來的——每一支都撲空、每一支都自己 spawn 一支
+// powershell 去讀同一份登錄檔。
+//
+// Windows VM 實測：暖機之後單獨跑一支 powershell 讀登錄檔要 603ms，冷的更久；十幾支
+// 併發下來，第一次開頁的 /env 花了約 14 秒才回來。那 14 秒裡畫面上一張環境卡片都沒有
+// （卡片是從 /env 的結果長出來的），學生看到的是一個空白又沒有按鈕的畫面。
+//
+// 重整之後就正常，是因為那時 powershell 已經被作業系統快取暖起來——這也是為什麼這個
+// 問題只有「第一次開頁」會現形，很容易被當成偶發。
+let inFlight = null;
+
 // 回傳給子程序用的環境變數。
 export async function spawnEnv(now = Date.now()) {
   if (process.platform === "darwin") {
@@ -168,6 +182,22 @@ export async function spawnEnv(now = Date.now()) {
     return cache.env;
   }
 
+  // 已經有人在讀了就等同一份結果，不要再開一支。
+  if (inFlight !== null) {
+    return inFlight;
+  }
+
+  inFlight = readEnvFromRegistry(now);
+
+  try {
+    return await inFlight;
+  } finally {
+    // 不管成功失敗都要放掉，否則失敗一次之後就永遠卡在同一個 promise 上。
+    inFlight = null;
+  }
+}
+
+async function readEnvFromRegistry(now) {
   const registry = await readRegistryPath();
 
   if (registry === null) {
