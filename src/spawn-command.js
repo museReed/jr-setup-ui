@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 
 // Node 20 起，spawn 在 shell:false 下執行 .cmd / .bat 會直接丟 EINVAL
 // （BatBadBut 漏洞的修補，CVE-2024-27980）。Windows 上 npm 裝出來的 CLI
@@ -52,39 +52,103 @@ export function resolveSpawn(cmd, args, platform = process.platform) {
 // 讓 ENOENT 照常浮現成「請先安裝」。
 const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 
-export function findExecutable(cmd, env, fileExists) {
-  const directories = (env.PATH ?? env.Path ?? "").split(";");
-  const extensions = (env.PATHEXT ?? DEFAULT_PATHEXT).split(";");
+export function findAllExecutables(
+  cmd,
+  env,
+  {
+    platform = process.platform,
+    fileExists,
+    realPath = (candidate) => candidate,
+  } = {},
+) {
+  const windows = platform === "win32";
+  const directories = (env.PATH ?? env.Path ?? "").split(windows ? ";" : ":");
+  const extensions = windows
+    ? (env.PATHEXT ?? DEFAULT_PATHEXT).split(";")
+    : [""];
+  const separator = windows ? "\\" : "/";
+  const seen = new Set();
+  const candidates = [];
 
   for (const directory of directories) {
-    const trimmed = directory.trim().replace(/[\\/]+$/, "");
+    const raw = directory.trim();
 
-    if (trimmed.length === 0) {
+    if (raw.length === 0) {
       continue;
     }
 
-    for (const extension of extensions) {
-      const candidate = `${trimmed}\\${cmd}${extension.trim()}`;
+    const trimmed = raw.replace(/[\\/]+$/, "");
+    const base = trimmed.length === 0 ? separator : trimmed;
 
-      if (fileExists(candidate)) {
-        return candidate;
+    for (const extension of extensions) {
+      const name = `${cmd}${extension.trim()}`;
+      const candidate =
+        base === separator ? `${base}${name}` : `${base}${separator}${name}`;
+
+      if (!fileExists(candidate)) {
+        continue;
       }
+
+      let identity = candidate;
+
+      try {
+        identity = realPath(candidate);
+      } catch {
+        // 連結暫時解不開仍可能是可執行檔，不能因為去重失敗就漏掉它。
+      }
+
+      if (seen.has(identity)) {
+        continue;
+      }
+
+      seen.add(identity);
+      candidates.push(candidate);
     }
   }
 
-  return null;
+  return candidates;
+}
+
+export function pickRunnable(candidates, { platform = process.platform } = {}) {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (platform !== "win32") {
+    return candidates[0];
+  }
+
+  return (
+    candidates.find((candidate) => /\.(exe|com)$/i.test(candidate)) ??
+    candidates[0]
+  );
+}
+
+export function findExecutable(cmd, env, fileExists) {
+  return (
+    findAllExecutables(cmd, env, { platform: "win32", fileExists })[0] ?? null
+  );
 }
 
 // 動作實際要 spawn 的指令。副檔名已經寫死的（npm.cmd）維持原本的處理，
 // 裸指令才去查 PATH。
-export function resolveLaunch(cmd, args, { env, fileExists, platform } = {}) {
+export function resolveLaunch(
+  cmd,
+  args,
+  { env, fileExists, realPath, platform } = {},
+) {
   const runtime = platform ?? process.platform;
 
   if (runtime !== "win32" || cmd.includes(".")) {
     return resolveSpawn(cmd, args, runtime);
   }
 
-  const found = findExecutable(cmd, env ?? process.env, fileExists ?? existsSync);
+  const candidates = findAllExecutables(cmd, env ?? process.env, {
+    platform: runtime,
+    fileExists: fileExists ?? existsSync,
+    realPath: realPath ?? realpathSync,
+  });
+  const found = pickRunnable(candidates, { platform: runtime });
 
   if (found === null) {
     return { cmd, args };

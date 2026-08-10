@@ -352,6 +352,7 @@ export function isInteractiveInvocation(args) {
 }
 
 function posixTabSyncFunction(command, watcherTarget) {
+  // POSIX 每次都用 command 動態查 PATH，且沒有 Windows shim 副檔名，不必預先挑路徑。
   return `${command}() {
   local arg sync_file tty_path watcher_pid exit_code
   for arg in "$@"; do
@@ -388,9 +389,17 @@ function posixTabSyncFunction(command, watcherTarget) {
 function powershellTabSyncFunction(command, watcherTarget) {
   return `function ${command} {
   param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
-  $realCommand = Get-Command ${command} -CommandType Application -ErrorAction Stop | Select-Object -First 1
+  $commandCandidates = @(Get-Command ${command} -CommandType Application -All -ErrorAction SilentlyContinue | Where-Object { Test-Path -LiteralPath $_.Source -PathType Leaf })
+  $realCommandPath = @($commandCandidates | Where-Object { [System.IO.Path]::GetExtension($_.Source) -in @('.exe', '.com') } | ForEach-Object { $_.Source })[0]
+  if ($null -eq $realCommandPath) {
+    $realCommandPath = @($commandCandidates | ForEach-Object { $_.Source })[0]
+  }
+  if ($null -eq $realCommandPath) {
+    Write-Host "找不到可執行的 ${command}，請重新安裝後再試。"
+    return
+  }
   if ($InvocationArgs | Where-Object { $_ -in @('-p', 'exec', '--version', '--help') }) {
-    & $realCommand.Source @InvocationArgs
+    & $realCommandPath @InvocationArgs
     return
   }
 
@@ -401,7 +410,7 @@ function powershellTabSyncFunction(command, watcherTarget) {
   $watcher = Start-Process powershell.exe -ArgumentList "-NoProfile -File \`"${watcherTarget}\`" \`"$syncFile\`" $PID" -NoNewWindow -PassThru
 
   try {
-    & $realCommand.Source @InvocationArgs
+    & $realCommandPath @InvocationArgs
     $commandExitCode = $LASTEXITCODE
   } finally {
     Stop-Process -Id $watcher.Id -Force -ErrorAction SilentlyContinue
