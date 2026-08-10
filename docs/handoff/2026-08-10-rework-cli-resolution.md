@@ -50,9 +50,35 @@
 | `powershell.exe … GetEnvironmentVariable` | 603ms ← 就是這支 × 13 |
 | `bash -c "exit 0"` | 327ms，而且**根本不在 PATH**（這台還沒裝 Git） |
 
-下一步建議：直接量 `/configs` 那一筆的 Time（DevTools 要**先開好**再貼網址進去，
-嚮導自己開的分頁沒有 DevTools）。可疑的是 `src/config-check.js` 的
-`probeRegisteredHook` / `probeHook`——**它們完全沒有逾時保護**，子行程不結束就永遠等。
+### 1a. 根因已找到：`/configs` 是序列跑的（**下一個 session 從這裡開始**）
+
+`src/config-check.js:1059` 的 `runConfigCheck` 是一個 `for` 迴圈，31 項**每一項都 await**：
+
+```js
+for (const id of ids) {
+  checks.push(await checkOutputStyle(materials, step));   // 一項做完才做下一項
+}
+```
+
+對照 `runEnvCheck` 用的是 `Promise.all(checksToRun)`——環境那半十幾項同時跑，規則檔
+這半 31 項排隊。31 項裡多數是讀檔（快），但 hook 那幾項會 spawn 子行程
+（`resolveBash()` 一支、`node` 一支、還有 `await spawnEnv()`）。排隊的話這些成本**相加**，
+併行的話是取最大值。
+
+**要做的兩件，缺一不可：**
+
+1. **改成併行**——`Promise.all`，跟環境那半一致。⚠️ 注意 `checks` 的**順序**要保持跟
+   `ids` 一致（畫面上的卡片順序靠它），所以是 `Promise.all(ids.map(...))` 而不是
+   push 進陣列
+2. **給 hook 探測逾時保護**——`probeRegisteredHook`（:443）與 `probeHook`（:476）
+   目前**完全沒有逾時**，子行程不結束那個 Promise 就永遠不 resolve。
+   環境那半的 `runProbe` 有 `TIMEOUT_MS = 15000` 可以照抄形狀
+
+⚠️ **第 2 件比第 1 件重要**：併行只是快，逾時才是「不會無限期卡住」。只做併行的話，
+一支卡住還是拖垮整包。
+
+驗收：Windows VM 還原快照 → 跑嚮導 → 第一眼就要有卡片**與**「下一張」。
+要數字的話 DevTools 得**先開好**再把網址貼進去（嚮導自己開的分頁沒有 DevTools）。
 
 ### 1b. 順帶要修的三件（方向已跟 Reed 對過，還沒動手）
 
