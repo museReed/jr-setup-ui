@@ -10,7 +10,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SKIP_DIRS = new Set(["node_modules", ".git", ".codex-task"]);
+// .worktrees 是 codex subagent 用的 git worktree，就放在 repo 底下。不跳過的話這裡會
+// 去檢查它裡面的複本，而豁免清單比對的是相對路徑（docs/setup.ps1），在複本裡對不上
+// ——測試會紅在一個跟這次改動無關的地方。
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".codex-task",
+  ".worktrees",
+]);
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 function collectPs1(dir) {
