@@ -210,10 +210,11 @@ Object.assign(actions, {
   // 兩個平台都要有：POSIX 那邊 .zshrc 一樣塞得進一個指向舊 npm 路徑的函式。
   "fix-shell-wrapper": {
     kind: "fixed",
-    label: "清掉舊設定",
+    label: "清除廢棄的 codex 引用",
     cmd: process.execPath,
     args: [fixShellWrapperScript, "--apply"],
-    description: "刪掉 shell 設定檔裡指向已刪檔案的 claude / codex 函式。",
+    description:
+      "刪掉 shell 設定檔裡指向已刪檔案的 claude / codex 函式，讓安裝完的 CLI 叫得動。",
   },
   "diagnose-naming-block": {
     kind: "fixed",
