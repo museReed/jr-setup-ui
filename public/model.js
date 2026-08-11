@@ -171,19 +171,11 @@ export const GUIDANCE = {
   // 這兩列沒有安裝按鈕：它們只是探針，壞了只回一個提醒，程式沒有東西可以幫他按。
   // 合併之後它們坐在整段第一張卡裡，所以自救步驟一定要寫出來——否則學生開場就卡在
   // 一句「檢查失敗」，而畫面上沒有任何可按的東西。
-  // 這兩列都是「裝好了、看起來也對，但一跑就爆」，而且程式沒有東西可以幫他按——
-  // 修法都要離開嚮導自己動手，所以自救步驟一定要寫滿。
-  "pwsh-store": {
-    symptom: "那一列寫「PowerShell 7 是 Microsoft Store 版」",
-    expected: "那一列顯示是一般安裝版",
-    checks: [
-      "Store 版的 PowerShell 被包在一層容器裡，Codex 的沙箱在裡面起不來",
-      "到 https://aka.ms/PSWindows 下載 .msi 裝一次（一般安裝版），兩個版本可以並存",
-      "裝完在設定裡把 Windows Terminal 的預設設定檔改成新裝的那一個，再重開終端",
-      "課堂只需要 PowerShell 5.1，急著上課的話這一列可以先放著，不影響其他步驟",
-    ],
-    diagnose: null,
-  },
+  // 這一列是「裝好了、看起來也對，但一跑就爆」，而且程式沒有東西可以幫他按——
+  // 修法要離開嚮導自己動手，所以自救步驟一定要寫滿。
+  //
+  // ⚠️ pwsh-store 原本也有一段，拿掉了：那一列不再警告（實測 Store 版底下沙箱
+  // 正常，見 src/codex-sandbox.js）。沒有問題就不需要自救步驟。
   "codex-sandbox": {
     symptom: "跑 Codex 時出現 `ShellExecuteExW failed to launch setup helper: 1223`",
     expected: "那一列顯示沙箱要用的檔案都在",

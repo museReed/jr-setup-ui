@@ -11,12 +11,14 @@
 //
 // ── 第二層：PowerShell 是 Microsoft Store 版 ────────────────────────────
 //
-// Store 版是 MSIX 包，檔案系統與權限都被虛擬化過，沙箱 helper 起不來。而且它在 PATH
-// 上的入口是 WindowsApps 底下的「應用程式執行別名」，不是真的執行檔——路徑看起來
-// 很正常，問題完全看不出來。
+// ⚠️ **這一層目前只描述、不警告。** 原本的假設是「Store 版是 MSIX 包，檔案系統與
+// 權限都被虛擬化過，沙箱 helper 起不來」——2026-08-11 VM 實測**推翻了它**：Store 版
+// 的 pwsh 7.6.4 底下 `codex exec --sandbox read-only` 完全正常。
 //
-// ⚠️ 這一層要能單獨、快速查得到（B5）：沙箱探針要真的去跑 codex，很慢；而 Store 版
-// 這件事光看路徑就知道，第一頁就該講，不必等探針。
+// 留著這一層有兩個理由：
+//   1. 診斷資料裡看得出學生用的是哪一種安裝，之後真的出事時對得上
+//   2. 它拓出了「應用程式執行別名整套系統看不見」那個影響所有 CLI 解析的 bug
+//      （見 spawn-command.js）——那才是這條線真正的收穫
 
 // Store 版的 PowerShell 在 PATH 上的入口一律落在這裡。傳統安裝是
 // C:\Program Files\PowerShell\7\pwsh.exe，兩者分得很開。
@@ -26,6 +28,16 @@ export function isStorePowerShell(source) {
   return typeof source === "string" && WINDOWS_APPS.test(source);
 }
 
+// ⚠️ 這一列**不警告**，只描述。
+//
+// 它原本寫「是 Microsoft Store 版，Codex 沙箱會起不來」——那句話沒有根據。
+// 2026-08-11 在 Reed 的 VM 上實測：Store 版的 pwsh 7.6.4 底下
+// `codex exec --sandbox read-only` 完全正常，沙箱起得來、hook 也跑了。
+// 那句斷言來自一個**疑問**（「Store 版會不會造成後續問題」），不是一次事故。
+//
+// 偵測邏輯留著是有價值的——它拓出了「應用程式執行別名整套系統看不見」那個
+// 影響所有 CLI 解析的 bug（見 spawn-command.js）。但在拿到具體症狀之前，
+// 不對學生說我們證明不了的話：黃燈會讓他去做一件我們不確定有沒有用的事。
 export function storePowerShellStatus(source) {
   if (source === null || source === undefined || source === "") {
     // 沒裝 pwsh 完全不是問題：課堂只需要 5.1，7 是加分。
@@ -37,11 +49,8 @@ export function storePowerShellStatus(source) {
   }
 
   return {
-    status: "warn",
-    installable: false,
-    fixLabel: null,
-    // ⚠️ 一行。長說明在 public/model.js 的 GUIDANCE——這一格右邊緊接著按鈕區。
-    detail: "是 Microsoft Store 版，Codex 沙箱會起不來",
+    status: "ok",
+    detail: "用的是 Microsoft Store 版",
     storePath: source,
   };
 }

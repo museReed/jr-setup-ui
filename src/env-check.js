@@ -102,9 +102,9 @@ export function checksForPlatform(platform) {
       { id: "windows-terminal", label: "終端機是 Windows Terminal" },
       { id: "powershell-version", label: "PowerShell 版本" },
       { id: "powershell-encoding", label: "PowerShell 中文編碼" },
-      // 光看路徑就判得出來，不必等沙箱探針去跑一次 codex（那個慢很多）。
-      // 放在「這台機器準備好了嗎」那張卡上，跟其他三列同一個性質。
-      { id: "pwsh-store", label: "PowerShell 7 不是 Store 版" },
+      // 只是把「這台的 PowerShell 7 是哪一種」講出來，不是警告——實測 Store 版
+      // 底下 Codex 沙箱是正常的（見 codex-sandbox.js 的說明）。
+      { id: "pwsh-store", label: "PowerShell 7 的安裝方式" },
     );
   }
 
@@ -679,7 +679,7 @@ async function pwshSource() {
 
 async function checkPwshStore() {
   const id = "pwsh-store";
-  const label = "PowerShell 7 不是 Store 版";
+  const label = "PowerShell 7 的安裝方式";
 
   try {
     return { id, label, ...storePowerShellStatus(await pwshSource()) };

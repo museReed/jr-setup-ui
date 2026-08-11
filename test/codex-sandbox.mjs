@@ -34,12 +34,18 @@ try {
   assert.equal(storePowerShellStatus(MSI_PWSH).status, "ok");
   ok("沒裝 PowerShell 7、或裝的是一般版，都是綠的");
 
+  // ⚠️ Store 版**不是黃燈**。這一列只描述，不警告。
+  //
+  // 它原本寫「是 Microsoft Store 版，Codex 沙箱會起不來」——那句話沒有根據。
+  // 2026-08-11 VM 實測：Store 版 pwsh 7.6.4 底下 `codex exec --sandbox read-only`
+  // 完全正常。那句斷言來自一個疑問，不是一次事故。拿到具體症狀之前不對學生說
+  // 我們證明不了的話。
   const store = storePowerShellStatus(STORE_PWSH);
-  assert.equal(store.status, "warn");
-  assert.equal(store.installable, false);
+  assert.equal(store.status, "ok");
+  assert.equal(store.fixLabel, undefined);
   assert.equal(store.storePath, STORE_PWSH);
   assert.ok(store.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
-  ok("Store 版是黃的、不長安裝鍵，說明一行講完");
+  ok("Store 版只描述不警告——沒有證據就不叫學生做事");
 
   // codex 找 helper 的三個地方，一個一個確認都認得。
   const sibling = findSandboxHelper(JUNCTION_CODEX, {
