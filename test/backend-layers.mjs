@@ -80,7 +80,18 @@ try {
   // 會逼人想一次：這條指令是誰決定的？
   // server.js 不在這張清單裡了：抽出 run-registry 之後它不再自己開子行程，
   // 那是這次重構要換到的東西之一。
-  const SPAWNERS = ["run-registry", "env-check", "config-check", "env-path"];
+  //
+  // report-issue：指令整條寫死在那支檔案裡（`gh issue create --repo <常數>
+  // --title <標題> --body-file <暫存檔>`）。來自網路的只有標題與內容兩個字串，
+  // 而且都是以 argv 元素傳進去、shell: false——不會被當成指令解析。
+  // 內容更是完全不進 argv，先寫成檔案再用 --body-file 讀，那也是它不走網址的原因。
+  const SPAWNERS = [
+    "run-registry",
+    "env-check",
+    "config-check",
+    "env-path",
+    "report-issue",
+  ];
 
   for (const name of [...DOMAIN, ...ADAPTERS]) {
     if (SPAWNERS.includes(name)) continue;
@@ -127,13 +138,16 @@ try {
     "GET /verify-shot",
     "GET /walkthroughs",
     "GET /state",
+    // 「這一頁卡住了」自己一支：/run 那套的參數是白名單比對的，而回報要送的是
+    // 一份幾千字、每次都不一樣的內容，塞不進白名單。
+    "POST /report",
     "POST /state",
     "POST /run",
     "POST /input",
     "POST /cancel",
     "GET /stream",
   ]);
-  ok("路由表就是這十一條，多一條會被抓到");
+  ok("路由表就是這十二條，多一條會被抓到");
 
   // 路徑帶參數的那兩條不進表：表是完全比對的，把它們塞進去就得改成正規式比對，
   // 那正是改成表之前那團 if 的樣子。它們走 prefixRoute，而且各自驗過格式才碰檔案

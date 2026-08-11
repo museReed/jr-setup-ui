@@ -778,9 +778,19 @@ function setupOrder(card) {
 // 舊捷徑那張緊接在後、排在所有 CLI 之前，理由跟執行原則同一種：擋路的先修。
 // 它擋的是「裝好了卻叫不動」——排在後面的話，學生會先把 Claude Code、Codex 全部
 // 裝完並登入，然後在第一次真的打指令時才發現全都不能用。
+// GitHub 排在很前面是**回報管道**的需求，不是課程需求（Reed 拍板）。
+//
+// 「這一頁卡住了」那顆鈴鐺走的是 `gh issue create --body-file`——沒有長度限制、
+// 不必管金鑰、而且用學生自己的身分開 issue，助教可以直接在下面問他。代價是它要
+// gh 已裝已登入，所以那張卡必須排在「會出事的那些卡」前面。
+//
+// ⚠️ 但排不到最前面：執行原則（Windows）與終端機（mac）是真正的前置——執行原則還是
+// Restricted 的話，後面每一支我們寫出來的腳本都跑不起來，包含裝 gh 那一步自己。
+// 所以順序是「機器本身 → GitHub（回報管道）→ 清掉舊的 → CLI」。
 const ENV_FIRST = [
   "execution-policy",
   "ghostty",
+  "git",
   "legacy-npm-cli",
   "shell-wrapper",
 ];

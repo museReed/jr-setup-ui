@@ -79,11 +79,15 @@ try {
     ),
     "env",
   );
-  // mac 的順序：終端機那張排到最前面（跟 Windows 的「先準備好」同一格），Git 與
-  // GitHub 合成一張，Node 與 Python 合成一張。
+  // mac 的順序：終端機那張排到最前面（跟 Windows 的「先準備好」同一格），接著是
+  // GitHub，然後才是兩支 CLI。
+  //
+  // ⚠️ GitHub 排這麼前面是**回報管道**的需求（Reed 拍板）：「這一頁卡住了」那顆走
+  // `gh issue create --body-file`，所以 gh 必須在「會出事的那些卡」之前就裝好登入好。
+  // 課程上這不是第一步，但沒有回報管道的話學生卡住了只能自己截圖。
   assert.deepEqual(
     envSequence.cards.map(({ checkId }) => checkId),
-    ["env-config", "ghostty", "claude", "codex", "git", "node"],
+    ["env-config", "ghostty", "git", "claude", "codex", "node"],
   );
   const gitCard = envSequence.cards.find(({ checkId }) => checkId === "git");
   assert.deepEqual(
@@ -119,7 +123,7 @@ try {
   );
   assert.deepEqual(
     windowsSequence.cards.map(({ checkId }) => checkId),
-    ["env-config", "execution-policy", "claude", "git", "node"],
+    ["env-config", "execution-policy", "git", "claude", "node"],
   );
   const windowsCard = windowsSequence.cards.find(
     ({ checkId }) => checkId === "execution-policy",

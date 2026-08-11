@@ -13,6 +13,7 @@ import { runConfigCheck } from "./config-check.js";
 import { LANGUAGES, TOOLS } from "./config-install.js";
 import { runEnvCheck } from "./env-check.js";
 import { contentDir, VERIFY_SHOT_AGENTS, verifyShotPath } from "./paths.js";
+import { createFeedbackIssue } from "./report-issue.js";
 import {
   clearBehaviorVerified,
   clearStepVerified,
@@ -278,6 +279,47 @@ export async function startServer({
     selection: await loadSelection(),
   });
   return;
+  },
+  // 「這一頁卡住了」。
+  //
+  // ⚠️ 為什麼不走 /run 那套 action：那邊的參數是白名單比對的（step 只能是 STEP_IDS
+  // 裡的值），而這裡要送的是一份幾千字、每次都不一樣的內容——塞不進白名單。
+  // 所以自己一支端點：收下內容、寫成暫存檔、交給 `gh issue create --body-file`。
+  //
+  // 用學生自己的 gh 登入，不必在學生端放任何金鑰；issue 掛在他名下，助教可以直接
+  // 在下面問他。gh 沒登入時 gh 自己會講，我們把它的話原樣帶回去。
+  "POST /report": async (request, response) => {
+    let body;
+
+    try {
+      body = await readJson(request);
+    } catch {
+      sendText(response, 400, "JSON 格式不正確");
+      return;
+    }
+
+    const title = body?.title;
+    const content = body?.body;
+
+    if (typeof title !== "string" || typeof content !== "string") {
+      sendText(response, 400, "title 與 body 都必須是字串");
+      return;
+    }
+
+    if (title.length === 0 || content.length === 0) {
+      sendText(response, 400, "title 與 body 不能是空的");
+      return;
+    }
+
+    try {
+      const result = await createFeedbackIssue({ title, body: content });
+      response.setHeader("Cache-Control", "no-store");
+      sendJson(response, result.ok ? 200 : 502, result);
+    } catch (error) {
+      sendText(response, 500, error.message);
+    }
+
+    return;
   },
   "POST /state": async (request, response, url) => {
   let body;
