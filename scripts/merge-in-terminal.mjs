@@ -25,7 +25,12 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import { describeStep } from "../src/config-install.js";
-import { mergeGroupFor, snapshotDir, snapshotFile } from "../src/merge-backup.js";
+import {
+  mergeGroupFor,
+  mergeLeaderFor,
+  snapshotDir,
+  snapshotFile,
+} from "../src/merge-backup.js";
 import { mergeReport } from "../src/merge-report.js";
 import { materialsDir } from "../src/paths.js";
 
@@ -40,13 +45,22 @@ function arg(name) {
     ?.slice(name.length + 3);
 }
 
-const step = arg("step");
+const requested = arg("step");
+// ⚠️ 收到跟班那一步（codex-agents）時要自己折回群組主人，不能拒絕。
+// 畫面上兩列都有合併鍵，而按鈕帶哪一步取決於「第一個還沒好的那一列」——真機上送
+// 進來的就是 codex-agents，腳本直接回「不是需要合併的步驟」，整條路斷掉。
+// 折在這裡是因為這是唯一的入口：前端怎麼改都不會再撞到。
+const step = requested === undefined ? undefined : mergeLeaderFor(requested);
 const lang = arg("lang") ?? "zh-TW";
-const group = step === undefined ? null : mergeGroupFor(step);
+const group = step === undefined || step === null ? null : mergeGroupFor(step);
 
 if (group === null) {
-  console.log(`${step ?? "(沒給 --step)"} 不是需要合併的步驟。`);
+  console.log(`${requested ?? "(沒給 --step)"} 不是需要合併的步驟。`);
   process.exit(1);
+}
+
+if (step !== requested) {
+  console.log(`${requested} 跟 ${step} 是同一組設定，一起合併。`);
 }
 
 const steps = group.steps.map((id) => describeStep(id, { lang, home: HOME }));

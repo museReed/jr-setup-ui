@@ -11,23 +11,26 @@ import { copyFileSync, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 
 import { describeStep } from "../src/config-install.js";
-import { mergeGroupFor, restorePlan } from "../src/merge-backup.js";
+import { mergeGroupFor, mergeLeaderFor, restorePlan } from "../src/merge-backup.js";
 
 const APPLY = process.argv.includes("--apply");
 const HOME = homedir();
-const stepArg = process.argv
+const requested = process.argv
   .find((entry) => entry.startsWith("--step="))
   ?.slice("--step=".length);
 
-if (stepArg === undefined) {
+if (requested === undefined) {
   console.log("要指定 --step=<步驟 id>。");
   process.exit(1);
 }
 
-const group = mergeGroupFor(stepArg);
+// 跟 merge-in-terminal 同一個道理：收到跟班那一步要折回群組主人，快照是用主人的
+// id 存的。不折的話還原鍵在某幾列上按了會說「找不到快照」。
+const stepArg = mergeLeaderFor(requested);
+const group = stepArg === null ? null : mergeGroupFor(stepArg);
 
 if (group === null) {
-  console.log(`${stepArg} 不是需要合併的步驟，沒有快照可以還原。`);
+  console.log(`${requested} 不是需要合併的步驟，沒有快照可以還原。`);
   process.exit(1);
 }
 
