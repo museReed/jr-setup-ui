@@ -67,10 +67,38 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
   Install-Node
 }
 
+# 上一次的嚮導還開著的話，它握著 $appDir 底下的檔案，下面那句 Remove-Item 會
+# 無限等下去——畫面停在「下載嚮導」，什麼訊息都沒有（VM 實測）。學生重跑一次
+# 嚮導是很常見的動作，所以這裡要自己處理掉，不能靠他知道要先關視窗。
+#
+# ⚠️ 只殺「跑這份嚮導」的那幾個 node，不是全部的 node——學生可能有自己的專案在跑。
+# node.exe 的 Path 是 Node 自己的安裝位置，看不出它在跑什麼，所以比對命令列。
+$ours = @(
+  Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$appDir*" }
+)
+
+if ($ours.Count -gt 0) {
+  Write-Host "上一次的嚮導還開著（$($ours.Count) 個），先把它關掉。"
+  $ours | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Sleep -Milliseconds 500
+}
+
 Say "下載嚮導（$branch）"
 $zipPath = Join-Path $env:TEMP "jr-setup-ui.zip"
 $extractDir = Join-Path $env:TEMP "jr-setup-ui-extract"
-Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+
+# PowerShell 5.1 的 Invoke-WebRequest 會邊下載邊畫進度列，而那件事本身讓下載慢上
+# 十幾倍——大檔案看起來就像整個卡死。關掉進度列是這個問題的標準解法，PS7 沒有這
+# 個毛病，加了也無害。
+$previousProgress = $ProgressPreference
+$ProgressPreference = "SilentlyContinue"
+
+try {
+  Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+} finally {
+  $ProgressPreference = $previousProgress
+}
 
 if (Test-Path $extractDir) {
   Remove-Item -Recurse -Force $extractDir
