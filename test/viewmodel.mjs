@@ -117,7 +117,7 @@ try {
     status: "warn",
     detail: "需要合併",
     installAction: "install-config-step",
-    mergeAction: "merge-config-step",
+    mergeAction: "merge-in-terminal",
   });
   assert.deepEqual(configActions.buttons, [
     {
@@ -127,13 +127,47 @@ try {
       step: "claude-md",
     },
     {
-      action: "merge-config-step",
+      action: "merge-in-terminal",
       dataName: "mergeAction",
-      text: "用 AI 合併",
+      // 講明會開視窗：不講的話學生按下去看到新視窗跳出來會以為出事了，
+      // 而那個視窗正是他要去回答問題的地方。
+      text: "用 AI 合併（會開終端）",
       step: "claude-md",
     },
   ]);
   ok("規則檔同時可安裝與合併時安裝按鈕在前");
+
+  // 合併過才有還原鍵，而且排在合併鍵後面——它是那顆的退路，不是另一個主動作。
+  const withRestore = configRowModel({
+    id: "codex-config",
+    label: "Codex CLI 的規矩與回話風格",
+    status: "warn",
+    detail: "需要合併",
+    installAction: null,
+    mergeAction: "merge-in-terminal",
+    restoreAction: "restore-merge-backup",
+  });
+  assert.deepEqual(
+    withRestore.buttons.map((button) => button.dataName),
+    ["installAction", "mergeAction", "restoreAction"],
+  );
+  assert.equal(withRestore.buttons[2].text, "還原成合併前");
+  ok("合併過的列多一顆「還原成合併前」，排在合併鍵後面");
+
+  // 沒合併過就沒有快照，那顆按下去只會說「找不到快照」——不該出現。
+  assert.deepEqual(
+    configRowModel({
+      id: "codex-config",
+      label: "x",
+      status: "warn",
+      detail: "需要合併",
+      installAction: null,
+      mergeAction: "merge-in-terminal",
+      restoreAction: null,
+    }).buttons.map((button) => button.dataName),
+    ["installAction", "mergeAction"],
+  );
+  ok("沒合併過時不長還原鍵");
 
   // 結構齊全不等於生效。實測踩過四次「裝好了、綠燈、就是不生效」，所以還沒驗過
   // 行為的列不能是綠的，而且要留著安裝按鈕讓學生能重跑。
@@ -1267,7 +1301,9 @@ try {
       extra: entry.terminal ?? entry.options ?? null,
     })),
     { step: "claude-md", action: "install-config-step", extra: null },
-    { step: "claude-md", action: "merge-config-step", extra: null },
+    { step: "claude-md", action: "merge-in-terminal", extra: null },
+    { step: "codex-config", action: "merge-in-terminal", extra: null },
+    { step: "codex-config", action: "restore-merge-backup", extra: null },
   ];
 
   for (const { step, action, extra } of rowSends) {

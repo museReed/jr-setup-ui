@@ -515,7 +515,20 @@ export function configRowModel(
     buttons.push({
       action: check.mergeAction,
       dataName: "mergeAction",
-      text: "用 AI 合併",
+      // 講明會開視窗。不講的話學生按下去看到一個新視窗跳出來會以為出事了，
+      // 而那個視窗正是他要去回答問題的地方。
+      text: "用 AI 合併（會開終端）",
+      step: check.id,
+    });
+  }
+
+  // 合併過才有這顆。合併是唯一會改寫學生自己內容的動作，退路要一直留著——
+  // 他可能過幾張卡之後才發現自己的規則怪怪的。
+  if (check.restoreAction !== null && check.restoreAction !== undefined) {
+    buttons.push({
+      action: check.restoreAction,
+      dataName: "restoreAction",
+      text: "還原成合併前",
       step: check.id,
     });
   }

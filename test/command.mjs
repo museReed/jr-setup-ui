@@ -18,39 +18,19 @@ try {
   assert(!claudeReadOnly.args.join(" ").includes("Write"));
   ok("claude read-only 只帶唯讀工具");
 
-  // 迴歸：合併那顆原本寫死 engine: "claude"。選「只要 Codex」的學生機器上沒有
-  // claude——那組檢查整組被拿掉、CLI 也不會安裝——但 config.toml 是 protectExisting，
-  // 仍然會要求合併，按下去拿到的是「找不到 claude 指令」。
-  const merge = actions["merge-config-step"];
-  assert.equal(resolveEngine(merge, { tools: "codex" }), "codex");
-  assert.equal(resolveEngine(merge, { tools: "claude" }), "claude");
-  // 兩個都選時優先 claude：課堂主線，而且它那邊裝好的 acceptEdits 讓合併不會停下
-  // 來問（Reed 指定）。
-  assert.equal(resolveEngine(merge, { tools: "claude,codex" }), "claude");
-  // 誰家的設定就用誰去合併（Reed 實測：Codex 的 config.toml 那張卡，終端上印的是
-  // 「Claude：思考中…」——動手的是沒在用那份設定的那一個）。
-  assert.equal(
-    resolveEngine(merge, { tools: "claude,codex", step: "codex-config" }),
-    "codex",
-  );
-  assert.equal(
-    resolveEngine(merge, { tools: "claude,codex", step: "codex-agents" }),
-    "codex",
-  );
-  assert.equal(
-    resolveEngine(merge, { tools: "claude,codex", step: "claude-md" }),
-    "claude",
-  );
-  // 那一家沒被選到就退回工具選擇——機器上根本沒有那支 CLI。
-  assert.equal(resolveEngine(merge, { tools: "claude", step: "codex-config" }), "claude");
-  assert.equal(resolveEngine(merge, { tools: "codex", step: "claude-md" }), "codex");
-  // tools 是這顆 action 宣告的選項之一，沒宣告的話伺服器會把前端送的值丟掉，
-  // engine 永遠拿到 undefined 而退回 claude——形同沒改。
-  assert(merge.options.tools.includes("codex"));
+  // A3 之後合併改成開真終端（merge-in-terminal），舊的 merge-config-step 整顆移除。
+  //
+  // ⚠️ 移除不只是清理：它是嚮導裡唯一「不先拍快照就改寫學生檔案」的路徑。留著等於
+  // 留一條沒有退路的合併。「誰家的設定用誰合併」那條規矩沒有消失，改由
+  // src/merge-backup.js 的 MERGE_GROUPS 寫死（測試在 test/merge-backup.mjs），
+  // 那份表同時決定了哪幾檔一起合、用哪個 agent。
+  assert.equal(actions["merge-config-step"], undefined);
+  ok("舊的 in-wizard 合併已經整顆移除，沒有不拍快照的合併路徑");
+
   // 固定字串的 engine 照舊，不要為了新形狀把舊的那幾顆一起改掉。
   assert.equal(resolveEngine(actions["codex-hello"]), "codex");
   assert.equal(resolveEngine(actions["claude-hello"], { tools: "codex" }), "claude");
-  ok("合併用那份設定自己家的 agent，沒選到才退回工具選擇");
+  ok("固定 engine 的動作不受影響");
 
   const claudeWrite = buildAgentCommand("claude", prompt, "write");
   assert(claudeWrite.args.join(" ").includes("Write"));

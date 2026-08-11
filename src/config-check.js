@@ -24,6 +24,7 @@ import {
   stepsForTools,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
+import { mergeBackupRoot, mergeGroupFor } from "./merge-backup.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -1147,6 +1148,20 @@ export async function runConfigCheck({ tools, lang }) {
 
 // 一列檢查結果 → 那一列該掛哪幾顆按鈕。抽出來是為了測得到：ViewModel 吃的是這個
 // 形狀，直接拿原始的 check 去測會少掉 verifyAction，測出來的按鈕數永遠是 0。
+// 這一步合併過嗎（＝有沒有快照可以退回去）。合併是唯一會改寫學生自己內容的動作，
+// 所以只要動過就一直留著還原鍵——他可能過幾張卡才發現規則怪怪的。
+function hasMergeSnapshot(id) {
+  if (mergeGroupFor(id) === null) {
+    return false;
+  }
+
+  try {
+    return readdirSync(`${mergeBackupRoot(HOME)}/${id}`).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function withActions(check) {
   const spec = VERIFICATION[check.id];
 
@@ -1157,7 +1172,15 @@ export function withActions(check) {
       (check.status === "ok" && check.reinstallable !== true)
         ? null
         : "install-config-step",
-    mergeAction: check.needsMerge === true ? "merge-config-step" : null,
+    // ⚠️ 合併鍵只長在「有合併群組」的那幾步上。codex-agents 同樣是 protectExisting、
+    // 同樣會標 needsMerge，但它被 codex-config 那顆帶著一起處理——不擋掉的話畫面上
+    // 會有兩顆合併鍵，按第二顆等於把剛合好的再合一次。
+    mergeAction:
+      check.needsMerge === true && mergeGroupFor(check.id) !== null
+        ? "merge-in-terminal"
+        : null,
+    // 合併過才給還原鍵。沒合併過就沒有快照，那顆按下去只會說「找不到快照」。
+    restoreAction: hasMergeSnapshot(check.id) ? "restore-merge-backup" : null,
     // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端
     // 視窗讓學生看，程式判定不了，所以一定配一個 eye 說明。
     verifyAction:

@@ -503,6 +503,8 @@ function fillButton({ icon, text, primary = false, onClick, small = true }) {
 // 做的事沒變。
 function actionIcon(spec) {
   if (spec.dataName === "mergeAction") return "merge";
+  // 還原是「退回去」，用重跑那顆的圖示——它跟合併是一組，不該長得像安裝。
+  if (spec.dataName === "restoreAction") return "reinstall";
   if (spec.dataName === "verifyAction") return "terminal";
   return spec.secondary === true ? "reinstall" : "install";
 }
@@ -1996,7 +1998,7 @@ export function renderBehaviorFallback(state) {
 }
 
 export function configActionButtons() {
-  return [...elements.currentCard.querySelectorAll("[data-install-action], [data-merge-action], [data-verify-action], [data-diagnose-action]")];
+  return [...elements.currentCard.querySelectorAll("[data-install-action], [data-merge-action], [data-restore-action], [data-verify-action], [data-diagnose-action]")];
 }
 
 export function envActionButtons() {

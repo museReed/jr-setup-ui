@@ -1,4 +1,4 @@
-import { agentForStep, LANGUAGES, STEP_IDS } from "./config-install.js";
+import { LANGUAGES, STEP_IDS } from "./config-install.js";
 import { EXECUTION_POLICY_FIX } from "./execution-policy.js";
 import { INSTALLERS, installActionId, resolveInstaller } from "./installers.js";
 import { moduleFile } from "./paths.js";
@@ -70,6 +70,10 @@ const fixLegacyCliScript = moduleFile(
 );
 const restoreMergeBackupScript = moduleFile(
   "../scripts/restore-merge-backup.mjs",
+  import.meta.url,
+);
+const mergeInTerminalScript = moduleFile(
+  "../scripts/merge-in-terminal.mjs",
   import.meta.url,
 );
 
@@ -244,6 +248,27 @@ Object.assign(actions, {
     description:
       "在 Codex 會去找的位置接一條 junction，指回它自己套件裡的 codex-resources。",
   },
+  // A3：合併改成開一個真的終端視窗。
+  //
+  // 舊的做法（已移除的 merge-config-step）是在嚮導裡叫 agent，輸出串到右邊那塊。
+  // 問題是合併過程 agent 會反問「這兩條規則衝突，要留哪一個」——那句話在嚮導裡沒人
+  // 回得了，最後它自己猜一個。開真視窗學生就能當場回答，也來得及在它做壞事前攔下來。
+  //
+  // 這支是 fixed 不是 agent：真正叫 agent 的是那個新視窗，這邊只負責拍快照、開窗、
+  // 等完成標記、然後比對有沒有把學生原本的行弄丟。
+  "merge-in-terminal": {
+    kind: "fixed",
+    label: "用 AI 合併（開終端）",
+    cmd: process.execPath,
+    options: { step: STEP_IDS, lang: LANGUAGES },
+    buildArgs: ({ step, lang }) => [
+      mergeInTerminalScript,
+      `--step=${step}`,
+      `--lang=${lang}`,
+    ],
+    description:
+      "開一個真的終端視窗做合併，合完列出有沒有把你原本的行弄丟。",
+  },
   // 合併是唯一會改寫學生自己內容的動作，所以它一定要有退路。用的是我們在合併前
   // 自己拍的快照，不是 AI 說它有備份的那一份（見 src/merge-backup.js）。
   "restore-merge-backup": {
@@ -369,52 +394,6 @@ Object.assign(actions, {
       "叫真的 Claude 跑一次，確認命名 hook 有被觸發、名字有寫進檔案。" +
       "終端標題那一格 headless 驗不到，輸出會請學生回自己的終端看一眼。",
   },
-  "merge-config-step": {
-    kind: "agent",
-    label: "用 AI 幫我合併",
-    // 用哪個 agent 跟著第一張卡的工具選擇走，不寫死（Reed 指定）。
-    //
-    // 原本一律用 claude。選「只要 Codex」的學生機器上根本沒有 claude——那組檢查
-    // 整組被拿掉、CLI 也不會安裝——但 config.toml 是 protectExisting，仍然會要求
-    // 合併。按下去跑的是一個不存在的指令，拿到「找不到 claude 指令」。
-    //
-    // 誰家的設定就用誰去合併：Codex 的 config.toml / AGENTS.md 交給 codex，
-    // Claude 的 CLAUDE.md 交給 claude。同一家的 agent 才認得那份檔案的規矩，而且
-    // 畫面上「Codex：思考中…」跟卡片標題也對得起來。
-    //
-    // 那一家沒被選到（或這一步不屬於任何一家）才退回工具選擇：選「只要 Codex」的
-    // 學生機器上根本沒有 claude，按下去會拿到「找不到 claude 指令」。
-    //
-    // 兩個都選、又沒有歸屬時優先 claude：合併要改檔案，Claude 這邊裝好的 acceptEdits
-    // 讓它不會停下來問。
-    engine: ({ step, tools }) => {
-      const selected = String(tools ?? "").split(",");
-      const owner = agentForStep(step);
-
-      if (owner !== null && selected.includes(owner)) {
-        return owner;
-      }
-
-      return selected.includes("claude") ? "claude" : "codex";
-    },
-    permission: "write",
-    options: {
-      step: STEP_IDS,
-      lang: LANGUAGES,
-      tools: ["claude", "codex", "claude,codex"],
-    },
-    buildPrompt: ({ step, lang }) =>
-      [
-        `我要把工作坊的設定合併進我已經有的檔案，語言版本是 ${lang}，這一步是 ${step}。`,
-        // 路徑錯了 agent 會自己去翻，翻得到就沒人發現——但每次合併都多燒一輪，
-        // 翻不到就只能瞎猜。實際落點是 app/materials/（實測回報）。
-        `新版內容在 ~/.jr-setup/app/materials/ 底下（claude-code/${lang}/ 與 codex/${lang}/）。`,
-        "請先讀我現有的檔案和新版內容，備份現有檔案（加 .bak.時間戳），",
-        "再把工作坊的規則合併進去——保留我原本的內容，不要整份覆蓋。",
-        "改完告訴我你加了什麼、有沒有衝突。",
-      ].join(""),
-    description: "把工作坊規則合併進使用者已存在的設定檔。",
-  },
   "login-claude": {
     kind: "fixed",
     label: "登入 Claude Code",
@@ -466,9 +445,11 @@ Object.assign(actions, {
   },
 });
 
-// engine 可以是固定字串，也可以是一個吃 options 的函式（merge-config-step 就是後者
-// ——它要跟著學生選的工具走）。呼叫端只想知道「這一次要跑哪個 agent」，兩種形狀都
-// 在這裡收斂掉，免得每個用到 action.engine 的地方各判斷一次。
+// engine 可以是固定字串，也可以是一個吃 options 的函式。呼叫端只想知道「這一次要跑
+// 哪個 agent」，兩種形狀都在這裡收斂掉，免得每個用到 action.engine 的地方各判斷一次。
+//
+// 函式形狀目前沒有人在用了——合併那顆（唯一的使用者）在 A3 之後改成開真終端，
+// agent 是那個新視窗叫的。留著是因為下一顆需要跟著選擇走的動作遲早會出現。
 //
 // 目前有兩處：組指令、以及挑輸出的 parser（claude 與 codex 的串流格式不同）。少改
 // 一處的話畫面上的名字或解析會跟實際跑的那個對不上。
