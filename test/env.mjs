@@ -188,6 +188,18 @@ for (const check of result.checks) {
 
 ok(`runEnvCheck 回傳 os 與 ${expectedIds.length} 筆固定形狀的檢查結果`);
 
+// ⚠️ runEnvCheck 的 catch 會把整段吞掉，每一列變成「檢查失敗」——而**那條路徑回的
+// id 跟正常路徑一模一樣**，所以上面那幾條全部照過。加 codex-legacy-skills 那次就是
+// 這樣：測試全綠，真的開起來整頁十七列全紅（`HOME is not defined`）。
+//
+// 這一條把那個洞補起來。不假設任何一列一定是 ok（CI 上不見得裝了 git），只要求
+// 「不是每一列都在講同一句失敗」。
+assert(
+  result.checks.some((check) => check.detail !== "檢查失敗"),
+  "每一列都是「檢查失敗」——runEnvCheck 整段拋了例外，看 console 的 [runEnvCheck]",
+);
+ok("整段沒有掉進那個把所有列變成「檢查失敗」的 catch");
+
 for (const check of result.checks) {
   assert(Object.hasOwn(check, "fixAction"));
   assert(

@@ -600,7 +600,7 @@ const OUR_CODEX_SKILLS = [...SKILL_NAMES, "vault-sync"];
 function checkLegacySkills() {
   const id = "codex-legacy-skills";
   const label = "沒有打架的舊版 skill";
-  const root = legacySkillRoot(HOME);
+  const root = legacySkillRoot(homedir());
 
   if (!existsSync(root)) {
     return { id, label, ...legacySkillStatus([]) };
@@ -849,7 +849,12 @@ export async function runEnvCheck(tools = []) {
       os: { platform: process.platform, arch: process.arch },
       checks: checks.map(withActions),
     };
-  } catch {
+  } catch (error) {
+    // ⚠️ 這個 catch 會把整段吞掉、每一列都變成「檢查失敗」，而 id 跟正常路徑一模一樣
+    // ——測試因此看不出差別（加 codex-legacy-skills 那次就是這樣，全綠但真的跑起來
+    // 整頁是紅的）。至少要留下原因，不然下一次又是從零開始猜。
+    console.error("[runEnvCheck] 整段失敗：", error);
+
     return {
       os: { platform: process.platform, arch: process.arch },
       checks: checksForTools(CHECKS, tools).map(({ id, label }) => ({
