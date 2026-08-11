@@ -68,6 +68,10 @@ const fixLegacyCliScript = moduleFile(
   "../scripts/fix-legacy-cli.mjs",
   import.meta.url,
 );
+const restoreMergeBackupScript = moduleFile(
+  "../scripts/restore-merge-backup.mjs",
+  import.meta.url,
+);
 
 export function shouldExplainOutput({ action, options = null, result }) {
   const succeeded =
@@ -239,6 +243,16 @@ Object.assign(actions, {
     args: [fixCodexSandboxScript, "--apply"],
     description:
       "在 Codex 會去找的位置接一條 junction，指回它自己套件裡的 codex-resources。",
+  },
+  // 合併是唯一會改寫學生自己內容的動作，所以它一定要有退路。用的是我們在合併前
+  // 自己拍的快照，不是 AI 說它有備份的那一份（見 src/merge-backup.js）。
+  "restore-merge-backup": {
+    kind: "fixed",
+    label: "還原成合併前",
+    cmd: process.execPath,
+    options: { step: STEP_IDS },
+    buildArgs: ({ step }) => [restoreMergeBackupScript, `--step=${step}`, "--apply"],
+    description: "把這一步的設定檔還原成合併前的樣子。",
   },
   "fix-legacy-cli": {
     kind: "fixed",
