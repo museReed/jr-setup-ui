@@ -97,6 +97,8 @@ for (const id of ids) {
 
 **A. 分支缺的功能（main 有）**
 - A1 回訪學生偵測：npm 並存、skill 落點、codex 舊 skill 路徑（三條規則要一開始就分清楚）
+  - ⚠️ **舊 skill 落點那條的嚴重性要往上提，設計也要改**——2026-08-11 在 VM 上實測，
+    見下面「codex 兩個 skill 落點都會載入」
 - A2 清理動作：隔離區搬移、移除 npm 舊版。⚠️ **B3 併進來一起做**——B3 是「那顆按鈕
   要多清孤兒 shim」，按鈕本身就是 A2，分開做等於把同一段清理邏輯寫兩次
 - A3 合併改成開真終端（含缺行報告、一顆做兩檔）
@@ -138,6 +140,39 @@ for (const id of ids) {
 - B6 診斷終端標題只查 PowerShell 5.1 的 profile 路徑
 - B7 合併失敗沒有中止條件
 - B8 `service_tier` 這類「新版不收的舊 key」→ `RETIRED_CODEX_KEYS` 可涵蓋
+
+### 2a. codex 兩個 skill 落點都會載入（2026-08-11 VM 實測）
+
+`scripts/seed-dirty-env.mjs:135` 那句註解「舊版讀 `~/.codex/skills`，現在讀
+`~/.agents/skills`」**是錯的**。codex 0.147.0 **兩個都讀**，而且同名時**兩份都列出來**、
+不去重：
+
+```
+- `zzztest`：新落點的版本（位於 `.agents/skills`）
+- `zzztest`：舊落點測試用（位於 `.codex/skills`）
+其中 `zzztest` 有兩個同名版本，來源與描述不同。
+```
+
+**壞法比預期的糟**：不是「舊版覆蓋新版」（錯但穩定、查得出來），是**兩份並存、由模型
+當場挑**。挑哪一份看描述文字與當下語境——同一個學生、同一句話，兩次可能拿到不同行為。
+工作坊現場最難處理的那種：學生說「剛剛不行現在又可以」。
+
+**所以 A1 / A2 要改：**
+
+- **A1** 偵測的判準是「新舊落點**有沒有同名 skill**」，不是「舊落點有沒有東西」
+- **A2** 舊落點的同名 skill 要**預設就清**，不能只提醒
+- 這條的優先級要往前提：它會讓所有 skill 相關的驗證變成假綠燈
+
+**順帶兩個實測到的坑：**
+
+1. **PowerShell 5.1 的 `Set-Content -Encoding UTF8` 會寫 BOM**，而 codex 的 YAML 解析
+   看到 `﻿---` 就說「missing YAML frontmatter」。寫要給別的程式解析的檔案一律用
+   `[IO.File]::WriteAllText(..., (New-Object System.Text.UTF8Encoding $false))`。
+   產品端目前沒中——`materials/` 與 `scripts/` 沒有用 PowerShell 寫 `.md` 的地方；
+   `docs/setup.ps1` 寫 `.jr-source` 有 BOM，但讀它的 `run-registry.js:37` 那個
+   `.trim()` 剛好把 BOM 當空白清掉。那是**運氣不是設計**
+2. 舊落點若放**格式壞掉**的檔案，codex 每次啟動印一行紅字但照跑；格式正確的話
+   **完全安靜地生效**。所以「沒有紅字」不代表沒有這個問題
 
 **C. 這一輪討論新增的**
 - C1 清理動作跑完，對應 banner 要消失。**寫成宣告式**（每個 action 宣告它讓哪份資料

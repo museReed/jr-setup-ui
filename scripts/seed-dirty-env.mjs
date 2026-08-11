@@ -132,8 +132,14 @@ const STEPS = [
   {
     id: "legacy-skill-root",
     label: "在 codex 的舊 skill 路徑放一支",
-    // codex 換過 skill 的位置：舊版讀 ~/.codex/skills，現在讀 ~/.agents/skills。
-    reproduces: "codex skill 舊落點",
+    // codex 換過 skill 的預設落點（舊：~/.codex/skills，新：~/.agents/skills），
+    // ⚠️ 但它**兩個都讀**——2026-08-11 在 VM 上實測，同名時兩份都列出來、不去重，
+    // 由模型當場挑哪一份。所以舊落點不是「殘留垃圾」，是會讓行為變得不可預測的
+    // 活躍設定。詳見 docs/handoff/2026-08-10-rework-cli-resolution.md 的 2a 節。
+    //
+    // 這裡寫的是「沒有 frontmatter」的版本，所以 codex 會印一行紅字。真實的回訪學生
+    // 那份是格式正確的，不會有紅字、會安靜地生效——那才是難查的情況。
+    reproduces: "codex skill 舊落點（會與新落點同名並存）",
     plan: () => [
       {
         kind: "write",
