@@ -102,7 +102,7 @@ for (const id of ids) {
 - A2 清理動作：隔離區搬移、移除 npm 舊版。⚠️ **B3 併進來一起做**——B3 是「那顆按鈕
   要多清孤兒 shim」，按鈕本身就是 A2，分開做等於把同一段清理邏輯寫兩次
 - A3 合併改成開真終端（含缺行報告、一顆做兩檔）
-- A4 Codex 沙箱檢查（junction / MSIX 兩層）
+- ~~A4 Codex 沙箱檢查（junction / MSIX 兩層）~~ ✅ **已完成並驗過**（見 2b）
 - A5 回報鈴鐺（要**連網址長度一起設計**，見 B1）
 - A6 codex 清乾淨腳本（Windows）
 - A7 段落最後一張自動重查、進度條底下指名擋著的卡
@@ -136,7 +136,10 @@ for (const id of ids) {
 
   ⚠️ 這三個同屬一類：**測試綠、畫面壞**。所以前兩個都補了守門測試
   （`test/viewmodel.mjs` 走訪每一顆修復鍵、`test/shell-wrapper.mjs` 守 detail 長度）。
-- B5 第一頁直接查 `pwsh` 是不是 Store 版（不必等沙箱探針）
+- ~~B5 第一頁直接查 `pwsh` 是不是 Store 版~~ ✅ **已完成**（見 2b）。
+  ⚠️ 只驗了「不誤報」——那台不是 Store 版。要驗黃燈得造假：在一個路徑含
+  `\WindowsApps\` 的資料夾放一支 `pwsh.exe`，並把它加進使用者 PATH 登錄檔，
+  然後**重開嚮導**（PATH 是從登錄檔讀的）
 - B6 診斷終端標題只查 PowerShell 5.1 的 profile 路徑
 - B7 合併失敗沒有中止條件
 - B8 `service_tier` 這類「新版不收的舊 key」→ `RETIRED_CODEX_KEYS` 可涵蓋
@@ -174,13 +177,55 @@ for (const id of ids) {
 2. 舊落點若放**格式壞掉**的檔案，codex 每次啟動印一行紅字但照跑；格式正確的話
    **完全安靜地生效**。所以「沒有紅字」不代表沒有這個問題
 
+### 2b. 這一輪做完的（2026-08-11）
+
+| 項目 | 狀態 | 出處 |
+|---|---|---|
+| A4 Codex 沙箱偵測 + 修復按鈕 | ✅ 真機驗到 `codex exec` 沙箱真的起得來 | `src/codex-sandbox.js` |
+| B5 Store 版 PowerShell 偵測 | ⚠️ 只驗了不誤報 | 同上 |
+| skill 舊落點偵測 + 搬進隔離區 | ✅ 真機驗過 | `src/skill-roots.js` |
+
+**A4 的修法**：檔案本來就在機器上，PATH 上那條 bin junction 讓 codex 往上一層找時
+走錯地方。按鈕在它會看的位置補一條 junction 指回去——零下載、零複製、免提權。
+真機證據：`codex exec --sandbox read-only` 跑得起來，1223 不再出現。
+
+⚠️ **junction 要接在 `...\standalone\current\` 上，不能解析到具體版本目錄**。
+第一版用 `realpathSync` 解 bin，Node 連 `current` 一起解開，連結釘死在
+`releases\0.147.0-...` 上，codex 一升版就斷。而且「已經接好了」的判準要是
+「**從連結那條路走得到 helper**」，不是「連結存不存在」——不然斷掉之後按第二次也修不好。
+
+**skill 舊落點的判準**：「舊落點有沒有**我們待會兒要裝的**同名 skill」。真機驗收同時
+證明了兩件：`handoff` 搬進隔離區、紅字消失、skill 清單不再重複；而學生自己放的
+`zzztest` 與 codex 的 `.system` **原封不動**。
+
+⚠️ **搬進隔離區，不能改名留在原地**。codex 掃 skills 底下每一個子目錄，
+`handoff.bak.20260811` 照樣被讀進去、frontmatter 裡還是 `name: handoff`，衝突沒解。
+
+### 2c. ⚠️ 「測試綠、畫面壞」這一族（這一輪踩了三次）
+
+三個都是測試全過、真的開起來才發現，**而且靠既有的斷言結構抓不到**：
+
+| 症狀 | 為什麼測試看不到 | 補的守門 |
+|---|---|---|
+| 清除鍵上寫著「開始登入」 | 按鈕文字是前端一張硬編對照表，沒對到就掉進登入用的預設值 | `test/viewmodel.mjs` 走訪 `FIX_ACTIONS` 每一顆，沒人決定過文字就紅 |
+| 卡片在、沒有任何可按的東西 | `detail` 太長把那一列撐爆，按鈕被擠出可視範圍 | 各狀態模組守 `detail` 長度上限 40 |
+| 整頁十七列全部「檢查失敗」 | `runEnvCheck` 的 catch **回的 id 跟成功路徑一模一樣**，id 清單與欄位形狀的斷言全部照過 | `test/env.mjs` 加「不是每一列都在講同一句失敗」；catch 也會 `console.error` 出原因 |
+
+**下次加任何一列新的環境檢查，先問這三件事**：按鈕文字誰決定？`detail` 幾個字？
+整段拋例外時看得出來嗎？
+
 **C. 這一輪討論新增的**
 - C1 清理動作跑完，對應 banner 要消失。**寫成宣告式**（每個 action 宣告它讓哪份資料
   失效），不要重蹈 main 那種散落的 if
 - C2 全綠之後才出現「清掉隔離區」。條件＝所有 skill 檢查 ok；按之前先列出要刪什麼。
   ⚠️ `.bak` 不一起刪，那是另一件事
 
-建議順序：~~B4 + B3~~ →　**A4 + B5 →　A1–A3 + B3 + C1 →　A5 + B1 →　C2**
+建議順序：~~B4 + B3~~ →　~~A4 + B5~~ →　**A1–A3 + B3 + C1 →　A5 + B1 →　C2**
+
+A1 的一半（codex 舊 skill 落點）已經在 2b 做掉了，剩下的是 npm 並存與 skill 落點
+那兩條規則，以及 A2 的其他清理動作——隔離區的機制已經有了
+（`~/.jr-setup/quarantine/`，見 `src/skill-roots.js` 的 `quarantineRoot`），
+A2 接上去就好，不用重新設計。
 
 ### 3. 驗收方式
 
