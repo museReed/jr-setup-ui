@@ -37,23 +37,52 @@ try {
   );
   ok("套件本體的位置從 shim 旁邊推出來，分隔符跟著平台走");
 
+  // 迴歸：只搬 .cmd 不夠。npm 一次寫三支，而 .ps1 不在 PATHEXT 裡、PowerShell 卻
+  // 自己會執行它——真機實測搬走 codex.CMD 之後，Get-Command codex -All 仍然列出
+  // codex.ps1 與無副檔名那支，孤兒照樣叫得到。
+  const npmDir = "C:\\Users\\Reed\\AppData\\Roaming\\npm";
+  const allThree = inspectCommand("codex", [`${npmDir}\\codex.CMD`], {
+    exists: (candidate) =>
+      [
+        `${npmDir}\\codex`,
+        `${npmDir}\\codex.cmd`,
+        `${npmDir}\\codex.ps1`,
+      ].includes(candidate),
+  });
+  assert.deepEqual(
+    allThree.npm.map((entry) => entry.path),
+    [`${npmDir}\\codex`, `${npmDir}\\codex.cmd`, `${npmDir}\\codex.ps1`],
+  );
+  ok("找到一支就把同目錄同名的三支一起收（含 PATHEXT 看不到的 .ps1）");
+
+  // Windows 的檔名不分大小寫：PATH 上拿到 codex.CMD、掃出來是 codex.cmd，
+  // 不正規化的話同一支會被搬兩次，第二次必定失敗。
+  const mixedCase = inspectCommand(
+    "codex",
+    [`${npmDir}\\codex.CMD`, `${npmDir}\\codex.cmd`],
+    { exists: (candidate) => candidate.toLowerCase() === `${npmDir}\\codex.cmd`.toLowerCase() },
+  );
+  assert.equal(mixedCase.npm.length, 1);
+  ok("大小寫不同的同一支只算一次");
+
   // 三種情況，一種一種來。
   const coexist = inspectCommand("codex", [OFFICIAL, NPM_SHIM], {
-    exists: (candidate) => candidate === NPM_PKG,
+    exists: (candidate) => candidate === NPM_PKG || candidate === NPM_SHIM,
   });
   assert.equal(coexist.official, 1);
   assert.equal(coexist.npm.length, 1);
   assert.equal(coexist.npm[0].orphan, false);
   ok("並存：官方版與 npm 版各認一支，npm 那支本體還在所以不是孤兒");
 
+  // shim 在、本體不在。exists 只認 shim 那一支。
   const orphan = inspectCommand("codex", [OFFICIAL, NPM_SHIM], {
-    exists: () => false,
+    exists: (candidate) => candidate === NPM_SHIM,
   });
   assert.equal(orphan.npm[0].orphan, true);
   ok("孤兒 shim：本體不在時標得出來");
 
   const onlyNpm = inspectCommand("codex", [NPM_SHIM], {
-    exists: (candidate) => candidate === NPM_PKG,
+    exists: (candidate) => candidate === NPM_PKG || candidate === NPM_SHIM,
   });
   assert.equal(onlyNpm.official, 0);
   ok("只有 npm 版：官方版數量是 0");
@@ -118,7 +147,7 @@ try {
 
   // 孤兒即使沒有官方版也要清：它不是「還能用的舊版」，它只會失敗。
   const lonelyOrphan = inspectCommand("codex", [NPM_SHIM], {
-    exists: () => false,
+    exists: (candidate) => candidate === NPM_SHIM,
   });
   assert.deepEqual(
     removableEntries([lonelyOrphan]).map((entry) => entry.path),

@@ -51,9 +51,26 @@ export function findPackageRoot(shimPath, packageName) {
   return [dir, "node_modules", ...parts].join(separator);
 }
 
+// npm 一次寫三支：`codex`（給 sh 的）、`codex.cmd`（給 cmd.exe 的）、
+// `codex.ps1`（給 PowerShell 的）。
+//
+// ⚠️ 只靠 PATHEXT 找的話只會找到 `.cmd`——`.ps1` 不在 PATHEXT 裡，**但 PowerShell
+// 自己會執行它**。真機實測：搬走 codex.CMD 之後，`Get-Command codex -All` 仍然列出
+// codex.ps1 與無副檔名那支，孤兒照樣叫得到。所以找到任何一支就把同一個目錄裡
+// 同名的三支一起處理。
+const SHIM_SUFFIXES = ["", ".cmd", ".ps1"];
+
+export function shimVariants(shimPath, command) {
+  const dir = shimPath.replace(/[\\/][^\\/]+$/, "");
+  const separator = shimPath.includes("\\") ? "\\" : "/";
+
+  return SHIM_SUFFIXES.map((suffix) => `${dir}${separator}${command}${suffix}`);
+}
+
 export function inspectCommand(command, candidates, { exists }) {
   const packageName = NPM_PACKAGES[command];
   const npm = [];
+  const seen = new Set();
   let official = 0;
 
   for (const candidate of candidates) {
@@ -68,12 +85,21 @@ export function inspectCommand(command, candidates, { exists }) {
       continue;
     }
 
-    npm.push({
-      command,
-      path: candidate,
-      // 本體不在 = 孤兒。這一項決定它是「可以搬走」還是「非清不可」。
-      orphan: !exists(findPackageRoot(candidate, packageName)),
-    });
+    // 本體不在 = 孤兒。這一項決定它是「可以搬走」還是「非清不可」。
+    const orphan = !exists(findPackageRoot(candidate, packageName));
+
+    for (const variant of shimVariants(candidate, command)) {
+      const key = variant.toLowerCase();
+
+      // Windows 的檔名不分大小寫，PATH 上拿到的可能是 codex.CMD、掃出來的是
+      // codex.cmd——不正規化的話同一支會被算兩次、搬第二次時失敗。
+      if (seen.has(key) || !exists(variant)) {
+        continue;
+      }
+
+      seen.add(key);
+      npm.push({ command, path: variant, orphan });
+    }
   }
 
   return { command, npm, official };
