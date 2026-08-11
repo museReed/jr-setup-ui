@@ -427,6 +427,44 @@ try {
   assert.match(nested.content, /^sandbox_mode = "read-only"$/m);
   ok("section 底下的同名 key 不會被誤認為最上層已設定，也不會被誤停用");
 
+  // service_tier 跟 sandbox_mode 不一樣：那個 key 還活著，只有 "default" 這個值
+  // 新版不收（真機：unknown variant `default`, expected `fast` or `flex`，連啟動
+  // 都失敗）。所以判準要看值。
+  const badValue = mergeCodexModes('service_tier = "default"\n');
+  assert.deepEqual(badValue.retired, ['service_tier = "default"']);
+  assert.match(badValue.content, /^# service_tier = "default"$/m);
+  assert.match(badValue.content, /新版 Codex 不收/);
+  ok("service_tier = \"default\" 會被註解停用，說明講的是「值」不是「key」");
+
+  // ⚠️ 這是把兩張表分開的全部理由：學生刻意設的合法值不能動。混成一張的話，
+  // 他知道自己在做什麼的那個設定會被我們安靜地關掉。
+  const goodValue = mergeCodexModes('service_tier = "fast"\n');
+  assert.deepEqual(goodValue.retired, []);
+  assert.match(goodValue.content, /^service_tier = "fast"$/m);
+  ok("service_tier = \"fast\" 是合法的，一個字都不動");
+
+  // 寫法有很多種：單引號、多餘空白、行尾註解。都要認得出來。
+  for (const line of [
+    "service_tier='default'",
+    '  service_tier   =   "default"  ',
+    'service_tier = "default" # 上一輪設的',
+  ]) {
+    assert.deepEqual(
+      mergeCodexModes(`${line}\n`).retired,
+      ['service_tier = "default"'],
+      `這種寫法沒認出來：${line}`,
+    );
+  }
+  ok("引號、空白、行尾註解的各種寫法都認得出來");
+
+  // 驗證那半也要跟著看值——不然裝完卡片會說「還有舊 key 沒退」而其實已經處理完。
+  assert.deepEqual(readRetiredCodexKeys('service_tier = "default"\n'), [
+    'service_tier = "default"',
+  ]);
+  assert.deepEqual(readRetiredCodexKeys('service_tier = "flex"\n'), []);
+  assert.deepEqual(readRetiredCodexKeys(badValue.content), []);
+  ok("驗證那半同樣看值，停用之後就不再回報");
+
   // 驗證那半讀的是「現在的值」，不是「有沒有這一行」：學生自己設成別的值時，
   // 卡片要說得出他設的是什麼，而不是只講「沒裝」。
   const read = readCodexModes(

@@ -1054,8 +1054,47 @@ const CODEX_MODES = {
 //
 // 已經裝過的機器上舊 key 還在，而 mergeCodexModes 只補不刪——所以要主動退掉它。
 // 註解掉而不是刪掉：那是學生檔案裡的一行，留著看得出發生過什麼、也還原得回去。
+// ⚠️ 這兩張表的每一筆都來自**真機事故**，不是照文件抄的。Codex 官方沒有一份「已停用
+// key」清單可以對，而且不認得的 key 只會警告、不會失敗——會讓 codex 連啟動都失敗的
+// 是「認得的 key 配了不認得的值」（enum 解析錯誤）。所以撞到一次記一次。
+//
+// 兩張表分開是因為處置的判準不同：
+//
+//   KEYS    這個 key 本身廢了，值是什麼都要停用
+//   VALUES  key 還活著，只有某幾個值不收——**其他值不能動**
+//
+// 混成一張的話（把 service_tier 丟進 KEYS），學生刻意設的 service_tier = "fast"
+// 會被我們安靜地註解掉。那是合法設定，他知道自己在做什麼。
 const RETIRED_CODEX_KEYS = ["sandbox_mode"];
+// service_tier = "default" 是真機撞到的：新版只收 fast / flex，設成 default 時
+// codex 直接以 `unknown variant 'default'` 收場，連啟動都失敗。
+const RETIRED_CODEX_VALUES = { service_tier: ["default"] };
 const RETIRED_NOTE = "# 由嚮導停用：與 default_permissions 不能並存（Codex 官方限制）";
+const RETIRED_VALUE_NOTE = "# 由嚮導停用：這個值新版 Codex 不收，留著會開不起來";
+
+// 這一行是不是「該停用的舊設定」。回傳要記在報告裡的名字，不是的話回 null。
+//
+// 值的比對只認引號裡那一段，前後空白與單雙引號都不算差別——學生手寫的檔案
+// 什麼寫法都有。
+function retiredCodexEntry(line) {
+  const key = RETIRED_CODEX_KEYS.find((name) =>
+    new RegExp(`^\\s*${name}\\s*=`).test(line),
+  );
+
+  if (key !== undefined) {
+    return { key, note: RETIRED_NOTE };
+  }
+
+  for (const [name, values] of Object.entries(RETIRED_CODEX_VALUES)) {
+    const match = line.match(new RegExp(`^\\s*${name}\\s*=\\s*["']?([^"'\\s#]*)`));
+
+    if (match !== null && values.includes(match[1])) {
+      return { key: `${name} = "${match[1]}"`, note: RETIRED_VALUE_NOTE };
+    }
+  }
+
+  return null;
+}
 
 // 驗證用：這三個 key 的期望值。安裝寫進去之後沒有人回頭確認過，而學生的檔案可能
 // 本來就有同名 key（我們刻意不覆蓋），那時卡片會全綠、設定卻是他原本那個值。
@@ -1095,16 +1134,14 @@ export function mergeCodexModes(content) {
       return line;
     }
 
-    const key = RETIRED_CODEX_KEYS.find((name) =>
-      new RegExp(`^\\s*${name}\\s*=`).test(line),
-    );
+    const entry = retiredCodexEntry(line);
 
-    if (key === undefined) {
+    if (entry === null) {
       return line;
     }
 
-    retired.push(key);
-    return `${RETIRED_NOTE}\n# ${line.trim()}`;
+    retired.push(entry.key);
+    return `${entry.note}\n# ${line.trim()}`;
   });
 
   const topLevelEnd = endOf(lines);
@@ -1140,9 +1177,9 @@ export function readRetiredCodexKeys(content) {
   const topLevelEnd = lines.findIndex((line) => /^\s*\[/.test(line));
   const topLevel = topLevelEnd === -1 ? lines : lines.slice(0, topLevelEnd);
 
-  return RETIRED_CODEX_KEYS.filter((key) =>
-    topLevel.some((line) => new RegExp(`^\\s*${key}\\s*=`).test(line)),
-  );
+  return topLevel
+    .map((line) => retiredCodexEntry(line)?.key)
+    .filter((key) => key !== undefined);
 }
 
 export function mergeAllowRules(settings, { allowRules }) {
