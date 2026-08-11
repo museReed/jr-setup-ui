@@ -1476,11 +1476,14 @@ try {
     "fix-shell-wrapper",
     "fix-codex-sandbox",
     "fix-legacy-skills",
+    "fix-legacy-cli",
   ]);
 
   for (const [checkId, resolve] of Object.entries(FIX_ACTIONS)) {
     for (const status of ["ok", "warn", "missing"]) {
-      const fixAction = resolve(status);
+      // 有幾列的按鈕不只看 status（npm 殘留那列同樣是黃燈，但「只有 npm 版」時
+      // 不能給清理鍵）。這裡餵一個「該有按鈕」的形狀，讓那幾顆也走得到守門。
+      const fixAction = resolve(status, { status, fixLabel: "（測試用）" });
 
       if (fixAction === null) {
         continue;

@@ -64,6 +64,10 @@ const fixLegacySkillsScript = moduleFile(
   "../scripts/fix-legacy-skills.mjs",
   import.meta.url,
 );
+const fixLegacyCliScript = moduleFile(
+  "../scripts/fix-legacy-cli.mjs",
+  import.meta.url,
+);
 
 export function shouldExplainOutput({ action, options = null, result }) {
   const succeeded =
@@ -235,6 +239,14 @@ Object.assign(actions, {
     args: [fixCodexSandboxScript, "--apply"],
     description:
       "在 Codex 會去找的位置接一條 junction，指回它自己套件裡的 codex-resources。",
+  },
+  "fix-legacy-cli": {
+    kind: "fixed",
+    label: "搬走 npm 裝的舊版",
+    cmd: process.execPath,
+    args: [fixLegacyCliScript, "--apply"],
+    description:
+      "把上一輪 npm 裝的 claude / codex 殘留搬進隔離區。只有 npm 版、沒有官方版的不動。",
   },
   "fix-legacy-skills": {
     kind: "fixed",

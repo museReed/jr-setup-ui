@@ -176,7 +176,7 @@ try {
   // 其餘依平台而定：macOS 多一列 Ghostty，Windows 多六列——執行原則、三列
   // PowerShell、Store 版判斷，再加 Codex 沙箱（junction / MSIX 都是 Windows 專屬）。
   const expectedChecks =
-    11 + (process.platform === "darwin" ? 1 : 0) +
+    12 + (process.platform === "darwin" ? 1 : 0) +
     (process.platform === "win32" ? 6 : 0);
   assert.equal(env.checks.length, expectedChecks);
   ok(`正確 token 的 GET /env 回傳 os 與 ${expectedChecks} 筆 checks`);

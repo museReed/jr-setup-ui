@@ -154,6 +154,8 @@ const expectedIds = [
   "python",
   // 兩個平台都查：shell 設定檔裡指向已刪檔案的 claude / codex 函式。
   "shell-wrapper",
+  // 兩個平台都查：上一輪 npm 全域安裝留下的並存與孤兒 shim。
+  "legacy-npm-cli",
 ];
 
 if (process.platform === "win32") {

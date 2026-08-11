@@ -570,6 +570,15 @@ const ENV_CARD_META = {
     description:
       "上過課的機器常留著指向已刪程式的舊捷徑，會讓後面裝好的東西全都叫不動。這張把它清掉",
   },
+  // 跟上面那張同一個性質、同一段時機：都是「上一輪留下的東西擋著這一輪」。
+  // 兩張都排在 CLI 之前（見 ENV_FIRST），不然學生會先裝完再發現裝的那支叫不到。
+  "legacy-npm-cli": {
+    agent: "other",
+    label: "清掉上一輪 npm 裝的舊版",
+    logo: "logo-terminal",
+    description:
+      "上一輪是用 npm 裝的，這次改用官方安裝器。兩份並存的話會搶著被叫到，這張處理掉",
+  },
   claude: {
     agent: "claude",
     label: "Claude Code",
@@ -777,7 +786,12 @@ function setupOrder(card) {
 // 舊捷徑那張緊接在後、排在所有 CLI 之前，理由跟執行原則同一種：擋路的先修。
 // 它擋的是「裝好了卻叫不動」——排在後面的話，學生會先把 Claude Code、Codex 全部
 // 裝完並登入，然後在第一次真的打指令時才發現全都不能用。
-const ENV_FIRST = ["execution-policy", "ghostty", "shell-wrapper"];
+const ENV_FIRST = [
+  "execution-policy",
+  "ghostty",
+  "legacy-npm-cli",
+  "shell-wrapper",
+];
 
 function envOrder(card) {
   const index = ENV_FIRST.indexOf(card.checkId);

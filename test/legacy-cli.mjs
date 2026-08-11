@@ -1,0 +1,107 @@
+import assert from "node:assert/strict";
+
+import {
+  classifyInstall,
+  findPackageRoot,
+  inspectCommand,
+  legacyCliStatus,
+  removableEntries,
+} from "../src/legacy-cli.js";
+
+function ok(description) {
+  console.log(`ok - ${description}`);
+}
+
+const NPM_SHIM = "C:\\Users\\Reed\\AppData\\Roaming\\npm\\codex.cmd";
+const NPM_PKG =
+  "C:\\Users\\Reed\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex";
+const OFFICIAL =
+  "C:\\Users\\Reed\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe";
+const POSIX_NPM = "/Users/reed/.npm-global/bin/codex";
+const POSIX_OFFICIAL = "/Users/reed/.local/bin/codex";
+
+try {
+  assert.equal(classifyInstall(NPM_SHIM), "npm");
+  assert.equal(classifyInstall(NPM_PKG), "npm");
+  assert.equal(classifyInstall(POSIX_NPM), "npm");
+  assert.equal(classifyInstall(OFFICIAL), "official");
+  assert.equal(classifyInstall(POSIX_OFFICIAL), "official");
+  assert.equal(classifyInstall("C:\\somewhere\\else\\codex.exe"), "unknown");
+  assert.equal(classifyInstall(null), "unknown");
+  ok("兩個平台的 npm 落點與官方落點都分得出來，不認得的就說不認得");
+
+  assert.equal(findPackageRoot(NPM_SHIM, "@openai/codex"), NPM_PKG);
+  assert.equal(
+    findPackageRoot(POSIX_NPM, "@openai/codex"),
+    "/Users/reed/.npm-global/bin/node_modules/@openai/codex",
+  );
+  ok("套件本體的位置從 shim 旁邊推出來，分隔符跟著平台走");
+
+  // 三種情況，一種一種來。
+  const coexist = inspectCommand("codex", [OFFICIAL, NPM_SHIM], {
+    exists: (candidate) => candidate === NPM_PKG,
+  });
+  assert.equal(coexist.official, 1);
+  assert.equal(coexist.npm.length, 1);
+  assert.equal(coexist.npm[0].orphan, false);
+  ok("並存：官方版與 npm 版各認一支，npm 那支本體還在所以不是孤兒");
+
+  const orphan = inspectCommand("codex", [OFFICIAL, NPM_SHIM], {
+    exists: () => false,
+  });
+  assert.equal(orphan.npm[0].orphan, true);
+  ok("孤兒 shim：本體不在時標得出來");
+
+  const onlyNpm = inspectCommand("codex", [NPM_SHIM], {
+    exists: (candidate) => candidate === NPM_PKG,
+  });
+  assert.equal(onlyNpm.official, 0);
+  ok("只有 npm 版：官方版數量是 0");
+
+  assert.equal(legacyCliStatus([inspectCommand("codex", [], { exists: () => true })]).status, "ok");
+  ok("沒有 npm 殘留時是綠的");
+
+  // ⚠️ 這是這支模組最重要的一條。只有 npm 版的時候**不能給清理按鈕**——
+  // 那是學生唯一叫得動的東西，清掉等於把人家的工具拆了。
+  const onlyNpmStatus = legacyCliStatus([onlyNpm]);
+  assert.equal(onlyNpmStatus.status, "warn");
+  assert.equal(onlyNpmStatus.fixLabel, undefined);
+  assert.ok(onlyNpmStatus.detail.includes("重裝"));
+  ok("只有 npm 版時不長清理按鈕，改叫他用官方版重裝");
+
+  const coexistStatus = legacyCliStatus([coexist]);
+  assert.equal(coexistStatus.fixLabel, "搬走 npm 裝的舊版");
+  assert.ok(coexistStatus.detail.length <= 40, coexistStatus.detail);
+  ok("並存時給清理按鈕，說明一行講完");
+
+  const orphanStatus = legacyCliStatus([orphan]);
+  assert.ok(orphanStatus.detail.includes("空氣"));
+  assert.ok(orphanStatus.detail.length <= 40, orphanStatus.detail);
+  ok("有孤兒時說明改成講那個更嚴重的症狀");
+
+  // 真的動得了的是哪幾支——這決定腳本會碰什麼檔案。
+  assert.deepEqual(
+    removableEntries([onlyNpm]).map((entry) => entry.path),
+    [],
+  );
+  ok("只有 npm 版時一支都不動");
+
+  assert.deepEqual(
+    removableEntries([coexist]).map((entry) => entry.path),
+    [NPM_SHIM],
+  );
+  ok("並存時搬走 npm 那一支");
+
+  // 孤兒即使沒有官方版也要清：它不是「還能用的舊版」，它只會失敗。
+  const lonelyOrphan = inspectCommand("codex", [NPM_SHIM], {
+    exists: () => false,
+  });
+  assert.deepEqual(
+    removableEntries([lonelyOrphan]).map((entry) => entry.path),
+    [NPM_SHIM],
+  );
+  ok("孤兒沒有官方版當靠山也要清——留著只會讓每次呼叫都失敗");
+} catch (error) {
+  console.error(error);
+  process.exit(1);
+}
