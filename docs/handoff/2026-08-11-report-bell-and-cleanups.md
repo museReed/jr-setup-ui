@@ -40,8 +40,9 @@ irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 |
 
 1. 卡片順序：**版本控制與 GitHub 排在 Claude Code 之前**
 2. 右上角「這一頁卡住了」→ 開框，預覽裡**不能出現使用者本名**（路徑要是 `~`）
-3. 寫一句描述、送出 → 拿到 issue 網址
-4. 去 `museReed/jr-setup-feedback` 看那則 issue
+3. 寫一句描述、送出 → **那則 issue 會自動在瀏覽器打開**
+4. 在那個頁面把一張截圖拖進留言框（`gh issue create` 沒有附件功能，Contents API 又要
+   寫入權限，所以圖只能在 GitHub 自己的畫面上拖——這是刻意的設計不是偷懶）
 
 ⚠️ **先確認那個 repo 存在且公開**：`gh repo view museReed/jr-setup-feedback`。
 不存在的話 gh 回 404，我們的訊息會說「這是嚮導的問題」。
