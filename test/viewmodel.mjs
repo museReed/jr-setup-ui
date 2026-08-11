@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { FIX_ACTIONS } from "../src/env-check.js";
 import {
   BEHAVIOR_CHECKLIST,
   BEHAVIOR_QUESTION,
@@ -25,6 +26,8 @@ import {
   envRowModel,
   eyeVerifiedSteps,
   extractLoginHints,
+  FIX_BUTTON_TEXT,
+  fixButtonText,
   impliedVerifiedSteps,
   installStatusMessage,
   isLoginAction,
@@ -1462,6 +1465,40 @@ try {
   );
   assert.equal(wrapper.buttons[0].checkId, "shell-wrapper");
   ok("那一列自己給了 fixLabel 時，按鈕就用它的文字");
+
+  // 守門：走訪後端所有可能掛出來的修復鍵，確認沒有一顆是「掉進預設值」才對的。
+  // 預設值現在是「修正」（通用、講錯了也還算通順），但預設值本身不是答案——
+  // 新加一顆修復鍵就要在這裡決定它該說什麼，不能靠 fallback 蒙混過去。
+  //
+  // 這支測試是為了擋 fix-shell-wrapper 那次：它沒對到表，於是清除鍵上寫著
+  // 「開始登入」，測試全綠、只有真的開起來才看得到。
+  const NEEDS_ROW_LABEL = new Set(["fix-shell-wrapper"]);
+
+  for (const [checkId, resolve] of Object.entries(FIX_ACTIONS)) {
+    for (const status of ["ok", "warn", "missing"]) {
+      const fixAction = resolve(status);
+
+      if (fixAction === null) {
+        continue;
+      }
+
+      assert.ok(
+        Object.hasOwn(FIX_BUTTON_TEXT, fixAction) ||
+          NEEDS_ROW_LABEL.has(fixAction),
+        `${fixAction} 沒人決定按鈕上要寫什麼——加進 FIX_BUTTON_TEXT，` +
+          `或讓那一列自己回 fixLabel 並登記在 NEEDS_ROW_LABEL`,
+      );
+
+      // 「開始登入」只准出現在真的是登入的那幾顆上。
+      const text = fixButtonText({ id: checkId, fixAction });
+      assert.equal(
+        isLoginAction(fixAction),
+        text === "開始登入",
+        `${fixAction} 的按鈕文字與它是不是登入動作對不起來`,
+      );
+    }
+  }
+  ok("後端掛得出來的每一顆修復鍵都有人決定過按鈕文字");
 
   // 修某一格的按鈕要說得出它修的是哪一格：畫面上它掛回那一格底下（見 view.js 的
   // inlineActions）。原本「未登入」在清單裡、按鈕在清單外的按鈕列，學生要自己把

@@ -210,6 +210,28 @@ export function extractLoginHints(text) {
   };
 }
 
+// 修復鍵上面要寫什麼。三層，由具體到通用：
+//
+//   1. 那一列自己給的 fixLabel——文字要跟著偵測結果變的（壞掉的是 claude 還是
+//      codex）只有後端知道，寫不進這張靜態表
+//   2. 這張表——文字固定、跟偵測結果無關的
+//   3. 「修正」——沒對到的一律走這裡
+//
+// ⚠️ 第 3 層以前是「開始登入」。那個預設值咬過一次：新加的 shell-wrapper 那一列
+// 沒對到表，於是清除鍵上寫著「開始登入」。預設值要選一個「講錯了也還算通順」的，
+// 不能拿某個特例當通用值。真正的守門在 test/viewmodel.mjs——新的 fixAction 沒給
+// 文字就會紅。
+export const FIX_BUTTON_TEXT = {
+  "fix-execution-policy": "修正",
+  "login-claude": "開始登入",
+  "login-codex": "開始登入",
+  "login-gh": "開始登入",
+};
+
+export function fixButtonText(check) {
+  return check.fixLabel ?? FIX_BUTTON_TEXT[check.fixAction] ?? "修正";
+}
+
 // 一列環境檢查結果要畫成什麼：圖示、文字、後面掛哪幾顆按鈕。
 export function envRowModel(check, installed = false) {
   const display = STATUS_DISPLAY[check.status] ?? STATUS_DISPLAY.warn;
@@ -238,11 +260,7 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: check.fixAction,
       dataName: "fixAction",
-      // fixLabel 由後端那一列自己給——文字要跟著偵測結果變的（壞掉的是 claude
-      // 還是 codex）沒辦法寫在這張靜態對照表裡。沒給就照舊。
-      text:
-        check.fixLabel ??
-        (check.id === "execution-policy" ? "修正" : "開始登入"),
+      text: fixButtonText(check),
       // 這顆修的是哪一格。畫面上要把它擺回那一格旁邊——「未登入」在清單裡，按鈕卻
       // 在清單外的按鈕列，學生得自己把兩者連起來（Reed 實測）。
       checkId: check.id,

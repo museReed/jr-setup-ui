@@ -283,21 +283,25 @@ async function spawnProbe(rawCmd, rawArgs) {
   });
 }
 
+// 哪一列在什麼狀態下掛哪一顆修復鍵。匯出是為了讓 test/viewmodel.mjs 走訪得到——
+// 新加一顆修復鍵卻忘了給它按鈕文字時，那支測試會紅（實測 fix-shell-wrapper
+// 就是這樣長出一顆寫著「開始登入」的清除鍵）。
+export const FIX_ACTIONS = {
+  "execution-policy": (status) =>
+    status === "ok" ? null : "fix-execution-policy",
+  "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
+  "claude-auth": (status) => (status === "warn" ? "login-claude" : null),
+  "codex-auth": (status) => (status === "warn" ? "login-codex" : null),
+  "gh-auth": (status) => (status === "warn" ? "login-gh" : null),
+};
+
 function withActions(check) {
   // installable 為 false 的紅燈是「東西在、但用錯方式」——給安裝按鈕只會誤導。
   const installer =
     check.status === "missing" && check.installable !== false
       ? resolveInstaller(check.id, process.platform)
       : null;
-  const fixActions = {
-    "execution-policy":
-      check.status === "ok" ? null : "fix-execution-policy",
-    "shell-wrapper": check.status === "warn" ? "fix-shell-wrapper" : null,
-    "claude-auth": check.status === "warn" ? "login-claude" : null,
-    "codex-auth": check.status === "warn" ? "login-codex" : null,
-    "gh-auth": check.status === "warn" ? "login-gh" : null,
-  };
-  const fixAction = fixActions[check.id] ?? null;
+  const fixAction = FIX_ACTIONS[check.id]?.(check.status) ?? null;
   // installAction 在項目裝好之後也會變 null（installer 只在 missing 時才解析），
   // 所以前端光看它分不出「已經裝好」與「這根本不是可以安裝的東西」。
   // execution-policy 這種設定類項目沒有 installer，卡片上不該出現安裝按鈕——
