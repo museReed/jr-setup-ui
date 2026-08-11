@@ -25,6 +25,7 @@ import {
   shellProfilePaths,
   shellWrapperStatus,
 } from "./shell-wrapper.js";
+import { quarantineEntries, quarantineRow } from "./quarantine.js";
 import {
   conflictingLegacySkills,
   legacySkillRoot,
@@ -325,6 +326,10 @@ export const FIX_ACTIONS = {
   "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
   "codex-legacy-skills": (status) =>
     status === "warn" ? "fix-legacy-skills" : null,
+  // ⚠️ 這一列是綠燈才有按鈕，跟其他每一顆都相反。它不是在修毛病，是把前面兩顆
+  // 清理鍵留下的備份收掉——那一列只會在「該清的都清完了」時才被加進來（見
+  // quarantineRow），所以走到這裡就代表按鈕該給。
+  quarantine: () => "clear-quarantine",
   // ⚠️ 這一列的按鈕不是「黃燈就有」——只有 npm 版的情況也是黃燈，但那時不能清
   // （見 legacy-cli.js 的第 3 種）。所以按鈕跟著那一列自己回的 fixLabel 走。
   "legacy-npm-cli": (status, check) =>
@@ -665,6 +670,30 @@ function checkLegacySkills() {
   }
 }
 
+// 隔離區那一列跟其他每一列都不同：它不是一次探測，是看完別人的結果才決定要不要
+// 出現。所以它不在 CHECKS 清單裡，也沒有固定的位置——由 runEnvCheck 在最後補上。
+function checkQuarantine(checks) {
+  const id = "quarantine";
+  const label = "先前搬走的東西還留著";
+
+  try {
+    const entries = quarantineEntries(homedir(), {
+      // 資料夾不存在是常態（沒清過的機器就沒有），不是錯誤。
+      list: (dir) =>
+        existsSync(dir)
+          ? readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name)
+          : [],
+    });
+    const row = quarantineRow(entries, checks);
+
+    return row === null ? null : { id, label, ...row };
+  } catch {
+    // 讀不到就當作沒有。這一列是收尾用的加分項，不該因為權限之類的意外
+    // 在整段已經全綠之後又長出一個學生修不了的東西。
+    return null;
+  }
+}
+
 // PATH 上第一支跑得動的 pwsh 落在哪。查路徑而不是跑指令：Store 版與一般版都答得出
 // 版本號，分不出來——差別只在它裝在 WindowsApps 底下。
 async function pwshSource() {
@@ -890,10 +919,14 @@ export async function runEnvCheck(tools = []) {
     }
 
     const checks = await Promise.all(checksToRun);
+    // 補在最後：它要先看得到別人的結論才決定自己出不出現。
+    const quarantine = checkQuarantine(checks);
 
     return {
       os: { platform: process.platform, arch: process.arch, home: homedir() },
-      checks: checks.map(withActions),
+      checks: (quarantine === null ? checks : [...checks, quarantine]).map(
+        withActions,
+      ),
     };
   } catch (error) {
     // ⚠️ 這個 catch 會把整段吞掉、每一列都變成「檢查失敗」，而 id 跟正常路徑一模一樣

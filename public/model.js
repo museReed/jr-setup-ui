@@ -570,6 +570,10 @@ const ENV_CARD_META = {
     logo: "logo-terminal",
     description:
       "上一輪是用 npm 裝的，這次改用官方安裝器。兩份並存的話會搶著被叫到，這張處理掉",
+    // 隔離區那一列掛在這張，不自己開一張卡：它講的是「剛才那幾顆按鈕搬走的東西
+    // 還躺著」，跟這張卡是同一件事的後半段。而且它只在清理都做完之後才存在
+    // （見 src/quarantine.js），自己開一張卡等於整段做到一半突然多出一站。
+    checkIds: ["legacy-npm-cli", "quarantine"],
   },
   claude: {
     agent: "claude",

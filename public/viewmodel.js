@@ -232,6 +232,9 @@ export function extractLoginHints(text) {
 // 文字就會紅。
 export const FIX_BUTTON_TEXT = {
   "fix-execution-policy": "修正",
+  // 這顆的文字永遠一樣（不像清除舊捷徑那幾顆要指名壞掉的是哪一支），所以寫在
+  // 表裡就夠，不必讓那一列自己回 fixLabel。
+  "clear-quarantine": "清掉隔離區",
   "login-claude": "開始登入",
   "login-codex": "開始登入",
   "login-gh": "開始登入",
@@ -372,12 +375,22 @@ export function envCardRowModel(card, installedSteps = new Set()) {
     //
     // 挑第一列講得出話的：一張卡上通常只有一列出問題，兩列以上時先講最前面那個
     // ——一次丟三段自救步驟，學生一段都不會讀。
+    //
+    // check.guidance 優先於那張靜態表：隔離區那一列要列出「這次會刪掉哪幾樣」，
+    // 而那是每台機器都不一樣的東西，寫不進 GUIDANCE。它也是唯一一列綠燈還要說話的
+    // ——guidanceModel 只對 missing / warn 開口（綠燈還在講自救步驟才是怪事）。
     guidance:
       checks
-        .map((check) =>
-          guidanceModel({ step: check.id, status: check.status, failed: false }),
+        .map(
+          (check) =>
+            check.guidance ??
+            guidanceModel({
+              step: check.id,
+              status: check.status,
+              failed: false,
+            }),
         )
-        .find((model) => model !== null) ?? null,
+        .find((model) => model !== null && model !== undefined) ?? null,
   };
 }
 
@@ -830,12 +843,56 @@ export function milestoneModels(
   });
 }
 
+// 進度條上面那一行。原本只講「還有 3 張要做」——那句話對站在最後一張的學生沒有用：
+// 他眼前這張是綠的，卻被告知還有三張，只能一張一張往回翻找是哪三張（VM 實測，
+// 跟段落閘門當初那句「先把上一段做完」是同一個毛病）。
+//
+// 所以指名。點名規則跟 sectionGateState 對齊：只講前兩張，後面用「等 N 張」帶過
+// ——列滿七張只會變成另一種看不懂，而且這一行擠在進度條上面，長了會換行把條推下去。
 export function sectionStatus(cards, completedCardIds, seenCardIds = new Set()) {
-  const remaining = cardsDone(cards, completedCardIds, seenCardIds).filter(
-    (done) => !done,
-  ).length;
+  const done = cardsDone(cards, completedCardIds, seenCardIds);
+  const blocking = cards
+    .map((card, index) => ({ label: card.label, index }))
+    .filter((_, index) => !done[index]);
 
-  return remaining === 0 ? "這一段已完成。" : `還有 ${remaining} 張要做。`;
+  if (blocking.length === 0) {
+    return "這一段已完成。";
+  }
+
+  const named = blocking
+    .slice(0, 2)
+    .map(({ label, index }) => `「${label}」（第 ${index + 1} 張）`)
+    .join("、");
+  const rest = blocking.length > 2 ? `等 ${blocking.length} 張` : "";
+
+  return `還沒做完：${named}${rest}。`;
+}
+
+// 走到一段的最後一張時，自己重查一次。
+//
+// 為什麼需要：段落閘門看的是「每張卡的實際狀態」，而那些狀態來自上一次檢查的快照。
+// 學生在卡片上按完安裝、驗證、清理之後往下翻，翻到最後一張時快照多半已經過期
+// ——畫面說這一段還沒完，下一段因此鎖著，而他手上沒有任何線索該回去點哪裡。
+// 唯一的自救是自己找到「重新檢查」那顆按鈕，而那顆在畫面另一頭（VM 實測）。
+//
+// 回哪一種：這一段的完成度是誰算出來的，就重查誰。環境段十三項併行 spawn，
+// Windows 上實測 8.3 秒——為了規則段的一張卡順手把它一起重跑是很貴的。
+//
+// alreadyDone 是「這一次走到最後一張，已經查過了」。沒有它會無限迴圈：查完會
+// renderWizard，renderWizard 又走到這裡。往回翻再翻回來要算新的一次，所以那個
+// 記憶由呼叫端在離開最後一張時清掉。
+export function sectionEndRecheck({
+  sectionId,
+  currentIndex,
+  cardCount,
+  alreadyDone = false,
+  busy = false,
+}) {
+  if (alreadyDone || busy || cardCount === 0 || currentIndex !== cardCount - 1) {
+    return null;
+  }
+
+  return sectionId === "env" ? "env" : "configs";
 }
 
 export function appendTermLine(lines, next) {

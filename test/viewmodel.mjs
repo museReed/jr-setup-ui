@@ -40,6 +40,7 @@ import {
   nextCardUnlocked,
   rowRunOptions,
   runControlsState,
+  sectionEndRecheck,
   failureReason,
   runOutcome,
   sectionManualItems,
@@ -336,20 +337,25 @@ try {
   assert.equal(verified.showRetest, true);
   ok("驗過之後才變綠，安裝按鈕收掉並可再次驗證");
 
+  // ⚠️ card.label 一定要有。真的資料一律由 checkCard 帶上（見 model.js），而
+  // sectionStatus 要拿它指名擋著的卡——少了它畫面上會出現「「undefined」（第 2 張）」。
   const cards = [
     {
       kind: "config",
       checkId: "one",
+      label: "一",
       check: { id: "one", label: "一", status: "ok", detail: "完成" },
     },
     {
       kind: "config",
       checkId: "two",
+      label: "二",
       check: { id: "two", label: "二", status: "ok", detail: "完成" },
     },
     {
       kind: "config",
       checkId: "three",
+      label: "三",
       check: {
         id: "three",
         label: "三",
@@ -512,12 +518,50 @@ try {
     sectionStatus(cards, allIds, seen("one", "two", "three")),
     "這一段已完成。",
   );
-  assert.equal(sectionStatus(cards, allIds, seen("one")), "還有 2 張要做。");
+  // A7：擋著的卡要指名，不能只講張數。學生站在最後一張、畫面顯示已完成，被告知
+  // 「還有 2 張要做」等於叫他自己一張一張往回翻（VM 實測，跟段落閘門同一個毛病）。
+  assert.equal(
+    sectionStatus(cards, allIds, seen("one")),
+    "還沒做完：「二」（第 2 張）、「三」（第 3 張）。",
+  );
   assert.equal(
     sectionStatus(cards, new Set(["one"]), seen("one", "two")),
-    "還有 2 張要做。",
+    "還沒做完：「二」（第 2 張）、「三」（第 3 張）。",
   );
-  ok("段落狀態依未完成卡片數顯示完成或剩餘張數");
+  ok("段落狀態把擋著的卡指名出來，不是只講剩幾張");
+
+  // 只講前兩張，後面用「等 N 張」帶過——列滿七張只會變成另一種看不懂，而且這一行
+  // 擠在進度條上面，長了會換行把條推下去。
+  const many = ["一", "二", "三", "四"].map((label, index) => ({
+    kind: "config",
+    checkId: `card-${index}`,
+    label,
+    check: { id: `card-${index}`, label, status: "missing", detail: "未完成" },
+  }));
+  const manyStatus = sectionStatus(
+    many,
+    new Set(),
+    seen("card-0", "card-1", "card-2", "card-3"),
+  );
+  assert.ok(manyStatus.includes("「一」（第 1 張）"));
+  assert.ok(manyStatus.includes("「二」（第 2 張）"));
+  assert.ok(!manyStatus.includes("「三」"));
+  assert.ok(manyStatus.includes("等 4 張"));
+  ok("擋著的卡超過兩張時只點名前兩張，其餘講數量");
+
+  // 沒有這個判準的話 renderWizard 與重查會互相呼叫成無限迴圈——alreadyDone 是唯一
+  // 的煞車，而它必須連「正在跑東西」一起擋（跑到一半的狀態不是結論）。
+  const atEnd = { sectionId: "rules", currentIndex: 2, cardCount: 3 };
+  assert.equal(sectionEndRecheck(atEnd), "configs");
+  assert.equal(sectionEndRecheck({ ...atEnd, sectionId: "env" }), "env");
+  assert.equal(sectionEndRecheck({ ...atEnd, alreadyDone: true }), null);
+  assert.equal(sectionEndRecheck({ ...atEnd, busy: true }), null);
+  assert.equal(sectionEndRecheck({ ...atEnd, currentIndex: 1 }), null);
+  assert.equal(
+    sectionEndRecheck({ sectionId: "env", currentIndex: 0, cardCount: 0 }),
+    null,
+  );
+  ok("只有站在最後一張、而且沒別的事在跑時才自動重查，環境段查環境");
 
   const checkingLine = {
     className: "ds-term-line ds-term-line--dim",

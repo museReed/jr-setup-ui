@@ -63,6 +63,7 @@ import {
   runControlsState,
   runOutcome,
   sectionManualItems,
+  sectionEndRecheck,
   sectionStatus,
   systemRowChecked,
   milestoneModels,
@@ -141,6 +142,9 @@ const state = {
   manualRecheck: false,
   // 終端上已經報過的那張卡。renderWizard 跑得很勤，沒有它會一直重複同一句。
   announcedCardId: null,
+  // 哪幾段「這一次走到最後一張」已經自動重查過了。沒有它 renderWizard 會跟重查
+  // 互相呼叫成無限迴圈；往回翻就清掉，翻回來要算新的一次（見 sectionEndRecheck）。
+  autoRecheckedSections: new Set(),
   pendingModalCheck: null,
   loginHints: { url: null, code: null },
   // 哪幾格有操作步驟可看，以及那一列該寫什麼。開頁問一次——按鈕存在卻按出一個空
@@ -882,6 +886,41 @@ function renderWizard() {
     // 之後那句話講的是一件已經發生過的事（見 tour-model.js 的 hintForCard）。
     cardDone,
   });
+  maybeRecheckAtSectionEnd(section.id, currentIndex, cardSection.cards.length);
+}
+
+// A7：翻到一段的最後一張就自己重查一次，讓段落閘門看到的是現在的狀態而不是快照。
+// 該不該查的判準在 viewmodel 的 sectionEndRecheck，這裡只負責記憶與副作用。
+function maybeRecheckAtSectionEnd(sectionId, currentIndex, cardCount) {
+  // 離開最後一張就把記憶清掉。往回翻再翻回來是新的一次——中間他多半又做了什麼，
+  // 拿上一輪的結論擋著等於白翻。
+  if (currentIndex !== cardCount - 1) {
+    state.autoRecheckedSections.delete(sectionId);
+    return;
+  }
+
+  const target = sectionEndRecheck({
+    sectionId,
+    currentIndex,
+    cardCount,
+    alreadyDone: state.autoRecheckedSections.has(sectionId),
+    // 有東西在跑就先不查：安裝／驗證跑到一半的狀態本來就不是結論，
+    // 而且那一支跑完自己會觸發重查。
+    busy:
+      state.runInProgress ||
+      state.envCheckInProgress ||
+      state.configCheckInProgress,
+  });
+
+  if (target === null) {
+    return;
+  }
+
+  state.autoRecheckedSections.add(sectionId);
+  // 不開 loading 遮罩：學生正在看最後一張卡，把它蓋掉只會像畫面壞了。
+  // 這一句留在終端上，是為了讓「卡片突然自己變綠」講得出原因。
+  view.addLine("走到這一段的最後一張，順手重新確認一次狀態。", "agent-status");
+  void (target === "env" ? checkEnvironment(false) : checkConfigs());
 }
 
 // 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。

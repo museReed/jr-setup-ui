@@ -68,6 +68,10 @@ const fixLegacyCliScript = moduleFile(
   "../scripts/fix-legacy-cli.mjs",
   import.meta.url,
 );
+const clearQuarantineScript = moduleFile(
+  "../scripts/clear-quarantine.mjs",
+  import.meta.url,
+);
 const restoreMergeBackupScript = moduleFile(
   "../scripts/restore-merge-backup.mjs",
   import.meta.url,
@@ -295,6 +299,16 @@ Object.assign(actions, {
     args: [fixLegacySkillsScript, "--apply"],
     description:
       "把 ~/.codex/skills 裡跟這次要裝的同名的 skill 搬進隔離區，Codex 才不會兩份都載入。",
+  },
+  // 那兩顆搬移鍵的收尾。⚠️ 唯一一顆真的刪東西的按鈕——範圍與不碰什麼寫在
+  // scripts/clear-quarantine.mjs 的開頭，畫面上按之前也會先列出要刪什麼。
+  "clear-quarantine": {
+    kind: "fixed",
+    label: "清掉隔離區",
+    cmd: process.execPath,
+    args: [clearQuarantineScript, "--apply"],
+    description:
+      "把先前搬進 ~/.jr-setup/quarantine 的舊 skill 與舊 CLI 刪掉。合併的還原點與 .bak 不動。",
   },
   "diagnose-naming-block": {
     kind: "fixed",
