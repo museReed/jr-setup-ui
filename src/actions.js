@@ -60,6 +60,10 @@ const fixCodexSandboxScript = moduleFile(
   "../scripts/fix-codex-sandbox.mjs",
   import.meta.url,
 );
+const fixLegacySkillsScript = moduleFile(
+  "../scripts/fix-legacy-skills.mjs",
+  import.meta.url,
+);
 
 export function shouldExplainOutput({ action, options = null, result }) {
   const succeeded =
@@ -231,6 +235,14 @@ Object.assign(actions, {
     args: [fixCodexSandboxScript, "--apply"],
     description:
       "在 Codex 會去找的位置接一條 junction，指回它自己套件裡的 codex-resources。",
+  },
+  "fix-legacy-skills": {
+    kind: "fixed",
+    label: "搬走打架的舊 skill",
+    cmd: process.execPath,
+    args: [fixLegacySkillsScript, "--apply"],
+    description:
+      "把 ~/.codex/skills 裡跟這次要裝的同名的 skill 搬進隔離區，Codex 才不會兩份都載入。",
   },
   "diagnose-naming-block": {
     kind: "fixed",

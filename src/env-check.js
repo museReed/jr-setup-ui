@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,11 +18,17 @@ import {
   sandboxStatus,
   storePowerShellStatus,
 } from "./codex-sandbox.js";
+import { SKILL_NAMES } from "./config-install.js";
 import {
   findDeadWrappers,
   shellProfilePaths,
   shellWrapperStatus,
 } from "./shell-wrapper.js";
+import {
+  conflictingLegacySkills,
+  legacySkillRoot,
+  legacySkillStatus,
+} from "./skill-roots.js";
 import {
   findAllExecutables,
   pickRunnable,
@@ -47,7 +53,7 @@ function timedOut(id, label) {
 // 沒列在這裡的（git / gh / node / python / 終端機那些）是兩邊共用的前置，永遠都要查。
 const TOOL_ONLY_CHECKS = {
   claude: ["claude", "claude-auth"],
-  codex: ["codex", "codex-auth", "codex-sandbox"],
+  codex: ["codex", "codex-auth", "codex-sandbox", "codex-legacy-skills"],
 };
 
 export function checksForTools(checks, tools) {
@@ -77,6 +83,8 @@ export function checksForPlatform(platform) {
     ...(platform === "win32"
       ? [{ id: "codex-sandbox", label: "Codex 沙箱跑得起來" }]
       : []),
+    // 兩個平台都要：~/.codex/skills 這個舊落點跟作業系統無關。
+    { id: "codex-legacy-skills", label: "沒有打架的舊版 skill" },
     { id: "git", label: "Git" },
     { id: "gh", label: "GitHub CLI" },
     { id: "gh-auth", label: "GitHub 登入狀態" },
@@ -308,6 +316,8 @@ export const FIX_ACTIONS = {
     status === "ok" ? null : "fix-execution-policy",
   "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
   "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
+  "codex-legacy-skills": (status) =>
+    status === "warn" ? "fix-legacy-skills" : null,
   "claude-auth": (status) => (status === "warn" ? "login-claude" : null),
   "codex-auth": (status) => (status === "warn" ? "login-codex" : null),
   "gh-auth": (status) => (status === "warn" ? "login-gh" : null),
@@ -583,6 +593,36 @@ async function checkShellWrapper() {
   return { id, label, ...shellWrapperStatus(dead) };
 }
 
+// 這一列查的是「舊落點有沒有東西會跟我們待會兒裝的打架」。判準寫在 skill-roots.js。
+// 這次要裝的是 SKILL_NAMES 那三支加上 vault-sync——照 config-install 的 skillStep。
+const OUR_CODEX_SKILLS = [...SKILL_NAMES, "vault-sync"];
+
+function checkLegacySkills() {
+  const id = "codex-legacy-skills";
+  const label = "沒有打架的舊版 skill";
+  const root = legacySkillRoot(HOME);
+
+  if (!existsSync(root)) {
+    return { id, label, ...legacySkillStatus([]) };
+  }
+
+  try {
+    const names = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+
+    return {
+      id,
+      label,
+      ...legacySkillStatus(conflictingLegacySkills(names, OUR_CODEX_SKILLS)),
+    };
+  } catch {
+    // 讀不到就當作沒問題：這一列是額外的保險，不該因為權限之類的意外
+    // 讓學生看到一個他修不了的紅燈。
+    return { id, label, ...legacySkillStatus([]) };
+  }
+}
+
 // PATH 上第一支跑得動的 pwsh 落在哪。查路徑而不是跑指令：Store 版與一般版都答得出
 // 版本號，分不出來——差別只在它裝在 WindowsApps 底下。
 async function pwshSource() {
@@ -776,6 +816,8 @@ export async function runEnvCheck(tools = []) {
       if (wanted.has("codex-sandbox")) {
         checksToRun.push(checkCodexSandbox());
       }
+
+      checksToRun.push(checkLegacySkills());
     }
 
     checksToRun.push(

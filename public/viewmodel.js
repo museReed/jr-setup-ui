@@ -1435,6 +1435,13 @@ export function installStatusMessage(action, result) {
     return { text: "已接回沙箱檔案，狀態已更新。", failed: false };
   }
 
+  if (action === "fix-legacy-skills") {
+    return {
+      text: "舊 skill 已搬進隔離區。要開一個新的 Codex session 才會生效。",
+      failed: false,
+    };
+  }
+
   return {
     text:
       result.benign === true

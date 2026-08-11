@@ -584,7 +584,7 @@ const ENV_CARD_META = {
     description: "另一個 AI 助手，課堂上會拿它跟 Claude 對照著看有什麼不一樣",
     // 沙箱那一列跟著 Codex 走：它問的是「這支 codex 待會兒跑得起來嗎」，
     // 跟裝了沒、登入了沒是同一張卡上的三個面向。Windows 才有那一列。
-    checkIds: ["codex", "codex-auth", "codex-sandbox"],
+    checkIds: ["codex", "codex-auth", "codex-sandbox", "codex-legacy-skills"],
   },
   // Git 與 GitHub CLI 合成一張：學生腦中那是同一件事（把東西存起來、推上去），
   // 拆兩張只是把一個念頭切成兩半讓他做兩次。

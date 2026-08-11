@@ -142,6 +142,9 @@ const expectedIds = [
   "claude-auth",
   "codex",
   "codex-auth",
+  // 兩個平台都查：~/.codex/skills 那個舊落點跟作業系統無關，而 codex 兩個落點
+  // 都會載入（見 skill-roots.js）。Windows 上 codex-sandbox 會插在這之前。
+  "codex-legacy-skills",
   "git",
   "gh",
   "gh-auth",
