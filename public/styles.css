@@ -1446,6 +1446,9 @@ body.wt-locked {
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
+  /* 送出成功那句帶著 issue 網址換行，不保留換行的話會跟前面那句黏成一團。 */
+  white-space: pre-line;
+  word-break: break-word;
 }
 
 .report-label {

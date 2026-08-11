@@ -1943,8 +1943,14 @@ view.onReportModal(
     const result = await api.sendReport(title, body);
 
     if (result.ok === true) {
-      view.setReportStatus(`送出去了：${result.url}`);
+      // 截圖只能在 GitHub 自己的頁面上拖進去——`gh issue create` 沒有附件功能，
+      // Contents API 又要寫入權限（學生對回報 repo 沒有）。所以送完直接把那則
+      // issue 開起來，學生在那個他熟悉的畫面上拖圖就好。
+      view.setReportStatus(
+        `送出去了。要附截圖的話，把圖直接拖進剛打開的那個頁面的留言框。\n${result.url}`,
+      );
       view.addLine(`已回報：${result.url}`, "succeeded");
+      window.open(result.url, "_blank", "noopener");
       return;
     }
 
