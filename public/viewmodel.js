@@ -1431,6 +1431,10 @@ export function installStatusMessage(action, result) {
     };
   }
 
+  if (action === "fix-codex-sandbox") {
+    return { text: "已接回沙箱檔案，狀態已更新。", failed: false };
+  }
+
   return {
     text:
       result.benign === true

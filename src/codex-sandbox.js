@@ -72,6 +72,45 @@ export function findSandboxHelper(codexPath, { exists }) {
   return candidates.find((candidate) => exists(candidate)) ?? null;
 }
 
+// 修法：在 codex 會去看的位置，建一條 junction 指到真正的 codex-resources。
+//
+// 檔案本來就在機器上——PATH 上那條 bin junction 指到
+// ~\.codex\packages\standalone\current\bin，而 codex-resources 就在它的上一層。
+// codex 找的是「bin 的上一層旁邊」，從 junction 這側看過去是
+// %LOCALAPPDATA%\Programs\OpenAI\Codex\，那裡什麼都沒有。補一條 junction 就通了。
+//
+// 為什麼是 junction 不是複製：codex.exe 那包 250MB 起跳，而 junction 是零成本、
+// 而且 codex 升版時 current 換指向，junction 跟著走，不會留下一份過期的複本。
+// Windows 上建目錄 junction 不需要管理員權限。
+export function planSandboxLink({ codexPath, realBinPath, exists }) {
+  if (
+    typeof codexPath !== "string" ||
+    codexPath === "" ||
+    typeof realBinPath !== "string" ||
+    realBinPath === ""
+  ) {
+    return null;
+  }
+
+  const binDir = codexPath.replace(/[\\/][^\\/]+$/, "");
+  const linkPath = `${binDir.replace(/[\\/][^\\/]+$/, "")}\\codex-resources`;
+  const packageRoot = realBinPath.replace(/[\\/][^\\/]+$/, "");
+  const targetPath = `${packageRoot}\\codex-resources`;
+
+  // 真正的那份不在的話就沒得接——那是另一種壞法（套件本身缺檔），
+  // 接一條指向空氣的 junction 只會把問題藏起來。
+  if (!exists(targetPath)) {
+    return null;
+  }
+
+  // 已經接好了就不用再做。重跑一次不該報錯，學生會按第二次。
+  if (exists(linkPath)) {
+    return { linkPath, targetPath, alreadyLinked: true };
+  }
+
+  return { linkPath, targetPath, alreadyLinked: false };
+}
+
 export function sandboxStatus({ codexPath, helperPath, storePowerShell }) {
   if (codexPath === null || codexPath === undefined || codexPath === "") {
     // codex 都還沒裝的話，這一列沒有話好說——那一列自己會紅。
@@ -87,7 +126,8 @@ export function sandboxStatus({ codexPath, helperPath, storePowerShell }) {
     return {
       status: "warn",
       installable: false,
-      detail: "沙箱要用的檔案找不到，而且 PowerShell 7 是 Store 版",
+      fixLabel: "接回沙箱要用的檔案",
+      detail: "沙箱檔案接不上，而且 PowerShell 7 是 Store 版",
       codexPath,
     };
   }
@@ -95,7 +135,8 @@ export function sandboxStatus({ codexPath, helperPath, storePowerShell }) {
   return {
     status: "warn",
     installable: false,
-    detail: "Codex 沙箱要用的檔案找不到，跑起來會失敗",
+    fixLabel: "接回沙箱要用的檔案",
+    detail: "Codex 找不到沙箱要用的檔案，跑起來會失敗",
     codexPath,
   };
 }

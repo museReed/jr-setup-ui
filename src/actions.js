@@ -56,6 +56,10 @@ const fixShellWrapperScript = moduleFile(
   "../scripts/fix-shell-wrapper.mjs",
   import.meta.url,
 );
+const fixCodexSandboxScript = moduleFile(
+  "../scripts/fix-codex-sandbox.mjs",
+  import.meta.url,
+);
 
 export function shouldExplainOutput({ action, options = null, result }) {
   const succeeded =
@@ -217,6 +221,16 @@ Object.assign(actions, {
     args: [fixShellWrapperScript, "--apply"],
     description:
       "刪掉 shell 設定檔裡指向已刪檔案的 claude / codex 函式，讓安裝完的 CLI 叫得動。",
+  },
+  // 只有 Windows 用得到，但註冊在共用區：mac 上那一列根本不會出現，
+  // 而把它藏進 win32 分支會讓 test/viewmodel.mjs 的守門測試在 mac 上看不到它。
+  "fix-codex-sandbox": {
+    kind: "fixed",
+    label: "接回沙箱檔案",
+    cmd: process.execPath,
+    args: [fixCodexSandboxScript, "--apply"],
+    description:
+      "在 Codex 會去找的位置接一條 junction，指回它自己套件裡的 codex-resources。",
   },
   "diagnose-naming-block": {
     kind: "fixed",

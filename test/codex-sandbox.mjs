@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   findSandboxHelper,
   isStorePowerShell,
+  planSandboxLink,
   sandboxStatus,
   storePowerShellStatus,
 } from "../src/codex-sandbox.js";
@@ -104,6 +105,59 @@ try {
   });
   assert.ok(bothLayers.detail.includes("Store"));
   ok("兩層都中時，說明先點名 Store 版");
+
+  // 修復那條路：真機（Reed 的 VM）量到的實際路徑，直接拿來當樣本。
+  const REAL_BIN = "C:\\Users\\Reed\\.codex\\packages\\standalone\\current\\bin";
+  const REAL_RESOURCES =
+    "C:\\Users\\Reed\\.codex\\packages\\standalone\\current\\codex-resources";
+  const LINK =
+    "C:\\Users\\Reed\\AppData\\Local\\Programs\\OpenAI\\Codex\\codex-resources";
+
+  const plan = planSandboxLink({
+    codexPath: JUNCTION_CODEX,
+    realBinPath: REAL_BIN,
+    exists: (candidate) => candidate === REAL_RESOURCES,
+  });
+  assert.equal(plan.linkPath, LINK);
+  assert.equal(plan.targetPath, REAL_RESOURCES);
+  assert.equal(plan.alreadyLinked, false);
+  ok("接的位置是 codex 會去看的那一層，指向真正的 codex-resources");
+
+  // 學生會按第二次。已經接好了要安靜地成功，不是報錯。
+  const again = planSandboxLink({
+    codexPath: JUNCTION_CODEX,
+    realBinPath: REAL_BIN,
+    exists: () => true,
+  });
+  assert.equal(again.alreadyLinked, true);
+  ok("已經接過了就回報「不用再接」，不是失敗");
+
+  // 真正的那份不在時不能接：接一條指向空氣的 junction 只會把問題藏起來，
+  // 下一次檢查反而變綠燈（findSandboxHelper 只看路徑在不在）。
+  assert.equal(
+    planSandboxLink({
+      codexPath: JUNCTION_CODEX,
+      realBinPath: REAL_BIN,
+      exists: () => false,
+    }),
+    null,
+  );
+  ok("來源不存在時不接，不製造假綠燈");
+
+  assert.equal(
+    planSandboxLink({ codexPath: null, realBinPath: REAL_BIN, exists: () => true }),
+    null,
+  );
+  ok("路徑是空的時候不會炸");
+
+  // 接完之後，findSandboxHelper 的第三個候選就會命中——修復與偵測要對得起來，
+  // 不然按完按鈕那一列還是黃的。
+  assert.ok(
+    findSandboxHelper(JUNCTION_CODEX, {
+      exists: (candidate) => candidate === `${LINK}\\${HELPER}`,
+    }) !== null,
+  );
+  ok("接好之後偵測那一列會轉綠（修復與偵測對得起來）");
 
   // 這幾條在 mac 上也跑得到——不然這兩列的接線只有 Windows 那台驗得了，
   // 而這個 repo 已經被「只在另一個平台才紅」咬過好幾次。

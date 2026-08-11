@@ -1472,7 +1472,7 @@ try {
   //
   // 這支測試是為了擋 fix-shell-wrapper 那次：它沒對到表，於是清除鍵上寫著
   // 「開始登入」，測試全綠、只有真的開起來才看得到。
-  const NEEDS_ROW_LABEL = new Set(["fix-shell-wrapper"]);
+  const NEEDS_ROW_LABEL = new Set(["fix-shell-wrapper", "fix-codex-sandbox"]);
 
   for (const [checkId, resolve] of Object.entries(FIX_ACTIONS)) {
     for (const status of ["ok", "warn", "missing"]) {

@@ -307,6 +307,7 @@ export const FIX_ACTIONS = {
   "execution-policy": (status) =>
     status === "ok" ? null : "fix-execution-policy",
   "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
+  "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
   "claude-auth": (status) => (status === "warn" ? "login-claude" : null),
   "codex-auth": (status) => (status === "warn" ? "login-codex" : null),
   "gh-auth": (status) => (status === "warn" ? "login-gh" : null),
