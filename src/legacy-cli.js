@@ -94,7 +94,10 @@ export function legacyCliStatus(reports) {
   const onlyNpm = withNpm.filter(
     (report) => report.official === 0 && !report.npm.some((entry) => entry.orphan),
   );
-  const names = withNpm.map((report) => report.command).join("、");
+  const coexisting = withNpm.filter(
+    (report) => report.official > 0 && !report.npm.some((entry) => entry.orphan),
+  );
+  const names = (list) => list.map((report) => report.command).join("、");
 
   if (onlyNpm.length === withNpm.length) {
     return {
@@ -102,19 +105,22 @@ export function legacyCliStatus(reports) {
       installable: false,
       // 這一種**不給清理按鈕**：那是他唯一叫得動的東西。要做的是用官方版重裝，
       // 而那顆按鈕本來就在上面那一列（「Codex CLI」那格的安裝鍵）。
-      detail: `${names} 是上一輪用 npm 裝的，建議改用官方版重裝`,
+      detail: `${names(onlyNpm)} 是上一輪用 npm 裝的，建議改用官方版重裝`,
       reports,
     };
   }
 
+  // ⚠️ 說明只講**按下去會動到的那幾支**。三種情況可以同時存在（Reed 的 VM 就是
+  // codex 並存 + claude 只有 npm），把全部串成一句會講出「claude 同時有 npm 版與
+  // 官方版」這種假話——清理行為是對的，錯的是說明。剩下那幾支由腳本的輸出交代。
   return {
     status: "warn",
     installable: false,
     fixLabel: "搬走 npm 裝的舊版",
     detail:
       orphans.length > 0
-        ? `${names} 有一支指向空氣的舊捷徑，打了一定失敗`
-        : `${names} 同時有 npm 版與官方版，會搶著被叫到`,
+        ? `${names(orphans)} 有一支指向空氣的舊捷徑，打了一定失敗`
+        : `${names(coexisting)} 同時有 npm 版與官方版，會搶著被叫到`,
     reports,
   };
 }

@@ -79,6 +79,30 @@ try {
   assert.ok(orphanStatus.detail.length <= 40, orphanStatus.detail);
   ok("有孤兒時說明改成講那個更嚴重的症狀");
 
+  // 混合情況：Reed 的 VM 實測就是這樣——codex 並存、claude 只有 npm 版。
+  // ⚠️ 說明只能講按下去會動到的那幾支。全部串成一句會講出「claude 同時有 npm 版
+  // 與官方版」這種假話（清理行為是對的，錯的是說明）。
+  const claudeOnlyNpm = inspectCommand(
+    "claude",
+    ["C:\\Users\\Reed\\AppData\\Roaming\\npm\\claude.cmd"],
+    { exists: () => true },
+  );
+  const mixed = legacyCliStatus([claudeOnlyNpm, coexist]);
+  assert.ok(mixed.detail.includes("codex"));
+  assert.ok(
+    !mixed.detail.includes("claude"),
+    `claude 只有 npm 版，不該被說成「同時有官方版」：${mixed.detail}`,
+  );
+  assert.equal(mixed.fixLabel, "搬走 npm 裝的舊版");
+  ok("混合情況時，說明只講按下去會動到的那幾支");
+
+  // 而且真的不會動到 claude。
+  assert.deepEqual(
+    removableEntries([claudeOnlyNpm, coexist]).map((entry) => entry.command),
+    ["codex"],
+  );
+  ok("混合情況時只搬 codex，claude 一支都不動");
+
   // 真的動得了的是哪幾支——這決定腳本會碰什麼檔案。
   assert.deepEqual(
     removableEntries([onlyNpm]).map((entry) => entry.path),
