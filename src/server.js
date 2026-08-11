@@ -42,6 +42,12 @@ const ASSETS = [
   ["/model.js", "text/javascript; charset=utf-8"],
   ["/api.js", "text/javascript; charset=utf-8"],
   ["/tour.js", "text/javascript; charset=utf-8"],
+  // ⚠️ 新增前端模組時這裡也要加一筆。漏了的話那支 import 拿到的是 401（不在清單裡
+  // 就走需要 token 的那條路），整個 app.js 停在載入階段——畫面上是「頁首畫得出來、
+  // 卡片一張都沒有、進度停在檢查中」，完全看不出是缺了一行設定（VM 實測，
+  // report.js 就是這樣漏掉的，只有 console 看得到那個 401）。
+  // test/frontend-layers.mjs 現在會走訪每一支被 import 的模組，漏了就紅。
+  ["/report.js", "text/javascript; charset=utf-8"],
   // 操作步驟的彈窗。mocks.js／mocks.css 跟 copy-studio 共用同一份——編輯器裡看到的
   // 畫面就是學生看到的畫面，複製一份的話兩邊遲早會分岔。
   ["/walkthrough.js", "text/javascript; charset=utf-8"],

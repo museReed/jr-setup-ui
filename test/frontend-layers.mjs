@@ -24,6 +24,30 @@ function importsOf(source) {
 }
 
 try {
+  // ⚠️ 新增前端模組時 server.js 的 ASSETS 也要加一筆。漏了的話那支 import 拿到 401
+  //（不在清單裡就走需要 token 的那條路），整個 app.js 停在載入階段——畫面上是
+  // 「頁首畫得出來、卡片一張都沒有、進度停在檢查中」，完全看不出是缺了一行設定。
+  // report.js 就是這樣漏掉的（VM 實測，console 才看得到那個 401）。
+  const assetSource = readFileSync(
+    new URL("../src/server.js", import.meta.url),
+    "utf8",
+  );
+  const served = new Set(
+    [...assetSource.matchAll(/\["\/([\w-]+)\.js",/g)].map((m) => m[1]),
+  );
+  const entryImports = new Set(
+    ["app.js", "view.js", "viewmodel.js", "model.js", "api.js", "tour.js"]
+      .flatMap((name) => importsOf(read(name))),
+  );
+
+  for (const name of entryImports) {
+    assert(
+      served.has(name),
+      `public/${name}.js 沒有列進 server.js 的 ASSETS——瀏覽器會拿到 401，整頁停在載入中`,
+    );
+  }
+  ok("每一支被 import 的前端模組都在伺服器的靜態檔清單裡");
+
   const files = {
     model: read("model.js"),
     viewmodel: read("viewmodel.js"),
