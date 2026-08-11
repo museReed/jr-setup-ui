@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 
 // Node 20 起，spawn 在 shell:false 下執行 .cmd / .bat 會直接丟 EINVAL
 // （BatBadBut 漏洞的修補，CVE-2024-27980）。Windows 上 npm 裝出來的 CLI
@@ -59,9 +59,37 @@ export function findAllExecutables(
     platform = process.platform,
     fileExists,
     realPath = (candidate) => candidate,
+    listDir = (dir) => readdirSync(dir),
   } = {},
 ) {
   const windows = platform === "win32";
+  // ⚠️ 光靠 existsSync 看不到「應用程式執行別名」。%LOCALAPPDATA%\Microsoft\
+  // WindowsApps 底下那些是零位元組的 APPEXECLINK reparse point——Node 對它們
+  // stat 會直接 EACCES，於是 existsSync 回 false，那支 CLI 在我們眼裡等於不存在。
+  //
+  // 真機實測（Reed 的 VM）：pwsh --version 回 PowerShell 7.6.4、PATH 上也有那個
+  // 目錄，我們卻回報「沒有裝 PowerShell 7」。最諷刺的是 B5 那一列的**全部目的**
+  // 就是偵測 Store 版，而它結構上做不到。
+  //
+  // 列目錄看得到（同一次實測 readdir 回 true），所以每個 PATH 目錄列一次、
+  // 比檔名。existsSync 保留當主要判準：測試都靠它注入假檔案系統，而且真的檔案
+  // 走它比較直接。
+  const listedNames = new Map();
+  const namesIn = (dir) => {
+    if (!listedNames.has(dir)) {
+      try {
+        listedNames.set(
+          dir,
+          new Set(listDir(dir).map((name) => name.toLowerCase())),
+        );
+      } catch {
+        // 目錄不存在、沒權限——當作沒有東西，不要讓整趟解析中斷。
+        listedNames.set(dir, null);
+      }
+    }
+
+    return listedNames.get(dir);
+  };
   const directories = (env.PATH ?? env.Path ?? "").split(windows ? ";" : ":");
   const extensions = windows
     ? (env.PATHEXT ?? DEFAULT_PATHEXT).split(";")
@@ -85,7 +113,7 @@ export function findAllExecutables(
       const candidate =
         base === separator ? `${base}${name}` : `${base}${separator}${name}`;
 
-      if (!fileExists(candidate)) {
+      if (!fileExists(candidate) && namesIn(base)?.has(name.toLowerCase()) !== true) {
         continue;
       }
 

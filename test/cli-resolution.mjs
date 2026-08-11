@@ -11,6 +11,47 @@ function ok(description) {
   console.log(`ok - ${description}`);
 }
 
+// ⚠️ 迴歸（Reed 的 VM 實測）：%LOCALAPPDATA%\Microsoft\WindowsApps 底下的
+// 「應用程式執行別名」是零位元組的 APPEXECLINK reparse point——Node 對它們 stat
+// 直接 EACCES，existsSync 回 false，那支 CLI 在我們眼裡等於不存在。
+//
+// 真機上 `pwsh --version` 回 PowerShell 7.6.4、PATH 也有那個目錄，我們卻回報
+// 「沒有裝 PowerShell 7」。而 B5 那一列的全部目的就是偵測 Store 版。
+//
+// 修法是「列目錄比檔名」——同一次實測 readdir 看得到。
+{
+  const winApps = "C:\\Users\\Reed\\AppData\\Local\\Microsoft\\WindowsApps";
+  const found = findAllExecutables(
+    "pwsh",
+    { PATH: winApps, PATHEXT: ".EXE" },
+    {
+      platform: "win32",
+      // stat 一律失敗，就像真機那樣。
+      fileExists: () => false,
+      listDir: (dir) => (dir === winApps ? ["pwsh.exe", "winget.exe"] : []),
+    },
+  );
+  assert.deepEqual(found, [`${winApps}\\pwsh.EXE`]);
+  ok("stat 看不到的應用程式執行別名，靠列目錄找得到");
+
+  // 列目錄失敗（目錄不存在、沒權限）不能讓整趟解析中斷。
+  assert.deepEqual(
+    findAllExecutables(
+      "pwsh",
+      { PATH: "C:\\nope", PATHEXT: ".EXE" },
+      {
+        platform: "win32",
+        fileExists: () => false,
+        listDir: () => {
+          throw new Error("ENOENT");
+        },
+      },
+    ),
+    [],
+  );
+  ok("列目錄失敗時安靜跳過那個目錄");
+}
+
 try {
   const windowsEnv = {
     PATH: "C:\\first;C:\\second",
