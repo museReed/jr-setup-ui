@@ -155,10 +155,14 @@ const expectedIds = [
 
 if (process.platform === "win32") {
   expectedIds.unshift("execution-policy");
+  // 沙箱那一列排在 codex-auth 後面：它問的是「這支 codex 待會兒跑得起來嗎」，
+  // 跟裝了沒、登入了沒同一組。順序要跟 checksForPlatform 一致。
+  expectedIds.splice(expectedIds.indexOf("codex-auth") + 1, 0, "codex-sandbox");
   expectedIds.push(
     "windows-terminal",
     "powershell-version",
     "powershell-encoding",
+    "pwsh-store",
   );
 }
 

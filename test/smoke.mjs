@@ -173,10 +173,11 @@ try {
   assert.equal(typeof env.os, "object");
   // 共通十列（含 Python 3——demo 那段的 self_play.py 要它，Windows 上沒有內建——
   // 以及 shell 設定檔裡的死路徑 wrapper 那一列）。
-  // 其餘依平台而定：macOS 多一列 Ghostty，Windows 多執行原則與三列 PowerShell。
+  // 其餘依平台而定：macOS 多一列 Ghostty，Windows 多六列——執行原則、三列
+  // PowerShell、Store 版判斷，再加 Codex 沙箱（junction / MSIX 都是 Windows 專屬）。
   const expectedChecks =
     10 + (process.platform === "darwin" ? 1 : 0) +
-    (process.platform === "win32" ? 4 : 0);
+    (process.platform === "win32" ? 6 : 0);
   assert.equal(env.checks.length, expectedChecks);
   ok(`正確 token 的 GET /env 回傳 os 與 ${expectedChecks} 筆 checks`);
 

@@ -171,6 +171,30 @@ export const GUIDANCE = {
   // 這兩列沒有安裝按鈕：它們只是探針，壞了只回一個提醒，程式沒有東西可以幫他按。
   // 合併之後它們坐在整段第一張卡裡，所以自救步驟一定要寫出來——否則學生開場就卡在
   // 一句「檢查失敗」，而畫面上沒有任何可按的東西。
+  // 這兩列都是「裝好了、看起來也對，但一跑就爆」，而且程式沒有東西可以幫他按——
+  // 修法都要離開嚮導自己動手，所以自救步驟一定要寫滿。
+  "pwsh-store": {
+    symptom: "那一列寫「PowerShell 7 是 Microsoft Store 版」",
+    expected: "那一列顯示是一般安裝版",
+    checks: [
+      "Store 版的 PowerShell 被包在一層容器裡，Codex 的沙箱在裡面起不來",
+      "到 https://aka.ms/PSWindows 下載 .msi 裝一次（一般安裝版），兩個版本可以並存",
+      "裝完在設定裡把 Windows Terminal 的預設設定檔改成新裝的那一個，再重開終端",
+      "課堂只需要 PowerShell 5.1，急著上課的話這一列可以先放著，不影響其他步驟",
+    ],
+    diagnose: null,
+  },
+  "codex-sandbox": {
+    symptom: "跑 Codex 時出現 `ShellExecuteExW failed to launch setup helper: 1223`",
+    expected: "那一列顯示沙箱要用的檔案都在",
+    checks: [
+      "Codex 找不到它自己的沙箱輔助程式——PATH 上那條捷徑只指到 bin，找不到旁邊的資源目錄",
+      "先把上面那列的 Store 版 PowerShell 換成一般安裝版，這是比較常見的那個原因",
+      "還是不行的話，把 Codex 移除重裝一次（用官方安裝檔，不要用 npm）",
+      "這是 Codex 自己的已知問題（openai/codex #28278），不是嚮導裝壞了",
+    ],
+    diagnose: null,
+  },
   "powershell-version": {
     symptom: "那一列寫「需要 PowerShell 5.1 或 7 以上」",
     expected: "顯示你目前的版本號，例如 5.1.26100",
@@ -558,7 +582,9 @@ const ENV_CARD_META = {
     label: "Codex CLI",
     logo: "logo-openai",
     description: "另一個 AI 助手，課堂上會拿它跟 Claude 對照著看有什麼不一樣",
-    checkIds: ["codex", "codex-auth"],
+    // 沙箱那一列跟著 Codex 走：它問的是「這支 codex 待會兒跑得起來嗎」，
+    // 跟裝了沒、登入了沒是同一張卡上的三個面向。Windows 才有那一列。
+    checkIds: ["codex", "codex-auth", "codex-sandbox"],
   },
   // Git 與 GitHub CLI 合成一張：學生腦中那是同一件事（把東西存起來、推上去），
   // 拆兩張只是把一個念頭切成兩半讓他做兩次。
@@ -601,6 +627,9 @@ const ENV_CARD_META = {
       "windows-terminal",
       "powershell-version",
       "powershell-encoding",
+      // Store 版那一列也在這張：光看路徑就判得出來，而它會讓後面的 Codex 沙箱
+      // 起不來。放這裡等於「機器本身的毛病一次講完」。
+      "pwsh-store",
     ],
   },
   // Mac 這邊只有終端機一列，沒得合。仍然給它一張自己的卡、並排到最前面，讓兩個平台

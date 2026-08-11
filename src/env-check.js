@@ -13,11 +13,21 @@ import {
 import { spawnEnv } from "./env-path.js";
 import { installActionId, resolveInstaller } from "./installers.js";
 import {
+  findSandboxHelper,
+  isStorePowerShell,
+  sandboxStatus,
+  storePowerShellStatus,
+} from "./codex-sandbox.js";
+import {
   findDeadWrappers,
   shellProfilePaths,
   shellWrapperStatus,
 } from "./shell-wrapper.js";
-import { resolveSpawn } from "./spawn-command.js";
+import {
+  findAllExecutables,
+  pickRunnable,
+  resolveSpawn,
+} from "./spawn-command.js";
 
 // 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
 // 但同學撞到的是「剛裝完的第一次啟動」——npm 剛寫完檔案、Defender 正在掃、
@@ -37,7 +47,7 @@ function timedOut(id, label) {
 // 沒列在這裡的（git / gh / node / python / 終端機那些）是兩邊共用的前置，永遠都要查。
 const TOOL_ONLY_CHECKS = {
   claude: ["claude", "claude-auth"],
-  codex: ["codex", "codex-auth"],
+  codex: ["codex", "codex-auth", "codex-sandbox"],
 };
 
 export function checksForTools(checks, tools) {
@@ -63,6 +73,10 @@ export function checksForPlatform(platform) {
     { id: "claude-auth", label: "Claude Code 登入狀態" },
     { id: "codex", label: "Codex CLI" },
     { id: "codex-auth", label: "Codex 登入狀態" },
+    // 沙箱那一列只有 Windows 有意義：junction 與 MSIX 都是 Windows 專屬的裝法。
+    ...(platform === "win32"
+      ? [{ id: "codex-sandbox", label: "Codex 沙箱跑得起來" }]
+      : []),
     { id: "git", label: "Git" },
     { id: "gh", label: "GitHub CLI" },
     { id: "gh-auth", label: "GitHub 登入狀態" },
@@ -77,6 +91,9 @@ export function checksForPlatform(platform) {
       { id: "windows-terminal", label: "終端機是 Windows Terminal" },
       { id: "powershell-version", label: "PowerShell 版本" },
       { id: "powershell-encoding", label: "PowerShell 中文編碼" },
+      // 光看路徑就判得出來，不必等沙箱探針去跑一次 codex（那個慢很多）。
+      // 放在「這台機器準備好了嗎」那張卡上，跟其他三列同一個性質。
+      { id: "pwsh-store", label: "PowerShell 7 不是 Store 版" },
     );
   }
 
@@ -565,6 +582,63 @@ async function checkShellWrapper() {
   return { id, label, ...shellWrapperStatus(dead) };
 }
 
+// PATH 上第一支跑得動的 pwsh 落在哪。查路徑而不是跑指令：Store 版與一般版都答得出
+// 版本號，分不出來——差別只在它裝在 WindowsApps 底下。
+async function pwshSource() {
+  const env = await spawnEnv();
+  const candidates = findAllExecutables("pwsh", env, {
+    platform: "win32",
+    fileExists: existsSync,
+  });
+
+  return pickRunnable(candidates, { platform: "win32" });
+}
+
+async function checkPwshStore() {
+  const id = "pwsh-store";
+  const label = "PowerShell 7 不是 Store 版";
+
+  try {
+    return { id, label, ...storePowerShellStatus(await pwshSource()) };
+  } catch {
+    // 查不到就當作沒問題：這一列是加分項，不該因為意外把學生擋在第一頁。
+    return { id, label, status: "ok", detail: "沒有裝 PowerShell 7（不影響課程）" };
+  }
+}
+
+// 沙箱那一列查的是「codex 待會兒找得到它要用的 helper 嗎」，不是「codex 裝了沒」。
+// 兩者會不一致：透過 bin junction 進來時 codex.exe 完全正常，helper 卻對不到。
+async function checkCodexSandbox() {
+  const id = "codex-sandbox";
+  const label = "Codex 沙箱跑得起來";
+
+  try {
+    const env = await spawnEnv();
+    const codexPath = pickRunnable(
+      findAllExecutables("codex", env, {
+        platform: "win32",
+        fileExists: existsSync,
+      }),
+      { platform: "win32" },
+    );
+
+    return {
+      id,
+      label,
+      ...sandboxStatus({
+        codexPath,
+        helperPath:
+          codexPath === null
+            ? null
+            : findSandboxHelper(codexPath, { exists: existsSync }),
+        storePowerShell: isStorePowerShell(await pwshSource()),
+      }),
+    };
+  } catch {
+    return { id, label, status: "warn", detail: "檢查逾時，請再按一次重新檢查" };
+  }
+}
+
 async function checkClaudeAuth(installed) {
   const id = "claude-auth";
   const label = "Claude Code 登入狀態";
@@ -697,6 +771,10 @@ export async function runEnvCheck(tools = []) {
     if (wanted.has("codex")) {
       const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
       checksToRun.push(codex, checkCodexAuth(codex));
+
+      if (wanted.has("codex-sandbox")) {
+        checksToRun.push(checkCodexSandbox());
+      }
     }
 
     checksToRun.push(
@@ -714,6 +792,7 @@ export async function runEnvCheck(tools = []) {
         checkWindowsTerminal(),
         checkPowerShellVersion(),
         checkPowerShellEncoding(),
+        checkPwshStore(),
       );
     }
 
