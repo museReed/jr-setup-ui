@@ -5,10 +5,12 @@
 //
 //   1. 並存      官方版與 npm 版都在 → npm 那支要搬走，不然 PATH 上誰先誰後決定一切
 //   2. 孤兒 shim PATH 上有一支 shim，它指向的套件本體卻不在 → 一定要清，它只會失敗
-//   3. 只有 npm  沒有官方版 → **不能清**。那是他現在唯一叫得動的東西，
-//                清掉等於把人家的工具拆了。要講的是「改用官方版重裝」
+//   3. 只有 npm  沒有官方版 → **看嚮導待會兒裝不裝得回來**。裝得回來就一起搬
+//                （Reed 拍板：反正後面那張卡會裝官方版，早點清掉比較乾淨）；
+//                這個平台沒有官方安裝器的話**不動**，那是他唯一叫得動的東西
 //
-// 第 3 種是這支模組存在的主要理由。少了它，前兩種的清理邏輯會很自然地誤傷。
+// 第 3 種的那個前提條件不能省。少了它，在一台我們裝不回來的機器上，這段清理會把
+// 學生唯一能用的 CLI 搬走、而且沒有東西補上。搬進隔離區（不是刪）是第二道保險。
 
 export const NPM_PACKAGES = {
   claude: "@anthropic-ai/claude-code",
@@ -106,7 +108,11 @@ export function inspectCommand(command, candidates, { exists }) {
 }
 
 // 三種情況合成一列要說的話。⚠️ detail 一行——右邊緊接著就是按鈕。
-export function legacyCliStatus(reports) {
+//
+// reinstallable ＝ 這個平台有官方安裝器、待會兒裝得回來的那幾支。第 3 種的處置
+// 完全看它。
+export function legacyCliStatus(reports, { reinstallable = [] } = {}) {
+  const canReinstall = new Set(reinstallable);
   const withNpm = reports.filter((report) => report.npm.length > 0);
 
   if (withNpm.length === 0) {
@@ -123,15 +129,28 @@ export function legacyCliStatus(reports) {
   const coexisting = withNpm.filter(
     (report) => report.official > 0 && !report.npm.some((entry) => entry.orphan),
   );
+  const stranded = onlyNpm.filter((report) => !canReinstall.has(report.command));
   const names = (list) => list.map((report) => report.command).join("、");
 
-  if (onlyNpm.length === withNpm.length) {
+  // 一支都動不了的情況：全部都是「只有 npm 版」而且我們裝不回來。
+  if (stranded.length === withNpm.length) {
     return {
       status: "warn",
       installable: false,
-      // 這一種**不給清理按鈕**：那是他唯一叫得動的東西。要做的是用官方版重裝，
-      // 而那顆按鈕本來就在上面那一列（「Codex CLI」那格的安裝鍵）。
-      detail: `${names(onlyNpm)} 是上一輪用 npm 裝的，建議改用官方版重裝`,
+      // 這一種**不給清理按鈕**：那是他唯一叫得動的東西，而這台我們補不上。
+      detail: `${names(stranded)} 是上一輪用 npm 裝的，建議改用官方版重裝`,
+      reports,
+    };
+  }
+
+  // 只有「裝得回來的 only-npm」時，說法要講清楚它會先消失再回來——不然學生按完
+  // 發現 claude 不見了會嚇到。
+  if (coexisting.length === 0 && orphans.length === 0) {
+    return {
+      status: "warn",
+      installable: false,
+      fixLabel: "搬走 npm 裝的舊版",
+      detail: `${names(onlyNpm.filter((r) => canReinstall.has(r.command)))} 是 npm 裝的，搬走後改裝官方版`,
       reports,
     };
   }
@@ -151,9 +170,20 @@ export function legacyCliStatus(reports) {
   };
 }
 
-// 真的可以動的那幾支：孤兒一定清；有官方版當靠山的 npm 版才搬得走。
-export function removableEntries(reports) {
+// 真的可以動的那幾支：
+//   - 孤兒一定清（它只會失敗，留著沒有任何好處）
+//   - 已經有官方版當靠山的，搬走沒有空窗
+//   - 只有 npm 版、但這個平台裝得回來的，也搬（Reed 拍板）
+// 剩下的是「只有 npm 版而且我們補不上」——那種一支都不動。
+export function removableEntries(reports, { reinstallable = [] } = {}) {
+  const canReinstall = new Set(reinstallable);
+
   return reports.flatMap((report) =>
-    report.npm.filter((entry) => entry.orphan || report.official > 0),
+    report.npm.filter(
+      (entry) =>
+        entry.orphan ||
+        report.official > 0 ||
+        canReinstall.has(report.command),
+    ),
   );
 }

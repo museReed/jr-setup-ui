@@ -90,13 +90,28 @@ try {
   assert.equal(legacyCliStatus([inspectCommand("codex", [], { exists: () => true })]).status, "ok");
   ok("沒有 npm 殘留時是綠的");
 
-  // ⚠️ 這是這支模組最重要的一條。只有 npm 版的時候**不能給清理按鈕**——
-  // 那是學生唯一叫得動的東西，清掉等於把人家的工具拆了。
-  const onlyNpmStatus = legacyCliStatus([onlyNpm]);
-  assert.equal(onlyNpmStatus.status, "warn");
-  assert.equal(onlyNpmStatus.fixLabel, undefined);
-  assert.ok(onlyNpmStatus.detail.includes("重裝"));
-  ok("只有 npm 版時不長清理按鈕，改叫他用官方版重裝");
+  // ⚠️ 這是這支模組最重要的一條：只有 npm 版、而且**這台裝不回官方版**時，
+  // 不能給清理按鈕——那是學生唯一叫得動的東西，搬走了沒有東西補上。
+  const stranded = legacyCliStatus([onlyNpm], { reinstallable: [] });
+  assert.equal(stranded.status, "warn");
+  assert.equal(stranded.fixLabel, undefined);
+  assert.ok(stranded.detail.includes("重裝"));
+  assert.deepEqual(removableEntries([onlyNpm], { reinstallable: [] }), []);
+  ok("只有 npm 版又裝不回來時：不長按鈕，也一支都不動");
+
+  // 裝得回來的話就一起搬（Reed 拍板：反正後面那張卡會裝官方版）。
+  const reinstallable = legacyCliStatus([onlyNpm], { reinstallable: ["codex"] });
+  assert.equal(reinstallable.fixLabel, "搬走 npm 裝的舊版");
+  assert.ok(
+    reinstallable.detail.includes("官方版"),
+    `要講清楚它會先消失再回來：${reinstallable.detail}`,
+  );
+  assert.ok(reinstallable.detail.length <= 40, reinstallable.detail);
+  assert.equal(
+    removableEntries([onlyNpm], { reinstallable: ["codex"] }).length,
+    onlyNpm.npm.length,
+  );
+  ok("只有 npm 版但裝得回來時：搬走，說明講清楚會先消失再回來");
 
   const coexistStatus = legacyCliStatus([coexist]);
   assert.equal(coexistStatus.fixLabel, "搬走 npm 裝的舊版");
@@ -125,12 +140,26 @@ try {
   assert.equal(mixed.fixLabel, "搬走 npm 裝的舊版");
   ok("混合情況時，說明只講按下去會動到的那幾支");
 
-  // 而且真的不會動到 claude。
+  // 同一組資料，兩種 reinstallable 的結果不同——這是 Reed 拍板那條的分水嶺。
   assert.deepEqual(
-    removableEntries([claudeOnlyNpm, coexist]).map((entry) => entry.command),
+    removableEntries([claudeOnlyNpm, coexist], { reinstallable: [] }).map(
+      (entry) => entry.command,
+    ),
     ["codex"],
   );
-  ok("混合情況時只搬 codex，claude 一支都不動");
+  ok("裝不回 claude 的機器上只搬 codex，claude 一支都不動");
+
+  assert.deepEqual(
+    [
+      ...new Set(
+        removableEntries([claudeOnlyNpm, coexist], {
+          reinstallable: ["claude", "codex"],
+        }).map((entry) => entry.command),
+      ),
+    ],
+    ["claude", "codex"],
+  );
+  ok("裝得回來的機器上兩支一起搬（反正後面那張卡會裝官方版）");
 
   // 真的動得了的是哪幾支——這決定腳本會碰什麼檔案。
   assert.deepEqual(

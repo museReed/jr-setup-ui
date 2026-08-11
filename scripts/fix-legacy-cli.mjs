@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { spawnEnv } from "../src/env-path.js";
+import { resolveInstaller } from "../src/installers.js";
 import { inspectCommand, removableEntries } from "../src/legacy-cli.js";
 import { findAllExecutables } from "../src/spawn-command.js";
 
@@ -35,16 +36,38 @@ const reports = ["claude", "codex"].map((command) =>
   ),
 );
 
-const entries = removableEntries(reports);
+// 這台裝得回來的那幾支。裝不回來的就不動——搬走了沒有東西補上。
+const reinstallable = ["claude", "codex"].filter(
+  (command) => resolveInstaller(command, process.platform) !== null,
+);
+const entries = removableEntries(reports, { reinstallable });
 const skipped = reports.flatMap((report) =>
   report.npm.filter((entry) => !entries.includes(entry)),
 );
 
 for (const entry of skipped) {
   console.log(
-    `略過 ${entry.path}——這是 ${entry.command} 目前唯一能用的版本，清掉你就沒得用了。`,
+    `略過 ${entry.path}——這是 ${entry.command} 目前唯一能用的版本，而這台裝不回官方版。`,
   );
-  console.log("  想換成官方版的話，用上面那一列的安裝鍵重裝一次，再回來按這顆。");
+}
+
+// 會出現空窗的那幾支要講清楚：搬完到裝好官方版之前，這台沒有那支指令。
+const stranded = [
+  ...new Set(
+    reports
+      .filter((report) => report.official === 0)
+      .flatMap((report) =>
+        entries.filter((entry) => entry.command === report.command),
+      )
+      .map((entry) => entry.command),
+  ),
+];
+
+for (const command of stranded) {
+  console.log(
+    `⚠️ 搬走之後這台暫時沒有 ${command}——請接著用「${command === "claude" ? "Claude Code" : "Codex CLI"}」那張卡的安裝鍵裝官方版。`,
+  );
+  console.log("   東西沒有被刪掉，都在隔離區裡，隨時搬得回來。");
 }
 
 if (entries.length === 0) {

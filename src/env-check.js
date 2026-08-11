@@ -619,7 +619,13 @@ async function checkLegacyCli(tools) {
       ),
     );
 
-    return { id, label, ...legacyCliStatus(reports) };
+    // 「裝得回來」＝這個平台有官方安裝器。少了這個前提，在一台我們補不上的機器
+    // 上會把學生唯一能用的 CLI 搬走、而且沒有東西補上。
+    const reinstallable = tools.filter(
+      (command) => resolveInstaller(command, process.platform) !== null,
+    );
+
+    return { id, label, ...legacyCliStatus(reports, { reinstallable }) };
   } catch {
     return { id, label, status: "ok", detail: "沒有上一輪用 npm 裝的殘留" };
   }
