@@ -225,12 +225,20 @@ export const INSTALLERS = {
       env: BREW_ENV,
     },
   },
-  // ⚠️ `--source winget` 不能省。不指定來源的話 winget 可能解析到 msstore，裝出來
-  // 的又是 MSIX 版——那正是我們要離開的那一個。指定了就是 GitHub 上的 MSI，
-  // 落在 C:\Program Files\PowerShell\7\，不在 WindowsApps 底下。
+  // ⚠️ **這一支目前沒有接到畫面上，而且已知在某些機器上沒有用。**
   //
-  // 裝完不必移除 Store 版：兩者可以並存，而 Windows 組 PATH 時機器層在使用者層
-  // 前面，所以 pwsh 會解析到 MSI 那一支。
+  // 2026-08-11 在 Reed 的 arm64 Windows VM 上實測：這台已經有 PowerShell 7.6.4，
+  // `winget list` 顯示它的 Source 就是 winget——但它是 **MSIX 套件**
+  // （落點 ...\WindowsApps\Microsoft.PowerShell_7.6.4.0_arm64__8wekyb3d8bbwe\），
+  // 而 C:\Program Files\PowerShell\7\pwsh.exe 根本不存在。
+  //
+  // 也就是說：`--source winget` 只決定「去哪裡找套件」，不決定「拿到哪一種安裝包」。
+  // 而且已經裝過的話這條指令是 no-op，跑完 exit 0 但什麼都沒變——按鈕接上去會變成
+  // 「按了說成功、那一列還是黃的」。
+  //
+  // 真的要一份不在 WindowsApps 底下的 PowerShell，目前已知可行的是從
+  // https://aka.ms/PSWindows 抓 .msi 手動裝（GUIDANCE 那段寫的就是這條）。
+  // 要接按鈕的話得先確認 winget 在目標機器上到底給哪一種包。
   pwsh: {
     win32: {
       cmd: "winget",
