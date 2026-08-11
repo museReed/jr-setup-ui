@@ -48,6 +48,24 @@ try {
   assert.ok(dirty.detail.length <= 40, `detail 太長會把按鈕擠出畫面：${dirty.detail}`);
   ok("有打架時是黃的、不長安裝鍵，說明一行講完");
 
+  // 學生在按下「搬走」之前有權知道什麼要被搬走。「1 個同名 skill」只會讓他問
+  // 「哪一個？」（Reed 在 VM 上看到那句話的第一個反應）。
+  assert.ok(legacySkillStatus(["handoff"]).detail.includes("handoff"));
+  assert.ok(dirty.detail.includes("auto-rename"));
+  assert.ok(dirty.detail.includes("handoff"));
+  ok("一到兩支時直接點名，不是只講數量");
+
+  // 多到列不完才退回數量——點名會把那一列撐爆，按鈕又被擠出去。
+  const many = legacySkillStatus([
+    "auto-rename",
+    "handoff",
+    "structured-questions",
+    "vault-sync",
+  ]);
+  assert.ok(many.detail.includes("4"));
+  assert.ok(many.detail.length <= 40, `detail 太長會把按鈕擠出畫面：${many.detail}`);
+  ok("三支以上退回講數量，那一列不會被撐爆");
+
   // ⚠️ 隔離區一定要在 skills 根目錄**外面**。留在裡面的話（例如改名成
   // handoff.bak.20260811），codex 照樣會掃到它、照樣讀到 name: handoff，
   // 衝突原封不動。

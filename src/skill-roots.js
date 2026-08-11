@@ -42,8 +42,13 @@ export function legacySkillStatus(names) {
     status: "warn",
     installable: false,
     fixLabel: "搬走打架的舊 skill",
+    // 少數幾支就直接點名——「1 個同名 skill」會讓學生問「哪一個？」，而他在按下
+    // 那顆按鈕之前有權知道什麼要被搬走。多到列不完才退回數量。
     // ⚠️ 一行。這一格右邊緊接著就是按鈕。
-    detail: `舊位置還有 ${names.length} 個同名 skill，Codex 會兩份都載入`,
+    detail:
+      names.length <= 2
+        ? `舊位置的 ${names.join("、")} 會跟這次裝的打架`
+        : `舊位置有 ${names.length} 支會跟這次裝的打架`,
     conflicting: names,
   };
 }
