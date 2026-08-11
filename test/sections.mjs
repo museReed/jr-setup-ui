@@ -8,6 +8,7 @@ import {
   flattenCheckCards,
   groupChecks,
   matchesFullscreenProof,
+  mergeInvalidates,
   nextInstallStep,
   pendingMergeSibling,
 } from "../public/model.js";
@@ -474,6 +475,23 @@ try {
   );
   assert.equal(pendingMergeSibling("hook", [check("hook")]), null);
   ok("沒有人等合併時不擋，沒被合併的步驟也照舊");
+
+  // 合併完要讓同卡的驗證結論作廢：那個驗證問的是「Claude 讀完 CLAUDE.md 之後怎麼
+  // 回話」，合併改的正是 CLAUDE.md。不作廢的話畫面上會留一個合併前跑出來的綠勾。
+  assert.deepEqual(
+    mergeInvalidates("claude-md", [check("claude-md"), check("output-style")]),
+    ["claude-md", "output-style"],
+  );
+  ok("合併 CLAUDE.md 會一起作廢同卡那個行為驗證的勾");
+
+  // 那張卡上不存在的步驟不要一起送——清一個伺服器沒見過的 step 只是白跑一趟。
+  assert.deepEqual(
+    mergeInvalidates("claude-md", [check("claude-md")]),
+    ["claude-md"],
+  );
+  // 不在任何合併群組裡的步驟只作廢自己。
+  assert.deepEqual(mergeInvalidates("hook", [check("hook")]), ["hook"]);
+  ok("只作廢這張卡真的有的那幾步");
 
   // 伺服器少回其中一份時不要整張卡消失——另一份仍該自己出現。
   const half = flattenCheckCards(

@@ -17,6 +17,7 @@ import {
   PLAYWRIGHT_SHOT_AGENTS,
   flattenCheckCards,
   groupChecks,
+  mergeInvalidates,
   nextInstallStep,
   pendingMergeSibling,
   matchesFullscreenProof,
@@ -1447,6 +1448,17 @@ async function handleDone(
   // 這條路要自己講清楚：裝完會接著驗一次，那次的結果才算數。
   if (action === "install-config-step" && step !== null && step !== undefined) {
     forgetVerification(step);
+  }
+  // 合併也是「那一步的內容換了」，而且影響的不只自己那一列：CLAUDE.md 合併之後，
+  // 同一張卡上那個「問一次 Claude 看它怎麼回」的行為驗證就不算數了——它驗的正是
+  // Claude 讀完 CLAUDE.md 之後的行為（Reed 在 VM 上看到勾還留著）。
+  //
+  // 這就是 C1 說的「每個 action 宣告它讓哪份資料失效」。這條分支沒有 banner，
+  // 但這裡有：合併讓同卡的驗證結論失效。
+  if (action === "merge-in-terminal" && step !== null && step !== undefined) {
+    for (const sibling of mergeInvalidates(step, state.lastChecks)) {
+      forgetVerification(sibling);
+    }
   }
   if (
     verifiedStep !== undefined &&

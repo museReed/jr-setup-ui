@@ -875,6 +875,26 @@ export function mergeCardChecks(checks) {
   return groups;
 }
 
+// 合併完之後，哪幾步的驗證結論要作廢。
+//
+// 這是 C1「每個 action 宣告它讓哪份資料失效」在這條分支上唯一真的成立的地方：
+// CLAUDE.md 合併之後，同一張卡那個「問一次 Claude 看它怎麼回」的行為驗證就不算數
+// 了——它驗的正是 Claude 讀完 CLAUDE.md 之後的行為。不作廢的話，畫面上會留著一個
+// 合併前跑出來的綠勾（Reed 在 VM 上看到的）。
+//
+// 連自己那一步一起回傳：合併本身也可能有驗證（之後加的話不必再改這裡）。
+export function mergeInvalidates(stepId, checks = []) {
+  const order = Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId));
+
+  if (order === undefined) {
+    return [stepId];
+  }
+
+  const byId = new Map(checks.map((check) => [check.id, check]));
+
+  return order.filter((id) => id === stepId || byId.has(id));
+}
+
 // 同一張卡上還有沒有「等著合併」的另一份。有的話不能自動驗證。
 //
 // nextInstallStep 只等「還沒裝」的那幾份，等不到「等合併」的——protectExisting 的列
