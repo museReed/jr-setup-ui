@@ -366,6 +366,18 @@ export function envCardRowModel(card, installedSteps = new Set()) {
     detail: cardResultText(card),
     results: cardResultItems(card),
     buttons,
+    // 環境那半原本完全沒有自救說明——configRowModel 有算，envCardRowModel 沒有。
+    // 於是「PowerShell 版本」「中文編碼」「Store 版判斷」那幾列是黃燈、沒按鈕、
+    // 也沒有任何文字告訴學生怎麼辦。
+    //
+    // 挑第一列講得出話的：一張卡上通常只有一列出問題，兩列以上時先講最前面那個
+    // ——一次丟三段自救步驟，學生一段都不會讀。
+    guidance:
+      checks
+        .map((check) =>
+          guidanceModel({ step: check.id, status: check.status, failed: false }),
+        )
+        .find((model) => model !== null) ?? null,
   };
 }
 

@@ -669,6 +669,51 @@ try {
   );
   ok("裝好之後安裝按鈕消失，卡片上只剩下一步要做的事");
 
+  // ⚠️ 沒有按鈕可按的那幾列，自救說明是唯一的出口。原本 envCardRowModel 根本不算
+  // guidance（configRowModel 有算），於是「PowerShell 版本」「中文編碼」「Store 版」
+  // 是黃燈、沒按鈕、也沒有任何文字告訴學生怎麼辦——完全的死路。
+  const storeVersion = envCardRowModel(
+    {
+      kind: "env",
+      checkId: "execution-policy",
+      checks: [
+        { id: "execution-policy", label: "執行原則", status: "ok", detail: "" },
+        {
+          id: "pwsh-store",
+          label: "PowerShell 7 不是 Store 版",
+          status: "warn",
+          detail: "是 Microsoft Store 版，Codex 沙箱會起不來",
+          installable: false,
+        },
+      ],
+    },
+    new Set(),
+  );
+  assert.notEqual(storeVersion.guidance, null);
+  assert.ok(storeVersion.guidance.checks.length > 0);
+  ok("黃燈又沒按鈕的那一列，卡片上帶得出自救步驟");
+
+  // 全綠的卡不該掛一段自救說明——那是在解一個沒發生的問題。
+  assert.equal(
+    envCardRowModel(
+      {
+        kind: "env",
+        checkId: "execution-policy",
+        checks: [
+          {
+            id: "pwsh-store",
+            label: "PowerShell 7 不是 Store 版",
+            status: "ok",
+            detail: "是一般安裝版",
+          },
+        ],
+      },
+      new Set(),
+    ).guidance,
+    null,
+  );
+  ok("全綠時不掛自救說明");
+
   // 迴歸：envRowModel 裝好後不再給按鈕，envCardRowModel 少了 installed 判斷就會
   // 掉進「補一顆停用佔位」那支，反而長出灰色的「安裝」——比原本的「已安裝」更難解讀。
   assert(

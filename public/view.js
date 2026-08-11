@@ -978,6 +978,14 @@ function renderCard(model) {
       figure.append(image, caption);
       body.append(figure);
     }
+    // 沒有按鈕可按的那幾列（PowerShell 版本、中文編碼、Store 版判斷）要在卡片上
+    // 講清楚怎麼自救。GUIDANCE 那張表本來就寫好了 symptom / expected / checks，
+    // 但**從來沒有任何地方把它畫出來**——學生看到的是黃燈、沒按鈕、沒說明的死路。
+    const guidance = model.row?.guidance;
+
+    if (guidance !== null && guidance !== undefined) {
+      body.append(guidanceElement(guidance));
+    }
     if (model.hints !== null && model.hints !== undefined) {
       const hints = document.createElement("div");
       hints.className = "card-hints";
@@ -1961,6 +1969,36 @@ export function shakeTerminal() {
   elements.terminal.classList.remove("term-shake");
   requestAnimationFrame(() => elements.terminal.classList.add("term-shake"));
   window.setTimeout(() => elements.terminal.classList.remove("term-shake"), 400);
+}
+
+// 自救說明畫成一塊：症狀 → 應該長怎樣 → 你可以做的幾件事。
+//
+// 順序是刻意的：學生先確認「我看到的是不是這件事」，再知道「好了會長怎樣」，
+// 最後才是動作。反過來的話他會照著做完卻不確定有沒有做對。
+export function guidanceElement(guidance) {
+  const block = document.createElement("div");
+  block.className = "card-guidance";
+
+  const symptom = document.createElement("p");
+  symptom.className = "card-guidance-symptom";
+  symptom.textContent = `你看到的：${guidance.symptom}`;
+
+  const expected = document.createElement("p");
+  expected.className = "card-guidance-expected";
+  expected.textContent = `好了會變成：${guidance.expected}`;
+
+  const list = document.createElement("ol");
+  list.className = "card-guidance-steps";
+
+  for (const step of guidance.checks ?? []) {
+    const item = document.createElement("li");
+    item.textContent = step;
+    list.append(item);
+  }
+
+  block.append(symptom, expected, list);
+
+  return block;
 }
 
 export function renderFailureGuidance({ guidance, explanation = null }) {

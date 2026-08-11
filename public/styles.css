@@ -1433,6 +1433,34 @@ body.wt-locked {
   white-space: pre;
 }
 
+/* 沒有按鈕可按的那幾列的自救說明。刻意做得像卡片上的一段話而不是警告框——
+   它不是錯誤，是「這件事程式幫不了你，但你自己做得到」。 */
+.card-guidance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+}
+
+.card-guidance-symptom,
+.card-guidance-expected {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.card-guidance-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--fs-sm);
+}
+
 .paste-proof-hint {
   margin: 0;
   color: var(--color-text-muted);
