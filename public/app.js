@@ -436,7 +436,11 @@ function renderWizard() {
   // 執行原則與 PowerShell 探針也是）留在裡面的話，它一紅整張卡的徽章就寫「未安裝」
   // ——但那張卡上根本沒有任何東西可以安裝，學生看了只會問「安裝什麼」（VM 實測）。
   const installChecks = cardChecks.filter(
-    (check) => !check.id.endsWith("-auth") && check.hasInstaller !== false,
+    (check) =>
+      !check.id.endsWith("-auth") &&
+      check.hasInstaller !== false &&
+      // 等合併的那一份不算「還沒裝」：檔案就在，安裝鍵按下去也刻意不覆蓋。
+      check.needsMerge !== true,
   );
   // installedSteps 只是「這一輪按過安裝」的樂觀記憶，不能凌駕伺服器回來的權威狀態。
   //
@@ -622,6 +626,9 @@ function renderWizard() {
         state.failedVerificationSteps.has(check.id),
     ),
     installed,
+    // 「等你合併」自己一個狀態。它不是「未安裝」的一種——檔案就在，只是有學生自己
+    // 的內容不能直接蓋。
+    awaitingMerge: cardChecks.some((check) => check.needsMerge === true),
   });
   const login = loginCardModel({
     checks: cardChecks,

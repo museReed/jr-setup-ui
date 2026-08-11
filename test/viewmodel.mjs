@@ -803,6 +803,7 @@ try {
       cardStatusModel(),
       cardStatusModel({ running: true }),
       cardStatusModel({ installed: true }),
+      cardStatusModel({ awaitingMerge: true }),
       cardStatusModel({ completed: true }),
       cardStatusModel({ failed: true }),
     ].map(({ text, className }) => ({ text, className })),
@@ -810,11 +811,31 @@ try {
       { text: "未安裝", className: "ds-pill" },
       { text: "安裝中…", className: "ds-pill" },
       { text: "待驗證", className: "ds-pill" },
+      { text: "等你合併", className: "ds-pill" },
       { text: "已完成", className: "ds-pill ds-pill-success" },
       { text: "失敗", className: "ds-pill card-status-danger" },
     ],
   );
-  ok("status 徽章五種狀態對到正確文字與 class");
+  ok("status 徽章六種狀態對到正確文字與 class");
+
+  // 迴歸（Reed 在 VM 上看到的）：那張卡上兩件事——另一份裝好也驗過了、CLAUDE.md
+  // 等著合併——徽章卻寫「未安裝」。學生照著去按安裝，而安裝刻意不覆蓋，原地打轉。
+  assert.equal(
+    cardStatusModel({ installed: true, awaitingMerge: true }).text,
+    "等你合併",
+  );
+  ok("同時「裝好了」與「等合併」時，講學生現在該做的那件");
+
+  // 但已經完成或正在跑的時候不能被它蓋掉——那兩個是更即時的狀態。
+  assert.equal(
+    cardStatusModel({ awaitingMerge: true, completed: true }).text,
+    "已完成",
+  );
+  assert.equal(
+    cardStatusModel({ awaitingMerge: true, running: true }).text,
+    "安裝中…",
+  );
+  ok("完成與進行中的狀態優先於「等你合併」");
 
   assert.deepEqual(sectionManualItems("rules", 0, 2, "claude"), []);
   // 規則段結尾原本有「關掉分頁、開新的」——拿掉了，規則段的驗證全部走

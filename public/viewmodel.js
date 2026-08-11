@@ -63,6 +63,10 @@ const CARD_STATUS_DISPLAY = {
   installing: { text: "安裝中…", className: "ds-pill" },
   verifying: { text: "驗證中…", className: "ds-pill" },
   pending: { text: "待驗證", className: "ds-pill" },
+  // 「等你合併」不是「未安裝」的一種。那張卡上的檔案就在，只是有你自己的內容不能
+  // 直接蓋——寫「未安裝」的話學生會去按安裝，而安裝刻意不覆蓋，他就原地打轉
+  // （Reed 在 VM 上看到的）。
+  "awaiting-merge": { text: "等你合併", className: "ds-pill" },
   complete: { text: "已完成", className: "ds-pill ds-pill-success" },
   failed: { text: "失敗", className: "ds-pill card-status-danger" },
 };
@@ -76,6 +80,7 @@ export function cardStatusModel({
   verifying = false,
   failed = false,
   installed = false,
+  awaitingMerge = false,
 } = {}) {
   const status = running
     ? verifying
@@ -85,9 +90,13 @@ export function cardStatusModel({
       ? "complete"
       : failed
         ? "failed"
-        : installed
-          ? "pending"
-          : "uninstalled";
+        : // 等合併排在 installed 之前：那張卡通常兩者都成立（另一份裝好了、這一份
+          // 等合併），而學生現在該做的是合併，不是驗證。
+          awaitingMerge
+          ? "awaiting-merge"
+          : installed
+            ? "pending"
+            : "uninstalled";
 
   return { status, ...CARD_STATUS_DISPLAY[status] };
 }
