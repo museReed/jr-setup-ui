@@ -318,6 +318,10 @@ export const FIX_ACTIONS = {
   "execution-policy": (status) =>
     status === "ok" ? null : "fix-execution-policy",
   "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
+  // ⚠️ pwsh-store 刻意**不接**修復鍵。`installers.js` 裡那支 winget 安裝器留著
+  // （要用隨時接得上），但畫面上先不給——2026-08-11 在 VM 上實測：Store 版的
+  // pwsh 7.6.4 底下 `codex exec --sandbox read-only` 完全正常。沒有證據證明需要換，
+  // 就不該叫學生多裝一份東西。
   "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
   "codex-legacy-skills": (status) =>
     status === "warn" ? "fix-legacy-skills" : null,

@@ -225,6 +225,28 @@ export const INSTALLERS = {
       env: BREW_ENV,
     },
   },
+  // ⚠️ `--source winget` 不能省。不指定來源的話 winget 可能解析到 msstore，裝出來
+  // 的又是 MSIX 版——那正是我們要離開的那一個。指定了就是 GitHub 上的 MSI，
+  // 落在 C:\Program Files\PowerShell\7\，不在 WindowsApps 底下。
+  //
+  // 裝完不必移除 Store 版：兩者可以並存，而 Windows 組 PATH 時機器層在使用者層
+  // 前面，所以 pwsh 會解析到 MSI 那一支。
+  pwsh: {
+    win32: {
+      cmd: "winget",
+      args: [
+        "install",
+        "--id",
+        "Microsoft.PowerShell",
+        "-e",
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--disable-interactivity",
+      ],
+    },
+  },
   "windows-terminal": {
     win32: {
       cmd: "winget",
