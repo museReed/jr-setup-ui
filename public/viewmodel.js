@@ -527,7 +527,9 @@ export function configRowModel(
       // 講明會開視窗。不講的話學生按下去看到一個新視窗跳出來會以為出事了，
       // 而那個視窗正是他要去回答問題的地方。
       text: "用 AI 合併（會開終端）",
-      step: check.id,
+      // 折回群組主人：同一張卡上兩列都給了按鈕（不然卡片可能一顆都沒有），
+      // 但按哪一列都是「兩份一次合完」。
+      step: check.mergeStep ?? check.id,
     });
   }
 

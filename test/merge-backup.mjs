@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   latestStamp,
   mergeGroupFor,
+  mergeLeaderFor,
   restorePlan,
   snapshotDir,
   snapshotFile,
@@ -30,10 +31,19 @@ try {
   });
   ok("claude-md 只有自己一檔");
 
-  // AGENTS.md 沒有自己的群組：它被 codex-config 那顆帶著走，不該長出第二顆合併鍵。
+  // AGENTS.md 沒有自己的群組：它被 codex-config 那顆帶著走。
   assert.equal(mergeGroupFor("codex-agents"), null);
   assert.equal(mergeGroupFor("output-style"), null);
   ok("被別人帶著走的、以及不需要合併的步驟都沒有群組");
+
+  // ⚠️ 迴歸（VM 實測）：只讓群組主人那一列長按鈕的話，Codex 那張卡一顆合併鍵都
+  // 沒有——卡片的按鈕來自「第一個還沒好的那一列」，而那是 codex-agents，它不是主人。
+  // 改成每一列都給按鈕，但送出的 step 一律折回主人，所以還是「兩份一次合完」。
+  assert.equal(mergeLeaderFor("codex-agents"), "codex-config");
+  assert.equal(mergeLeaderFor("codex-config"), "codex-config");
+  assert.equal(mergeLeaderFor("claude-md"), "claude-md");
+  assert.equal(mergeLeaderFor("output-style"), null);
+  ok("每一列都問得出「這一步的合併交給哪一顆」");
 
   assert.equal(
     snapshotDir(HOME, "codex-config", "20260811150000"),

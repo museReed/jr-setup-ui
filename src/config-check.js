@@ -24,7 +24,11 @@ import {
   stepsForTools,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
-import { mergeBackupRoot, mergeGroupFor } from "./merge-backup.js";
+import {
+  mergeBackupRoot,
+  mergeGroupFor,
+  mergeLeaderFor,
+} from "./merge-backup.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -1172,13 +1176,14 @@ export function withActions(check) {
       (check.status === "ok" && check.reinstallable !== true)
         ? null
         : "install-config-step",
-    // ⚠️ 合併鍵只長在「有合併群組」的那幾步上。codex-agents 同樣是 protectExisting、
-    // 同樣會標 needsMerge，但它被 codex-config 那顆帶著一起處理——不擋掉的話畫面上
-    // 會有兩顆合併鍵，按第二顆等於把剛合好的再合一次。
-    mergeAction:
-      check.needsMerge === true && mergeGroupFor(check.id) !== null
-        ? "merge-in-terminal"
-        : null,
+    // 需要合併的每一列都給按鈕，但按下去送的 step 折回群組主人（mergeStep），
+    // 所以同一張卡按哪一列都是「兩份一次合完」，不會合兩次。
+    //
+    // ⚠️ 不能只讓群組主人那一列長按鈕：卡片的按鈕來自「第一個還沒好的那一列」
+    // （app.js 的 rowCheck），Codex 那張卡第一個是 codex-agents——它不是主人，
+    // 於是整張卡一顆合併鍵都沒有（VM 實測）。
+    mergeAction: check.needsMerge === true ? "merge-in-terminal" : null,
+    mergeStep: mergeLeaderFor(check.id),
     // 合併過才給還原鍵。沒合併過就沒有快照，那顆按下去只會說「找不到快照」。
     restoreAction: hasMergeSnapshot(check.id) ? "restore-merge-backup" : null,
     // 兩種驗證形態：behavior 在頁面上跑完直接判定；terminal 是開一個真的終端

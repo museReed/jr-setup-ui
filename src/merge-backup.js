@@ -19,9 +19,27 @@ export const MERGE_GROUPS = {
 };
 
 // codex-agents 沒有自己的群組——它跟 config.toml 綁在一起，由 codex-config 那顆
-// 按鈕一起處理。查得到群組的那幾步才長出合併鍵。
+// 按鈕一起處理。
 export function mergeGroupFor(step) {
   return MERGE_GROUPS[step] ?? null;
+}
+
+// 這一步的合併要交給哪一顆按鈕。
+//
+// ⚠️ 不能只讓群組主人那一列長按鈕。畫面上卡片的按鈕來自「第一個還沒好的那一列」
+// （app.js 的 rowCheck），而 Codex 那張卡第一個是 codex-agents——它不是主人，於是
+// 整張卡一顆合併鍵都沒有（VM 實測）。所以每一列都給按鈕，但按下去送的 step 一律
+// 折回群組主人，兩份還是一次合完。
+export function mergeLeaderFor(step) {
+  if (MERGE_GROUPS[step] !== undefined) {
+    return step;
+  }
+
+  const found = Object.entries(MERGE_GROUPS).find(([, group]) =>
+    group.steps.includes(step),
+  );
+
+  return found === undefined ? null : found[0];
 }
 
 export function mergeBackupRoot(home) {

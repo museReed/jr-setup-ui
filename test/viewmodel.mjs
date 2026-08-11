@@ -145,6 +145,7 @@ try {
     detail: "需要合併",
     installAction: null,
     mergeAction: "merge-in-terminal",
+    mergeStep: "codex-config",
     restoreAction: "restore-merge-backup",
   });
   assert.deepEqual(
@@ -153,6 +154,23 @@ try {
   );
   assert.equal(withRestore.buttons[2].text, "還原成合併前");
   ok("合併過的列多一顆「還原成合併前」，排在合併鍵後面");
+
+  // 迴歸（VM 實測）：Codex 那張卡的按鈕來自 codex-agents 那一列，但合併要送的是
+  // 群組主人 codex-config——不折回去的話會只合一半，而且不會拍到另一份的快照。
+  const followerRow = configRowModel({
+    id: "codex-agents",
+    label: "Codex CLI 做事的規矩",
+    status: "warn",
+    detail: "已有你自己的版本，需要合併",
+    installAction: null,
+    mergeAction: "merge-in-terminal",
+    mergeStep: "codex-config",
+  });
+  assert.equal(
+    followerRow.buttons.find((button) => button.dataName === "mergeAction").step,
+    "codex-config",
+  );
+  ok("跟班那一列也有合併鍵，但送出的 step 折回群組主人");
 
   // 沒合併過就沒有快照，那顆按下去只會說「找不到快照」——不該出現。
   assert.deepEqual(
