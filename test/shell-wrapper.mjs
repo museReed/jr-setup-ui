@@ -137,6 +137,22 @@ try {
 
   assert.equal(both.installable, false);
   ok("這一列不是「沒裝」，不該長出安裝按鈕");
+
+  // 迴歸：detail 原本塞了整段來龍去脈（含那條長路徑），把清單那一列撐爆，
+  // 掛在列尾的修復鍵被擠出可視範圍——畫面上變成「有問題但沒東西可按」（VM 實測）。
+  // 長說明的家在 public/model.js 的 GUIDANCE。
+  for (const status of [claudeOnly, both]) {
+    assert.ok(
+      status.detail.length <= 40,
+      `detail 太長會把修復鍵擠出畫面：${status.detail}`,
+    );
+    assert.ok(!status.detail.includes("\\"), "detail 不該塞進完整路徑");
+  }
+  ok("那一列的說明短到不會把按鈕擠出去");
+
+  // 路徑仍然要拿得到——只是不放在那一列上。
+  assert.equal(claudeOnly.deadPath, "/gone/claude");
+  ok("死路徑另外附在結果上，需要時才顯示");
 } catch (error) {
   console.error(error);
   process.exit(1);

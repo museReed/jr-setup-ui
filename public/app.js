@@ -431,8 +431,11 @@ function renderWizard() {
     // 「安裝」那一格要在按完安裝的當下就打勾，不等下一次伺服器檢查回來。
     installedCheckIds: state.installedSteps,
   });
+  // 「這張卡裝好了嗎」只問裝得起來的那幾列。沒有安裝這回事的列（舊捷徑那張整張都是、
+  // 執行原則與 PowerShell 探針也是）留在裡面的話，它一紅整張卡的徽章就寫「未安裝」
+  // ——但那張卡上根本沒有任何東西可以安裝，學生看了只會問「安裝什麼」（VM 實測）。
   const installChecks = cardChecks.filter(
-    (check) => !check.id.endsWith("-auth"),
+    (check) => !check.id.endsWith("-auth") && check.hasInstaller !== false,
   );
   // installedSteps 只是「這一輪按過安裝」的樂觀記憶，不能凌駕伺服器回來的權威狀態。
   //

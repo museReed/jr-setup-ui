@@ -131,11 +131,11 @@ export function shellWrapperStatus(dead) {
     // 按鈕文字跟著壞掉的那一支變。寫死 codex 的話，profile 裡壞的是 claude 時，
     // 卡片說 claude、按鈕說 codex，學生會以為按下去修的是別的東西。
     fixLabel: `清除廢棄的 ${names} 引用`,
-    detail:
-      `你的設定檔裡有一個 ${names}，指到一個已經不在的檔案（${dead[0].deadPath}）。` +
-      `不清掉的話，${names} 裝完還是叫不動——之後每一張要你在終端機打 ${names} 的卡` +
-      `都會說「找不到指令」，但你去查又會發現它明明裝好了。` +
-      `按右邊清除廢棄的引用，安裝才走得完。`,
+    // ⚠️ 一行就好。這一格是清單裡的一列，右邊緊接著就是修復鍵——寫長了會把整列
+    // 撐開，按鈕被擠出可視範圍，畫面上變成「有問題但沒東西可按」（VM 實測）。
+    // 完整的來龍去脈寫在 public/model.js 的 GUIDANCE，那裡才有版面可以展開。
+    detail: `${names} 指到一個已經不在的檔案，裝完也叫不動`,
+    deadPath: dead[0].deadPath,
   };
 }
 

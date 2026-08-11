@@ -156,6 +156,18 @@ export const CARD_GATES = {
 };
 
 export const GUIDANCE = {
+  // 這一列的說明只有一行（放長了會把修復鍵擠出畫面），完整的說法寫在這裡。
+  // 它是整段唯一「東西都裝好了、但還是叫不動」的狀況，不講清楚學生會以為是誤報。
+  "shell-wrapper": {
+    symptom: "終端機打 codex 說找不到指令，但這裡明明顯示已安裝",
+    expected: "打 codex 會回版本號",
+    checks: [
+      "你的 shell 設定檔裡有一個同名的舊捷徑，指向上一輪課程留下、後來被移除的檔案",
+      "它排在真正的程式前面，所以每次都是它接手——不清掉的話，重裝幾次都一樣",
+      "按那一列的「清除廢棄的引用」，清完要開一個新的終端視窗才會生效",
+    ],
+    diagnose: null,
+  },
   // 這兩列沒有安裝按鈕：它們只是探針，壞了只回一個提醒，程式沒有東西可以幫他按。
   // 合併之後它們坐在整段第一張卡裡，所以自救步驟一定要寫出來——否則學生開場就卡在
   // 一句「檢查失敗」，而畫面上沒有任何可按的東西。
@@ -522,6 +534,18 @@ export function groupChecks(checks) {
 // 描述一律回答「做完你會多出什麼」，不寫「安裝 X，才能…」——那種句型只是把標題
 // 再講一次。
 const ENV_CARD_META = {
+  // 排在 CLI 那幾張之前（見 ENV_FIRST）：舊捷徑擋著的話，後面每一張裝完都叫不動，
+  // 排在最後等於讓學生把整段做完才被告知「剛才那些其實還不能用」。
+  //
+  // 沒登記在這裡的話會走預設模板，標題被塞成「準備 <整句 label>，讓後面的課堂步驟
+  // 可以正常進行。」——讀起來像機器寫的（VM 實測）。
+  "shell-wrapper": {
+    agent: "other",
+    label: "清掉上一輪留下的舊捷徑",
+    logo: "logo-terminal",
+    description:
+      "上過課的機器常留著指向已刪程式的舊捷徑，會讓後面裝好的東西全都叫不動。這張把它清掉",
+  },
   claude: {
     agent: "claude",
     label: "Claude Code",
@@ -721,7 +745,10 @@ function setupOrder(card) {
 // claude 時仍然要靠它，所以順序也要對：擋路的先修。
 // mac 的終端機那張跟著排到最前面（Reed 拍板）：兩個平台的卡片序一致，講師帶兩種
 // 機器的學生時講同一套話。理由本身也成立——後面每一步都在那個視窗裡做。
-const ENV_FIRST = ["execution-policy", "ghostty"];
+// 舊捷徑那張緊接在後、排在所有 CLI 之前，理由跟執行原則同一種：擋路的先修。
+// 它擋的是「裝好了卻叫不動」——排在後面的話，學生會先把 Claude Code、Codex 全部
+// 裝完並登入，然後在第一次真的打指令時才發現全都不能用。
+const ENV_FIRST = ["execution-policy", "ghostty", "shell-wrapper"];
 
 function envOrder(card) {
   const index = ENV_FIRST.indexOf(card.checkId);
