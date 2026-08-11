@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  currentPackageRoot,
   findSandboxHelper,
   isStorePowerShell,
   planSandboxLink,
@@ -108,8 +109,9 @@ try {
 
   // 修復那條路：真機（Reed 的 VM）量到的實際路徑，直接拿來當樣本。
   const REAL_BIN = "C:\\Users\\Reed\\.codex\\packages\\standalone\\current\\bin";
-  const REAL_RESOURCES =
-    "C:\\Users\\Reed\\.codex\\packages\\standalone\\current\\codex-resources";
+  const CURRENT_ROOT =
+    "C:\\Users\\Reed\\.codex\\packages\\standalone\\current";
+  const REAL_RESOURCES = `${CURRENT_ROOT}\\codex-resources`;
   const LINK =
     "C:\\Users\\Reed\\AppData\\Local\\Programs\\OpenAI\\Codex\\codex-resources";
 
@@ -123,6 +125,21 @@ try {
   assert.equal(plan.alreadyLinked, false);
   ok("接的位置是 codex 會去看的那一層，指向真正的 codex-resources");
 
+  // 迴歸：第一版用 realpathSync 解 bin，Node 連 current 一起解開，junction 於是
+  // 釘死在版本號上（真機截圖：...\releases\0.147.0-aarch64-pc-windows-msvc\）。
+  // codex 一升版舊目錄被清掉，連結就斷了。
+  const resolvedBin =
+    "C:\\Users\\Reed\\.codex\\packages\\standalone\\releases\\0.147.0-aarch64-pc-windows-msvc\\bin";
+  assert.equal(currentPackageRoot(resolvedBin), CURRENT_ROOT);
+  const pinned = planSandboxLink({
+    codexPath: JUNCTION_CODEX,
+    realBinPath: resolvedBin,
+    exists: (candidate) => candidate === REAL_RESOURCES,
+  });
+  assert.equal(pinned.targetPath, REAL_RESOURCES);
+  assert.ok(!pinned.targetPath.includes("releases"));
+  ok("解析到版本目錄時折回 current，不把連結釘死在版本號上");
+
   // 學生會按第二次。已經接好了要安靜地成功，不是報錯。
   const again = planSandboxLink({
     codexPath: JUNCTION_CODEX,
@@ -131,6 +148,18 @@ try {
   });
   assert.equal(again.alreadyLinked, true);
   ok("已經接過了就回報「不用再接」，不是失敗");
+
+  // 迴歸：「連結在不在」跟「連結通不通」是兩件事。只看前者的話，升版之後那條
+  // 斷掉的 junction 會被當成「已經接好了」，學生按第二次也修不好。
+  const dangling = planSandboxLink({
+    codexPath: JUNCTION_CODEX,
+    realBinPath: REAL_BIN,
+    // 連結在、來源在，但從連結那條路走不到 helper。
+    exists: (candidate) => candidate === REAL_RESOURCES || candidate === LINK,
+  });
+  assert.equal(dangling.alreadyLinked, false);
+  assert.equal(dangling.stale, true);
+  ok("連結在但走不通時視為斷掉，要拆掉重接");
 
   // 真正的那份不在時不能接：接一條指向空氣的 junction 只會把問題藏起來，
   // 下一次檢查反而變綠燈（findSandboxHelper 只看路徑在不在）。

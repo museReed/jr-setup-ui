@@ -6,7 +6,7 @@
 // 沒有下載、沒有複製：檔案本來就在機器上，只是 PATH 上那條 bin junction 讓 codex
 // 往上一層走時走到了別的地方。這裡在它會看的位置補一條 junction 指回真正的那份。
 // 判準在 src/codex-sandbox.js，這裡只負責解 junction、建連結、把做了什麼印出來。
-import { existsSync, realpathSync, symlinkSync } from "node:fs";
+import { existsSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import path from "node:path";
 
 import { planSandboxLink } from "../src/codex-sandbox.js";
@@ -64,6 +64,12 @@ if (plan.alreadyLinked) {
 }
 
 console.log("");
+
+if (plan.stale) {
+  console.log(`${plan.linkPath} 在，但從那條路走不到沙箱檔案——是斷掉的舊連結，`);
+  console.log("先拆掉再重接。");
+}
+
 console.log(`要接：${plan.linkPath}`);
 console.log(`指向：${plan.targetPath}`);
 
@@ -74,6 +80,12 @@ if (!APPLY) {
 }
 
 try {
+  // 只拆連結本身。rmSync 對 junction 是刪那條連結，不會跟著進去刪真正的檔案；
+  // 但這裡仍然只在確認過 stale 的情況下做，不對任意路徑動手。
+  if (plan.stale) {
+    rmSync(plan.linkPath, { recursive: false, force: true });
+  }
+
   // junction 而不是 symlink：Windows 上建目錄 junction 不需要管理員權限，
   // symlink 預設要（除非開了開發人員模式）。學生那台兩者都不能假設。
   symlinkSync(plan.targetPath, plan.linkPath, "junction");

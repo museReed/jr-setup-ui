@@ -79,9 +79,22 @@ export function findSandboxHelper(codexPath, { exists }) {
 // codex 找的是「bin 的上一層旁邊」，從 junction 這側看過去是
 // %LOCALAPPDATA%\Programs\OpenAI\Codex\，那裡什麼都沒有。補一條 junction 就通了。
 //
-// 為什麼是 junction 不是複製：codex.exe 那包 250MB 起跳，而 junction 是零成本、
-// 而且 codex 升版時 current 換指向，junction 跟著走，不會留下一份過期的複本。
-// Windows 上建目錄 junction 不需要管理員權限。
+// 為什麼是 junction 不是複製：codex.exe 那包 250MB 起跳，而 junction 是零成本。
+// Windows 上建目錄 junction 不需要管理員權限（symlink 要，除非開了開發人員模式）。
+//
+// ⚠️ 要接到 ...\standalone\current\codex-resources，**不是**解析到底的
+// ...\releases\0.147.0-aarch64-pc-windows-msvc\codex-resources。
+// 第一版用 realpathSync 解 bin，Node 把整條鏈連 current 一起解開，junction 於是
+// 釘死在當下那個版本號上——codex 升版、舊的 releases 目錄被清掉，連結就斷了
+// （真機截圖抓到的）。接在 current 上，升版時它自己會跟著換。
+const RELEASES_SEGMENT = /([\\/])releases\1[^\\/]+(?=[\\/]|$)/i;
+
+export function currentPackageRoot(realBinPath) {
+  const packageRoot = realBinPath.replace(/[\\/][^\\/]+$/, "");
+
+  return packageRoot.replace(RELEASES_SEGMENT, "$1current");
+}
+
 export function planSandboxLink({ codexPath, realBinPath, exists }) {
   if (
     typeof codexPath !== "string" ||
@@ -94,8 +107,7 @@ export function planSandboxLink({ codexPath, realBinPath, exists }) {
 
   const binDir = codexPath.replace(/[\\/][^\\/]+$/, "");
   const linkPath = `${binDir.replace(/[\\/][^\\/]+$/, "")}\\codex-resources`;
-  const packageRoot = realBinPath.replace(/[\\/][^\\/]+$/, "");
-  const targetPath = `${packageRoot}\\codex-resources`;
+  const targetPath = `${currentPackageRoot(realBinPath)}\\codex-resources`;
 
   // 真正的那份不在的話就沒得接——那是另一種壞法（套件本身缺檔），
   // 接一條指向空氣的 junction 只會把問題藏起來。
@@ -103,12 +115,20 @@ export function planSandboxLink({ codexPath, realBinPath, exists }) {
     return null;
   }
 
-  // 已經接好了就不用再做。重跑一次不該報錯，學生會按第二次。
-  if (exists(linkPath)) {
-    return { linkPath, targetPath, alreadyLinked: true };
+  // ⚠️ 「連結在不在」跟「連結通不通」是兩件事。只看前者的話，升版之後那條斷掉的
+  // junction 會被當成「已經接好了」，學生按第二次也修不好（第一版就是這樣）。
+  // 判準改成：從連結那條路走得到 helper 才算接好。
+  if (exists(`${linkPath}\\${HELPER}`)) {
+    return { linkPath, targetPath, alreadyLinked: true, stale: false };
   }
 
-  return { linkPath, targetPath, alreadyLinked: false };
+  // 連結在、但走不到 helper ＝ 斷掉的舊連結。要先拆掉再接。
+  return {
+    linkPath,
+    targetPath,
+    alreadyLinked: false,
+    stale: exists(linkPath),
+  };
 }
 
 export function sandboxStatus({ codexPath, helperPath, storePowerShell }) {
