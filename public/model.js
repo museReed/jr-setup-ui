@@ -875,6 +875,31 @@ export function mergeCardChecks(checks) {
   return groups;
 }
 
+// 同一張卡上還有沒有「等著合併」的另一份。有的話不能自動驗證。
+//
+// nextInstallStep 只等「還沒裝」的那幾份，等不到「等合併」的——protectExisting 的列
+// 按安裝不會覆蓋，它要的是學生按「用 AI 合併」。於是流程變成：CLAUDE.md 說「已有你
+// 自己的版本」→ 接著裝 output-style → **馬上驗行為**（Reed 在 VM 上看到的）。
+//
+// 那次驗證驗的是一個半完成的狀態：行為驗證是真的問一次 Claude，而它怎麼回同時受
+// output-style 與 CLAUDE.md 影響。現在過了不代表合併完還會過，而且那一輪要跑一分多鐘
+// 又燒 token——卡片自己還會叫學生「合併完再按重跑驗證」，等於同一件事做兩次。
+export function pendingMergeSibling(stepId, checks = []) {
+  const order = Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId));
+
+  if (order === undefined) {
+    return null;
+  }
+
+  const byId = new Map(checks.map((check) => [check.id, check]));
+
+  return (
+    order
+      .map((id) => byId.get(id))
+      .find((check) => check !== undefined && check.needsMerge === true) ?? null
+  );
+}
+
 // 剛裝完 stepId 之後，同一張卡還有沒有沒裝的另一份。有的話先把它裝完再驗證。
 export function nextInstallStep(stepId, checks = []) {
   const order = Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId));

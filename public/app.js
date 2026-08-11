@@ -18,6 +18,7 @@ import {
   flattenCheckCards,
   groupChecks,
   nextInstallStep,
+  pendingMergeSibling,
   matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
@@ -1463,6 +1464,20 @@ async function handleDone(
   if (sibling !== null) {
     view.addLine(`接著裝同一張卡的另一份：${sibling.label}`, "agent-status");
     runConfigCheckAction(sibling, "install-config-step");
+    return;
+  }
+
+  // 同一張卡上還有東西等著合併的話，先不要驗——驗的是半完成的狀態，而且合併完
+  // 學生本來就要再驗一次（見 model.js 的 pendingMergeSibling）。
+  const awaitingMerge = pendingMergeSibling(step, state.lastChecks);
+
+  if (followUp === "auto" && awaitingMerge !== null) {
+    state.deferredVerificationSteps.add(installedCheck.id);
+    view.addLine(
+      `先不驗證：這張卡的「${awaitingMerge.label}」還等著合併。合併完再按「重跑驗證」。`,
+      "agent-status",
+    );
+    renderWizard();
     return;
   }
 

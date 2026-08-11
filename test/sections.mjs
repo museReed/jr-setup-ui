@@ -9,6 +9,7 @@ import {
   groupChecks,
   matchesFullscreenProof,
   nextInstallStep,
+  pendingMergeSibling,
 } from "../public/model.js";
 import {
   cardIsComplete,
@@ -449,6 +450,30 @@ try {
   // 沒有被合併的步驟照舊。
   assert.equal(nextInstallStep("hook", [check("hook")]), null);
   ok("裝完第一份會接著裝第二份，都好了才輪到驗證");
+
+  // 迴歸（Reed 在 VM 上看到的）：CLAUDE.md 說「已有你自己的版本，需要合併」之後，
+  // 流程照樣往下裝 output-style 然後**馬上驗行為**。那次驗的是半完成的狀態——行為
+  // 驗證是真的問一次 Claude，而它怎麼回同時受 output-style 與 CLAUDE.md 影響。
+  // 而且卡片自己還會叫學生「合併完再按重跑驗證」，等於同一件事做兩次。
+  assert.equal(
+    pendingMergeSibling("output-style", [
+      { ...check("claude-md"), needsMerge: true },
+      check("output-style"),
+    ])?.id,
+    "claude-md",
+  );
+  ok("同卡還有東西等合併時攔得到，不會先驗一次半完成的狀態");
+
+  // 沒有人等合併就照舊——不能因為這道保險讓正常流程也停下來。
+  assert.equal(
+    pendingMergeSibling("output-style", [
+      check("claude-md"),
+      check("output-style"),
+    ]),
+    null,
+  );
+  assert.equal(pendingMergeSibling("hook", [check("hook")]), null);
+  ok("沒有人等合併時不擋，沒被合併的步驟也照舊");
 
   // 伺服器少回其中一份時不要整張卡消失——另一份仍該自己出現。
   const half = flattenCheckCards(
