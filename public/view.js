@@ -26,7 +26,13 @@ const elements = {
   sectionPanel: document.querySelector("[data-section-panel]"),
   sectionStatus: document.querySelector("#section-status"),
   replayTour: document.querySelector("#replay-tour"),
-  copyDiagnostics: document.querySelector("#copy-diagnostics"),
+  reportIssue: document.querySelector("#report-issue"),
+  reportModal: document.querySelector("#report-modal"),
+  reportDescription: document.querySelector("#report-description"),
+  reportPreview: document.querySelector("#report-preview"),
+  reportSend: document.querySelector("#report-modal-send"),
+  reportCancel: document.querySelector("#report-modal-cancel"),
+  reportStatus: document.querySelector("#report-modal-status"),
   copyRawOutput: document.querySelector("#copy-raw-output"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
@@ -2166,6 +2172,49 @@ export function clearLoginHints() {
   setButtonLabel(copy, "複製");
   runInput.hidden = true;
   hints.hidden = true;
+}
+
+// 「這一頁卡住了」那個框。
+//
+// 先給學生看到要送什麼，再讓他決定——內容裡有他機器上的路徑與每一張卡的原始輸出，
+// 送出去之後就是一則公開的 issue。家目錄已經換成 ~，但那不等於全部都遮乾淨了。
+//
+// 描述是選填的：要求他一定要寫的話，多數人會寫「不能用」然後送出，那跟沒寫一樣，
+// 卻多擋了一次。真正判斷得了問題的是下面那坨原始輸出。
+export function showReportModal(preview) {
+  elements.reportPreview.textContent = preview;
+  elements.reportDescription.value = "";
+  elements.reportStatus.hidden = true;
+  elements.reportSend.disabled = false;
+  elements.reportModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.reportModal.classList.add("open");
+    elements.reportDescription.focus();
+  });
+}
+
+export function hideReportModal() {
+  elements.reportModal.classList.remove("open");
+  window.setTimeout(() => {
+    elements.reportModal.hidden = true;
+  }, 200);
+}
+
+export function reportDescription() {
+  return elements.reportDescription.value;
+}
+
+// 送出中／成功／失敗都寫在框裡，不是丟到右邊那個終端——學生的眼睛在這個框上，
+// 而框關掉之前他看不到別的地方。
+export function setReportStatus(text, { sending = false } = {}) {
+  elements.reportStatus.textContent = text;
+  elements.reportStatus.hidden = text === "";
+  elements.reportSend.disabled = sending;
+}
+
+export function onReportModal(send, cancel) {
+  elements.reportSend.addEventListener("click", send);
+  elements.reportCancel.addEventListener("click", cancel);
 }
 
 export function showVerifyModal() {

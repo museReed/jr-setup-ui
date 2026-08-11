@@ -50,7 +50,7 @@
           <button type="button" id="replay-tour" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v5M12 7.5v.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>這頁怎麼用</span></button>
           <!-- 分頁鎖頭的狀態變化紀錄。學生看到怪畫面時按一下，整包貼給助教就查得到
                是哪一個瞬間算錯的（見 view.js 的 lockDiagnostics）。 -->
-          <button type="button" id="copy-diagnostics" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h9v11H9zM6 15H5V4h10v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>複製診斷資料</span></button>
+          <button type="button" id="report-issue" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zM10 19a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>這一頁卡住了</span></button>
         </div>
         <div id="milestone-bar" class="ds-pbar ds-pbar--milestones" data-base="0">
           <div id="milestone-fill" class="ds-pbar-fill" role="progressbar" aria-label="本段卡片進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
@@ -143,6 +143,22 @@
           <button type="button" id="verify-modal-confirm" class="ds-btn ds-btn-primary">開終端驗證</button>
           <button type="button" id="verify-modal-later" class="ds-btn ds-btn-ghost">稍後</button>
         </div>
+      </section>
+    </div>
+
+    <div id="report-modal" class="ds-modal-overlay" hidden>
+      <section class="ds-modal-panel report-panel" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+        <h2 id="report-modal-title">把這一頁卡住的狀況送給助教</h2>
+        <p class="report-hint">用你自己的 GitHub 帳號開一則 issue，助教會在那裡回覆你。</p>
+        <label class="report-label" for="report-description">發生什麼事？（選填，但寫一句話會快很多）</label>
+        <textarea id="report-description" class="report-description" rows="3" placeholder="例如：按了安裝之後就一直轉圈，等了五分鐘"></textarea>
+        <p class="report-hint">下面是會一起送出的內容。要截圖的話截這一塊就好——家目錄已經換成 ~。</p>
+        <pre id="report-preview" class="report-preview"></pre>
+        <div>
+          <button type="button" id="report-modal-send" class="ds-btn ds-btn-primary">送出</button>
+          <button type="button" id="report-modal-cancel" class="ds-btn ds-btn-ghost">取消</button>
+        </div>
+        <p id="report-modal-status" class="report-hint" hidden></p>
       </section>
     </div>
 

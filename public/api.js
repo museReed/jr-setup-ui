@@ -99,6 +99,19 @@ export async function forgetVerification(step) {
   ]);
 }
 
+// 「這一頁卡住了」。伺服器那邊交給 `gh issue create --body-file`——回傳的是
+// 一則真的 issue 的網址，不是「打開一個預填好的頁面」。
+export async function sendReport(title, body) {
+  const response = await postJson("/report", { title, body });
+
+  // 失敗時伺服器回的是 JSON（帶人話訊息），只有格式錯誤才是純文字。
+  try {
+    return await response.json();
+  } catch {
+    return { ok: false, message: "回報失敗，請再試一次。", detail: "" };
+  }
+}
+
 // 工具／語言的選擇也存伺服器：port 每次啟動都變，localStorage 綁 origin 存不住。
 export async function saveSelection(selection) {
   const response = await postJson("/state", { selection });

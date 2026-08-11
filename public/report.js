@@ -66,13 +66,17 @@ export function issueBody({
   log = "",
   sections = null,
   home = "",
+  description = "",
 }) {
   const clean = (value) => redact(String(value ?? ""), home);
+  const written = clean(description).trim();
 
   const lines = [
     "## 發生什麼事",
     "",
-    "（請在這裡寫一兩句：你按了什麼、期待看到什麼、實際看到什麼）",
+    // 選填。沒寫的話留一句話講明「他沒寫」，而不是留一段空白——助教看到空白會
+    // 以為是嚮導漏掉了，看到這句才知道要自己去問。
+    written === "" ? "（學生沒有補充，請看下面的原始輸出）" : written,
     "",
     "## 這一步",
     "",

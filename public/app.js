@@ -8,6 +8,7 @@ import {
   replayTour,
   tourDiagnostics,
 } from "./tour.js";
+import { buildIssue } from "./report.js";
 import { openWalkthrough } from "./walkthrough.js";
 import {
   CONFIG_LANGUAGES,
@@ -361,6 +362,9 @@ function renderWizard() {
     state.viewingCardIndex[state.activeSectionId] = derivedIndex;
   }
   const card = cardSection.cards[currentIndex];
+  // 「這一頁卡住了」要講得出是哪一頁。那顆按鈕在頁首、不在卡片上，拿不到這裡的
+  // 區域變數，所以每次畫的時候記下來。
+  state.reportCard = card;
 
   // 走到這裡（含）為止的卡都算「顯示過」。里程碑要亮，除了完成還得走到過——
   // 這一行同時做兩件事：進來時把落點以前的卡一次補齊（重整後畫面跟原本一樣），
@@ -1193,6 +1197,9 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
       toolSelectionValue(state.selectedTools),
     );
     state.envChecks = checks;
+    // 回報那一份要用到：平台寫進 issue，家目錄用來把學生的本名換成 ~。
+    // 家目錄只有伺服器知道，瀏覽器問不到——不帶回來的話遮蔽就做不了。
+    state.envOs = os;
     forgetStaleInstalls(checks);
     view.elements.envOs.textContent = `作業系統：${os.platform} / ${os.arch}`;
     // 結果回來的那一刻就把「重掃中」關掉，再畫。留到 finally 才關的話，這一次
@@ -1896,31 +1903,60 @@ initTour();
 view.elements.replayTour.addEventListener("click", () => replayTour());
 // 分頁鎖頭演錯、或導覽該跳沒跳時按這顆，整包貼給助教。收集在 view 與 tour 那邊
 //（那裡才看得到動畫實例與變化紀錄），這裡只負責把它變成一段文字丟進剪貼簿。
-view.elements.copyDiagnostics.addEventListener("click", async () => {
-  try {
-    const diagnostics = {
-      // 每張卡最近幾次執行的原始輸出。這一份才是真正判斷得了問題的東西——這顆按鈕
-      // 原本只收鎖頭與導覽的狀態，學生按了貼回來，我們拿到的是動畫幀號。
-      //
-      // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
-      output: view.rawOutputDiagnostics(),
-      // 哪一段做完了、哪一段還鎖著。「為什麼我進不去下一段」是真的會問的問題，
-      // 而那個答案在畫面上只表現成一個鎖頭圖示。
-      sections: view.sectionLockStates(),
-      // 導覽跑了什麼、為什麼沒跑。Reed 在 VM 上看到版面導覽沒出現就直接跳了元件
-      // 導覽，而同一份 code 在 Mac 上重現不出來——沒有紀錄只能一路猜。
-      tour: tourDiagnostics(),
-    };
-    await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
-    view.setButtonLabel(view.elements.copyDiagnostics, "已複製");
-    // 字要換回來：留著「已複製」的話，下次真的要按時看起來像已經按過了。
-    window.setTimeout(() => {
-      view.setButtonLabel(view.elements.copyDiagnostics, "複製診斷資料");
-    }, 2000);
-  } catch (error) {
-    view.addLine(`無法複製診斷資料：${error.message}`, "failed");
-  }
+// 「這一頁卡住了」取代了原本的「複製診斷資料」。
+//
+// 舊的那顆只是把 JSON 丟進剪貼簿，然後學生要自己找地方貼——多數人貼在課堂聊天室，
+// 訊息一長就被捲走，也沒有地方回覆他。現在直接開成一則 issue，用他自己的 GitHub
+// 帳號，助教在下面回。
+//
+// ⚠️ 先開框讓他看過再送：那份內容裡有他機器上的路徑與每一張卡的原始輸出，送出去
+// 就是一則公開的 issue。
+function currentReportInput(description = "") {
+  const os = state.envOs ?? {};
+
+  return {
+    card: state.reportCard,
+    platform: `${os.platform ?? ""} ${os.arch ?? ""}`.trim(),
+    status: state.failedSteps.size > 0 ? "有失敗的步驟" : "沒有明顯失敗",
+    // 跨卡片的原始輸出。問題常常是前一張留下來的，只送當下那張會漏掉真正的線索。
+    log: JSON.stringify(view.rawOutputDiagnostics(), null, 2),
+    sections: view.sectionLockStates(),
+    // 家目錄只有伺服器知道（瀏覽器問不到），跟著 /env 一起帶回來。少了它，
+    // 學生的本名會原封不動出現在一則公開的 issue 上。
+    home: os.home ?? "",
+    description,
+  };
+}
+
+view.elements.reportIssue.addEventListener("click", () => {
+  view.showReportModal(buildIssue(currentReportInput()).body);
 });
+
+view.onReportModal(
+  async () => {
+    const { title, body } = buildIssue(
+      currentReportInput(view.reportDescription()),
+    );
+
+    view.setReportStatus("送出中……", { sending: true });
+
+    const result = await api.sendReport(title, body);
+
+    if (result.ok === true) {
+      view.setReportStatus(`送出去了：${result.url}`);
+      view.addLine(`已回報：${result.url}`, "succeeded");
+      return;
+    }
+
+    // 失敗留在框裡不關掉——關掉的話學生剛打的那段描述就沒了。
+    view.setReportStatus(result.message ?? "送不出去，請再試一次。");
+
+    if (result.detail) {
+      view.addLine(result.detail, "failed");
+    }
+  },
+  () => view.hideReportModal(),
+);
 // 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
 // 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。
 view.elements.copyRawOutput.addEventListener("click", async () => {

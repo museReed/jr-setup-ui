@@ -892,7 +892,7 @@ export async function runEnvCheck(tools = []) {
     const checks = await Promise.all(checksToRun);
 
     return {
-      os: { platform: process.platform, arch: process.arch },
+      os: { platform: process.platform, arch: process.arch, home: homedir() },
       checks: checks.map(withActions),
     };
   } catch (error) {
@@ -902,7 +902,7 @@ export async function runEnvCheck(tools = []) {
     console.error("[runEnvCheck] 整段失敗：", error);
 
     return {
-      os: { platform: process.platform, arch: process.arch },
+      os: { platform: process.platform, arch: process.arch, home: homedir() },
       checks: checksForTools(CHECKS, tools).map(({ id, label }) => ({
         id,
         label,

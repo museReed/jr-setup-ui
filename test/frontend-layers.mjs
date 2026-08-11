@@ -477,7 +477,10 @@ try {
   //
   // 而且它跨卡片：頁面上的 copy 只複製得到當下那張，但問題常常是前一張留下來的。
   assert(files.view.includes("export function rawOutputDiagnostics()"));
-  assert(files.app.includes("output: view.rawOutputDiagnostics()"));
+  // 「複製診斷資料」換成了「這一頁卡住了」——同一份東西不再進剪貼簿，改成直接開成
+  // 一則 issue（Reed 拍板）。舊的那顆只是丟進剪貼簿，學生得自己找地方貼，多數人貼在
+  // 聊天室，訊息一長就被捲走、也沒有地方回覆他。
+  assert(files.app.includes("log: JSON.stringify(view.rawOutputDiagnostics()"));
 
   // 每跑一輪不再把上一輪清掉：學生遇到失敗的第一個動作就是再按一次，那時失敗那次
   // 的輸出已經沒了——而我們要判斷的正是失敗那次。改成保留最近幾次、用分隔線隔開。
@@ -670,7 +673,9 @@ try {
   );
   assert.match(
     files.app,
-    /state\.envChecks = checks;\s*\n\s*forgetStaleInstalls\(checks\);/,
+    // 中間那幾行是把 os 記下來給回報用的（家目錄要遮蔽學生本名）——不影響這條的
+    // 用意：兩份檢查結果回來時，樂觀記憶都要清。
+    /state\.envChecks = checks;[\s\S]{0,400}forgetStaleInstalls\(checks\);/,
     "環境檢查回來要清",
   );
   assert.match(
@@ -896,7 +901,8 @@ try {
     "recheck-configs",
     "recheck-env",
     "cancel",
-    "copy-diagnostics",
+    // 「複製診斷資料」換成了「這一頁卡住了」——同一個位置、同一種樣式。
+    "report-issue",
     "copy-raw-output",
   ]) {
     assert.match(

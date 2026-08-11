@@ -1433,6 +1433,50 @@ body.wt-locked {
   white-space: pre;
 }
 
+/* 「這一頁卡住了」那個框。要能整塊截圖，所以預覽區給足高度、內容可捲。 */
+.report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(720px, 92vw);
+  text-align: left;
+}
+
+.report-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.report-label {
+  font-size: var(--fs-sm);
+}
+
+.report-description {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+/* 送出去的就是這一塊的內容。等寬字體：路徑與 log 對齊了才看得出哪一行是哪一行。 */
+.report-preview {
+  max-height: 40vh;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* 沒有按鈕可按的那幾列的自救說明。刻意做得像卡片上的一段話而不是警告框——
    它不是錯誤，是「這件事程式幫不了你，但你自己做得到」。 */
 .card-guidance {
