@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import {
   checkAgentHooks,
   checkCopyStep,
   checkTabSync,
+  missingSourceLines,
   probeHook,
   resolveBash,
   wiredToScript,
@@ -374,6 +376,50 @@ process.stdin.on("end", () => {
   );
   assert(VERIFICATION.allowlist.terminal != null);
   ok("白名單是眼睛項規則的唯一例外，而且是刻意的");
+
+  // ⚠️ 這一支是合併的完成判準——`scripts/merge-in-terminal.mjs` 就是等它變成空陣列。
+  // 兩邊共用同一支，不各寫一份：各寫一份的結果會是「終端說完成、卡片說需要合併」。
+  const missDir = mkdtempSync(path.join(tmpdir(), "jr-miss-"));
+  const sourceRel = "jr-test-source.md";
+  writeFileSync(
+    path.join(MATERIALS, sourceRel),
+    "# 工作坊\n\n第一條規則\n第二條規則\n",
+  );
+  const targetPath = path.join(missDir, "mine.md");
+  const step = { source: sourceRel, target: targetPath };
+
+  try {
+    // 目標還不存在＝還沒得比。那是「安裝」要做的事，不是合併——回 null 不是回 []，
+    // 不然合併腳本會把「檔案根本不在」判成「已經併好了」。
+    assert.equal(await missingSourceLines(MATERIALS, step), null);
+
+    // 學生自己的內容原封不動、工作坊那段一行都沒進去。
+    writeFileSync(targetPath, "# 我自己的規則\n一律用繁體中文\n");
+    assert.deepEqual(await missingSourceLines(MATERIALS, step), [
+      "# 工作坊",
+      "第一條規則",
+      "第二條規則",
+    ]);
+
+    // 潤飾掉一行就會被抓出來——那正是這一步最常見的壞法（真機撞過，AI 說合併完成、
+    // 實際差 17 行）。回傳的是「還缺哪幾行」，逾時訊息才印得出可以貼回去的東西。
+    writeFileSync(
+      targetPath,
+      "# 我自己的規則\n一律用繁體中文\n\n---\n\n# 工作坊\n\n第一條規則\n",
+    );
+    assert.deepEqual(await missingSourceLines(MATERIALS, step), ["第二條規則"]);
+
+    // 學生自己的東西留著也不影響——只問「工作坊那段在不在」，不問「有沒有多」。
+    writeFileSync(
+      targetPath,
+      "# 我自己的規則\n一律用繁體中文\n\n---\n\n# 工作坊\n\n第一條規則\n第二條規則\n",
+    );
+    assert.deepEqual(await missingSourceLines(MATERIALS, step), []);
+    ok("合併的完成判準回「還缺哪幾行」，學生自己的內容不影響判定");
+  } finally {
+    rmSync(path.join(MATERIALS, sourceRel), { force: true });
+    rmSync(missDir, { recursive: true, force: true });
+  }
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

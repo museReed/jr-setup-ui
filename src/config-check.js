@@ -103,11 +103,18 @@ async function sameAsSource(materials, step) {
 // 自己加的東西不影響，因為只檢查有沒有，不檢查有沒有多。
 //
 // TOML 的 # 是註解，可以不算；Markdown 的 # 是標題，是實質內容，不能丟。
-async function containsSourceContent(materials, step) {
+// ⚠️ 回**還缺哪幾行**，不只回「完成了沒」。
+//
+// 那份清單是逾時訊息裡唯一有行動力的東西：AI 合併時本來就會潤飾，而這裡是逐行比對，
+// 「它說做完了、嚮導說沒有」很常見。只講「還沒完成」的話學生沒有任何線索；把缺的
+// 那幾行印出來，他可以直接貼回終端叫 AI 一字不差補上。
+//
+// null 表示「還沒得比」——來源或目標檔案不在，那是「安裝」要做的事，不是合併。
+export async function missingSourceLines(materials, step) {
   const source = path.join(materials, step.source);
 
   if (!existsSync(source) || !existsSync(step.target)) {
-    return false;
+    return null;
   }
 
   const [sourceText, targetText] = await Promise.all([
@@ -121,13 +128,22 @@ async function containsSourceContent(materials, step) {
     .filter((line) => line !== "" && !(isToml && line.startsWith("#")));
 
   if (required.length === 0) {
-    return false;
+    return null;
   }
 
   const targetLines = new Set(
     targetText.split("\n").map((line) => line.trim()),
   );
-  return required.every((line) => targetLines.has(line));
+  return required.filter((line) => !targetLines.has(line));
+}
+
+// 「工作坊那段在不在」就是「一行都不缺」。兩邊共用同一支判準，不各寫一份——
+// 合併腳本等的東西跟畫面上那一列講的話必須是同一件事，否則會出現「終端說完成、
+// 卡片說需要合併」（真機撞過）。
+async function containsSourceContent(materials, step) {
+  const missing = await missingSourceLines(materials, step);
+
+  return missing !== null && missing.length === 0;
 }
 
 // 「檔案在」不等於「檔案是對的」。hook 與 watcher 的內容改過之後，已經裝過的人
