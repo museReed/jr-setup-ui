@@ -440,9 +440,11 @@ body {
 
 /* 窄螢幕的那條規則沒了：兩顆本來就只有箭頭，寬螢幕也一樣，不需要分兩種長相。 */
 
+/* 站在進度條下面。上面的空隙留 space-4：那是給里程碑圓點被 hover 撐大時用的，
+   貼太近的話圓點的外框會擦到字。 */
 #section-status {
   display: block;
-  margin: 0;
+  margin: var(--space-4) 0 0;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -573,17 +575,15 @@ body {
   height: 100%;
 }
 
-/* 進度文字與右邊那幾顆按鈕排同一行。按鈕要黏在一起靠右，所以把空白全推給進度
-   文字（margin-right: auto）——用 space-between 的話兩顆按鈕會被拆到兩端。 */
+/* 這一列現在只剩右邊那兩顆按鈕。進度文字搬到進度條下面去了（見 index.html 那段
+   註解：貓會壓在字上）。靠右用 flex-end，不要 space-between——只剩兩顆的話
+   space-between 會把它們拆到兩端。 */
 .milestone-heading {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
-}
-
-.milestone-heading > #section-status {
-  margin-right: auto;
 }
 
 /* driver.js 的泡泡預設是白底藍鈕，跟這頁的暗色卡片不同世界。長相全部拉回

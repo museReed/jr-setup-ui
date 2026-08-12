@@ -46,7 +46,6 @@
 
       <div class="milestone-wrap">
         <div class="milestone-heading">
-          <small id="section-status" aria-live="polite">正在檢查目前進度…</small>
           <button type="button" id="replay-tour" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v5M12 7.5v.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>這頁怎麼用</span></button>
           <!-- 分頁鎖頭的狀態變化紀錄。學生看到怪畫面時按一下，整包貼給助教就查得到
                是哪一個瞬間算錯的（見 view.js 的 lockDiagnostics）。 -->
@@ -64,6 +63,12 @@
             </div>
           </div>
         </div>
+        <!-- ⚠️ 這一行一定要在進度條**下面**，不是上面。那隻貓是 bottom:6px、45px 高，
+             整隻往上凸出進度條 43px——擺在上面的話，指名擋著的卡（那一行會長到
+             半個畫面寬）會被牠壓住（VM 實測看到「選工具 + 選[貓]」）。
+             改成指名之前那行只有「還有 7 張要做。」，短到走不進貓的走道，所以
+             這個重疊是這一輪才長出來的。 -->
+        <small id="section-status" aria-live="polite">正在檢查目前進度…</small>
       </div>
       </div>
 
