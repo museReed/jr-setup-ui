@@ -4,6 +4,7 @@
 import {
   agentForCheck,
   CARD_GATES,
+  EYE_ONLY_VERIFY,
   GUIDANCE,
   MANUAL_STEPS,
   SECTION_GATES,
@@ -998,7 +999,9 @@ export function checklistGroups({
     //
     // 「裝好了沒」的判定沿用 configRowModel 那一條，不另開一條路——這個 repo 有過
     // 「多個完成判定各自為政」的稽核紀錄（見 completedCardIds 上面的說明）。
-    if (candidate.verifyAction != null) {
+    // ⚠️ EYE_ONLY_VERIFY 的那幾列不拆。它們的「驗證」只是把終端開起來、沒有可以
+    // 輪詢的落點，拆出來的那一格會在視窗剛開的瞬間就打勾（見 model.js 的說明）。
+    if (candidate.verifyAction != null && !EYE_ONLY_VERIFY.has(candidate.id)) {
       const installedThis =
         candidate.status === "ok" ||
         checked ||

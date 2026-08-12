@@ -145,6 +145,24 @@ export const EYE_ROW_ACTIONS = {
   },
 };
 
+// 這幾列的「驗證」那一格要整個拿掉——它是假的。
+//
+// `verify-in-terminal` 的 vault-note 那一格 `expect` 回 null（見那支腳本），也就是
+// **沒有任何可以輪詢的落點**：它的工作只是把終端開起來，判定交給學生的眼睛。可是
+// 腳本開完視窗就 exit 0，而 verify-in-terminal 在 AUTO_VERIFY_ACTIONS 裡，於是那一
+// 格當場被打勾——畫面寫著「驗證：叫 AI 寫一篇進去 ✅」，而 codex 才剛開始做事
+// （VM 實測）。
+//
+// ⚠️ app.js 的註解早就認得出這件事（「開終端驗證跑完 exit 0 不一定等於驗過了」），
+// 但只擋了外層：有 eyeCheck 就不把**整列**標綠，那一格照樣打勾。
+//
+// 拿掉之後這張卡剩兩格：「按右邊開終端跑一次」（真的按了就打勾，誠實）與眼睛那格
+// 「GitHub 上看得到你的改動歷史」（真正的證據）。
+export const EYE_ONLY_VERIFY = new Set([
+  "vault-agent-claude",
+  "vault-agent-codex",
+]);
+
 export const CARD_GATES = {
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。

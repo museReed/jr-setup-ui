@@ -54,6 +54,7 @@ import {
   CARD_HINTS,
   CONFIG_LANGUAGES,
   CONFIG_TOOL_CHOICES,
+  EYE_ONLY_VERIFY,
   configQuery,
 } from "../public/model.js";
 import { actions as ACTIONS } from "../src/actions.js";
@@ -1075,6 +1076,28 @@ try {
   });
   assert.equal(systemOnly.system[0].text, "Node.js");
   ok("程式檢查與眼睛確認並存時才加前綴，分清楚哪一格是誰的事");
+
+  // ⚠️ 筆記那兩張的「驗證」格要整個消失。它的 expect 回 null（沒有可輪詢的落點），
+  // 腳本開完視窗就 exit 0，而 verify-in-terminal 在 AUTO_VERIFY_ACTIONS 裡——拆出來
+  // 的那一格會在視窗剛開的瞬間就打勾，而 AI 才剛開始做事（VM 實測）。
+  for (const id of EYE_ONLY_VERIFY) {
+    const eyeOnly = checklistGroups({
+      checks: [
+        {
+          id,
+          label: "叫 AI 寫一篇進去",
+          detail: "按右邊開終端跑一次",
+          eyeCheck: "GitHub 上看得到你的改動歷史",
+          verifyAction: "verify-in-terminal",
+        },
+      ],
+      verifiedCheckIds: new Set(),
+    });
+    assert.equal(eyeOnly.system.length, 1, `${id} 不該拆成安裝／驗證兩格`);
+    assert.ok(!eyeOnly.system[0].text.startsWith("驗證："));
+    assert.equal(eyeOnly.manual.length, 1, `${id} 的眼睛那格要留著`);
+  }
+  ok("沒有可輪詢落點的那幾列不長「驗證」格，判定交給眼睛那一格");
 
   // 結構都對了卻還沒打勾的那一格，要說清楚它在等什麼——不然畫面是「都已生效」
   // 配一個空格，看起來像壞掉。
