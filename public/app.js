@@ -1482,9 +1482,19 @@ async function handleDone(
     result,
     check: installedCheck,
   });
+  // ⚠️ 等合併的那幾列不能記成「已安裝」。
+  //
+  // CLAUDE.md、codex 的 config.toml 與 AGENTS.md 是 protectExisting 的：學生已經有
+  // 檔案時「安裝」**刻意什麼都不做**，腳本照樣 exit 0。只看「是不是 install-* 而且
+  // 成功」的話，一個還等著合併的列會當場被打勾，而卡片右上角同時寫著「等你合併」
+  // ——畫面自相矛盾，而且那個勾是在說一件沒發生的事（VM 實測）。
+  //
+  // 樂觀記憶的用途是撐住「終端印了安裝成功、這一列還寫尚未安裝」那幾秒，前提是
+  // 那次安裝**真的做了事**。needsMerge 的那次沒有，所以不該進來。
   if (
     step !== null &&
     step !== undefined &&
+    installedCheck?.needsMerge !== true &&
     (action.startsWith("install-") || action === "merge-config-step")
   ) {
     state.installedSteps.add(step);
