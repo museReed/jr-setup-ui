@@ -132,8 +132,12 @@ const STEPS = [
   {
     id: "legacy-skill-root",
     label: "在 codex 的舊 skill 路徑放一支",
-    // codex 換過 skill 的預設落點（舊：~/.codex/skills，新：~/.agents/skills），
-    // ⚠️ 但它**兩個都讀**——2026-08-11 在 VM 上實測，同名時兩份都列出來、不去重，
+    // ⚠️ 舊落點那份是**我們自己的 installer 放的**，不是 codex 官方搬家留下的。
+    // jr_ai_agent_skills 的 `1e9d1bb`（2026-07-15）之前就是裝到 ~/.codex/skills，
+    // 那一版之後才改裝到 ~/.agents/skills。所以要重現的是「7/15 之前上過課、之後
+    // 沒再重跑過那支 installer」的機器。
+    //
+    // ⚠️ codex **兩個落點都讀**——2026-08-11 在 VM 上實測，同名時兩份都列出來、不去重，
     // 由模型當場挑哪一份。所以舊落點不是「殘留垃圾」，是會讓行為變得不可預測的
     // 活躍設定。詳見 docs/handoff/2026-08-10-rework-cli-resolution.md 的 2a 節。
     //
