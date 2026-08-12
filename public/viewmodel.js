@@ -405,10 +405,16 @@ export function guidanceModel({
 }) {
   const guidance = GUIDANCE[step];
 
-  if (
-    guidance === undefined ||
-    (!failed && status !== "missing" && status !== "warn")
-  ) {
+  // ⚠️ `missing`（還沒裝）**不給**自救步驟。
+  //
+  // GUIDANCE 每一段的文案都假設「你已經裝了、但它不生效」——「名字已經寫進同步檔，
+  // 但終端分頁標題沒有動」、「交接檔已經寫出來，分頁標題卻沒有變成 📦」。原本的
+  // 條件把 missing 也算進去，於是**每一張還沒開始做的卡都提前顯示一段診斷**，
+  // 講的是一件還沒發生的事（VM 實測，分頁標題那張 0/3 就在講標題沒換）。
+  //
+  // 還沒裝的人需要的是那顆安裝鍵，不是自救步驟。環境段那幾列本來就都是 warn，
+  // 不受這個改動影響。
+  if (guidance === undefined || (!failed && status !== "warn")) {
     return null;
   }
 

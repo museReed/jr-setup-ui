@@ -12,17 +12,20 @@ function ok(description) {
 }
 
 try {
-  for (const status of ["warn", "missing"]) {
-    const guidance = guidanceModel({ step: "hook", status });
-    assert.equal(guidance.symptom, GUIDANCE.hook.symptom);
-    assert.equal(guidance.expected, GUIDANCE.hook.expected);
-    assert.deepEqual(guidance.checks, GUIDANCE.hook.checks);
-  }
-  ok("有登記的 step 在 warn / missing 時產出就地引導");
+  const guidance = guidanceModel({ step: "hook", status: "warn" });
+  assert.equal(guidance.symptom, GUIDANCE.hook.symptom);
+  assert.equal(guidance.expected, GUIDANCE.hook.expected);
+  assert.deepEqual(guidance.checks, GUIDANCE.hook.checks);
+  ok("有登記的 step 在 warn 時產出就地引導");
 
+  // ⚠️ missing（還沒裝）不給引導。GUIDANCE 每一段的文案都假設「已經裝了、但不
+  // 生效」——「名字已經寫進同步檔，但終端分頁標題沒有動」。原本 missing 也顯示，
+  // 於是每一張還沒開始做的卡都提前印一段講還沒發生的事的診斷（VM 實測：分頁標題
+  // 那張 0/3 就在講標題沒換）。還沒裝的人需要的是安裝鍵。
+  assert.equal(guidanceModel({ step: "hook", status: "missing" }), null);
   assert.equal(guidanceModel({ step: "not-registered", status: "warn" }), null);
   assert.equal(guidanceModel({ step: "hook", status: "ok" }), null);
-  ok("沒登記的 step 與成功狀態不產出引導");
+  ok("還沒裝、沒登記的 step、成功狀態都不產出引導");
 
   assert.notEqual(
     guidanceModel({ step: "hook", status: "ok", failed: true }),
