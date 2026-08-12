@@ -676,8 +676,11 @@ const ENV_CARD_META = {
     agent: "other",
     label: "Windows 先準備好",
     logo: "logo-powershell",
+    // ⚠️ 不要寫死幾件事。選了 Codex 才會多出 pwsh-store 那一列（見
+    // env-check.js 的 TOOL_ONLY_CHECKS），所以這張卡是四列或五列都可能——
+    // 寫「四件事」的話，選了 Codex 的學生會看到卡片說四件、清單五列（VM 實測）。
     description:
-      "四件事一起確認：願意跑課堂指令、終端機視窗是對的、版本夠新、中文不會變亂碼。後面每一步都站在這上面",
+      "先確認這台機器本身準備好了：願意跑課堂指令、終端機視窗是對的、版本夠新、中文不會變亂碼。後面每一步都站在這上面",
     checkIds: [
       "execution-policy",
       "windows-terminal",
