@@ -186,9 +186,10 @@ export const GUIDANCE = {
     checks: [
       "你的 PowerShell 7 是從 Microsoft Store 裝的，被系統封裝過（MSIX）",
       "Codex 的沙箱用一個受限帳號跑指令，而 Windows 不准這種帳號啟動市集封裝的程式——所以它改得了檔案、卻一個指令都執行不了",
-      "建議的解法：到 https://aka.ms/PSWindows 下載 .msi 裝一份 PowerShell 7。它會落在 C:\\Program Files 底下，排在市集那份前面，Codex 就會挑到它",
+      "按那一列的「換成一般安裝版」就會裝一份不被封裝的 PowerShell 7（會跳一次系統的權限確認，要按同意）",
       "裝完在新視窗跑 `where.exe pwsh`，第一行要是 C:\\Program Files\\PowerShell\\7\\pwsh.exe 才算成功",
-      "不想再裝一份的話，改 ~/.codex/config.toml 加上 [windows] sandbox = \"unelevated\"。這是 Codex 官方認可的退路，代價是沙箱防護比較弱",
+      "按鈕失敗的話可以自己來：到 https://aka.ms/PSWindows 下載 .msi 裝一份，落點一樣",
+      "都不想裝的話，改 ~/.codex/config.toml 加上 [windows] sandbox = \"unelevated\"。這是 Codex 官方認可的退路，代價是沙箱防護比較弱",
       "改完關掉嚮導、開一個新的終端視窗重跑",
       "這是 Codex 自己的已知問題（openai/codex #35871），不是嚮導裝壞了",
     ],

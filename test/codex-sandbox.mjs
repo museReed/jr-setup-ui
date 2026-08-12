@@ -8,7 +8,12 @@ import {
   sandboxStatus,
   storePowerShellStatus,
 } from "../src/codex-sandbox.js";
-import { checksForPlatform, checksForTools } from "../src/env-check.js";
+import {
+  FIX_ACTIONS,
+  checksForPlatform,
+  checksForTools,
+} from "../src/env-check.js";
+import { installActionId, resolveInstaller } from "../src/installers.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -50,13 +55,30 @@ try {
   // 但一個指令都執行不了。
   const store = storePowerShellStatus(STORE_PWSH);
   assert.equal(store.status, "warn");
-  // ⚠️ 不給任何按鈕：winget 拿到的還是 MSIX（見 installers.js），接了會變成
-  // 「按了說成功、那一列還是黃的」。自救步驟走 GUIDANCE。
-  assert.equal(store.fixLabel, undefined);
+  assert.equal(store.fixLabel, "換成一般安裝版");
+  // ⚠️ installable: false 不是「不能裝」，是「不要走安裝鍵那條路」——這一列是黃燈，
+  // 而 withActions 只在 missing 時給 installAction。少了這一行，envCardRowModel
+  // 會補一顆灰掉的「安裝」佔位鍵，畫面上變成兩顆按鈕、一顆還按不下去。
   assert.equal(store.installable, false);
   assert.equal(store.storePath, STORE_PWSH);
   assert.ok(store.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
-  ok("Store 版是黃燈，但不長按鈕——自救步驟寫在 GUIDANCE");
+  ok("Store 版是黃燈，按鈕走 fixAction 而不是安裝鍵");
+
+  // ⚠️ 這一顆按鈕的關鍵在 --installer-type wix，不加的話 winget 給的是 MSIX
+  // ——落點還是 WindowsApps，等於什麼都沒修（2026-08-12 在 arm64 VM 上兩種都實測過）。
+  const pwshInstaller = resolveInstaller("pwsh-store", "win32");
+  assert.notEqual(pwshInstaller, null, "pwsh-store 那一列查不到安裝器，按鈕會不見");
+  const typeIndex = pwshInstaller.args.indexOf("--installer-type");
+  assert.ok(typeIndex !== -1, "少了 --installer-type，winget 會給 MSIX");
+  assert.equal(pwshInstaller.args[typeIndex + 1], "wix");
+  // 已經有一份市集版時，不加 --force 會直接跳過、跑完 exit 0 但什麼都沒變。
+  assert.ok(pwshInstaller.args.includes("--force"));
+  assert.equal(
+    FIX_ACTIONS["pwsh-store"]("warn", store),
+    installActionId("pwsh-store"),
+  );
+  assert.equal(FIX_ACTIONS["pwsh-store"]("ok", {}), null);
+  ok("換一般安裝版那顆帶著 --installer-type wix 與 --force，綠燈時不出現");
 
   // codex 找 helper 的三個地方，一個一個確認都認得。
   const sibling = findSandboxHelper(JUNCTION_CODEX, {

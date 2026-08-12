@@ -329,10 +329,15 @@ export const FIX_ACTIONS = {
   "execution-policy": (status) =>
     status === "ok" ? null : "fix-execution-policy",
   "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
-  // ⚠️ pwsh-store 刻意**不接**修復鍵。`installers.js` 裡那支 winget 安裝器留著
-  // （要用隨時接得上），但畫面上先不給——2026-08-11 在 VM 上實測：Store 版的
-  // pwsh 7.6.4 底下 `codex exec --sandbox read-only` 完全正常。沒有證據證明需要換，
-  // 就不該叫學生多裝一份東西。
+  // 2026-08-12 接上了。8/11 不接的理由是「Store 版底下沙箱完全正常」——那次的
+  // 測試無效（沙箱根本沒設定起來，見 codex-sandbox.js）。真的設定起來之後，
+  // 市集版的 pwsh 在沙箱裡 20/20 失敗（上游 openai/codex#35871 量的）。
+  //
+  // ⚠️ 走 fixAction 不走 installAction：withActions 只在 missing 時給安裝鍵，
+  // 而這一列是黃燈——東西裝了，只是裝錯種類。指向的仍然是 INSTALLERS 那支
+  // （key 就叫 pwsh-store），所以 action 本身由 actions.js 的那個迴圈自動註冊。
+  "pwsh-store": (status) =>
+    status === "warn" ? installActionId("pwsh-store") : null,
   "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
   "codex-legacy-skills": (status) =>
     status === "warn" ? "fix-legacy-skills" : null,

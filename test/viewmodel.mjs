@@ -1640,6 +1640,10 @@ try {
     "fix-codex-sandbox",
     "fix-legacy-skills",
     "fix-legacy-cli",
+    // ⚠️ 這一顆是安裝器（INSTALLERS 的 pwsh-store），但掛在 fixAction 上
+    // ——那一列是黃燈不是紅燈，走不到 installAction 那條路。文字由那一列自己
+    // 給（「換成一般安裝版」），不是預設的「安裝」。
+    "install-pwsh-store",
   ]);
 
   for (const [checkId, resolve] of Object.entries(FIX_ACTIONS)) {

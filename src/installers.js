@@ -225,21 +225,32 @@ export const INSTALLERS = {
       env: BREW_ENV,
     },
   },
-  // ⚠️ **這一支目前沒有接到畫面上，而且已知在某些機器上沒有用。**
+  // ⚠️ **`--installer-type wix` 這一項是這支存在的全部意義，不要拿掉。**
   //
-  // 2026-08-11 在 Reed 的 arm64 Windows VM 上實測：這台已經有 PowerShell 7.6.4，
-  // `winget list` 顯示它的 Source 就是 winget——但它是 **MSIX 套件**
-  // （落點 ...\WindowsApps\Microsoft.PowerShell_7.6.4.0_arm64__8wekyb3d8bbwe\），
-  // 而 C:\Program Files\PowerShell\7\pwsh.exe 根本不存在。
+  // 要修的問題：Codex 的沙箱以受限帳號跑指令，而 Windows 不准那種帳號啟動 MSIX
+  // 封裝的程式。所以學生只要 PATH 上第一支 pwsh 是市集版，codex 就一個指令都執行
+  // 不了（見 codex-sandbox.js 的說明與 openai/codex#35871）。要解掉就得給他一份
+  // **不在 WindowsApps 底下**的 PowerShell 7。
   //
-  // 也就是說：`--source winget` 只決定「去哪裡找套件」，不決定「拿到哪一種安裝包」。
-  // 而且已經裝過的話這條指令是 no-op，跑完 exit 0 但什麼都沒變——按鈕接上去會變成
-  // 「按了說成功、那一列還是黃的」。
+  // 而 winget 預設給的正是 MSIX。`Microsoft.PowerShell` 7.6.4.0 的 manifest 裡
+  // 每個架構都有兩種包：
   //
-  // 真的要一份不在 WindowsApps 底下的 PowerShell，目前已知可行的是從
-  // https://aka.ms/PSWindows 抓 .msi 手動裝（GUIDANCE 那段寫的就是這條）。
-  // 要接按鈕的話得先確認 winget 在目標機器上到底給哪一種包。
-  pwsh: {
+  //   msix   PowerShell-7.6.4.msixbundle        ← winget 預設挑這個，落在 WindowsApps
+  //   wix    PowerShell-7.6.4-win-<arch>.msi    ← 我們要的，落在 C:\Program Files
+  //
+  // 2026-08-12 在 Reed 的 arm64 VM 上實測，兩次都試過：
+  //
+  //   不加 --installer-type（連 --force 也加了）  → 還是 MSIX，Program Files 底下沒有東西
+  //   加 --installer-type wix                     → 抓 PowerShell-7.6.4-win-arm64.msi，
+  //                                                 C:\Program Files\PowerShell\7\pwsh.exe 出現
+  //
+  // ⚠️ 類型填 `wix` 不是 `msi`——manifest 裡標的就是 wix。
+  //
+  // ⚠️ **這支會跳 UAC**（winget 自己會印 "The installer will request to run as
+  // administrator. Expect a prompt."）。學生按取消的話裝不起來，而那一列還是黃的。
+  // ⚠️ key 是 `pwsh-store` 不是 `pwsh`：`withActions` 拿**那一列的 id** 來查安裝器
+  // （`resolveInstaller(check.id, …)`），叫 pwsh 的話那一列永遠長不出按鈕。
+  "pwsh-store": {
     win32: {
       cmd: "winget",
       args: [
@@ -249,6 +260,11 @@ export const INSTALLERS = {
         "-e",
         "--source",
         "winget",
+        // ⚠️ 見上面：少了這一行拿到的是 MSIX，等於什麼都沒修。
+        "--installer-type",
+        "wix",
+        // 已經有一份市集版時，不加 --force 會直接跳過。
+        "--force",
         "--accept-source-agreements",
         "--accept-package-agreements",
         "--disable-interactivity",

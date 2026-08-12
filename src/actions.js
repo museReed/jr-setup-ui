@@ -171,7 +171,7 @@ export const installerNames = {
   git: "Git",
   gh: "GitHub CLI",
   python: "Python 3",
-  pwsh: "PowerShell 7（一般安裝版）",
+  "pwsh-store": "PowerShell 7（一般安裝版）",
   // ghostty 一直沒寫在這裡，所以 macOS 上那顆按鈕從以前就是「安裝 undefined」。
   // 加 python 時順手做的這道守衛把它抓出來了。
   ghostty: "Ghostty 終端機",

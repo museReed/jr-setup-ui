@@ -65,8 +65,9 @@ export function isStorePowerShell(source) {
   return typeof source === "string" && WINDOWS_APPS.test(source);
 }
 
-// ⚠️ 這一列**會警告**，而且沒有修復鍵——自救步驟在 GUIDANCE 裡（兩條路都不是
-// 我們按得下去的：一個是 Windows 設定裡的開關，一個是手動裝 MSI）。
+// ⚠️ 這一列會警告，而且**有安裝鍵**——按下去用 winget 裝一份 MSI 版的 PowerShell 7
+// （落在 C:\Program Files，排在 WindowsApps 前面）。關鍵在 installers.js 那支帶著
+// `--installer-type wix`：不加的話 winget 給的還是 MSIX，等於什麼都沒修。
 //
 // 「沒裝 pwsh」反而是好的：codex 找不到 pwsh 就退回 5.1，而 5.1 在沙箱裡沒問題。
 // 所以這一列的黃燈條件很窄——**裝了、而且是市集那份**。
@@ -82,8 +83,16 @@ export function storePowerShellStatus(source) {
 
   return {
     status: "warn",
-    // ⚠️ 不給安裝鍵：winget 拿到的還是 MSIX，按了會「說成功、那一列還是黃的」。
+    // ⚠️ installable: false 不是「不能裝」，是「不要走安裝鍵那條路」。
+    //
+    // withActions 只在 status === "missing" 時才給 installAction，而這一列是黃燈
+    // ——東西裝了，只是裝錯種類。所以按鈕走 fixAction（見 env-check.js 的
+    // FIX_ACTIONS），跟清舊捷徑、清 npm 殘留那幾顆同一個形狀。
+    //
+    // 少了這一行的話 envCardRowModel 會補一顆**灰掉的「安裝」**佔位鍵（它看
+    // hasInstaller），畫面上變成一顆按不下去的按鈕旁邊一顆按得下去的。
     installable: false,
+    fixLabel: "換成一般安裝版",
     // ⚠️ 一行。完整說法在 GUIDANCE，那裡才有版面。
     detail: "市集版的 PowerShell，Codex 執行指令會失敗",
     storePath: source,
