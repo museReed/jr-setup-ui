@@ -35,12 +35,27 @@
 // `which::which("pwsh")` 先查 PATH，找到 WindowsApps 那支就用它；找不到任何 pwsh
 // 才退回 `powershell`。沒有環境變數、沒有 config key 可以覆寫。
 //
-// 所以自救只有兩條，都寫在 model.js 的 GUIDANCE 裡：
-//   1. 關掉 pwsh.exe 的「應用程式執行別名」→ which 找不到 → 退回 5.1（零下載）
-//   2. 從 aka.ms/PSWindows 裝 MSI 版 → 落在機器 PATH，排在 WindowsApps 前面
+// 上游 openai/codex#35871 把這件事量得比我們徹底（同一台、同一個 session、每種
+// shell 各 20 次）：MSIX 的 pwsh 20/20 失敗，5.1、cmd.exe、git bash 各 0/20。
+// 那份 issue 也指出它是六七個看起來不相干的回報（#26803 #25436 #26186 #9062
+// #30047 #26896）背後的同一個原因——因為沒有人發現條件是「shell 是不是封裝過的」。
 //
-// ⚠️ **不要接 winget 安裝鍵**：`--source winget` 只決定去哪找套件，不決定拿到哪種
-// 包——實測拿到的還是 MSIX（見 installers.js 的 pwsh 那段）。
+// ⚠️ 它還解掉一個我們自己踩過的困惑：失敗看起來「間歇」其實是**逐指令決定**的。
+// `echo hello` 20/20 失敗、`Get-Content` 20/20 成功，因為讀檔那條路根本到不了
+// SpawnChild。所以我們看到的「apply_patch 成功、下一步 Get-Content 炸」不矛盾
+// ——那次的 Get-Content 是**透過 shell** 跑的。
+//
+// 自救三條，寫在 model.js 的 GUIDANCE 裡（順序就是建議順序）：
+//   1. 從 aka.ms/PSWindows 裝 MSI 版 → 落在機器 PATH，排在 WindowsApps 前面。
+//      **這是首選**：留著 PowerShell 7，也留著完整的沙箱防護
+//   2. `[windows] sandbox = "unelevated"`（issue 裡的官方退路）→ 不用 CreateProcessAsUserW，
+//      代價是防護較弱
+//   3. 關掉 pwsh.exe 的應用程式執行別名 → which 找不到 → 退回 5.1。零下載，
+//      但等於讓學生降版本，所以排最後（Reed 拍板）
+//
+// ⚠️ **不要接 winget 安裝鍵**，至少在重驗之前不要：installers.js 那段記的是
+// 「實測拿到的還是 MSIX」，但那次觀察有個沒排除的干擾——那台**已經裝過**，
+// 指令根本是 no-op。要接的話得先在一台沒裝過的機器上確認 winget 給的是哪一種包。
 
 // Store 版的 PowerShell 在 PATH 上的入口一律落在這裡。傳統安裝是
 // C:\Program Files\PowerShell\7\pwsh.exe，兩者分得很開。
