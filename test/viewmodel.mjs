@@ -127,6 +127,9 @@ try {
       dataName: "installAction",
       text: "安裝",
       step: "claude-md",
+      // ⚠️ rowId 決定這顆畫在哪一列。沒有 verifyAction 的列不拆成「安裝／驗證」
+      // 兩格，所以兩顆都掛在 system-<id> 那一列上。
+      rowId: "system-claude-md",
     },
     {
       action: "merge-in-terminal",
@@ -135,9 +138,40 @@ try {
       // 而那個視窗正是他要去回答問題的地方。
       text: "用 AI 合併（會開終端）",
       step: "claude-md",
+      rowId: "system-claude-md",
     },
   ]);
-  ok("規則檔同時可安裝與合併時安裝按鈕在前");
+  ok("規則檔同時可安裝與合併時安裝按鈕在前，而且各自掛回它負責的那一列");
+
+  // ⚠️ 守門：每一顆按鈕的 rowId 都要對得到清單裡真的存在的那一列。
+  //
+  // view.js 的 inlineActions 是一張 Map，查不到就**什麼都不畫**——rowId 算錯的話
+  // 按鈕不是跑錯位置，是**安靜地消失**。而拆不拆成「安裝／驗證」兩格的規則寫在
+  // checklistGroups，兩邊要一模一樣。
+  const rowShapes = [
+    { id: "claude-md", label: "規矩", status: "warn", detail: "需要合併", installAction: "install-config-step", mergeAction: "merge-in-terminal", restoreAction: "restore-merge-backup" },
+    { id: "output-style", label: "回話風格", status: "missing", detail: "尚未安裝", installAction: "install-config-step", verifyAction: "verify-behavior" },
+    { id: "demo-claude", label: "跑一次", status: "ok", detail: "好了", noInstall: true, verifyAction: "verify-in-terminal", verifyKind: "terminal" },
+    { id: "vault-agent-claude", label: "寫一篇", status: "ok", detail: "好了", eyeCheck: "看得到歷史", verifyAction: "verify-in-terminal", verifyKind: "terminal" },
+  ];
+
+  for (const shape of rowShapes) {
+    const rows = new Set(
+      checklistGroups({ checks: [shape], verifiedCheckIds: new Set() }).system.map(
+        ({ id }) => id,
+      ),
+    );
+
+    for (const button of configRowModel(shape).buttons) {
+      if (button.rowId === undefined) continue;
+
+      assert.ok(
+        rows.has(button.rowId),
+        `${shape.id} 的「${button.text}」掛到不存在的列 ${button.rowId}，畫面上會直接不見`,
+      );
+    }
+  }
+  ok("每一顆按鈕的 rowId 都對得到清單裡真的存在的那一列");
 
   // 合併過才有還原鍵，而且排在合併鍵後面——它是那顆的退路，不是另一個主動作。
   const withRestore = configRowModel({

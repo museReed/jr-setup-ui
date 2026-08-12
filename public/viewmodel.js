@@ -435,6 +435,19 @@ export function guidanceModel({
   };
 }
 
+// 這一列在清單裡的 id。⚠️ 拆不拆成「安裝／驗證」兩格的規則要跟 checklistGroups
+// 一模一樣——算錯的話按鈕會被掛到一個不存在的列上，然後**安靜地消失**（view.js 的
+// inlineActions 是一張 Map，查不到就什麼都不畫）。test/viewmodel.mjs 有守門。
+export function checklistRowIds(check) {
+  const split =
+    check.verifyAction != null && !EYE_ONLY_VERIFY.has(check.id);
+
+  return {
+    install: split ? `install-${check.id}` : `system-${check.id}`,
+    verify: `system-${check.id}`,
+  };
+}
+
 export function configRowModel(
   check,
   verified = false,
@@ -463,6 +476,9 @@ export function configRowModel(
   const status = pending ? "unverified" : check.status;
   const display = STATUS_DISPLAY[status] ?? STATUS_DISPLAY.warn;
   const buttons = [];
+  // 每一顆按鈕都掛回它負責的那一列（Reed 指定），不再全部落到卡片底部的按鈕列。
+  // 環境卡本來就是這樣做的（envRowModel 的 checkId），config 卡先前漏了。
+  const rowIds = checklistRowIds(check);
 
   // 待驗證的列也要留安裝按鈕——重跑安裝是學生手上唯一的自救手段。
   // 例外是 demo 那種「沒有東西可裝」的列（noInstall）：補了按鈕按下去只會失敗。
@@ -504,6 +520,7 @@ export function configRowModel(
         text: "重裝",
         step: check.id,
         secondary: true,
+        rowId: rowIds.install,
       });
     } else if (!installationDone) {
       buttons.push({
@@ -511,6 +528,7 @@ export function configRowModel(
         dataName: "installAction",
         text: "安裝",
         step: check.id,
+        rowId: rowIds.install,
       });
     }
   } else if (check.noInstall !== true && !installationDone) {
@@ -528,6 +546,7 @@ export function configRowModel(
       text: "安裝",
       step: check.id,
       disabled: true,
+      rowId: rowIds.install,
     });
   }
 
@@ -548,6 +567,7 @@ export function configRowModel(
       dataName: "verifyAction",
       text: verified ? "重跑一次" : "開終端跑",
       step: check.id,
+      rowId: rowIds.verify,
       options: check.verifyOptions ?? undefined,
     });
   }
@@ -562,6 +582,7 @@ export function configRowModel(
       // 折回群組主人：同一張卡上兩列都給了按鈕（不然卡片可能一顆都沒有），
       // 但按哪一列都是「兩份一次合完」。
       step: check.mergeStep ?? check.id,
+      rowId: rowIds.verify,
     });
   }
 
@@ -573,6 +594,7 @@ export function configRowModel(
       dataName: "restoreAction",
       text: "還原成合併前",
       step: check.id,
+      rowId: rowIds.verify,
     });
   }
 
