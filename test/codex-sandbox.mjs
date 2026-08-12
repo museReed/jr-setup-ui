@@ -5,6 +5,7 @@ import {
   findSandboxHelper,
   isStorePowerShell,
   planSandboxLink,
+  sandboxReady,
   sandboxStatus,
   storePowerShellStatus,
 } from "../src/codex-sandbox.js";
@@ -25,6 +26,11 @@ const JUNCTION_CODEX =
 const STORE_PWSH =
   "C:\\Users\\Reed\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe";
 const MSI_PWSH = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+// Reed 的 VM 上實際那份 cap_sid（SID 照抄，那是真機量到的形狀）。
+const CAP_SID =
+  '{"workspace":"S-1-5-21-1362387983-552409480-2161049111-3168295565",' +
+  '"readonly":"S-1-5-21-2944420964-406617841-1713765989-1815078759",' +
+  '"workspace_by_cwd":{},"writable_root_by_path":{}}';
 
 try {
   assert.equal(isStorePowerShell(STORE_PWSH), true);
@@ -117,30 +123,68 @@ try {
   );
   ok("codex 還沒裝時這一列不搶話");
 
+  // ⚠️ 判準是 cap_sid，不是 helper。helper 只在第一次建沙箱那一刻用得到，設定完
+  // 之後它在不在都不影響——Reed 的 VM 就是「helper 對不到、沙箱一切正常」，舊判準
+  // 在那台誤報黃燈。
+  assert.equal(sandboxReady(CAP_SID), true);
+  // 只有一個 SID ＝ 上次設定跑到一半（UAC 按了否），codex 還是會再問一次。
+  assert.equal(
+    sandboxReady('{"workspace":"S-1-5-21-1-2-3-4","readonly":""}'),
+    false,
+  );
+  assert.equal(sandboxReady('{"workspace":"S-1-5-21-1-2-3-4"}'), false);
+  // 檔案不在、空的、壞掉的 JSON 都當作沒設定。
+  assert.equal(sandboxReady(null), false);
+  assert.equal(sandboxReady(""), false);
+  assert.equal(sandboxReady("{壞掉的"), false);
+  // SID 長得不對也不算——那不是我們認得的記錄。
+  assert.equal(
+    sandboxReady('{"workspace":"yes","readonly":"yes"}'),
+    false,
+  );
+  ok("沙箱設定好了沒，看的是 cap_sid 裡那兩個 SID");
+
   assert.equal(
     sandboxStatus({
       codexPath: JUNCTION_CODEX,
-      helperPath: `x\\${HELPER}`,
+      helperPath: null,
+      ready: true,
       storePowerShell: false,
     }).status,
     "ok",
   );
-  ok("helper 找得到就是綠的");
+  ok("設定好了就是綠的，helper 對不對得到都一樣");
+
+  // 迴歸：舊判準在這裡判綠燈，而這才是真的會出事的人——helper 在，但沙箱從來沒
+  // 設定過，學生到規則段合併時才會撞上。
+  const neverSetUp = sandboxStatus({
+    codexPath: JUNCTION_CODEX,
+    helperPath: `x\\${HELPER}`,
+    ready: false,
+    storePowerShell: false,
+  });
+  assert.equal(neverSetUp.status, "warn");
+  assert.equal(neverSetUp.linkable, undefined, "沒得接就不該長那顆接回檔案的按鈕");
+  assert.ok(neverSetUp.detail.includes("是"), "UAC 預設按否，說明要點名那顆按鈕");
+  ok("helper 在但從沒設定過是黃的，而且不給接 junction 的按鈕");
 
   const broken = sandboxStatus({
     codexPath: JUNCTION_CODEX,
     helperPath: null,
+    ready: false,
     storePowerShell: false,
   });
   assert.equal(broken.status, "warn");
   assert.equal(broken.installable, false);
+  assert.equal(broken.linkable, true);
   assert.ok(broken.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
-  ok("helper 找不到是黃的，而且不長安裝鍵");
+  ok("helper 找不到是黃的、接得回來，而且不長安裝鍵");
 
   // 兩層都中時先講 Store 版：它比較上游，而且是學生自己修得掉的那一個。
   const bothLayers = sandboxStatus({
     codexPath: JUNCTION_CODEX,
     helperPath: null,
+    ready: false,
     storePowerShell: true,
   });
   assert.ok(bothLayers.detail.includes("Store"));

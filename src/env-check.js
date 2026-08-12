@@ -15,6 +15,7 @@ import { installActionId, resolveInstaller } from "./installers.js";
 import {
   findSandboxHelper,
   isStorePowerShell,
+  sandboxReady,
   sandboxStatus,
   storePowerShellStatus,
 } from "./codex-sandbox.js";
@@ -338,7 +339,13 @@ export const FIX_ACTIONS = {
   // （key 就叫 pwsh-store），所以 action 本身由 actions.js 的那個迴圈自動註冊。
   "pwsh-store": (status) =>
     status === "warn" ? installActionId("pwsh-store") : null,
-  "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
+  // ⚠️ 不是「黃燈就有按鈕」——黃燈有兩種，只有一種按了會有事發生。
+  //
+  //   helper 對不到      → 接一條 junction 就好，這顆按鈕就是為它寫的
+  //   helper 在、沒設定過 → 沒得接。設定要在 codex 自己的選單裡完成，按這顆只會
+  //                        回「已經在了，不用再接」，而那句話會讓學生以為修好了
+  "codex-sandbox": (status, check) =>
+    status === "warn" && check?.linkable === true ? "fix-codex-sandbox" : null,
   "codex-legacy-skills": (status) =>
     status === "warn" ? "fix-legacy-skills" : null,
   // ⚠️ 這一列是綠燈才有按鈕，跟其他每一顆都相反。它不是在修毛病，是把前面兩顆
@@ -735,8 +742,20 @@ async function checkPwshStore() {
   }
 }
 
-// 沙箱那一列查的是「codex 待會兒找得到它要用的 helper 嗎」，不是「codex 裝了沒」。
-// 兩者會不一致：透過 bin junction 進來時 codex.exe 完全正常，helper 卻對不到。
+// 沙箱那一列查的是「沙箱設定好了沒」——記錄在 ~/.codex/cap_sid，不是 .sandbox。
+//
+// ⚠️ 2026-08-12 換掉的判準。原本問「helper 找不找得到」，而 helper 只在第一次建
+// 沙箱那一刻用得到，所以已經設定好的機器會被誤報黃燈、而「helper 在但從沒設定過」
+// 的機器反而被判綠燈——後者才是真的會出事的人。完整理由見 codex-sandbox.js。
+async function readCapSid() {
+  try {
+    return await readFile(join(homedir(), ".codex", "cap_sid"), "utf8");
+  } catch {
+    // 檔案不在＝從來沒設定過，那正是我們要判的其中一種狀態。
+    return null;
+  }
+}
+
 async function checkCodexSandbox() {
   const id = "codex-sandbox";
   const label = "Codex 沙箱跑得起來";
@@ -760,6 +779,7 @@ async function checkCodexSandbox() {
           codexPath === null
             ? null
             : findSandboxHelper(codexPath, { exists: existsSync }),
+        ready: sandboxReady(await readCapSid()),
         storePowerShell: isStorePowerShell(await pwshSource()),
       }),
     };

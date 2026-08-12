@@ -206,32 +206,78 @@ export function planSandboxLink({ codexPath, realBinPath, exists }) {
   };
 }
 
-export function sandboxStatus({ codexPath, helperPath, storePowerShell }) {
+// 沙箱到底設定好了沒——真正的記錄在 ~/.codex/cap_sid，不是 .sandbox。
+//
+// ⚠️ 這是 2026-08-12 判準翻案的核心。原本問的是「helper 找不找得到」，而 helper
+// 只在**第一次建沙箱**那一刻用得到：建完之後兩個受限帳號的 SID 寫進 cap_sid，
+// 之後 codex 一路讀那份，helper 在不在都不影響。用它當判準會兩頭錯：
+//
+//   已經設定好、helper 對不到  → 誤報黃燈（Reed 的 VM 就是，cap_sid 兩個 SID 齊全）
+//   helper 在、但從沒設定過    → 誤報綠燈 ← **那才是真的會出事的人**
+//
+// 刪 .sandbox 不會讓 codex 重問，刪 cap_sid 才會——那就是它是唯一狀態記錄的證據。
+export function sandboxReady(capSidRaw) {
+  if (typeof capSidRaw !== "string" || capSidRaw.trim() === "") {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(capSidRaw);
+
+    // 兩個都要：workspace 是改檔案那個帳號，readonly 是唯讀那個。只有一個代表
+    // 上次設定跑到一半（UAC 按了否就會停在中間），那時 codex 還是會再問一次。
+    return (
+      isSid(parsed?.workspace) && isSid(parsed?.readonly)
+    );
+  } catch {
+    // 檔案在但不是 JSON ＝ 壞掉的記錄，當作沒設定。
+    return false;
+  }
+}
+
+function isSid(value) {
+  return typeof value === "string" && /^S-1-5-21-/.test(value);
+}
+
+export function sandboxStatus({ codexPath, helperPath, ready, storePowerShell }) {
   if (codexPath === null || codexPath === undefined || codexPath === "") {
     // codex 都還沒裝的話，這一列沒有話好說——那一列自己會紅。
     return { status: "ok", detail: "等 Codex 裝好再看這一項" };
   }
 
-  if (helperPath !== null) {
-    return { status: "ok", detail: "沙箱要用的檔案都在" };
+  // 設定好了就是綠的，helper 在不在都一樣——它的工作已經做完了。
+  if (ready === true) {
+    return { status: "ok", detail: "沙箱已經設定好了" };
   }
 
-  // 兩層都中的時候先講 Store 版：它是比較上游的那個，而且是學生自己修得掉的。
-  if (storePowerShell) {
+  // 還沒設定，而且 helper 也對不到 → 學生現在去設定一定會撞上
+  // `ShellExecuteExW failed to launch setup helper`。這顆按鈕就是為了這個情況。
+  if (helperPath === null) {
     return {
       status: "warn",
       installable: false,
+      // ⚠️ linkable 是 fixAction 的判準：只有這一種情況接 junction 才有用。
+      // 「helper 在、只是沒設定」按這顆會回「已經在了，不用再接」，等於一顆
+      // 按了不會有事發生的按鈕（比沒有按鈕更讓人以為修好了）。
+      linkable: true,
       fixLabel: "接回沙箱要用的檔案",
-      detail: "沙箱檔案接不上，而且 PowerShell 7 是 Store 版",
+      // 兩層都中的時候先講 Store 版：它是比較上游的那個，而且是學生自己修得掉的。
+      detail: storePowerShell
+        ? "沙箱檔案接不上，而且 PowerShell 7 是 Store 版"
+        : "Codex 找不到沙箱要用的檔案，跑起來會失敗",
       codexPath,
     };
   }
 
+  // 檔案都在、只差沒設定過。這一格沒有按鈕可按——設定要在 codex 自己的選單裡完成，
+  // 而那個選單只在它第一次用到沙箱時跳出來。
+  //
+  // ⚠️ UAC 的預設按鈕是「否」，順手按 Enter 就等於取消，而畫面上不會有任何說明
+  // （那就是 1223 = ERROR_CANCELLED）。所以這一行一定要點名那顆按鈕。
   return {
     status: "warn",
     installable: false,
-    fixLabel: "接回沙箱要用的檔案",
-    detail: "Codex 找不到沙箱要用的檔案，跑起來會失敗",
+    detail: "沙箱還沒設定：Codex 問的時候選 1，權限視窗要按「是」",
     codexPath,
   };
 }
