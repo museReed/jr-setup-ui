@@ -31,6 +31,28 @@
 // 都執行不了。學生看到的是一長串 `CreateProcessAsUserW failed: 1920`，完全聯想
 // 不到「因為我的 PowerShell 是從市集裝的」。
 //
+// ⚠️ **為什麼那個帳號叫不動它**——main 那邊 2026-08-08 就排查出來了，說法比
+// 「Windows 不准」精確（見那條分支的 scripts/install-pwsh-msi.mjs，2026-08-12
+// 搬過來的）：
+//
+//   沙箱不是「限制你自己」，而是另外開一個權限很低的**本機帳號**
+//   （CodexSandboxOffline / CodexSandboxOnline）去跑指令。而 Microsoft Store 的
+//   程式是**綁帳號、不綁機器**的——那個沙箱帳號從來沒裝過 pwsh，所以連啟動都
+//   做不到。
+//
+// 也就是說：**是帳號綁定，不是政策禁止**。那份排查還多測了一列我們今天沒測的：
+//
+//   powershell（5.1，System32）      ✅
+//   pwsh（Store 版）                 ❌
+//   pwsh 的**完整 WindowsApps 路徑**  ❌  ← 證明不是捷徑解析的問題，是 MSIX 本身
+//
+// ⚠️ 有一個**兩邊實測衝突**、還沒查清楚的：那份排查寫「winget 那條走不通，提權
+// 之後仍然 0x80070005 Access is denied」，而 2026-08-12 在 arm64 VM 上實測
+// `winget install --installer-type wix --force` 是**成功的**。差別可能在有沒有
+// 指定安裝包類型（不指定時 winget 給的是 MSIX，那條路本來就不會通）。真的踩到
+// 0x80070005 的話，退路是直接抓官方 MSI：
+//   https://github.com/PowerShell/PowerShell/releases/download/v<版本>/PowerShell-<版本>-win-<arch>.msi
+//
 // ⚠️ **不能靠設定繞過**。codex 的 shell 選法寫死在 shell-command/src/shell_detect.rs：
 // `which::which("pwsh")` 先查 PATH，找到 WindowsApps 那支就用它；找不到任何 pwsh
 // 才退回 `powershell`。沒有環境變數、沒有 config key 可以覆寫。

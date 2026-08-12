@@ -142,6 +142,32 @@ MSIX；加了 `--installer-type wix` 就抓到 `.msi`。端到端也驗過——
    就不要長一列」）該收，但它現在是唯一能從畫面看出 PowerShell 種類的地方。
    建議只在「沒裝」時收，裝了就一定顯示——那樣列數只有兩種可能。
 8. **B6**：診斷終端標題只查 5.1 的 profile 路徑（8/10 就在清單上）。
+9. **「換成一般安裝版」那顆改成開真終端**。main 的 `scripts/install-pwsh-msi.mjs`
+   刻意這樣做，理由是「背景跑的話 UAC 框會跳在嚮導後面，學生順手關掉，我們只拿到
+   一個沒頭沒尾的錯誤碼」——而我們現在那顆就是跑在背景管線裡。這跟待辦 5 是同一件事。
+10. **查清楚 winget 那個矛盾**：main 說「提權之後仍然 0x80070005」，我們實測
+    `--installer-type wix --force` 成功。差別可能在有沒有指定安裝包類型。
+
+## 從 main 搬過來的（2026-08-12）
+
+main 上有 56 個 commit 是這條分支沒有的（它是從 `51c3e96` 另開的，刻意不從 main
+複製 code）。準備把 main reset 掉之前，先撿了三樣：
+
+| 撿了什麼 | 為什麼 |
+|---|---|
+| `docs/handoff/2026-08-08-…md` | 交接文件是這個專案的記憶，丟了就沒了 |
+| `docs/returning-students.md` | 8/10 那份交接寫著「main 上那份才是最新」。已在檔頭加註「路徑與函式名不要照著查」 |
+| `install-pwsh-msi.mjs` 的**根因說明** | 見下。⚠️ 只搬註解不搬檔案——那支 import `src/terminal-window.js`，這條分支沒有那支 |
+
+⚠️ **main 的根因說明比我們今天寫的準**，已併進 `codex-sandbox.js` 的檔頭：沙箱是
+另外開一個本機帳號（`CodexSandboxOffline` / `Online`）去跑指令，而 Store 的程式
+**綁帳號不綁機器**——那個帳號從來沒裝過 pwsh。**是帳號綁定，不是政策禁止。**
+它還多測了一列我們沒測的：用**完整的 WindowsApps 路徑**也一樣失敗，證明不是捷徑
+解析的問題。
+
+⚠️ 其餘六個檔案（`src/legacy.js`、`src/terminal-window.js`、`scripts/quarantine-skills.mjs`、
+`reset-workshop-skills.mjs`、`seed-dirty-vm.ps1`、`uninstall-legacy-cli.mjs`）分支都
+重做過，沒有搬。
 
 ## 走規則段時順手修掉的五個
 
