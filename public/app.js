@@ -647,9 +647,10 @@ function renderWizard() {
               {
                 action: EYE_ROW_ACTIONS[card.checkId].action,
                 dataName: "verifyAction",
-                text: mergePending
-                  ? "先按「用 AI 合併」"
-                  : EYE_ROW_ACTIONS[card.checkId].text,
+                // ⚠️ 按鈕上寫的是它自己做的事，不是「你該先做什麼」（Reed 在畫面前
+                // 指定）。擋住的理由已經寫在卡片右上角的「等你合併」，按鈕再講一次
+                // 只是把同一句話塞進一個按不動的地方。
+                text: EYE_ROW_ACTIONS[card.checkId].text,
                 rowId: `eye-${card.checkId}`,
                 step: `eye-${card.checkId}`,
                 options: EYE_ROW_ACTIONS[card.checkId].options ?? undefined,
@@ -660,11 +661,7 @@ function renderWizard() {
         ...(perRowVerify ? verifyChecks : []).map((check) => ({
           action: check.verifyAction,
           dataName: "verifyAction",
-          text: mergePending
-            ? "先按「用 AI 合併」"
-            : verified.has(check.id)
-              ? "重跑驗證"
-              : "驗證",
+          text: verified.has(check.id) ? "重跑驗證" : "驗證",
           checkId: check.id,
           step: check.id,
           disabled: mergePending,
