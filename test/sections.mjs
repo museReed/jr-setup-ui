@@ -411,12 +411,13 @@ try {
     [
       // 主 check 是最後那個：驗證掛在它身上，而驗證要等兩份都裝好。
       ["output-style", "claude-md+output-style"],
-      // 擋串接與白名單寫的是同一個 settings.json，講的也是同一件事。hook 排前面：
-      // 先看到「該擋的擋下來」，再看「不該問的不問」，順序才講得通。
+      // 擋串接與白名單寫的是同一個 settings.json，講的也是同一件事。
+      // 2026-08-12 改成白名單排前面（Reed 在 VM 上看著畫面指定）。
       //
-      // 主 check 跟著變成 allowlist（checks.at(-1)），MERGED_CARDS 的 key 也要跟著
-      // 換——沒換的話標題與說明會靜靜退回單列的預設值，下面兩條 assert 就是在防這個。
-      ["allowlist", "hook+allowlist"],
+      // ⚠️ 主 check 是 checks.at(-1)，所以順序一換它就跟著換，而 MERGED_CARDS 的
+      // key 也要一起換——沒換的話標題與說明會靜靜退回單列的預設值，下面兩條 assert
+      // 就是在防這個。
+      ["hook", "allowlist+hook"],
       ["codex-config", "codex-agents+codex-config"],
     ],
   );
@@ -425,10 +426,10 @@ try {
   assert.match(permissionCard.detail, /改檔案不再逐次問你/);
   assert.deepEqual(
     permissionCard.checks.map(({ id }) => id),
-    ["hook", "allowlist"],
-    "先擋串接再講白名單",
+    ["allowlist", "hook"],
+    "先講白名單再擋串接",
   );
-  ok("擋串接與白名單合成一張權限卡，hook 排前面、主 check 是 allowlist");
+  ok("擋串接與白名單合成一張權限卡，白名單排前面、主 check 是 hook");
   assert.match(
     mergedRules[0].label,
     /規矩與回話風格/,
