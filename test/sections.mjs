@@ -11,6 +11,7 @@ import {
   mergeInvalidates,
   nextInstallStep,
   pendingMergeSibling,
+  pendingVerifySteps,
 } from "../public/model.js";
 import {
   cardIsComplete,
@@ -456,6 +457,55 @@ try {
   // 沒有被合併的步驟照舊。
   assert.equal(nextInstallStep("hook", [check("hook")]), null);
   ok("裝完第一份會接著裝第二份，都好了才輪到驗證");
+
+  // 迴歸（VM 實測 2026-08-12）：權限卡按安裝會依序裝 allowlist 與 hook，而自動接的
+  // 驗證用的是「剛裝完的那一份」＝hook，於是 allowlist 那格的驗證從來沒被觸發，
+  // 清單看起來順序不對（第一格空著、第二格打勾）。要驗的是整張卡，依卡片上的順序。
+  //
+  // ⚠️ 這跟 MERGE_ORDER 的順序無關，換順序只會換一格沒被驗到。
+  assert.deepEqual(
+    pendingVerifySteps("hook", [
+      { ...check("allowlist"), verifyAction: "verify-in-terminal" },
+      { ...check("hook"), verifyAction: "verify-in-terminal" },
+    ]).map(({ id }) => id),
+    ["allowlist", "hook"],
+    "兩格都要驗，而且白名單排前面",
+  );
+  // 已經驗過的不再排進去：學生自己先驗過一格再按重裝，不該被拉去重跑那一格。
+  assert.deepEqual(
+    pendingVerifySteps(
+      "hook",
+      [
+        { ...check("allowlist"), verifyAction: "verify-in-terminal" },
+        { ...check("hook"), verifyAction: "verify-in-terminal" },
+      ],
+      new Set(["allowlist"]),
+    ).map(({ id }) => id),
+    ["hook"],
+  );
+  // 沒有驗證的那一格不排隊；還等著合併的也不排——驗的會是半完成的狀態。
+  assert.deepEqual(
+    pendingVerifySteps("output-style", [
+      { ...check("claude-md"), needsMerge: true, verifyAction: "verify-behavior" },
+      { ...check("output-style"), verifyAction: "verify-behavior" },
+    ]).map(({ id }) => id),
+    ["output-style"],
+  );
+  assert.deepEqual(
+    pendingVerifySteps("hook", [
+      check("allowlist"),
+      { ...check("hook"), verifyAction: "verify-in-terminal" },
+    ]).map(({ id }) => id),
+    ["hook"],
+  );
+  // 沒被合併的單列卡照舊，只驗自己那一格。
+  assert.deepEqual(
+    pendingVerifySteps("codex-name", [
+      { ...check("codex-name"), verifyAction: "verify-in-terminal" },
+    ]).map(({ id }) => id),
+    ["codex-name"],
+  );
+  ok("裝完之後排隊要驗的是整張卡，依順序，不是剛裝完的那一份");
 
   // 迴歸（Reed 在 VM 上看到的）：CLAUDE.md 說「已有你自己的版本，需要合併」之後，
   // 流程照樣往下裝 output-style 然後**馬上驗行為**。那次驗的是半完成的狀態——行為

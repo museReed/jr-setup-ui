@@ -551,8 +551,24 @@ try {
   // 的話，驗的是只裝了一半的狀態。
   assert.match(
     files.app,
-    /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n\s*if \(followUp === "auto"\)/,
+    /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n[\s\S]*?const verifyQueue =/,
   );
+  // ⚠️ 兩份都裝完之後要驗的是**整張卡**，不是剛裝完的那一份。用 installedCheck 去接
+  // 驗證的話，第一份的驗證永遠不會被觸發（VM 實測：「一次只跑一個指令」打勾了、
+  // 「常用指令不用每次問你」空著）。
+  assert.match(files.app, /const verifyTarget = verifyQueue\[0\] \?\? null;/);
+  assert.match(
+    files.app,
+    /installVerificationFollowUp\(\{\s*\n\s*action,\s*\n\s*result,\s*\n\s*check: verifyTarget,/,
+  );
+  assert(
+    !/step: installedCheck\.id/.test(files.app),
+    "自動接的驗證不可以再對著剛裝完的那一份",
+  );
+  // 一格驗完接下一格，而且要在重查之後——排隊那幾格是不是還需要驗，看的是最新結果。
+  assert.match(files.app, /await checkConfigs\(\);\s*\n\s*runNextAutoVerify\(\);/);
+  // 兩格串起來要跑兩分多鐘，畫面要說現在在驗第幾格，不然看起來像當掉。
+  assert.match(files.app, /驗證 \$\{index\}\/\$\{state\.autoVerifyTotal\}/);
   // 安裝按鈕對著還沒好的那一份。
   assert.match(files.app, /configRowModel\(rowCheck,/);
   // 驗證按鈕對著它自己那一格。合併卡有兩個驗證之後，全部丟給 rowCheck 的話第二格會

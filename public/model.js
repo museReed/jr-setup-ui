@@ -1006,6 +1006,34 @@ export function nextInstallStep(stepId, checks = []) {
   return null;
 }
 
+// 一張卡裝完之後，還有哪幾份等著驗證——**依卡片上的順序，不是「最後裝完的那一份」**。
+//
+// ⚠️ 這裡是 8/12 那個 bug 的正解。裝完之後接驗證的那段用的是 installedCheck（＝剛裝完
+// 的那一份），而合併卡會依序裝兩份，所以自動接的驗證永遠只驗到第二份，第一份的驗證
+// 從來沒被觸發過（VM 實測：「一次只跑一個指令」打勾了、「常用指令不用每次問你」空著）。
+//
+// 這個 bug 跟 MERGE_ORDER 的順序無關——8/12 換順序之前也在，只是沒驗到的換了一格。
+// 把順序改回去不會解決它。
+//
+// 只回傳「還沒驗過」的：學生手動驗過其中一格再按重裝，不該又被拉去重跑那一格。
+// needsMerge 的不進來，理由跟 installVerificationFollowUp 那段一樣——還沒合併的驗證
+// 驗的是半完成的狀態。
+export function pendingVerifySteps(stepId, checks = [], verified = new Set()) {
+  const order =
+    Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId)) ?? [stepId];
+  const byId = new Map(checks.map((check) => [check.id, check]));
+
+  return order
+    .map((id) => byId.get(id))
+    .filter(
+      (check) =>
+        check !== undefined &&
+        check.verifyAction != null &&
+        check.needsMerge !== true &&
+        !verified.has(check.id),
+    );
+}
+
 export function flattenCheckCards(groupedSections, envChecks = []) {
   const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
   const mergedCheckIds = new Set(

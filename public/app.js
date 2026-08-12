@@ -21,6 +21,7 @@ import {
   mergeInvalidates,
   nextInstallStep,
   pendingMergeSibling,
+  pendingVerifySteps,
   matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
@@ -146,6 +147,11 @@ const state = {
   // 互相呼叫成無限迴圈；往回翻就清掉，翻回來要算新的一次（見 sectionEndRecheck）。
   autoRecheckedSections: new Set(),
   pendingModalCheck: null,
+  // 裝完一張卡之後，還排隊等著驗證的那幾列（只放 id）。合併卡會依序裝兩份，兩份都
+  // 要各自驗一次，而驗證是串起來跑的——一次一分多鐘，所以畫面要說現在在驗第幾格，
+  // 不然看起來像當掉。空陣列＝沒有串接在跑，這也是「這次驗證是不是自動接的」的判準。
+  autoVerifyQueue: [],
+  autoVerifyTotal: 0,
   loginHints: { url: null, code: null },
   // 哪幾格有操作步驟可看，以及那一列該寫什麼。開頁問一次——按鈕存在卻按出一個空
   // 彈窗，比沒有按鈕更讓人困惑。
@@ -334,6 +340,60 @@ function runConfigCheckAction(check, action, button, extra) {
       extra,
     }),
   );
+}
+
+// 一張卡有兩格要驗時，畫面上要看得出「現在在驗第幾格」。兩格串起來要跑兩分多鐘，
+// 沒有這句話學生會以為當掉了（handoff 8/12 指定）。只有一格就不報——那句「1/1」
+// 只會讓人以為還有下一格。
+function announceVerifyStep(check) {
+  if (state.autoVerifyTotal < 2) {
+    return;
+  }
+
+  const index = state.autoVerifyTotal - state.autoVerifyQueue.length;
+
+  view.addLine(
+    `驗證 ${index}/${state.autoVerifyTotal}：${check.label}`,
+    "agent-status",
+  );
+}
+
+// 排隊中的下一格。開終端那種照樣先跳確認框——那顆按下去會真的開一個視窗，不先講
+// 一聲的話學生會被第二個突然冒出來的終端嚇到。
+function runNextAutoVerify() {
+  while (state.autoVerifyQueue.length > 0) {
+    const id = state.autoVerifyQueue.shift();
+    const next = state.lastChecks.find((check) => check.id === id);
+
+    // 這一輪重查之後那一列可能已經綠了（例如學生自己先驗過），跳過不重跑。
+    if (
+      next === undefined ||
+      next.verifyAction == null ||
+      next.needsMerge === true ||
+      state.verificationAttempted.has(id)
+    ) {
+      continue;
+    }
+
+    announceVerifyStep(next);
+
+    if (next.verifyKind === "terminal") {
+      state.pendingModalCheck = next;
+      view.showVerifyModal();
+      renderWizard();
+      return;
+    }
+
+    runConfigCheckAction(next, next.verifyAction, null, next.verifyOptions);
+    return;
+  }
+
+  state.autoVerifyTotal = 0;
+}
+
+function stopAutoVerifyChain() {
+  state.autoVerifyQueue = [];
+  state.autoVerifyTotal = 0;
 }
 
 function renderWizard() {
@@ -1425,6 +1485,9 @@ async function handleDone(
       state.failedVerificationSteps.add(step);
       state.deferredVerificationSteps.delete(step);
     }
+    // 一格沒過就不要接著跑下一格：畫面現在要講的是這一格為什麼失敗，再開一個終端
+    // 只會把那段說明推走。剩下那幾格學生自己按「重跑驗證」。
+    stopAutoVerifyChain();
     // 腳本自己講的那句話：那一列的說明與白話區印的是同一句，兩邊不要各講各的。
     const reason = failureReason(runContext.rawOutput);
 
@@ -1477,11 +1540,6 @@ async function handleDone(
   const installedCheck = state.lastChecks.find(
     (check) => check.id === verifiedStep,
   );
-  const followUp = installVerificationFollowUp({
-    action,
-    result,
-    check: installedCheck,
-  });
   // ⚠️ 等合併的那幾列不能記成「已安裝」。
   //
   // CLAUDE.md、codex 的 config.toml 與 AGENTS.md 是 protectExisting 的：學生已經有
@@ -1545,12 +1603,28 @@ async function handleDone(
     return;
   }
 
+  // ⚠️ 要驗的不是「剛裝完的那一份」，是這張卡上**第一格還沒驗過的**。
+  //
+  // 兩份依序裝完之後，這裡的 installedCheck 一定是第二份，於是第一份的驗證從來沒
+  // 被觸發過（VM 實測，見 model.js 的 pendingVerifySteps）。現在改成整張卡排隊、
+  // 一格驗完接下一格。
+  const verifyQueue =
+    action === "install-config-step"
+      ? pendingVerifySteps(step, state.lastChecks, state.verificationAttempted)
+      : [];
+  const verifyTarget = verifyQueue[0] ?? null;
+  const followUp = installVerificationFollowUp({
+    action,
+    result,
+    check: verifyTarget,
+  });
+
   // 同一張卡上還有東西等著合併的話，先不要驗——驗的是半完成的狀態，而且合併完
   // 學生本來就要再驗一次（見 model.js 的 pendingMergeSibling）。
   const awaitingMerge = pendingMergeSibling(step, state.lastChecks);
 
   if (followUp === "auto" && awaitingMerge !== null) {
-    state.deferredVerificationSteps.add(installedCheck.id);
+    state.deferredVerificationSteps.add(verifyTarget.id);
     view.addLine(
       `先不驗證：這張卡的「${awaitingMerge.label}」還等著合併。合併完再按「重跑驗證」。`,
       "agent-status",
@@ -1559,23 +1633,29 @@ async function handleDone(
     return;
   }
 
+  if (followUp === "auto" || followUp === "prompt") {
+    state.autoVerifyQueue = verifyQueue.slice(1).map((check) => check.id);
+    state.autoVerifyTotal = verifyQueue.length;
+    announceVerifyStep(verifyTarget);
+  }
+
   if (followUp === "auto") {
     run(
-      installedCheck.verifyAction,
+      verifyTarget.verifyAction,
       undefined,
       null,
       rowRunOptions({
-        step: installedCheck.id,
+        step: verifyTarget.id,
         lang: options.lang,
         tools: options.tools,
-        extra: installedCheck.verifyOptions,
+        extra: verifyTarget.verifyOptions,
       }),
     );
     return;
   }
 
   if (followUp === "prompt") {
-    state.pendingModalCheck = installedCheck;
+    state.pendingModalCheck = verifyTarget;
     view.showVerifyModal();
     renderWizard();
     return;
@@ -1601,7 +1681,9 @@ async function handleDone(
       await rememberVerifiedStep(verifiedStep);
     }
 
+    // 重查完才輪下一格：排隊那幾格的 needsMerge／已驗過與否，要看這一輪的最新結果。
     await checkConfigs();
+    runNextAutoVerify();
     return;
   }
 
@@ -2095,6 +2177,11 @@ view.onVerifyModal(
     view.hideVerifyModal();
     if (check !== null) {
       state.deferredVerificationSteps.add(check.id);
+      // 按了「稍後」就是整張卡都稍後，別再把排隊的下一格推上來——學生會覺得關不掉。
+      for (const id of state.autoVerifyQueue) {
+        state.deferredVerificationSteps.add(id);
+      }
+      stopAutoVerifyChain();
       renderWizard();
     }
   },
