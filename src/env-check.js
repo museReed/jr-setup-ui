@@ -55,7 +55,17 @@ function timedOut(id, label) {
 // 沒列在這裡的（git / gh / node / python / 終端機那些）是兩邊共用的前置，永遠都要查。
 const TOOL_ONLY_CHECKS = {
   claude: ["claude", "claude-auth"],
-  codex: ["codex", "codex-auth", "codex-sandbox", "codex-legacy-skills"],
+  // ⚠️ pwsh-store 是 codex 專屬的。它從「只描述」改回黃燈之後（2026-08-12），
+  // 那一列會擋住整張卡、進而擋住整個環境段——而它講的是 codex 沙箱跑不動指令，
+  // 跟 Claude Code 一點關係都沒有。不放進來的話，只選 Claude 的學生會被一個
+  // 他永遠不需要在意的問題卡住，而且那一列還沒有按鈕可以按。
+  codex: [
+    "codex",
+    "codex-auth",
+    "codex-sandbox",
+    "codex-legacy-skills",
+    "pwsh-store",
+  ],
 };
 
 export function checksForTools(checks, tools) {

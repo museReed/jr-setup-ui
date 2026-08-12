@@ -34,18 +34,29 @@ try {
   assert.equal(storePowerShellStatus(MSI_PWSH).status, "ok");
   ok("沒裝 PowerShell 7、或裝的是一般版，都是綠的");
 
-  // ⚠️ Store 版**不是黃燈**。這一列只描述，不警告。
+  // ⚠️ Store 版是黃燈。這個斷言改過兩次，兩次都是被實測改的，所以理由要寫清楚：
   //
-  // 它原本寫「是 Microsoft Store 版，Codex 沙箱會起不來」——那句話沒有根據。
-  // 2026-08-11 VM 實測：Store 版 pwsh 7.6.4 底下 `codex exec --sandbox read-only`
-  // 完全正常。那句斷言來自一個疑問，不是一次事故。拿到具體症狀之前不對學生說
-  // 我們證明不了的話。
+  //   最初      黃燈，理由是「Store 版是 MSIX，沙箱起不來」——那是疑問不是事故
+  //   2026-08-11 改綠：實測 `codex exec --sandbox read-only` 正常
+  //   2026-08-12 改回黃燈，**理由完全不同**
+  //
+  // 8/11 那次測試是無效的：那台的沙箱從來沒設定起來（cap_sid 是快照帶的、helper
+  // 也找不到），codex 根本沒走 CreateProcessAsUserW。把沙箱真的設定起來之後：
+  //
+  //   codex sandbox powershell …  →  正常（5.1 在 System32，不是 MSIX）
+  //   codex sandbox pwsh …        →  CreateProcessAsUserW failed: 2 / 1920
+  //
+  // 壞法是「受限帳號存取不到 MSIX 封裝的 pwsh」——沙箱起得來、檔案也改得動，
+  // 但一個指令都執行不了。
   const store = storePowerShellStatus(STORE_PWSH);
-  assert.equal(store.status, "ok");
+  assert.equal(store.status, "warn");
+  // ⚠️ 不給任何按鈕：winget 拿到的還是 MSIX（見 installers.js），接了會變成
+  // 「按了說成功、那一列還是黃的」。自救步驟走 GUIDANCE。
   assert.equal(store.fixLabel, undefined);
+  assert.equal(store.installable, false);
   assert.equal(store.storePath, STORE_PWSH);
   assert.ok(store.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
-  ok("Store 版只描述不警告——沒有證據就不叫學生做事");
+  ok("Store 版是黃燈，但不長按鈕——自救步驟寫在 GUIDANCE");
 
   // codex 找 helper 的三個地方，一個一個確認都認得。
   const sibling = findSandboxHelper(JUNCTION_CODEX, {
@@ -213,13 +224,23 @@ try {
 
   // 只選 Claude 的學生不該看到 Codex 的沙箱列。漏掉的話那一列會孤零零地
   // 掛在畫面上，而他根本沒裝 Codex。
+  //
+  // ⚠️ pwsh-store 原本留著（理由是「它跟工具選擇無關」）。2026-08-12 改成也濾掉：
+  // 那一列從「只描述」變成黃燈之後就會擋住整張卡、進而擋住整個環境段，而它講的是
+  // codex 沙箱跑不動指令——只選 Claude 的學生會被一個他永遠不需要在意的問題卡住，
+  // 而且那一列**沒有按鈕**，他連按都沒得按。
   const claudeOnlyIds = checksForTools(
     checksForPlatform("win32"),
     ["claude"],
   ).map((check) => check.id);
   assert.ok(!claudeOnlyIds.includes("codex-sandbox"));
-  assert.ok(claudeOnlyIds.includes("pwsh-store"));
-  ok("只選 Claude 時沙箱列會被濾掉，Store 版那列留著（它跟工具選擇無關）");
+  assert.ok(!claudeOnlyIds.includes("pwsh-store"));
+
+  const codexIds = checksForTools(checksForPlatform("win32"), ["codex"]).map(
+    (check) => check.id,
+  );
+  assert.ok(codexIds.includes("pwsh-store"));
+  ok("只選 Claude 時兩列都濾掉，選了 Codex 才看得到 Store 版那列");
 } catch (error) {
   console.error(error);
   process.exit(1);

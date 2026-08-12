@@ -11,14 +11,36 @@
 //
 // ── 第二層：PowerShell 是 Microsoft Store 版 ────────────────────────────
 //
-// ⚠️ **這一層目前只描述、不警告。** 原本的假設是「Store 版是 MSIX 包，檔案系統與
-// 權限都被虛擬化過，沙箱 helper 起不來」——2026-08-11 VM 實測**推翻了它**：Store 版
-// 的 pwsh 7.6.4 底下 `codex exec --sandbox read-only` 完全正常。
+// 這一層的說法改過兩次，兩次都是被實測推翻的，所以把過程寫下來：
 //
-// 留著這一層有兩個理由：
-//   1. 診斷資料裡看得出學生用的是哪一種安裝，之後真的出事時對得上
-//   2. 它拓出了「應用程式執行別名整套系統看不見」那個影響所有 CLI 解析的 bug
-//      （見 spawn-command.js）——那才是這條線真正的收穫
+//   最初      「Store 版是 MSIX，沙箱**起不來**」——那是一個疑問，不是一次事故
+//   2026-08-11 拿掉警告：Store 版底下 `codex exec --sandbox read-only` 完全正常
+//   2026-08-12 **警告改回來，但理由完全不同**（見下）
+//
+// ⚠️ 8/11 那次的測試是**無效的**：那台的沙箱其實從來沒設定起來（`~/.codex/cap_sid`
+// 是快照帶的、helper 也找不到），所以 codex 根本沒走 `CreateProcessAsUserW`，
+// 測到的「正常」只是它退回去跑而已。
+//
+// 8/12 把沙箱真的設定起來之後，症狀立刻出現：
+//
+//   codex sandbox powershell …  →  正常（5.1 住在 System32，不是 MSIX）
+//   codex sandbox pwsh …        →  CreateProcessAsUserW failed: 2 / 1920
+//
+// 真正的壞法是：**提升式沙箱以受限帳號跑指令，而那個帳號存取不到 MSIX 封裝的
+// pwsh**。所以沙箱起得來、檔案也改得動（apply_patch 沒問題），但 codex 一個指令
+// 都執行不了。學生看到的是一長串 `CreateProcessAsUserW failed: 1920`，完全聯想
+// 不到「因為我的 PowerShell 是從市集裝的」。
+//
+// ⚠️ **不能靠設定繞過**。codex 的 shell 選法寫死在 shell-command/src/shell_detect.rs：
+// `which::which("pwsh")` 先查 PATH，找到 WindowsApps 那支就用它；找不到任何 pwsh
+// 才退回 `powershell`。沒有環境變數、沒有 config key 可以覆寫。
+//
+// 所以自救只有兩條，都寫在 model.js 的 GUIDANCE 裡：
+//   1. 關掉 pwsh.exe 的「應用程式執行別名」→ which 找不到 → 退回 5.1（零下載）
+//   2. 從 aka.ms/PSWindows 裝 MSI 版 → 落在機器 PATH，排在 WindowsApps 前面
+//
+// ⚠️ **不要接 winget 安裝鍵**：`--source winget` 只決定去哪找套件，不決定拿到哪種
+// 包——實測拿到的還是 MSIX（見 installers.js 的 pwsh 那段）。
 
 // Store 版的 PowerShell 在 PATH 上的入口一律落在這裡。傳統安裝是
 // C:\Program Files\PowerShell\7\pwsh.exe，兩者分得很開。
@@ -28,19 +50,14 @@ export function isStorePowerShell(source) {
   return typeof source === "string" && WINDOWS_APPS.test(source);
 }
 
-// ⚠️ 這一列**不警告**，只描述。
+// ⚠️ 這一列**會警告**，而且沒有修復鍵——自救步驟在 GUIDANCE 裡（兩條路都不是
+// 我們按得下去的：一個是 Windows 設定裡的開關，一個是手動裝 MSI）。
 //
-// 它原本寫「是 Microsoft Store 版，Codex 沙箱會起不來」——那句話沒有根據。
-// 2026-08-11 在 Reed 的 VM 上實測：Store 版的 pwsh 7.6.4 底下
-// `codex exec --sandbox read-only` 完全正常，沙箱起得來、hook 也跑了。
-// 那句斷言來自一個**疑問**（「Store 版會不會造成後續問題」），不是一次事故。
-//
-// 偵測邏輯留著是有價值的——它拓出了「應用程式執行別名整套系統看不見」那個
-// 影響所有 CLI 解析的 bug（見 spawn-command.js）。但在拿到具體症狀之前，
-// 不對學生說我們證明不了的話：黃燈會讓他去做一件我們不確定有沒有用的事。
+// 「沒裝 pwsh」反而是好的：codex 找不到 pwsh 就退回 5.1，而 5.1 在沙箱裡沒問題。
+// 所以這一列的黃燈條件很窄——**裝了、而且是市集那份**。
 export function storePowerShellStatus(source) {
   if (source === null || source === undefined || source === "") {
-    // 沒裝 pwsh 完全不是問題：課堂只需要 5.1，7 是加分。
+    // 沒裝 pwsh 完全不是問題，而且對沙箱來說還比較好（codex 會退回 5.1）。
     return { status: "ok", detail: "沒有裝 PowerShell 7（不影響課程）" };
   }
 
@@ -49,8 +66,11 @@ export function storePowerShellStatus(source) {
   }
 
   return {
-    status: "ok",
-    detail: "用的是 Microsoft Store 版",
+    status: "warn",
+    // ⚠️ 不給安裝鍵：winget 拿到的還是 MSIX，按了會「說成功、那一列還是黃的」。
+    installable: false,
+    // ⚠️ 一行。完整說法在 GUIDANCE，那裡才有版面。
+    detail: "市集版的 PowerShell，Codex 執行指令會失敗",
     storePath: source,
   };
 }

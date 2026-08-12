@@ -174,16 +174,34 @@ export const GUIDANCE = {
   // 這一列是「裝好了、看起來也對，但一跑就爆」，而且程式沒有東西可以幫他按——
   // 修法要離開嚮導自己動手，所以自救步驟一定要寫滿。
   //
-  // ⚠️ pwsh-store 原本也有一段，拿掉了：那一列不再警告（實測 Store 版底下沙箱
-  // 正常，見 src/codex-sandbox.js）。沒有問題就不需要自救步驟。
+  // 這一段拿掉過又加回來。8/11 拿掉的理由（「實測 Store 版底下沙箱正常」）是無效的
+  // ——那次測的時候沙箱根本沒設定起來。8/12 把沙箱真的設定起來之後症狀立刻出現，
+  // 完整的來龍去脈在 src/codex-sandbox.js 的檔頭。
+  //
+  // ⚠️ 這一列沒有修復鍵，兩條自救都不是我們按得下去的：一個是 Windows 設定裡的
+  // 開關，一個是手動裝 MSI。所以這段文字就是學生唯一的線索，要寫得能照著做。
+  "pwsh-store": {
+    symptom: "Codex 執行指令時噴 `CreateProcessAsUserW failed: 1920`（或 2）",
+    expected: "那一列顯示「是一般安裝版」，或乾脆沒裝 PowerShell 7",
+    checks: [
+      "你的 PowerShell 7 是從 Microsoft Store 裝的，被系統封裝過（MSIX）",
+      "Codex 的沙箱用一個受限帳號跑指令，而那個帳號存取不到市集封裝的程式——所以它改得了檔案、卻一個指令都執行不了",
+      "最快的解法（不用下載）：設定 → 應用程式 → 進階應用程式設定 → 應用程式執行別名，把 pwsh.exe 關掉。Codex 會自動退回 PowerShell 5.1，那支沒有這個問題",
+      "想留著 PowerShell 7 的話：到 https://aka.ms/PSWindows 下載 .msi 手動裝一份，它會落在 C:\\Program Files 底下、排在市集那份前面",
+      "⚠️ 不要用 winget 裝——實測拿到的還是市集那種包，裝了也沒用",
+      "改完關掉嚮導、開一個新的終端視窗重跑",
+    ],
+    diagnose: null,
+  },
   "codex-sandbox": {
     symptom: "跑 Codex 時出現 `ShellExecuteExW failed to launch setup helper: 1223`",
     expected: "那一列顯示沙箱要用的檔案都在",
     checks: [
       "Codex 找不到它自己的沙箱輔助程式——PATH 上那條捷徑只指到 bin，找不到旁邊的資源目錄",
-      "先把上面那列的 Store 版 PowerShell 換成一般安裝版，這是比較常見的那個原因",
+      "按那一列的修復鍵就會接好。接完第一次跑 Codex 會跳出「要設定哪種沙箱」，選第一個",
+      "⚠️ 接著跳出來的 UAC 視窗要按「是」——**預設按鈕是「否」**，按到否就等於沒設定，而且畫面上不會有任何說明（那就是 1223，它的意思是「被取消」不是「找不到」）",
       "還是不行的話，把 Codex 移除重裝一次（用官方安裝檔，不要用 npm）",
-      "這是 Codex 自己的已知問題（openai/codex #28278），不是嚮導裝壞了",
+      "這是 Codex 自己的已知問題（openai/codex #28278、#30829），不是嚮導裝壞了",
     ],
     diagnose: null,
   },
