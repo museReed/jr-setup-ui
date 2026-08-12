@@ -881,14 +881,29 @@ export function sectionStatus(cards, completedCardIds, seenCardIds = new Set()) 
 // alreadyDone 是「這一次走到最後一張，已經查過了」。沒有它會無限迴圈：查完會
 // renderWizard，renderWizard 又走到這裡。往回翻再翻回來要算新的一次，所以那個
 // 記憶由呼叫端在離開最後一張時清掉。
+// ⚠️ sectionDone 這道是 VM 實測之後補的：學生站在最後一張、上面明明寫著
+// 「這一段已完成。」，它還是重查了一次。那一次什麼都不會改變——環境段十三項併行
+// spawn、Windows 上實測 8.3 秒，純粹白跑，而且往回翻再翻回來又跑一次。
+//
+// 已完成的段落沒有任何東西需要被解鎖。而這支要救的那個情境（卡在最後一張、下一段
+// 鎖著、不知道該回去點哪裡）前提正是「這一段沒完成」，所以加這道不影響它。
+//
+// undefined（資料還沒回來）當成「還沒完成」：那時重查一次正是我們要的。
 export function sectionEndRecheck({
   sectionId,
   currentIndex,
   cardCount,
   alreadyDone = false,
   busy = false,
+  sectionDone = false,
 }) {
-  if (alreadyDone || busy || cardCount === 0 || currentIndex !== cardCount - 1) {
+  if (
+    alreadyDone ||
+    busy ||
+    sectionDone === true ||
+    cardCount === 0 ||
+    currentIndex !== cardCount - 1
+  ) {
     return null;
   }
 

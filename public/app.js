@@ -904,6 +904,9 @@ function maybeRecheckAtSectionEnd(sectionId, currentIndex, cardCount) {
     currentIndex,
     cardCount,
     alreadyDone: state.autoRecheckedSections.has(sectionId),
+    // 這一段已經完成就不查——沒有東西需要被解鎖，查了只是花 8 秒證明一件已經
+    // 成立的事（VM 實測：卡片上寫著「這一段已完成。」，它還是重查了）。
+    sectionDone: sectionCompletion()[sectionId] === true,
     // 有東西在跑就先不查：安裝／驗證跑到一半的狀態本來就不是結論，
     // 而且那一支跑完自己會觸發重查。
     busy:

@@ -561,7 +561,15 @@ try {
     sectionEndRecheck({ sectionId: "env", currentIndex: 0, cardCount: 0 }),
     null,
   );
-  ok("只有站在最後一張、而且沒別的事在跑時才自動重查，環境段查環境");
+  // ⚠️ 已完成的段落不查。VM 實測踩到的：卡片上寫著「這一段已完成。」，它還是
+  // 重查了一次——環境段十三項併行 spawn，Windows 上 8.3 秒，純粹白跑。
+  assert.equal(sectionEndRecheck({ ...atEnd, sectionDone: true }), null);
+  // 資料還沒回來（undefined）要當成沒完成——那時重查正是我們要的。
+  assert.equal(
+    sectionEndRecheck({ ...atEnd, sectionDone: undefined }),
+    "configs",
+  );
+  ok("只有站在最後一張、這段還沒完成、又沒別的事在跑時才自動重查");
 
   const checkingLine = {
     className: "ds-term-line ds-term-line--dim",
