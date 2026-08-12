@@ -14,16 +14,18 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 
-import { quarantineEntries, quarantineHome } from "../src/quarantine.js";
+import { quarantineHome, quarantineState } from "../src/quarantine.js";
 
 const APPLY = process.argv.includes("--apply");
 const HOME = homedir();
 
-const entries = quarantineEntries(HOME, {
+const { entries } = quarantineState(HOME, {
+  // 不存在回 null、空的回 []（見 quarantine.js）。這支只在乎有沒有東西可刪，
+  // 兩種都是「沒有」，但判準的形狀要跟嚮導那半一致。
   list: (dir) =>
     existsSync(dir)
       ? readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name)
-      : [],
+      : null,
 });
 
 if (entries.length === 0) {

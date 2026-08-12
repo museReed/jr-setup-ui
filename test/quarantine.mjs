@@ -5,9 +5,9 @@ import { FIX_ACTIONS } from "../src/env-check.js";
 import {
   CLEANUP_CHECK_IDS,
   QUARANTINE_AREAS,
-  quarantineEntries,
   quarantineHome,
   quarantineRow,
+  quarantineState,
 } from "../src/quarantine.js";
 import { quarantineRoot } from "../src/skill-roots.js";
 
@@ -20,9 +20,13 @@ const HOME = "/Users/reed";
 // 兩列清理都綠了的樣子。這一列的出現條件全靠它。
 const CLEAN = CLEANUP_CHECK_IDS.map((id) => ({ id, status: "ok" }));
 
+// ⚠️ 沒登記的目錄回 **null**（＝不存在），不是 []（＝存在但空的）。
 function listing(map) {
-  return { list: (dir) => map[dir] ?? [] };
+  return { list: (dir) => map[dir] ?? null };
 }
+
+const SKILLS_DIR = `${quarantineHome(HOME)}/codex-skills`;
+const NPM_DIR = `${quarantineHome(HOME)}/npm-cli`;
 
 try {
   // 兩支按鈕各自寫死的路徑要跟這裡對得起來。對不起來的話畫面會說「沒東西可刪」，
@@ -40,23 +44,28 @@ try {
   );
   ok("每個分區都講得出是哪一列搬進去的");
 
-  const entries = quarantineEntries(
+  const state = quarantineState(
     HOME,
     listing({
-      [`${quarantineHome(HOME)}/codex-skills`]: ["handoff-20260811"],
-      [`${quarantineHome(HOME)}/npm-cli`]: ["codex.cmd-20260811", "codex.ps1-20260811"],
+      [SKILLS_DIR]: ["handoff-20260811"],
+      [NPM_DIR]: ["codex.cmd-20260811", "codex.ps1-20260811"],
     }),
   );
-  assert.equal(entries.length, 3);
-  assert.deepEqual(entries[0], {
+  assert.equal(state.used, true);
+  assert.equal(state.entries.length, 3);
+  assert.deepEqual(state.entries[0], {
     name: "handoff-20260811",
     what: "舊版 skill",
-    path: `${quarantineHome(HOME)}/codex-skills/handoff-20260811`,
+    path: `${SKILLS_DIR}/handoff-20260811`,
   });
   ok("列得出隔離區裡有什麼，而且講得出每一樣是什麼東西");
 
-  assert.deepEqual(quarantineEntries(HOME, listing({})), []);
-  ok("資料夾不存在時回空的，不是拋例外");
+  // ⚠️ 這兩種要分得出來，否則學生按完「清掉隔離區」整張卡連同里程碑會一起消失。
+  const never = quarantineState(HOME, listing({}));
+  assert.deepEqual(never, { used: false, entries: [] });
+  const cleared = quarantineState(HOME, listing({ [SKILLS_DIR]: [] }));
+  assert.deepEqual(cleared, { used: true, entries: [] });
+  ok("分得出「從來沒搬過」與「搬過但已經清乾淨」");
 
   // 隔離區裡有東西、但清理還沒做完 → 這一列不出現。
   //
@@ -67,19 +76,29 @@ try {
       check.id === id ? { id, status: "warn" } : check,
     );
     assert.equal(
-      quarantineRow(entries, pending),
+      quarantineRow(state, pending),
       null,
       `${id} 還沒綠就不該出現刪除鍵`,
     );
   }
-  assert.equal(quarantineRow(entries, []), null);
+  assert.equal(quarantineRow(state, []), null);
   ok("清理還沒做完（或那一列根本不在）時，這一列不出現");
 
-  // 沒東西可刪就不長一列出來——「隔離區：沒有東西」對誰都沒有用。
-  assert.equal(quarantineRow([], CLEAN), null);
-  ok("隔離區是空的時候不長一列出來");
+  // 從來沒搬過東西進來就不長一列出來——「隔離區：沒有東西」對誰都沒有用。
+  assert.equal(quarantineRow(never, CLEAN), null);
+  ok("從來沒搬過東西進隔離區時，這一列不出現");
 
-  const row = quarantineRow(entries, CLEAN);
+  // ⚠️ 但「搬過、已經清乾淨」要留著並打勾。不留的話學生按完那顆按鈕，整張卡連同
+  // 里程碑會一起消失（Reed 指定要改掉的正是這個）。
+  const done = quarantineRow(cleared, CLEAN);
+  assert.notEqual(done, null);
+  assert.equal(done.status, "ok");
+  assert.equal(done.clearable, undefined);
+  assert.equal(FIX_ACTIONS.quarantine("ok", done), null);
+  assert.equal(done.guidance, undefined);
+  ok("清乾淨之後那一列留著、打勾、不再長按鈕");
+
+  const row = quarantineRow(state, CLEAN);
   assert.notEqual(row, null);
   // ⚠️ 綠燈不是筆誤：判成黃燈的話環境段永遠不會全綠，學生會被一個他明明沒有毛病的
   // 狀態擋在段落閘門外。
@@ -92,8 +111,8 @@ try {
   ok("有東西可刪時是綠燈、說明一行講完");
 
   // 「按之前先列出要刪什麼」——這是唯一一顆刪掉就回不來的按鈕。
-  assert.equal(row.guidance.checks.length, entries.length);
-  for (const entry of entries) {
+  assert.equal(row.guidance.checks.length, state.entries.length);
+  for (const entry of state.entries) {
     assert.ok(
       row.guidance.checks.some((line) => line.includes(entry.name)),
       `${entry.name} 沒有出現在按之前的清單裡`,

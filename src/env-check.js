@@ -25,7 +25,7 @@ import {
   shellProfilePaths,
   shellWrapperStatus,
 } from "./shell-wrapper.js";
-import { quarantineEntries, quarantineRow } from "./quarantine.js";
+import { quarantineRow, quarantineState } from "./quarantine.js";
 import {
   conflictingLegacySkills,
   legacySkillRoot,
@@ -342,9 +342,11 @@ export const FIX_ACTIONS = {
   "codex-legacy-skills": (status) =>
     status === "warn" ? "fix-legacy-skills" : null,
   // ⚠️ 這一列是綠燈才有按鈕，跟其他每一顆都相反。它不是在修毛病，是把前面兩顆
-  // 清理鍵留下的備份收掉——那一列只會在「該清的都清完了」時才被加進來（見
-  // quarantineRow），所以走到這裡就代表按鈕該給。
-  quarantine: () => "clear-quarantine",
+  // 清理鍵留下的備份收掉。
+  //
+  // ⚠️ 判準看的是 `clearable` 不是 status——清乾淨之後那一列**留著**（否則整張卡
+  // 連同里程碑會消失），而那時它同樣是綠的，只是沒東西可刪了。
+  quarantine: (status, check) => (check?.clearable === true ? "clear-quarantine" : null),
   // ⚠️ 這一列的按鈕不是「黃燈就有」——只有 npm 版的情況也是黃燈，但那時不能清
   // （見 legacy-cli.js 的第 3 種）。所以按鈕跟著那一列自己回的 fixLabel 走。
   "legacy-npm-cli": (status, check) =>
@@ -692,14 +694,14 @@ function checkQuarantine(checks) {
   const label = "先前搬走的東西還留著";
 
   try {
-    const entries = quarantineEntries(homedir(), {
-      // 資料夾不存在是常態（沒清過的機器就沒有），不是錯誤。
+    const state = quarantineState(homedir(), {
+      // ⚠️ 不存在回 null、空的回 []。兩者的意思完全不同，見 quarantine.js。
       list: (dir) =>
         existsSync(dir)
           ? readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name)
-          : [],
+          : null,
     });
-    const row = quarantineRow(entries, checks);
+    const row = quarantineRow(state, checks);
 
     return row === null ? null : { id, label, ...row };
   } catch {

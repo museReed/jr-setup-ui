@@ -43,28 +43,56 @@ function cleanupsSettled(checks) {
 //
 // 只列每個分區底下的第一層：搬進去的單位就是「一個 skill 資料夾」或「一支 shim」，
 // 再往下走只會列出一堆學生看不懂的內部檔案。
-export function quarantineEntries(home, { list }) {
-  return QUARANTINE_AREAS.flatMap((area) => {
+//
+// ⚠️ `list` 對「資料夾不存在」要回 **null**，對「存在但空的」回 []。兩者差很多：
+//
+//   分區不存在  這台從來沒有東西被搬進隔離區 → 這一列根本不該出現
+//   分區是空的  搬過、而且已經清乾淨了      → 這一列要留著，打勾
+//
+// 分不出來的話，學生按完「清掉隔離區」整張卡就會消失、里程碑少一站（Reed 指定
+// 要改掉的正是這個）。而這個判準不需要記任何狀態：那兩個分區資料夾只有在某顆
+// 清理鍵真的搬過東西時才會被建出來，清空腳本又只刪裡面的東西、不刪分區本身。
+export function quarantineState(home, { list }) {
+  let used = false;
+  const entries = QUARANTINE_AREAS.flatMap((area) => {
     const dir = `${quarantineHome(home)}/${area.dir}`;
+    const names = list(dir);
 
-    return list(dir).map((name) => ({
+    if (names === null) {
+      return [];
+    }
+
+    used = true;
+    return names.map((name) => ({
       name,
       what: area.what,
       path: `${dir}/${name}`,
     }));
   });
+
+  return { used, entries };
 }
 
-// 回 null＝這一列根本不要出現。兩種情況：清理還沒做完，或者隔離區是空的。
+// 回 null＝這一列根本不要出現。兩種情況：從來沒搬過東西進隔離區，或者前面那兩列
+// 清理還沒做完。
 //
-// 空的時候不長一列「隔離區：沒有東西」出來是刻意的：那是一句對誰都沒有用的話，
-// 而環境段每多一列，學生就多一列要讀。
-export function quarantineRow(entries, checks = []) {
-  if (entries.length === 0 || !cleanupsSettled(checks)) {
+// 「從來沒搬過」不長一列「隔離區：沒有東西」出來是刻意的：那是一句對誰都沒有用的
+// 話，而環境段每多一列，學生就多一列要讀。
+export function quarantineRow({ used, entries }, checks = []) {
+  if (!used || !cleanupsSettled(checks)) {
     return null;
   }
 
+  // 搬過、而且已經清乾淨了。這一列要留著並打勾——不留的話學生按完那顆按鈕，
+  // 整張卡連同里程碑會一起消失（Reed 指定要改掉的正是這個）。
+  if (entries.length === 0) {
+    return { status: "ok", detail: "已經清乾淨了" };
+  }
+
   return {
+    // ⚠️ FIX_ACTIONS 看這一項決定給不給按鈕，不是看 status——這一列不管有沒有
+    // 東西可刪都是綠的（它不是問題，是可選的收尾）。
+    clearable: true,
     // ⚠️ 綠燈不是筆誤。這一列不是問題，是一個「可以順手做」的收尾——判成黃燈的話
     // 環境段永遠不會全綠，學生會被一個他明明沒有毛病的狀態擋在段落閘門外。
     // 按鈕不看 status，所以綠燈照樣掛得上（見 viewmodel 的 envRowModel）。
