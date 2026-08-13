@@ -49,6 +49,17 @@ function openTerminal(file) {
         "wt.exe",
         "powershell.exe",
         "-NoExit",
+        // ⚠️ 這裡要 -NoProfile，合併那支刻意**不加**——兩支的需求相反，別互相抄。
+        //
+        //   合併    要跑學生平常那一支 claude / codex，而 wrapper 住在 profile 裡
+        //   這一支  只跑一個 codex 指令，profile 對它沒有任何用處
+        //
+        // 真機（Reed 的 arm64 VM）上載 profile 還會噴一段紅字：Smart App Control
+        // 開在評估中 → WDAC 使用者模式稽核 → 未簽章的 profile 被判成受限語言模式，
+        // PowerShell 載入 profile 用的正是 dot-source，於是拒絕載入。學生會看到
+        // 「Cannot dot-source this command because it was defined in a different
+        // language mode」，跟他要做的事一點關係都沒有。
+        "-NoProfile",
         // 我們自己寫出來的臨時腳本不該看機器的執行原則臉色（跟合併那支同一個理由）。
         "-ExecutionPolicy",
         "Bypass",
