@@ -37,7 +37,16 @@ const APPLY = process.argv.includes("--apply");
 //
 // ⚠️ 為什麼要另外開一個暫存目錄：家目錄在 config.toml 裡是 trust_level = "trusted"，
 // 那裡的 codex **不用沙箱、也就不會問**。選單只在未信任的目錄出現。
-const WORK_DIR = "jr-codex-sandbox-setup";
+//
+// ⚠️ 而且**目錄名要每次都不一樣**。第一版用固定名字 jr-codex-sandbox-setup，結果
+// 只有第一次有效：codex 把用過的目錄寫進 config.toml 的 [projects] 並標成
+// trust_level = "trusted"，第二次進去就不再問了（真機實測，config.toml 裡看得到
+// 那一筆）。信任是逐目錄累加的，所以每次給一個新名字最省事。
+//
+// ⚠️ 也試過直接跑那支 helper（codex-windows-sandbox-setup.exe）——**不通**。它要一個
+// base64 payload，是 codex 內部呼叫用的，人叫它只會得到：
+//   helper_request_args_failed: failed to decode payload b64
+const WORK_DIR = `jr-codex-sandbox-${Date.now().toString(36)}`;
 const BODY = [
   `$dir = Join-Path $env:TEMP '${WORK_DIR}'`,
   "New-Item -ItemType Directory -Force -Path $dir | Out-Null",
