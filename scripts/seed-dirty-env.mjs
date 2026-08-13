@@ -153,6 +153,41 @@ const STEPS = [
     ],
   },
   {
+    id: "legacy-claude-skills",
+    label: "在 Claude 的 skill 落點放上一輪那三支舊的",
+    // Codex 那邊要重現的是「舊落點」（~/.codex/skills，見上一步），Claude 這邊不一樣
+    // ——落點從來沒搬過，要重現的是**同一個落點裡的舊內容**：學生上一輪裝過，這次
+    // 的安裝要把它蓋掉。
+    //
+    // ⚠️ 每一支多放一個 references/old-notes.md，那是 handoff 記著的已知缺口：
+    // 安裝只寫我們現在發的那幾個檔案，舊版留下的其他附屬檔會留在同一個資料夾裡，
+    // 而 Claude 載入 skill 看的是**整個資料夾**。驗的時候要看得到：
+    //
+    //   SKILL.md          → 應該被蓋成新的（開頭不再是「上一輪裝的」）
+    //   old-notes.md      → 仍然留著 ← 這就是那個缺口，不是驗錯了
+    reproduces: "Claude skill 覆蓋、舊版附屬檔殘留（已知缺口）",
+    plan: () =>
+      ["auto-rename", "handoff", "structured-questions"].flatMap((name) => [
+        {
+          kind: "write",
+          target: path.join(HOME, ".claude", "skills", name, "SKILL.md"),
+          text: `---\nname: ${name}\ndescription: 上一輪裝的舊版 ${name}\n---\n\n這是上一輪工作坊裝的版本，應該被這次的安裝蓋掉。\n`,
+        },
+        {
+          kind: "write",
+          target: path.join(
+            HOME,
+            ".claude",
+            "skills",
+            name,
+            "references",
+            "old-notes.md",
+          ),
+          text: `# 上一輪 ${name} 留下的附屬檔\n\n這個檔案這次不會被覆蓋，也不會被刪掉。\n`,
+        },
+      ]),
+  },
+  {
     id: "native-codex",
     label: "裝原生版 codex（製造並存 + junction 漏連）",
     // junction 漏連是安裝器自己的 bug（openai/codex#30829），不用手動破壞。
