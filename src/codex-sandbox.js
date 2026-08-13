@@ -206,59 +206,34 @@ export function planSandboxLink({ codexPath, realBinPath, exists }) {
   };
 }
 
-// 沙箱到底設定好了沒——真正的記錄在 ~/.codex/cap_sid，不是 .sandbox。
+// 學生回答過「要哪種沙箱」那題了沒——記錄在 config.toml 的 `[windows] sandbox`。
 //
-// ⚠️ 這是 2026-08-12 判準翻案的核心。原本問的是「helper 找不找得到」，而 helper
-// 只在**第一次建沙箱**那一刻用得到：建完之後記錄寫進 cap_sid，之後 codex 一路讀
-// 那份，helper 在不在都不影響。用它當判準會兩頭錯：
+// ⚠️ 這一列的判準 2026-08-13 一天之內換了三次，每一次都是被真機推翻的。把過程
+// 完整留著，因為每一個「聽起來很合理」的判準都錯過：
 //
-//   已經設定好、helper 對不到  → 誤報黃燈（Reed 的 VM 就是，cap_sid 兩個 SID 齊全）
-//   helper 在、但從沒設定過    → 誤報綠燈 ← **那才是真的會出事的人**
+//   ① helper 找不找得到     helper 只在第一次設定那一刻用得到，之後在不在都不影響
+//   ② ~/.codex/cap_sid      帳號被刪掉時它照樣齊全，而學生一開 codex 還是被問
+//   ③ cap_sid + 兩個本機帳號 太嚴：學生選完 1、codex 印了 Sandbox ready 之後，
+//                            **那兩樣都還沒生出來**（實測：帳號沒有、cap_sid 也沒有），
+//                            那一列於是永遠等不到，按鈕變成一顆按不完的迴圈
+//   ④ ✅ config.toml 的 `[windows] sandbox`
 //
-// 刪 .sandbox 不會讓 codex 重問，刪 cap_sid 才會——那就是它是唯一狀態記錄的證據。
+// 為什麼 ④ 才對：**它就是 codex 自己「要不要再問」的開關**。學生答過一次就寫進去，
+// 之後不管在哪個目錄、cap_sid 在不在、帳號有沒有被刪，codex 都不再問（真機驗過：
+// 挪開目錄、挪開 cap_sid、刪掉帳號，三種都不會讓選單回來，只有把這一段拿掉才會）。
 //
-// ⚠️ 2026-08-13 實測推翻了兩個先前寫在這裡的說法，兩個都值得記著：
+// 而這一列存在的目的正是「別讓學生在合併那一步被那個選單打斷」，所以判準要對齊的
+// 就是那個開關，不是沙箱的內部產物。
 //
-//   ❌「cap_sid 記的是 CodexSandboxOffline / Online 兩個本機帳號的 SID」
-//   ✅ 不是。那兩個欄位的 SID 前綴**彼此都不同**，跟本機帳號對不起來——它們是
-//      沙箱用來設權限的能力 SID（capability SID）。真機量到的：
-//        本機帳號   S-1-5-21-2467909001-3784851742-1502529921-1003 / 1004
-//        cap_sid    S-1-5-21-1247760472-… / S-1-5-21-4233841508-…
-//
-//   ❌「把那兩個帳號刪掉，設定就會從頭跑一次（跳選單 + UAC）」
-//   ✅ 一半對。`codex sandbox <指令>` 照樣跑得起來、照樣寫出 cap_sid、也沒有跳
-//      UAC——但**互動式的 codex 一進未信任目錄就照樣問你要不要設定沙箱**。
-//
-// ⚠️ 所以 codex 有**兩種沙箱**，這是這一列判準的核心：
-//
-//   非提權（能力 SID）  只要 cap_sid    → `codex sandbox` 走這條，帳號沒了也能跑
-//   提權（default）     要那兩個本機帳號 → 互動式 codex 要的是這個，沒有就一直問
-//
-// 判準因此是**兩個都要**：cap_sid 齊全 + 兩個帳號都在。只看 cap_sid 的話，帳號被
-// 刪掉的機器會顯示綠燈，而學生一開 codex 照樣被問——綠燈要對齊的是他的體驗。
-// （2026-08-13 Reed 在 VM 上一步步量出來的：刪帳號→被問；選 1 + UAC 按是→
-//   帳號回來、印 Sandbox ready、不再問。）
-export function sandboxReady(capSidRaw) {
-  if (typeof capSidRaw !== "string" || capSidRaw.trim() === "") {
-    return false;
-  }
+// ⚠️ 誠實記下代價：綠燈不保證提權沙箱**已經建好**（帳號與 cap_sid 可能還沒生出來，
+// codex 看起來是等真的要跑指令時才建）。真的沒建成的話學生會在 codex 那邊看到
+// helper_sid_resolve_failed（1332），那是 codex 自己會報的錯，不是我們能提前判的。
+const WINDOWS_SANDBOX_KEY = /\[windows\][^[]*?\bsandbox\s*=\s*["']?\w/;
 
-  try {
-    const parsed = JSON.parse(capSidRaw);
-
-    // 兩個都要：workspace 是可以改檔案那一組權限，readonly 是唯讀那一組。只有一個
-    // 代表上次設定跑到一半（UAC 按了否就會停在中間），那時 codex 還是會再問一次。
-    return (
-      isSid(parsed?.workspace) && isSid(parsed?.readonly)
-    );
-  } catch {
-    // 檔案在但不是 JSON ＝ 壞掉的記錄，當作沒設定。
-    return false;
-  }
-}
-
-function isSid(value) {
-  return typeof value === "string" && /^S-1-5-21-/.test(value);
+export function sandboxAnswered(configToml) {
+  return (
+    typeof configToml === "string" && WINDOWS_SANDBOX_KEY.test(configToml)
+  );
 }
 
 // ⚠️ 沙箱是**兩列**不是一列（Reed 在畫面前指定）。
@@ -294,21 +269,15 @@ export function sandboxFilesStatus({ codexPath, helperPath, storePowerShell }) {
   };
 }
 
-export function sandboxSetupStatus({ codexPath, ready, accounts }) {
+export function sandboxSetupStatus({ codexPath, answered }) {
   if (codexPath === null || codexPath === undefined || codexPath === "") {
     return { status: "ok", detail: "等 Codex 裝好再看這一項" };
   }
 
-  // ⚠️ 兩個條件都要，這是 2026-08-13 在 VM 上量出來的（我先前只看 cap_sid，錯了）：
-  //
-  //   cap_sid 齊全、但兩個帳號被刪掉  → `codex sandbox` 照樣跑得動（非提權那條路），
-  //                                    但**互動式的 codex 一進未信任目錄就照樣問你
-  //                                    要不要設定沙箱**——畫面是綠的，學生還是被問
-  //   帳號補回來（選 1 + UAC 按是）    → codex 印 Sandbox ready，不再問
-  //
-  // 也就是 codex 有兩種沙箱：非提權那種只要 cap_sid，提權那種要那兩個本機帳號。
-  // 綠燈要對齊的是**學生的體驗**（不會再被問），所以兩個都要。
-  if (ready === true && accounts === true) {
+  // 判準是 config.toml 的 [windows] sandbox——完整理由與三次錯誤的判準寫在
+  // sandboxAnswered 上面。一句話：那是 codex 自己「要不要再問」的開關，而這一列
+  // 要防的正是「學生在合併那一步被那個選單打斷」。
+  if (answered === true) {
     return { status: "ok", detail: "沙箱已經設定好了" };
   }
 

@@ -5,8 +5,8 @@ import {
   findSandboxHelper,
   isStorePowerShell,
   planSandboxLink,
+  sandboxAnswered,
   sandboxFilesStatus,
-  sandboxReady,
   sandboxSetupStatus,
   storePowerShellStatus,
 } from "../src/codex-sandbox.js";
@@ -27,11 +27,16 @@ const JUNCTION_CODEX =
 const STORE_PWSH =
   "C:\\Users\\Reed\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe";
 const MSI_PWSH = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
-// Reed 的 VM 上實際那份 cap_sid（SID 照抄，那是真機量到的形狀）。
-const CAP_SID =
-  '{"workspace":"S-1-5-21-1362387983-552409480-2161049111-3168295565",' +
-  '"readonly":"S-1-5-21-2944420964-406617841-1713765989-1815078759",' +
-  '"workspace_by_cwd":{},"writable_root_by_path":{}}';
+// Reed 的 VM 上實際那份 config.toml 的形狀（[windows] 排在最後，前面是一堆
+// [projects]，這個順序有意義——判準的 regex 不能被 [projects] 那些干擾）。
+const CONFIG_UNANSWERED = [
+  'service_tier = "default"',
+  "",
+  "[projects.'c:\\users\\reed']",
+  'trust_level = "trusted"',
+  "",
+].join("\n");
+const CONFIG_ANSWERED = `${CONFIG_UNANSWERED}\n[windows]\nsandbox = "elevated"\n`;
 
 try {
   assert.equal(isStorePowerShell(STORE_PWSH), true);
@@ -126,74 +131,35 @@ try {
     "ok",
   );
   assert.equal(
-    sandboxSetupStatus({ codexPath: null, ready: false, accounts: false })
-      .status,
+    sandboxSetupStatus({ codexPath: null, answered: false }).status,
     "ok",
   );
   ok("codex 還沒裝時這兩列都不搶話");
 
-  // ⚠️ 判準是 cap_sid，不是 helper。helper 只在第一次建沙箱那一刻用得到，設定完
-  // 之後它在不在都不影響——Reed 的 VM 就是「helper 對不到、沙箱一切正常」，舊判準
-  // 在那台誤報黃燈。
-  assert.equal(sandboxReady(CAP_SID), true);
-  // 只有一個 SID ＝ 上次設定跑到一半（UAC 按了否），codex 還是會再問一次。
-  assert.equal(
-    sandboxReady('{"workspace":"S-1-5-21-1-2-3-4","readonly":""}'),
-    false,
-  );
-  assert.equal(sandboxReady('{"workspace":"S-1-5-21-1-2-3-4"}'), false);
-  // 檔案不在、空的、壞掉的 JSON 都當作沒設定。
-  assert.equal(sandboxReady(null), false);
-  assert.equal(sandboxReady(""), false);
-  assert.equal(sandboxReady("{壞掉的"), false);
-  // SID 長得不對也不算——那不是我們認得的記錄。
-  assert.equal(
-    sandboxReady('{"workspace":"yes","readonly":"yes"}'),
-    false,
-  );
-  ok("沙箱設定好了沒，看的是 cap_sid 裡那兩個 SID");
+  // ⚠️ 判準是 config.toml 的 [windows] sandbox，那是 codex 自己「要不要再問」的
+  // 開關。2026-08-13 一天之內換過三次判準，前三個都被真機推翻（見
+  // src/codex-sandbox.js 的 sandboxAnswered 上面那段）。
+  assert.equal(sandboxAnswered(CONFIG_ANSWERED), true);
+  assert.equal(sandboxAnswered(CONFIG_UNANSWERED), false);
+  // 檔案不在、空的都當作沒回答過。
+  assert.equal(sandboxAnswered(null), false);
+  assert.equal(sandboxAnswered(""), false);
+  // 有 [windows] 這一段但沒有 sandbox 這個鍵，也不算。
+  assert.equal(sandboxAnswered("[windows]\nsomething = 1\n"), false);
+  ok("沙箱設定好了沒，看的是 config.toml 的 [windows] sandbox");
 
-  // 設定好了那一列就是綠的，檔案那一列跟它無關——那正是拆成兩列的理由：
-  // Reed 的 VM 是「helper 對不到、沙箱一切正常」，兩件事各自成立。
   assert.equal(
-    sandboxSetupStatus({
-      codexPath: JUNCTION_CODEX,
-      ready: true,
-      accounts: true,
-    }).status,
+    sandboxSetupStatus({ codexPath: JUNCTION_CODEX, answered: true }).status,
     "ok",
   );
-  ok("設定好了就是綠的，跟檔案那一列各自判各自的");
+  ok("回答過了就是綠的，跟檔案那一列各自判各自的");
 
-  // ⚠️ 迴歸（2026-08-13 VM 實測）：cap_sid 齊全但那兩個本機帳號被刪掉時，
-  // `codex sandbox <指令>` 照樣跑得動（非提權那條路），但**互動式的 codex 一進
-  // 未信任目錄就照樣問學生要不要設定沙箱**。只看 cap_sid 的話這裡會給綠燈，
-  // 而學生的體驗是「畫面說好了、codex 還在問」。
-  assert.equal(
-    sandboxSetupStatus({
-      codexPath: JUNCTION_CODEX,
-      ready: true,
-      accounts: false,
-    }).status,
-    "warn",
-  );
-  // 反過來也不算：帳號在、但 cap_sid 沒了，codex 一樣會重問。
-  assert.equal(
-    sandboxSetupStatus({
-      codexPath: JUNCTION_CODEX,
-      ready: false,
-      accounts: true,
-    }).status,
-    "warn",
-  );
-  ok("cap_sid 與兩個受限帳號都要在，缺一個都還會被 codex 問");
-
-  // ⚠️ 這一列非有按鈕不可（Reed 在畫面前指出）：合成一列的時候，這種狀態長不出
-  // 按鈕，學生看得到問題卻無事可做。
+  // ⚠️ 迴歸（2026-08-13 VM 實測）：判準不可以回頭去查 cap_sid 或那兩個本機帳號。
+  // 學生選完 1、codex 印了 Sandbox ready 之後，那兩樣**都還沒生出來**，於是那一列
+  // 永遠等不到、按鈕變成一顆按不完的迴圈。
   const neverSetUp = sandboxSetupStatus({
     codexPath: JUNCTION_CODEX,
-    ready: false,
-    accounts: false,
+    answered: false,
   });
   assert.equal(neverSetUp.status, "warn");
   assert.equal(neverSetUp.fixLabel, "開終端設定沙箱");

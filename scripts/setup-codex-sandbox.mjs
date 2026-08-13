@@ -12,12 +12,12 @@
 // ⚠️ 這支不判定成功與否。判定在 env-check 那一列：~/.codex/cap_sid 裡有沒有
 // workspace + readonly 兩個 SID（見 src/codex-sandbox.js 的 sandboxReady）。
 // 學生選完之後按「重新檢查」，那一列自己會轉綠。
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { sandboxReady } from "../src/codex-sandbox.js";
+import { sandboxAnswered } from "../src/codex-sandbox.js";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -209,28 +209,15 @@ console.log("");
 // 等的是**狀態本身**，判準跟畫面上那一列同一組，不各寫一份。這支結束之後 app.js
 // 會自己重跑環境檢查，所以那一列會自動轉綠。
 
-// ⚠️ 兩個條件都要，跟畫面上那一列同一組判準（見 src/codex-sandbox.js）：
-// cap_sid 齊全，而且那兩個本機帳號真的在。只等 cap_sid 的話，帳號被刪掉的機器
-// 會在設定還沒做完時就被判成好了。
-const ACCOUNTS = ["codexsandboxoffline", "codexsandboxonline"];
-
-function accountsExist() {
-  try {
-    // net user 而不是 Get-LocalUser：cmd.exe 每台都有，也不必過 PowerShell 的
-    // 語言模式那一關（Smart App Control 開著的機器會擋未簽章腳本）。
-    const out = execFileSync("cmd.exe", ["/c", "net user"], {
-      encoding: "utf8",
-    }).toLowerCase();
-
-    return ACCOUNTS.every((name) => out.includes(name));
-  } catch {
-    return false;
-  }
-}
+// 判準跟畫面上那一列同一支函式（sandboxAnswered），不各寫一份：學生一選完，codex
+// 就把 [windows] sandbox 寫回 config.toml，那一刻就算完成。
+//
+// ⚠️ 這裡曾經等「cap_sid 齊全 + 兩個本機帳號都在」，等不到——選完之後那兩樣都還
+// 沒生出來（真機實測），於是輪詢跑滿三分鐘才逾時。
 
 function ready() {
   try {
-    return sandboxReady(readFileSync(CAP_SID, "utf8")) && accountsExist();
+    return sandboxAnswered(readFileSync(CONFIG, "utf8"));
   } catch {
     // 檔案還沒出現就是還沒好，不是錯誤。
     return false;

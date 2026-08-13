@@ -16,7 +16,7 @@ import {
   findSandboxHelper,
   isStorePowerShell,
   sandboxFilesStatus,
-  sandboxReady,
+  sandboxAnswered,
   sandboxSetupStatus,
   storePowerShellStatus,
 } from "./codex-sandbox.js";
@@ -753,39 +753,19 @@ async function checkPwshStore() {
 // ⚠️ 2026-08-12 換掉的判準。原本問「helper 找不找得到」，而 helper 只在第一次建
 // 沙箱那一刻用得到，所以已經設定好的機器會被誤報黃燈、而「helper 在但從沒設定過」
 // 的機器反而被判綠燈——後者才是真的會出事的人。完整理由見 codex-sandbox.js。
-async function readCapSid() {
+async function readCodexConfig() {
   try {
-    return await readFile(join(homedir(), ".codex", "cap_sid"), "utf8");
+    return await readFile(join(homedir(), ".codex", "config.toml"), "utf8");
   } catch {
     // 檔案不在＝從來沒設定過，那正是我們要判的其中一種狀態。
     return null;
   }
 }
 
-// 提權沙箱要的那兩個本機帳號在不在。
-//
-// ⚠️ 用 `net user` 不用 PowerShell 的 Get-LocalUser：cmd.exe 每台 Windows 都有，
-// 而且不必經過 PowerShell 的語言模式那一關（Smart App Control 開著的機器會擋
-// 未簽章的腳本，見 setup-codex-sandbox.mjs 的註解）。
-//
-// 帳號名是 codex 寫死的字串，不隨系統語系變——`net user` 的表頭會變成中文，
-// 但那兩個名字不會，所以比對名字是安全的。
-const SANDBOX_ACCOUNTS = ["CodexSandboxOffline", "CodexSandboxOnline"];
-
-async function sandboxAccountsExist() {
-  const result = await runProbe("cmd.exe", ["/c", "net user"]);
-
-  if (result.type !== "close") {
-    // 問不到就別亂判。回 true 等於「不因為這一項而變黃」——寧可漏報也不要在
-    // 一台其實沒問題的機器上長出一顆按不出結果的按鈕。
-    return true;
-  }
-
-  const output = result.output.toLowerCase();
-
-  return SANDBOX_ACCOUNTS.every((name) => output.includes(name.toLowerCase()));
-}
-
+// ⚠️ 這裡曾經查過 CodexSandboxOffline / Online 兩個本機帳號（`net user`），
+// 已經拿掉：學生選完 1、codex 印了 Sandbox ready 之後，那兩個帳號**還沒生出來**
+// （真機實測），於是那一列永遠等不到，按鈕變成一顆按不完的迴圈。
+// 判準改看 config.toml 的 [windows] sandbox，理由見 codex-sandbox.js。
 async function codexForSandbox() {
   const env = await spawnEnv();
 
@@ -832,8 +812,7 @@ async function checkCodexSandboxReady() {
       label,
       ...sandboxSetupStatus({
         codexPath: await codexForSandbox(),
-        ready: sandboxReady(await readCapSid()),
-        accounts: await sandboxAccountsExist(),
+        answered: sandboxAnswered(await readCodexConfig()),
       }),
     };
   } catch {
