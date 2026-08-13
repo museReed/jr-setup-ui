@@ -13,9 +13,11 @@
 // workspace + readonly 兩個 SID（見 src/codex-sandbox.js 的 sandboxReady）。
 // 學生選完之後按「重新檢查」，那一列自己會轉綠。
 import { spawn } from "node:child_process";
-import { chmodSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+
+import { sandboxReady } from "../src/codex-sandbox.js";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -99,7 +101,7 @@ console.log("  ● 跳出「要設定哪種沙箱」的選單 ——選 1（Set 
 console.log("     接著跳出來的權限確認視窗要按「是」");
 console.log("     ⚠️ 那個視窗預設選在「否」，順手按 Enter 就等於取消，而且不會有任何說明");
 console.log("");
-console.log("看到 sandbox-ok 就成功了，回到嚮導按「重新檢查」。");
+console.log("設定好的那一刻嚮導就會自己往下走，不用等你關掉那個視窗。");
 console.log("");
 
 if (!APPLY) {
@@ -111,3 +113,54 @@ const { cmd, args } = openTerminal(launcher());
 spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
 
 console.log("已經開了一個新的終端視窗，請看那個視窗。");
+console.log("");
+
+// ⚠️ 不要等視窗關掉。學生看到 sandbox-ok 之後那個視窗會留著（-NoExit），而他多半
+// 不會馬上關——等關窗等於要他多做一個動作，而且畫面在那之前完全不會動（Reed 指定
+// 改成隨時輪詢）。
+//
+// 等的是**狀態本身**：cap_sid 齊了就算好，判準跟畫面上那一列同一支函式
+// （sandboxReady），不各寫一份。這支結束之後 app.js 會自己重跑環境檢查，
+// 所以那一列會自動轉綠。
+const CAP_SID = path.join(homedir(), ".codex", "cap_sid");
+const POLL_MS = 1000;
+const TIMEOUT_MS = 3 * 60 * 1000;
+
+function ready() {
+  try {
+    return sandboxReady(readFileSync(CAP_SID, "utf8"));
+  } catch {
+    // 檔案還沒出現就是還沒好，不是錯誤。
+    return false;
+  }
+}
+
+const startedAt = Date.now();
+let announced = 0;
+
+while (!ready()) {
+  if (Date.now() - startedAt > TIMEOUT_MS) {
+    console.log("");
+    console.log("等了三分鐘還沒偵測到沙箱設定完成。三種可能：");
+    console.log("");
+    console.log("  ● 那個視窗還停在選單上 ——照上面的步驟選完就好");
+    console.log("  ● 剛才那個權限確認視窗，你按到「否」了嗎？");
+    console.log("    ⚠️ 它預設就選在「否」，按 Enter 等於取消，而且畫面上不會有任何說明。");
+    console.log("    再按一次這顆按鈕，這次在那個視窗按「是」。");
+    console.log("  ● 它已經印出 sandbox-ok ——回嚮導按一次「重新檢查」就好");
+    process.exit(0);
+  }
+
+  // 每 15 秒說一次話。完全安靜的等待看起來像當掉，而這一段可能要等學生按 UAC。
+  const waited = Math.floor((Date.now() - startedAt) / 15000);
+
+  if (waited > announced) {
+    announced = waited;
+    console.log(`等那個視窗完成⋯⋯（${waited * 15} 秒）`);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+}
+
+console.log("");
+console.log("✓ 沙箱設定好了。那個終端視窗可以關掉了。");
