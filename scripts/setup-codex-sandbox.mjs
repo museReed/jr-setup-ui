@@ -13,7 +13,7 @@
 // workspace + readonly 兩個 SID（見 src/codex-sandbox.js 的 sandboxReady）。
 // 學生選完之後按「重新檢查」，那一列自己會轉綠。
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
@@ -119,14 +119,49 @@ console.log("  2. 跳出來的權限確認視窗要按「是」");
 console.log("     ⚠️ 那個視窗預設選在「否」，順手按 Enter 就等於取消，而且不會有任何說明");
 console.log("  3. 看到「Sandbox ready」就成功了");
 console.log("");
-console.log("如果它沒問就直接開始了，代表沙箱本來就好了，關掉視窗就行。");
-console.log("");
 console.log("設定好的那一刻嚮導就會自己往下走，不用等你關掉那個視窗。");
 console.log("");
 
 if (!APPLY) {
   console.log("以上只是先看不動。加 --apply 才會真的開視窗。");
   process.exit(0);
+}
+
+const CAP_SID = path.join(homedir(), ".codex", "cap_sid");
+const POLL_MS = 1000;
+const TIMEOUT_MS = 3 * 60 * 1000;
+
+// ⚠️ 開視窗之前先把 cap_sid 挪開。這是「一定會跳選單」的唯一可靠條件。
+//
+// 試過三種觸發方式，只有這一種每次都成立：
+//
+//   固定的暫存目錄     第二次起不會問（目錄被寫進 [projects] 標成 trusted）
+//   每次換新目錄名     **還是不一定會問**（真機實測：同樣是「帳號沒了、cap_sid 還在」，
+//                      ~\Desktop\test 會問、新的暫存目錄不會，原因未查明）
+//   把 cap_sid 挪開    ✅ 每次都問（Reed 驗過兩次）
+//
+// ⚠️ 挪開不是刪掉：學生中途取消的話要還得回去，否則我們把一台本來好好的機器弄壞了。
+// 逾時或沒完成就搬回來（見下面的 restore）。
+const CAP_SID_BACKUP = `${CAP_SID}.jr-setup-bak`;
+let movedCapSid = false;
+
+try {
+  renameSync(CAP_SID, CAP_SID_BACKUP);
+  movedCapSid = true;
+} catch {
+  // 檔案本來就不在——那正是「從沒設定過」的狀態，codex 一定會問，不用做什麼。
+}
+
+function restoreCapSid() {
+  if (!movedCapSid) {
+    return;
+  }
+
+  try {
+    renameSync(CAP_SID_BACKUP, CAP_SID);
+  } catch {
+    // 新的已經寫出來了（設定成功），舊的那份就沒用了。
+  }
 }
 
 const { cmd, args } = openTerminal(launcher());
@@ -140,9 +175,6 @@ console.log("");
 //
 // 等的是**狀態本身**，判準跟畫面上那一列同一組，不各寫一份。這支結束之後 app.js
 // 會自己重跑環境檢查，所以那一列會自動轉綠。
-const CAP_SID = path.join(homedir(), ".codex", "cap_sid");
-const POLL_MS = 1000;
-const TIMEOUT_MS = 3 * 60 * 1000;
 
 // ⚠️ 兩個條件都要，跟畫面上那一列同一組判準（見 src/codex-sandbox.js）：
 // cap_sid 齊全，而且那兩個本機帳號真的在。只等 cap_sid 的話，帳號被刪掉的機器
@@ -185,6 +217,8 @@ while (!ready()) {
     console.log("    ⚠️ 它預設就選在「否」，按 Enter 等於取消，而且畫面上不會有任何說明。");
     console.log("    再按一次這顆按鈕，這次在那個視窗按「是」。");
     console.log("  ● 它已經寫著「Sandbox ready」——回嚮導按一次「重新檢查」就好");
+    // 沒設定成功就把舊的記錄搬回去，不要留下一台比按之前更糟的機器。
+    restoreCapSid();
     process.exit(0);
   }
 
@@ -197,6 +231,13 @@ while (!ready()) {
   }
 
   await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+}
+
+// 設定成功了，新的 cap_sid 已經寫出來，舊那份備份沒有用了。
+try {
+  rmSync(CAP_SID_BACKUP, { force: true });
+} catch {
+  // 刪不掉也無所謂，它只是一個帶著 .jr-setup-bak 的舊檔。
 }
 
 console.log("");
