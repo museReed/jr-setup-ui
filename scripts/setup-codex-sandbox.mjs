@@ -21,7 +21,18 @@ const APPLY = process.argv.includes("--apply");
 
 // codex 的沙箱選單只在它**用得到沙箱**時才跳。`codex sandbox` 這個子指令就是
 // 拿來試沙箱的，比開一個完整的對話乾淨——學生不必先問它一句話才看到選單。
-const BODY = "codex sandbox pwsh -c \"echo sandbox-ok\"";
+//
+// ⚠️ 沙箱裡跑的是 **cmd 不是 pwsh**，兩個理由，都是真機量到的：
+//
+//   1. pwsh 一開就讀 profile。Reed 的 VM 上那會噴一段紅字（Smart App Control 開在
+//      評估中 → 未簽章的 profile 被判成受限語言模式 → PowerShell 載入 profile 用的
+//      正是 dot-source，於是拒絕）。⚠️ 外層視窗的 -NoProfile 管不到這一支——那個
+//      紅字是**沙箱裡那個 shell** 印的，就在 sandbox-ok 上面一行。
+//   2. 指名 pwsh 的話，沒裝 PowerShell 7 的機器直接失敗。cmd.exe 每台 Windows 都有。
+//
+// 這一步只是「把沙箱叫起來」，不是在測 shell。市集版 pwsh 在沙箱裡跑不動是另一
+// 回事，那有 pwsh-store 自己那一列在管。
+const BODY = "codex sandbox cmd /c echo sandbox-ok";
 
 function launcher() {
   // 檔名不帶時間戳：這支同一台機器上重跑很正常，蓋掉上一份就好。

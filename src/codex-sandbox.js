@@ -209,13 +209,30 @@ export function planSandboxLink({ codexPath, realBinPath, exists }) {
 // 沙箱到底設定好了沒——真正的記錄在 ~/.codex/cap_sid，不是 .sandbox。
 //
 // ⚠️ 這是 2026-08-12 判準翻案的核心。原本問的是「helper 找不找得到」，而 helper
-// 只在**第一次建沙箱**那一刻用得到：建完之後兩個受限帳號的 SID 寫進 cap_sid，
-// 之後 codex 一路讀那份，helper 在不在都不影響。用它當判準會兩頭錯：
+// 只在**第一次建沙箱**那一刻用得到：建完之後記錄寫進 cap_sid，之後 codex 一路讀
+// 那份，helper 在不在都不影響。用它當判準會兩頭錯：
 //
 //   已經設定好、helper 對不到  → 誤報黃燈（Reed 的 VM 就是，cap_sid 兩個 SID 齊全）
 //   helper 在、但從沒設定過    → 誤報綠燈 ← **那才是真的會出事的人**
 //
 // 刪 .sandbox 不會讓 codex 重問，刪 cap_sid 才會——那就是它是唯一狀態記錄的證據。
+//
+// ⚠️ 2026-08-13 實測推翻了兩個先前寫在這裡的說法，兩個都值得記著：
+//
+//   ❌「cap_sid 記的是 CodexSandboxOffline / Online 兩個本機帳號的 SID」
+//   ✅ 不是。那兩個欄位的 SID 前綴**彼此都不同**，跟本機帳號對不起來——它們是
+//      沙箱用來設權限的能力 SID（capability SID）。真機量到的：
+//        本機帳號   S-1-5-21-2467909001-3784851742-1502529921-1003 / 1004
+//        cap_sid    S-1-5-21-1247760472-… / S-1-5-21-4233841508-…
+//
+//   ❌「把那兩個帳號刪掉，設定就會從頭跑一次（跳選單 + UAC）」
+//   ✅ 不會。帳號兩個都刪光之後，`codex sandbox` 照樣跑得起來、照樣寫出 cap_sid，
+//      **完全沒有跳 UAC**。那兩個帳號應該是舊版 codex 留下的，0.147.0 用的是不必
+//      提權的機制。
+//
+// 對判準的影響：沒有。它跟 codex 自己的認定一致（有 cap_sid 就不再問），而且
+// 「綠燈時沙箱真的能用」在真機上驗過了——帳號不存在也一樣能用。
+// ⚠️ 所以**不要**改成去查那兩個帳號在不在，那會製造一個 codex 根本不在乎的紅燈。
 export function sandboxReady(capSidRaw) {
   if (typeof capSidRaw !== "string" || capSidRaw.trim() === "") {
     return false;
@@ -224,8 +241,8 @@ export function sandboxReady(capSidRaw) {
   try {
     const parsed = JSON.parse(capSidRaw);
 
-    // 兩個都要：workspace 是改檔案那個帳號，readonly 是唯讀那個。只有一個代表
-    // 上次設定跑到一半（UAC 按了否就會停在中間），那時 codex 還是會再問一次。
+    // 兩個都要：workspace 是可以改檔案那一組權限，readonly 是唯讀那一組。只有一個
+    // 代表上次設定跑到一半（UAC 按了否就會停在中間），那時 codex 還是會再問一次。
     return (
       isSid(parsed?.workspace) && isSid(parsed?.readonly)
     );
