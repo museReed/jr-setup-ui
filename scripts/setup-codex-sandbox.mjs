@@ -131,36 +131,69 @@ const CAP_SID = path.join(homedir(), ".codex", "cap_sid");
 const POLL_MS = 1000;
 const TIMEOUT_MS = 3 * 60 * 1000;
 
-// ⚠️ 開視窗之前先把 cap_sid 挪開。這是「一定會跳選單」的唯一可靠條件。
+// ⚠️ 選單跳不跳，只由 config.toml 的 `[windows] sandbox` 決定——**跟目錄、跟
+// cap_sid、跟那兩個帳號都無關**。這一點試錯了四次，把過程留著：
 //
-// 試過三種觸發方式，只有這一種每次都成立：
+//   固定的暫存目錄   第二次起不問（以為是目錄被標成 trusted）
+//   每次換新目錄名   還是不問
+//   把 cap_sid 挪開  還是不問
+//   ✅ 真正的記錄    config.toml 裡的 [windows] sandbox = "elevated"
+//                    ——學生答過一次就寫進去，之後 codex 不再問任何一次
 //
-//   固定的暫存目錄     第二次起不會問（目錄被寫進 [projects] 標成 trusted）
-//   每次換新目錄名     **還是不一定會問**（真機實測：同樣是「帳號沒了、cap_sid 還在」，
-//                      ~\Desktop\test 會問、新的暫存目錄不會，原因未查明）
-//   把 cap_sid 挪開    ✅ 每次都問（Reed 驗過兩次）
+// 所以要重跑設定，就得把那一段拿掉。
 //
-// ⚠️ 挪開不是刪掉：學生中途取消的話要還得回去，否則我們把一台本來好好的機器弄壞了。
-// 逾時或沒完成就搬回來（見下面的 restore）。
+// ⚠️ 是**挪開不是刪掉**：學生中途取消的話要還得回去，否則我們把一台本來好好的
+// 機器弄壞了（逾時就 restore）。
+const CONFIG = path.join(homedir(), ".codex", "config.toml");
+const CONFIG_BACKUP = `${CONFIG}.jr-setup-bak`;
 const CAP_SID_BACKUP = `${CAP_SID}.jr-setup-bak`;
 let movedCapSid = false;
+let originalConfig = null;
+
+// [windows] 那一段整段拿掉。只刪 sandbox 那一行的話，留下一個空的 [windows]
+// 沒有意義，而那一段目前也只有這個鍵。
+function stripWindowsSandbox(text) {
+  return text.replace(/(^|\n)\[windows\][^[]*/g, "$1").trimEnd() + "\n";
+}
+
+try {
+  originalConfig = readFileSync(CONFIG, "utf8");
+
+  if (/\[windows\]/.test(originalConfig)) {
+    writeFileSync(CONFIG_BACKUP, originalConfig, "utf8");
+    writeFileSync(CONFIG, stripWindowsSandbox(originalConfig), "utf8");
+  } else {
+    originalConfig = null;
+  }
+} catch {
+  // 沒有 config.toml ＝ 從沒設定過，codex 本來就會問。
+  originalConfig = null;
+}
 
 try {
   renameSync(CAP_SID, CAP_SID_BACKUP);
   movedCapSid = true;
 } catch {
-  // 檔案本來就不在——那正是「從沒設定過」的狀態，codex 一定會問，不用做什麼。
+  // 檔案本來就不在，不用做什麼。
 }
 
 function restoreCapSid() {
-  if (!movedCapSid) {
-    return;
+  if (movedCapSid) {
+    try {
+      renameSync(CAP_SID_BACKUP, CAP_SID);
+    } catch {
+      // 新的已經寫出來了（設定成功），舊的那份就沒用了。
+    }
   }
 
-  try {
-    renameSync(CAP_SID_BACKUP, CAP_SID);
-  } catch {
-    // 新的已經寫出來了（設定成功），舊的那份就沒用了。
+  // ⚠️ config 一定要還原。少了 [windows] sandbox 的機器，下次開 codex 會再被問
+  // 一次——那是我們造成的，不是它本來的狀態。
+  if (originalConfig !== null) {
+    try {
+      writeFileSync(CONFIG, originalConfig, "utf8");
+    } catch {
+      // 還原不了就把備份留著，至少學生找得回來。
+    }
   }
 }
 
@@ -233,11 +266,13 @@ while (!ready()) {
   await new Promise((resolve) => setTimeout(resolve, POLL_MS));
 }
 
-// 設定成功了，新的 cap_sid 已經寫出來，舊那份備份沒有用了。
+// 設定成功了：codex 自己會把 [windows] sandbox 與新的 cap_sid 寫回去，兩份備份
+// 都沒有用了。
 try {
   rmSync(CAP_SID_BACKUP, { force: true });
+  rmSync(CONFIG_BACKUP, { force: true });
 } catch {
-  // 刪不掉也無所謂，它只是一個帶著 .jr-setup-bak 的舊檔。
+  // 刪不掉也無所謂，它們只是帶著 .jr-setup-bak 的舊檔。
 }
 
 console.log("");
