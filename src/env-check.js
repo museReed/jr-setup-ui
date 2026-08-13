@@ -762,6 +762,30 @@ async function readCapSid() {
   }
 }
 
+// 提權沙箱要的那兩個本機帳號在不在。
+//
+// ⚠️ 用 `net user` 不用 PowerShell 的 Get-LocalUser：cmd.exe 每台 Windows 都有，
+// 而且不必經過 PowerShell 的語言模式那一關（Smart App Control 開著的機器會擋
+// 未簽章的腳本，見 setup-codex-sandbox.mjs 的註解）。
+//
+// 帳號名是 codex 寫死的字串，不隨系統語系變——`net user` 的表頭會變成中文，
+// 但那兩個名字不會，所以比對名字是安全的。
+const SANDBOX_ACCOUNTS = ["CodexSandboxOffline", "CodexSandboxOnline"];
+
+async function sandboxAccountsExist() {
+  const result = await runProbe("cmd.exe", ["/c", "net user"]);
+
+  if (result.type !== "close") {
+    // 問不到就別亂判。回 true 等於「不因為這一項而變黃」——寧可漏報也不要在
+    // 一台其實沒問題的機器上長出一顆按不出結果的按鈕。
+    return true;
+  }
+
+  const output = result.output.toLowerCase();
+
+  return SANDBOX_ACCOUNTS.every((name) => output.includes(name.toLowerCase()));
+}
+
 async function codexForSandbox() {
   const env = await spawnEnv();
 
@@ -809,6 +833,7 @@ async function checkCodexSandboxReady() {
       ...sandboxSetupStatus({
         codexPath: await codexForSandbox(),
         ready: sandboxReady(await readCapSid()),
+        accounts: await sandboxAccountsExist(),
       }),
     };
   } catch {

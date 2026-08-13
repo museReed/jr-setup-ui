@@ -126,7 +126,8 @@ try {
     "ok",
   );
   assert.equal(
-    sandboxSetupStatus({ codexPath: null, ready: false }).status,
+    sandboxSetupStatus({ codexPath: null, ready: false, accounts: false })
+      .status,
     "ok",
   );
   ok("codex 還沒裝時這兩列都不搶話");
@@ -155,16 +156,44 @@ try {
   // 設定好了那一列就是綠的，檔案那一列跟它無關——那正是拆成兩列的理由：
   // Reed 的 VM 是「helper 對不到、沙箱一切正常」，兩件事各自成立。
   assert.equal(
-    sandboxSetupStatus({ codexPath: JUNCTION_CODEX, ready: true }).status,
+    sandboxSetupStatus({
+      codexPath: JUNCTION_CODEX,
+      ready: true,
+      accounts: true,
+    }).status,
     "ok",
   );
   ok("設定好了就是綠的，跟檔案那一列各自判各自的");
+
+  // ⚠️ 迴歸（2026-08-13 VM 實測）：cap_sid 齊全但那兩個本機帳號被刪掉時，
+  // `codex sandbox <指令>` 照樣跑得動（非提權那條路），但**互動式的 codex 一進
+  // 未信任目錄就照樣問學生要不要設定沙箱**。只看 cap_sid 的話這裡會給綠燈，
+  // 而學生的體驗是「畫面說好了、codex 還在問」。
+  assert.equal(
+    sandboxSetupStatus({
+      codexPath: JUNCTION_CODEX,
+      ready: true,
+      accounts: false,
+    }).status,
+    "warn",
+  );
+  // 反過來也不算：帳號在、但 cap_sid 沒了，codex 一樣會重問。
+  assert.equal(
+    sandboxSetupStatus({
+      codexPath: JUNCTION_CODEX,
+      ready: false,
+      accounts: true,
+    }).status,
+    "warn",
+  );
+  ok("cap_sid 與兩個受限帳號都要在，缺一個都還會被 codex 問");
 
   // ⚠️ 這一列非有按鈕不可（Reed 在畫面前指出）：合成一列的時候，這種狀態長不出
   // 按鈕，學生看得到問題卻無事可做。
   const neverSetUp = sandboxSetupStatus({
     codexPath: JUNCTION_CODEX,
     ready: false,
+    accounts: false,
   });
   assert.equal(neverSetUp.status, "warn");
   assert.equal(neverSetUp.fixLabel, "開終端設定沙箱");

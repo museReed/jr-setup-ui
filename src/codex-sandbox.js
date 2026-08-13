@@ -226,13 +226,18 @@ export function planSandboxLink({ codexPath, realBinPath, exists }) {
 //        cap_sid    S-1-5-21-1247760472-… / S-1-5-21-4233841508-…
 //
 //   ❌「把那兩個帳號刪掉，設定就會從頭跑一次（跳選單 + UAC）」
-//   ✅ 不會。帳號兩個都刪光之後，`codex sandbox` 照樣跑得起來、照樣寫出 cap_sid，
-//      **完全沒有跳 UAC**。那兩個帳號應該是舊版 codex 留下的，0.147.0 用的是不必
-//      提權的機制。
+//   ✅ 一半對。`codex sandbox <指令>` 照樣跑得起來、照樣寫出 cap_sid、也沒有跳
+//      UAC——但**互動式的 codex 一進未信任目錄就照樣問你要不要設定沙箱**。
 //
-// 對判準的影響：沒有。它跟 codex 自己的認定一致（有 cap_sid 就不再問），而且
-// 「綠燈時沙箱真的能用」在真機上驗過了——帳號不存在也一樣能用。
-// ⚠️ 所以**不要**改成去查那兩個帳號在不在，那會製造一個 codex 根本不在乎的紅燈。
+// ⚠️ 所以 codex 有**兩種沙箱**，這是這一列判準的核心：
+//
+//   非提權（能力 SID）  只要 cap_sid    → `codex sandbox` 走這條，帳號沒了也能跑
+//   提權（default）     要那兩個本機帳號 → 互動式 codex 要的是這個，沒有就一直問
+//
+// 判準因此是**兩個都要**：cap_sid 齊全 + 兩個帳號都在。只看 cap_sid 的話，帳號被
+// 刪掉的機器會顯示綠燈，而學生一開 codex 照樣被問——綠燈要對齊的是他的體驗。
+// （2026-08-13 Reed 在 VM 上一步步量出來的：刪帳號→被問；選 1 + UAC 按是→
+//   帳號回來、印 Sandbox ready、不再問。）
 export function sandboxReady(capSidRaw) {
   if (typeof capSidRaw !== "string" || capSidRaw.trim() === "") {
     return false;
@@ -289,12 +294,21 @@ export function sandboxFilesStatus({ codexPath, helperPath, storePowerShell }) {
   };
 }
 
-export function sandboxSetupStatus({ codexPath, ready }) {
+export function sandboxSetupStatus({ codexPath, ready, accounts }) {
   if (codexPath === null || codexPath === undefined || codexPath === "") {
     return { status: "ok", detail: "等 Codex 裝好再看這一項" };
   }
 
-  if (ready === true) {
+  // ⚠️ 兩個條件都要，這是 2026-08-13 在 VM 上量出來的（我先前只看 cap_sid，錯了）：
+  //
+  //   cap_sid 齊全、但兩個帳號被刪掉  → `codex sandbox` 照樣跑得動（非提權那條路），
+  //                                    但**互動式的 codex 一進未信任目錄就照樣問你
+  //                                    要不要設定沙箱**——畫面是綠的，學生還是被問
+  //   帳號補回來（選 1 + UAC 按是）    → codex 印 Sandbox ready，不再問
+  //
+  // 也就是 codex 有兩種沙箱：非提權那種只要 cap_sid，提權那種要那兩個本機帳號。
+  // 綠燈要對齊的是**學生的體驗**（不會再被問），所以兩個都要。
+  if (ready === true && accounts === true) {
     return { status: "ok", detail: "沙箱已經設定好了" };
   }
 
