@@ -23,6 +23,7 @@ import {
   describeStep,
   stepsForTools,
 } from "../src/config-install.js";
+import { checksForPlatform } from "../src/env-check.js";
 
 function ok(description) {
   console.log(`ok - ${description}`);
@@ -389,6 +390,42 @@ try {
     ["env-config", "execution-policy", "claude", "node"],
   );
   ok("執行原則排在環境段最前面，擋路的先修");
+
+  // 守門：後端會回的每一列環境檢查，都要有人認領。沒登記在 ENV_CARD_META 的
+  // checkIds 裡就會自己長成一張卡，標題走預設模板（「準備 <整句 label>，讓後面的
+  // 課堂步驟可以正常進行。」）——讀起來像機器寫的。
+  //
+  // ⚠️ 這支測試是為了擋沙箱拆成兩列那次：新的 codex-sandbox-ready 忘了加進 Codex
+  // 那張卡，畫面上多出一張沒人要的卡，而測試全綠。同一種漏在這個檔案的註解裡
+  // 已經寫過一次了，還是又漏了——所以改成用測試擋。
+  const everyWindowsCheck = checksForPlatform("win32").map(({ id }) => id);
+  const ownedCards = flattenCheckCards(
+    groupChecks([]),
+    everyWindowsCheck.map((id) => check(id)),
+  );
+  const ownRow = new Set(
+    section(ownedCards, "env").cards.flatMap(({ checks }) =>
+      checks.map(({ id }) => id),
+    ),
+  );
+
+  for (const id of everyWindowsCheck) {
+    assert.ok(ownRow.has(id), `${id} 沒有出現在任何一張環境卡的清單裡`);
+  }
+
+  // 每一列都要嘛是自己那張卡的主 check，要嘛被別人的 checkIds 收編——落單的那種
+  // 會拿到預設模板的標題。
+  for (const card of section(ownedCards, "env").cards) {
+    if (card.kind === "setup") {
+      continue;
+    }
+
+    assert.ok(
+      !/^準備 .+，讓後面的課堂步驟可以正常進行。$/.test(card.detail ?? ""),
+      `${card.checkId} 的說明是預設模板——它該被收進某張卡，或自己登記一段文案`,
+    );
+  }
+  ok("環境段每一列都有卡片認領，沒有人落在預設模板上");
 
   // 規矩與回話風格是同一件事的兩半，合成一張卡。分兩張只是把「設定它怎麼做事」
   // 切成兩半讓學生做兩次，而且先驗的那次跑的是只裝了一半的狀態。

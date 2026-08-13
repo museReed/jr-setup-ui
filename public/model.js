@@ -225,6 +225,22 @@ export const GUIDANCE = {
     ],
     diagnose: null,
   },
+  // 上面那一列講「檔案接不接得上」，這一列講「設定做了沒」——兩件事各自一段自救。
+  // 這一列有按鈕（開終端），所以重點不是「你要自己想辦法」，而是**按下去之後那個
+  // 視窗裡要做什麼**：選單長什麼樣、UAC 那顆按哪個、怎麼知道成功了。
+  "codex-sandbox-ready": {
+    symptom: "合併或驗證時 Codex 一個指令都跑不動，或它每次都重問要設定哪種沙箱",
+    expected: "那一列顯示沙箱已經設定好了",
+    checks: [
+      "Codex 的沙箱要先建兩個受限帳號才用得起來，而那只能在 Codex 自己的選單裡做",
+      "按那一列的「開終端設定沙箱」，會開一個新視窗把 Codex 叫起來",
+      "在那個視窗選 1（Set up default sandbox）再按 Enter",
+      "⚠️ 接著跳出來的權限確認視窗要按「是」——**預設按鈕是「否」**，順手按 Enter 就等於取消，而且畫面上不會有任何說明（那就是 1223，它的意思是「被取消」不是「找不到」）",
+      "看到它印出路徑就成功了，回到嚮導按「重新檢查」，那一列會轉綠",
+      "上面那一列（沙箱要用的檔案）還是黃的話先修它——檔案接不上時，設定一定會失敗",
+    ],
+    diagnose: null,
+  },
   "powershell-version": {
     symptom: "那一列寫「需要 PowerShell 5.1 或 7 以上」",
     expected: "顯示你目前的版本號，例如 5.1.26100",
@@ -640,7 +656,16 @@ const ENV_CARD_META = {
     description: "另一個 AI 助手，課堂上會拿它跟 Claude 對照著看有什麼不一樣",
     // 沙箱那一列跟著 Codex 走：它問的是「這支 codex 待會兒跑得起來嗎」，
     // 跟裝了沒、登入了沒是同一張卡上的三個面向。Windows 才有那一列。
-    checkIds: ["codex", "codex-auth", "codex-sandbox", "codex-legacy-skills"],
+    // ⚠️ 沙箱**兩列都要列在這裡**。沒登記的那一列會自己長成一張卡，標題走預設模板
+    // ——「準備 Codex 沙箱設定好了，讓後面的課堂步驟可以正常進行。」，讀起來像機器
+    // 寫的。拆成兩列那次就漏了一次，現在有守門測試擋（test/sections.mjs）。
+    checkIds: [
+      "codex",
+      "codex-auth",
+      "codex-sandbox",
+      "codex-sandbox-ready",
+      "codex-legacy-skills",
+    ],
   },
   // Git 與 GitHub CLI 合成一張：學生腦中那是同一件事（把東西存起來、推上去），
   // 拆兩張只是把一個念頭切成兩半讓他做兩次。
