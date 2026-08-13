@@ -1703,6 +1703,9 @@ try {
   const NEEDS_ROW_LABEL = new Set([
     "fix-shell-wrapper",
     "fix-codex-sandbox",
+    // 沙箱拆成兩列之後多的那一顆。文字由那一列自己給（「開終端設定沙箱」），
+    // 因為它跟接檔案那顆長得很像，只有寫清楚「開終端」學生才知道會發生什麼事。
+    "setup-codex-sandbox",
     "fix-legacy-skills",
     "fix-legacy-cli",
     // ⚠️ 這一顆是安裝器（INSTALLERS 的 pwsh-store），但掛在 fixAction 上

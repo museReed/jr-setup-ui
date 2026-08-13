@@ -15,8 +15,9 @@ import { installActionId, resolveInstaller } from "./installers.js";
 import {
   findSandboxHelper,
   isStorePowerShell,
+  sandboxFilesStatus,
   sandboxReady,
-  sandboxStatus,
+  sandboxSetupStatus,
   storePowerShellStatus,
 } from "./codex-sandbox.js";
 import { SKILL_NAMES } from "./config-install.js";
@@ -64,6 +65,7 @@ const TOOL_ONLY_CHECKS = {
     "codex",
     "codex-auth",
     "codex-sandbox",
+    "codex-sandbox-ready",
     "codex-legacy-skills",
     "pwsh-store",
   ],
@@ -93,8 +95,13 @@ export function checksForPlatform(platform) {
     { id: "codex", label: "Codex CLI" },
     { id: "codex-auth", label: "Codex 登入狀態" },
     // 沙箱那一列只有 Windows 有意義：junction 與 MSIX 都是 Windows 專屬的裝法。
+    // ⚠️ 兩列不是一列：檔案接不接得上、設定好了沒，是兩件事、兩顆按鈕
+    // （見 codex-sandbox.js）。檔案那列排前面——接不上的話設定一定會失敗。
     ...(platform === "win32"
-      ? [{ id: "codex-sandbox", label: "Codex 沙箱跑得起來" }]
+      ? [
+          { id: "codex-sandbox", label: "Codex 沙箱要用的檔案" },
+          { id: "codex-sandbox-ready", label: "Codex 沙箱設定好了" },
+        ]
       : []),
     // 兩個平台都要：~/.codex/skills 這個舊落點跟作業系統無關。
     { id: "codex-legacy-skills", label: "沒有打架的舊版 skill" },
@@ -339,13 +346,12 @@ export const FIX_ACTIONS = {
   // （key 就叫 pwsh-store），所以 action 本身由 actions.js 的那個迴圈自動註冊。
   "pwsh-store": (status) =>
     status === "warn" ? installActionId("pwsh-store") : null,
-  // ⚠️ 不是「黃燈就有按鈕」——黃燈有兩種，只有一種按了會有事發生。
-  //
-  //   helper 對不到      → 接一條 junction 就好，這顆按鈕就是為它寫的
-  //   helper 在、沒設定過 → 沒得接。設定要在 codex 自己的選單裡完成，按這顆只會
-  //                        回「已經在了，不用再接」，而那句話會讓學生以為修好了
-  "codex-sandbox": (status, check) =>
-    status === "warn" && check?.linkable === true ? "fix-codex-sandbox" : null,
+  "codex-sandbox": (status) => (status === "warn" ? "fix-codex-sandbox" : null),
+  // ⚠️ 這一列非有按鈕不可。沙箱的設定只能在 codex 自己的選單裡完成，而那個選單
+  // 只在它第一次用到沙箱時跳出來——沒有按鈕的話學生看得到問題卻無事可做
+  // （Reed 在畫面前指出）。這顆開一個真的終端把 codex 叫起來。
+  "codex-sandbox-ready": (status) =>
+    status === "warn" ? "setup-codex-sandbox" : null,
   "codex-legacy-skills": (status) =>
     status === "warn" ? "fix-legacy-skills" : null,
   // ⚠️ 這一列是綠燈才有按鈕，跟其他每一顆都相反。它不是在修毛病，是把前面兩顆
@@ -756,31 +762,53 @@ async function readCapSid() {
   }
 }
 
+async function codexForSandbox() {
+  const env = await spawnEnv();
+
+  return pickRunnable(
+    findAllExecutables("codex", env, {
+      platform: "win32",
+      fileExists: existsSync,
+    }),
+    { platform: "win32" },
+  );
+}
+
 async function checkCodexSandbox() {
   const id = "codex-sandbox";
-  const label = "Codex 沙箱跑得起來";
+  const label = "Codex 沙箱要用的檔案";
 
   try {
-    const env = await spawnEnv();
-    const codexPath = pickRunnable(
-      findAllExecutables("codex", env, {
-        platform: "win32",
-        fileExists: existsSync,
-      }),
-      { platform: "win32" },
-    );
+    const codexPath = await codexForSandbox();
 
     return {
       id,
       label,
-      ...sandboxStatus({
+      ...sandboxFilesStatus({
         codexPath,
         helperPath:
           codexPath === null
             ? null
             : findSandboxHelper(codexPath, { exists: existsSync }),
-        ready: sandboxReady(await readCapSid()),
         storePowerShell: isStorePowerShell(await pwshSource()),
+      }),
+    };
+  } catch {
+    return { id, label, status: "warn", detail: "檢查逾時，請再按一次重新檢查" };
+  }
+}
+
+async function checkCodexSandboxReady() {
+  const id = "codex-sandbox-ready";
+  const label = "Codex 沙箱設定好了";
+
+  try {
+    return {
+      id,
+      label,
+      ...sandboxSetupStatus({
+        codexPath: await codexForSandbox(),
+        ready: sandboxReady(await readCapSid()),
       }),
     };
   } catch {
@@ -923,6 +951,10 @@ export async function runEnvCheck(tools = []) {
 
       if (wanted.has("codex-sandbox")) {
         checksToRun.push(checkCodexSandbox());
+      }
+
+      if (wanted.has("codex-sandbox-ready")) {
+        checksToRun.push(checkCodexSandboxReady());
       }
 
       checksToRun.push(checkLegacySkills());

@@ -239,45 +239,59 @@ function isSid(value) {
   return typeof value === "string" && /^S-1-5-21-/.test(value);
 }
 
-export function sandboxStatus({ codexPath, helperPath, ready, storePowerShell }) {
+// ⚠️ 沙箱是**兩列**不是一列（Reed 在畫面前指定）。
+//
+// 原本一列兩種狀態：同一列有時說「檔案接不上」、有時說「還沒設定」，而那是兩件
+// 不同的事、要按的也是兩顆不同的按鈕。合成一列的代價在畫面上看得見：其中一種
+// 狀態長不出按鈕，學生就卡在那裡沒事可做。
+//
+//   codex-sandbox        沙箱要用的檔案接得上嗎  → 接一條 junction
+//   codex-sandbox-ready  沙箱設定好了嗎          → 開終端讓 codex 問那三個選項
+//
+// 順序也有意義：檔案接不上的話，設定一定會撞上
+// `ShellExecuteExW failed to launch setup helper`，所以檔案那列排前面。
+export function sandboxFilesStatus({ codexPath, helperPath, storePowerShell }) {
   if (codexPath === null || codexPath === undefined || codexPath === "") {
     // codex 都還沒裝的話，這一列沒有話好說——那一列自己會紅。
     return { status: "ok", detail: "等 Codex 裝好再看這一項" };
   }
 
-  // 設定好了就是綠的，helper 在不在都一樣——它的工作已經做完了。
+  if (helperPath !== null) {
+    return { status: "ok", detail: "沙箱要用的檔案都在" };
+  }
+
+  return {
+    status: "warn",
+    installable: false,
+    fixLabel: "接回沙箱要用的檔案",
+    // 兩層都中的時候先講 Store 版：它是比較上游的那個，而且是學生自己修得掉的。
+    detail: storePowerShell
+      ? "沙箱檔案接不上，而且 PowerShell 7 是 Store 版"
+      : "Codex 找不到沙箱要用的檔案，跑起來會失敗",
+    codexPath,
+  };
+}
+
+export function sandboxSetupStatus({ codexPath, ready }) {
+  if (codexPath === null || codexPath === undefined || codexPath === "") {
+    return { status: "ok", detail: "等 Codex 裝好再看這一項" };
+  }
+
   if (ready === true) {
     return { status: "ok", detail: "沙箱已經設定好了" };
   }
 
-  // 還沒設定，而且 helper 也對不到 → 學生現在去設定一定會撞上
-  // `ShellExecuteExW failed to launch setup helper`。這顆按鈕就是為了這個情況。
-  if (helperPath === null) {
-    return {
-      status: "warn",
-      installable: false,
-      // ⚠️ linkable 是 fixAction 的判準：只有這一種情況接 junction 才有用。
-      // 「helper 在、只是沒設定」按這顆會回「已經在了，不用再接」，等於一顆
-      // 按了不會有事發生的按鈕（比沒有按鈕更讓人以為修好了）。
-      linkable: true,
-      fixLabel: "接回沙箱要用的檔案",
-      // 兩層都中的時候先講 Store 版：它是比較上游的那個，而且是學生自己修得掉的。
-      detail: storePowerShell
-        ? "沙箱檔案接不上，而且 PowerShell 7 是 Store 版"
-        : "Codex 找不到沙箱要用的檔案，跑起來會失敗",
-      codexPath,
-    };
-  }
-
-  // 檔案都在、只差沒設定過。這一格沒有按鈕可按——設定要在 codex 自己的選單裡完成，
-  // 而那個選單只在它第一次用到沙箱時跳出來。
+  // ⚠️ 這一列一定要有按鈕。設定只能在 codex 自己的選單裡完成，而那個選單只在它
+  // 第一次用到沙箱時跳出來——沒有按鈕的話學生看得到問題卻無事可做（Reed 在畫面
+  // 前指出）。按鈕開一個真的終端把 codex 叫起來，選單就會出現。
   //
   // ⚠️ UAC 的預設按鈕是「否」，順手按 Enter 就等於取消，而畫面上不會有任何說明
   // （那就是 1223 = ERROR_CANCELLED）。所以這一行一定要點名那顆按鈕。
   return {
     status: "warn",
     installable: false,
-    detail: "沙箱還沒設定：Codex 問的時候選 1，權限視窗要按「是」",
+    fixLabel: "開終端設定沙箱",
+    detail: "還沒設定：選 1，權限視窗要按「是」",
     codexPath,
   };
 }

@@ -5,8 +5,9 @@ import {
   findSandboxHelper,
   isStorePowerShell,
   planSandboxLink,
+  sandboxFilesStatus,
   sandboxReady,
-  sandboxStatus,
+  sandboxSetupStatus,
   storePowerShellStatus,
 } from "../src/codex-sandbox.js";
 import {
@@ -114,14 +115,21 @@ try {
   assert.equal(findSandboxHelper(null, { exists: () => true }), null);
   ok("codex 路徑是空的時候不會炸");
 
-  // codex 還沒裝的話這一列沒有話好說——「Codex CLI」那一列自己會紅，
-  // 兩列一起紅只是把同一件事講兩次。
+  // codex 還沒裝的話這兩列都沒有話好說——「Codex CLI」那一列自己會紅，
+  // 三列一起紅只是把同一件事講三次。
   assert.equal(
-    sandboxStatus({ codexPath: null, helperPath: null, storePowerShell: false })
-      .status,
+    sandboxFilesStatus({
+      codexPath: null,
+      helperPath: null,
+      storePowerShell: false,
+    }).status,
     "ok",
   );
-  ok("codex 還沒裝時這一列不搶話");
+  assert.equal(
+    sandboxSetupStatus({ codexPath: null, ready: false }).status,
+    "ok",
+  );
+  ok("codex 還沒裝時這兩列都不搶話");
 
   // ⚠️ 判準是 cap_sid，不是 helper。helper 只在第一次建沙箱那一刻用得到，設定完
   // 之後它在不在都不影響——Reed 的 VM 就是「helper 對不到、沙箱一切正常」，舊判準
@@ -144,47 +152,52 @@ try {
   );
   ok("沙箱設定好了沒，看的是 cap_sid 裡那兩個 SID");
 
+  // 設定好了那一列就是綠的，檔案那一列跟它無關——那正是拆成兩列的理由：
+  // Reed 的 VM 是「helper 對不到、沙箱一切正常」，兩件事各自成立。
   assert.equal(
-    sandboxStatus({
-      codexPath: JUNCTION_CODEX,
-      helperPath: null,
-      ready: true,
-      storePowerShell: false,
-    }).status,
+    sandboxSetupStatus({ codexPath: JUNCTION_CODEX, ready: true }).status,
     "ok",
   );
-  ok("設定好了就是綠的，helper 對不對得到都一樣");
+  ok("設定好了就是綠的，跟檔案那一列各自判各自的");
 
-  // 迴歸：舊判準在這裡判綠燈，而這才是真的會出事的人——helper 在，但沙箱從來沒
-  // 設定過，學生到規則段合併時才會撞上。
-  const neverSetUp = sandboxStatus({
+  // ⚠️ 這一列非有按鈕不可（Reed 在畫面前指出）：合成一列的時候，這種狀態長不出
+  // 按鈕，學生看得到問題卻無事可做。
+  const neverSetUp = sandboxSetupStatus({
     codexPath: JUNCTION_CODEX,
-    helperPath: `x\\${HELPER}`,
     ready: false,
-    storePowerShell: false,
   });
   assert.equal(neverSetUp.status, "warn");
-  assert.equal(neverSetUp.linkable, undefined, "沒得接就不該長那顆接回檔案的按鈕");
+  assert.equal(neverSetUp.fixLabel, "開終端設定沙箱");
   assert.ok(neverSetUp.detail.includes("是"), "UAC 預設按否，說明要點名那顆按鈕");
-  ok("helper 在但從沒設定過是黃的，而且不給接 junction 的按鈕");
+  assert.ok(neverSetUp.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
+  ok("沒設定過是黃的，而且給得出一顆真的能做事的按鈕");
 
-  const broken = sandboxStatus({
+  const broken = sandboxFilesStatus({
     codexPath: JUNCTION_CODEX,
     helperPath: null,
-    ready: false,
     storePowerShell: false,
   });
   assert.equal(broken.status, "warn");
   assert.equal(broken.installable, false);
-  assert.equal(broken.linkable, true);
+  assert.equal(broken.fixLabel, "接回沙箱要用的檔案");
   assert.ok(broken.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
   ok("helper 找不到是黃的、接得回來，而且不長安裝鍵");
 
+  // helper 對得到就是綠的，這一列只管檔案。
+  assert.equal(
+    sandboxFilesStatus({
+      codexPath: JUNCTION_CODEX,
+      helperPath: `x\\${HELPER}`,
+      storePowerShell: false,
+    }).status,
+    "ok",
+  );
+  ok("檔案那一列只管 helper 對不對得到");
+
   // 兩層都中時先講 Store 版：它比較上游，而且是學生自己修得掉的那一個。
-  const bothLayers = sandboxStatus({
+  const bothLayers = sandboxFilesStatus({
     codexPath: JUNCTION_CODEX,
     helperPath: null,
-    ready: false,
     storePowerShell: true,
   });
   assert.ok(bothLayers.detail.includes("Store"));

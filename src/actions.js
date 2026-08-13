@@ -60,6 +60,10 @@ const fixCodexSandboxScript = moduleFile(
   "../scripts/fix-codex-sandbox.mjs",
   import.meta.url,
 );
+const setupCodexSandboxScript = moduleFile(
+  "../scripts/setup-codex-sandbox.mjs",
+  import.meta.url,
+);
 const fixLegacySkillsScript = moduleFile(
   "../scripts/fix-legacy-skills.mjs",
   import.meta.url,
@@ -252,6 +256,19 @@ Object.assign(actions, {
     args: [fixCodexSandboxScript, "--apply"],
     description:
       "在 Codex 會去找的位置接一條 junction，指回它自己套件裡的 codex-resources。",
+  },
+  // 沙箱的**設定**跟上面那顆（接檔案）是兩件事，所以是兩個 action。
+  //
+  // ⚠️ 這顆開一個真的終端視窗，跟合併那顆同一個理由：codex 問的是互動選單，而選了
+  // 之後跳的 UAC 框在背景管線裡會出現在嚮導後面——學生順手關掉，我們只拿到一個
+  // 沒頭沒尾的錯誤碼。
+  "setup-codex-sandbox": {
+    kind: "fixed",
+    label: "設定沙箱（開終端）",
+    cmd: process.execPath,
+    args: [setupCodexSandboxScript, "--apply"],
+    description:
+      "開一個終端把 Codex 叫起來，讓它問你要怎麼設定沙箱；選完回嚮導按重新檢查。",
   },
   // A3：合併改成開一個真的終端視窗。
   //
