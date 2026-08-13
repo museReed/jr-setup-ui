@@ -285,13 +285,15 @@ export function sandboxSetupStatus({ codexPath, ready }) {
   // 第一次用到沙箱時跳出來——沒有按鈕的話學生看得到問題卻無事可做（Reed 在畫面
   // 前指出）。按鈕開一個真的終端把 codex 叫起來，選單就會出現。
   //
-  // ⚠️ UAC 的預設按鈕是「否」，順手按 Enter 就等於取消，而畫面上不會有任何說明
-  // （那就是 1223 = ERROR_CANCELLED）。所以這一行一定要點名那顆按鈕。
+  // ⚠️ 這一行**不要寫死「選 1」**。真機實測：受限帳號還在的機器按下去什麼都不問，
+  // 直接跑完就綠了（Reed 的 VM）；只有真的要重建帳號時才會跳選單與 UAC。
+  // 寫死一個未必會出現的步驟，學生會停在那裡等一個不會來的選單。
+  // 兩種結果都講得通的說法寫在按鈕開的那個視窗裡（scripts/setup-codex-sandbox.mjs）。
   return {
     status: "warn",
     installable: false,
     fixLabel: "開終端設定沙箱",
-    detail: "還沒設定：選 1，權限視窗要按「是」",
+    detail: "還沒設定：按右邊開終端，照那裡的指示做",
     codexPath,
   };
 }

@@ -168,7 +168,13 @@ try {
   });
   assert.equal(neverSetUp.status, "warn");
   assert.equal(neverSetUp.fixLabel, "開終端設定沙箱");
-  assert.ok(neverSetUp.detail.includes("是"), "UAC 預設按否，說明要點名那顆按鈕");
+  // ⚠️ 這一行不可以寫死「選 1」。真機實測：受限帳號還在的機器按下去什麼都不問，
+  // 直接印 sandbox-ok；只有要重建帳號時才跳選單。寫死一個未必出現的步驟，那種人
+  // 會停在那裡等一個不會來的選單（Reed 在畫面前指出）。
+  assert.ok(
+    !neverSetUp.detail.includes("選 1"),
+    "那一列不該寫死「選 1」——有一半的機器不會跳選單",
+  );
   assert.ok(neverSetUp.detail.length <= 40, "detail 太長會把按鈕擠出畫面");
   ok("沒設定過是黃的，而且給得出一顆真的能做事的按鈕");
 

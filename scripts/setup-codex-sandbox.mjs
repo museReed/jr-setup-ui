@@ -77,13 +77,18 @@ if (process.platform !== "win32") {
   process.exit(0);
 }
 
-console.log("會開一個新的終端視窗，讓 Codex 問你要怎麼設定沙箱。");
+// ⚠️ 兩種結果都要講。真機實測：受限帳號還在的機器按下去**什麼都不問**，直接印
+// sandbox-ok；只有真的要重建帳號時才跳選單與 UAC。只講後者的話，前一種人會停在
+// 那裡等一個不會出現的選單（Reed 在畫面前指出文案跟他看到的不一樣）。
+console.log("會開一個新的終端視窗，在那裡試著把沙箱跑起來。");
 console.log("");
-console.log("在那個視窗裡：");
-console.log("  1. 選 1（Set up default sandbox）再按 Enter");
-console.log("  2. 跳出來的權限確認視窗要按「是」");
+console.log("兩種情況都正常：");
+console.log("  ● 直接印出 sandbox-ok ——沙箱本來就設定好了，關掉視窗就行");
+console.log("  ● 跳出「要設定哪種沙箱」的選單 ——選 1（Set up default sandbox）再按 Enter");
+console.log("     接著跳出來的權限確認視窗要按「是」");
 console.log("     ⚠️ 那個視窗預設選在「否」，順手按 Enter 就等於取消，而且不會有任何說明");
-console.log("  3. 看到它印出路徑就成功了，回到嚮導按「重新檢查」");
+console.log("");
+console.log("看到 sandbox-ok 就成功了，回到嚮導按「重新檢查」。");
 console.log("");
 
 if (!APPLY) {
