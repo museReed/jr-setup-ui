@@ -1633,7 +1633,9 @@ async function handleDone(
   if (followUp === "auto" && awaitingMerge !== null) {
     state.deferredVerificationSteps.add(verifyTarget.id);
     view.addLine(
-      `先不驗證：這張卡的「${awaitingMerge.label}」還等著合併。合併完再按「重跑驗證」。`,
+      // 同樣不寫死「重跑驗證」：沒驗過時那顆寫的是「驗證」（見 retestText 與格內
+      // 那顆），指名一個當下不存在的字，學生會去找一顆找不到的按鈕。
+      `先不驗證：這張卡的「${awaitingMerge.label}」還等著合併。合併完再按這一列的驗證鍵。`,
       "agent-status",
     );
     renderWizard();

@@ -980,7 +980,19 @@ export function systemRowChecked(check, { rowVerified, behaviorVerified }) {
 }
 
 // 「結構都對了，但還沒實際跑跑看」——這句只在該跑而還沒跑的時候補。
-const PENDING_RUN_HINT = "還沒實際跑跑看——按「重跑驗證」";
+//
+// ⚠️ 不寫死「重跑驗證」：那顆按鈕沒驗過時寫的是「驗證」，驗過了才叫「重跑驗證」
+//（見 app.js 的 retestText 與格內那顆）。而這句話出現的時機正是「還沒驗過」——
+// 指名一個當下不存在的字，學生會在畫面上找一顆叫「重跑驗證」的按鈕。跟安裝那邊
+// 「重跑安裝」是同一種錯（Reed 在畫面前抓到兩次）。
+const PENDING_RUN_HINT = "還沒實際跑跑看——按這一列的驗證鍵";
+
+// 打了勾、但伺服器上一輪的結論還停在「尚未安裝」。
+//
+// 那個勾來自本次的樂觀記憶（按過安裝、或驗過了），而說明來自上一次檢查——安裝完
+// 接著跑驗證的那段時間裡，兩者會同時出現在同一格：勾是綠的，底下寫「尚未安裝」
+//（Reed 在畫面前抓到的 auto-rename）。勾是對的，過期的是那句話。
+const INSTALLED_PENDING_RECHECK = "已安裝，等這一輪跑完會再檢查一次";
 
 // 驗過之後那一步的檔案被動過。不作廢那個勾，只提醒——改的可能是學生自己那半
 // （合併過的 CLAUDE.md），程式看不出來會不會影響，決定權給他。
@@ -1037,10 +1049,18 @@ export function checklistGroups({
         candidate.status === "ok" ||
         checked ||
         installedCheckIds.has(candidate.id);
+      // ⚠️ 勾打上了，說明就不能還停在「尚未安裝」——那個勾來自本次的樂觀記憶，那句
+      // 話來自上一次檢查，安裝完接著驗證的那幾秒兩者會同時出現在同一格。只在伺服器
+      // 還說 missing 時換掉：warn 的那些（例如舊的 service_tier 還在）講的是別的事，
+      // 換掉會把真正該讀的訊息蓋掉。
+      const installDetail = resultTexts.get(candidate.id) ?? candidate.detail ?? "";
       system.push({
         id: `install-${candidate.id}`,
         text: `安裝：${candidate.label}`,
-        detail: resultTexts.get(candidate.id) ?? candidate.detail ?? "",
+        detail:
+          installedThis && candidate.status === "missing"
+            ? INSTALLED_PENDING_RECHECK
+            : installDetail,
         checked: installedThis,
         automatic: true,
         disabled: true,

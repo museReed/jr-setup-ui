@@ -1216,6 +1216,37 @@ try {
   assert.equal(justInstalled.system[1].checked, false);
   ok("剛按完安裝：安裝那格當場打勾，驗證那格還空著");
 
+  // ⚠️ 同一格的勾與說明不能互相打架。勾來自本次的樂觀記憶，說明來自上一次檢查——
+  // 安裝完接著跑驗證的那幾秒，畫面上是綠勾配一句「尚未安裝」（Reed 在畫面前抓到的
+  // auto-rename）。勾是對的，過期的是那句話。
+  assert.doesNotMatch(justInstalled.system[0].detail, /尚未安裝/);
+  assert.match(justInstalled.system[0].detail, /已安裝/);
+  ok("剛裝完那一格不會綠勾配「尚未安裝」");
+
+  // ⚠️ 只換掉 missing 那種。warn 講的是別的事（例如舊的 service_tier 還在，而那句
+  // 話正指著學生該按的按鈕），換掉會把真正該讀的訊息蓋掉。
+  const staleButInstalled = checklistGroups({
+    checks: [
+      {
+        ...eyeRow,
+        label: "Codex 的規矩",
+        status: "warn",
+        detail: '舊的 service_tier = "default" 還在',
+        verifyAction: "verify-in-terminal",
+      },
+    ],
+    verifiedCheckIds: new Set(),
+    installedCheckIds: new Set(["x"]),
+  });
+  assert.match(staleButInstalled.system[0].detail, /service_tier/);
+  ok("warn 那種說明留著，不會被「已安裝」蓋掉");
+
+  // ⚠️ 這句不可以寫死「重跑驗證」：那顆按鈕沒驗過時叫「驗證」，而這句話出現的時機
+  // 正是還沒驗過。指名一個當下不存在的字，學生會在畫面上找一顆不存在的按鈕。
+  assert.ok(!notRunYet.system[1].detail.includes("重跑驗證"));
+  assert.match(notRunYet.system[1].detail, /這一列的驗證鍵/);
+  ok("等驗證那句話指得到當下真的存在的那顆按鈕");
+
   // 沒有自動驗證的檢查不拆——硬拆會長出一格永遠不知道該不該打勾的東西。
   assert.equal(systemOnly.system.length, 1);
   assert.equal(systemOnly.system[0].id, "system-node");
