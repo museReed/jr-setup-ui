@@ -486,7 +486,19 @@ export function configRowModel(
     check.installAction ??
     (pending && check.noInstall !== true ? "install-config-step" : null);
 
-  if (installAction !== null && installAction !== undefined) {
+  // ⚠️ 等著合併的列一顆安裝鍵都不給——不管裝過沒有。
+  //
+  // 那個檔案是 protectExisting 的：安裝刻意不覆蓋學生自己的內容，所以按下去**什麼
+  // 都不會發生**，只印一句「已有你自己的 X，沒有覆蓋，請按『用 AI 合併』」。Reed 在
+  // VM 上按了好幾次，畫面除了那句話沒有任何變化，他的話是「點了之後沒有任何反應，
+  // 也不能確定有沒有安裝成功」——那顆鍵存在本身就是誤導。
+  //
+  // 那一列真正該按的是「用 AI 合併」，而它就在同一格（見下面 mergeAction 的 rowId）。
+  if (
+    check.needsMerge !== true &&
+    installAction !== null &&
+    installAction !== undefined
+  ) {
     // 安裝按鈕只管安裝：
     //
     //   還沒裝                「安裝」      主要動作，橘色
@@ -509,15 +521,9 @@ export function configRowModel(
     //（Reed 在畫面前問「那個 button 在哪邊」）。伺服器說不 ok 就是不 ok，本次的
     // 樂觀記憶不能蓋過它。
     //
-    // ⚠️ 但等著合併的列不算——那一列的 status 本來就不是 ok，而重跑安裝**什麼都不會
-    // 做**：檔案是 protectExisting 的，安裝刻意不覆蓋學生自己的內容，按下去只會印
-    // 一句「已有你自己的 X，沒有覆蓋，請按『用 AI 合併』」。同一列旁邊就擺著那顆
-    // 「用 AI 合併」，再放一顆按了沒事的鍵只是分散他的注意力（Reed 在畫面前指出，
-    // config-check.js 的 differs 那段也是同一個理由）。
+    // （等著合併的列在上面就整個擋掉了，不會走到這裡。）
     const rescueReinstall =
-      installationDone &&
-      (verificationFailed ||
-        (check.status !== "ok" && check.needsMerge !== true));
+      installationDone && (verificationFailed || check.status !== "ok");
     // 有些列裝好之後仍然要留一顆（check.reinstallable，見 config-check）：那些
     // 設定會被別的程式改掉，重跑安裝是唯一的自救手段。它不是主要動作，畫成次要的。
     const canRedo = installationDone && !rescueReinstall && check.reinstallable === true;
@@ -548,8 +554,15 @@ export function configRowModel(
         rowId: rowIds.install,
       });
     }
-  } else if (check.noInstall !== true && !installationDone) {
+  } else if (
+    check.noInstall !== true &&
+    check.needsMerge !== true &&
+    !installationDone
+  ) {
     // 沒有安裝動作時補一顆停用的佔位，讓每一列的按鈕位置對齊。
+    //
+    // ⚠️ 等著合併的列也不補。它旁邊本來就有一顆真的能做事的「用 AI 合併」，再放一顆
+    // 灰掉的「安裝」只會讓學生盯著它想「是不是要先按那個」——而按了什麼都不會發生。
     //
     // 但 demo 那種 noInstall 的列不補：它從頭到尾就沒有「安裝」這個概念，補一顆
     // 按不動的按鈕只會讓學生盯著它想「是不是要先按這個」（VM 實測）。那一列的動作
@@ -599,7 +612,10 @@ export function configRowModel(
       // 折回群組主人：同一張卡上兩列都給了按鈕（不然卡片可能一顆都沒有），
       // 但按哪一列都是「兩份一次合完」。
       step: check.mergeStep ?? check.id,
-      rowId: rowIds.verify,
+      // ⚠️ 掛在「安裝：…」那一格，不是「驗證：…」那一格。合併改的是檔案本身，
+      // 而那一格的說明正寫著「已有你自己的版本，需要合併」——按鈕要待在講那件事的
+      // 地方。掛到驗證那格的話，說明在上面、按鈕在下面，學生要自己連起來。
+      rowId: rowIds.install,
     });
   }
 

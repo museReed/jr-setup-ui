@@ -347,6 +347,46 @@ try {
   );
   ok("等著合併的列只給合併鍵，不給按了沒事的安裝鍵");
 
+  // ⚠️ 還沒按過安裝的那一輪也一樣不給。Reed 在 Codex 那張卡上按了好幾次那顆「安裝」，
+  // 畫面除了一句「已有你自己的版本，沒有覆蓋」以外沒有任何變化——他的話是「點了之後
+  // 沒有任何反應，也不能確定有沒有安裝成功」。那顆鍵存在本身就是誤導。
+  const freshMergeRow = configRowModel({
+    id: "codex-agents",
+    label: "Codex CLI 做事的規矩",
+    status: "warn",
+    detail: "已有你自己的版本，需要合併",
+    installAction: "install-config-step",
+    mergeAction: "merge-in-terminal",
+    needsMerge: true,
+  });
+  assert.ok(
+    !freshMergeRow.buttons.some(
+      (button) => button.dataName === "installAction",
+    ),
+    "沒按過安裝的合併列也不給安裝鍵——按下去一樣什麼都不會發生",
+  );
+  // 合併鍵掛在「安裝：…」那一格，不是「驗證：…」那一格：合併改的是檔案本身，而那
+  // 一格的說明正寫著「已有你自己的版本，需要合併」。
+  const mergeButton = freshMergeRow.buttons.find(
+    (button) => button.dataName === "mergeAction",
+  );
+  assert.equal(mergeButton.rowId, "system-codex-agents");
+  const splitMergeRow = configRowModel({
+    id: "codex-config",
+    label: "Codex CLI 的規矩與回話風格",
+    status: "warn",
+    detail: "已有你自己的版本，需要合併",
+    mergeAction: "merge-in-terminal",
+    verifyAction: "verify-behavior",
+    needsMerge: true,
+  });
+  assert.equal(
+    splitMergeRow.buttons.find((button) => button.dataName === "mergeAction")
+      .rowId,
+    "install-codex-config",
+  );
+  ok("合併鍵掛在講「需要合併」的那一格，拆成兩格時掛安裝那半");
+
   // 還沒裝的列才是「安裝」，而且是主要動作。
   const notInstalledYet = configRowModel({
     id: "hook",

@@ -691,6 +691,24 @@ function renderWizard() {
               rowId: checklistRowIds(check).install,
             };
           }),
+        // 等著合併的每一格也各自一顆「用 AI 合併」。
+        //
+        // ⚠️ 這一顆跟安裝／驗證不同：按哪一格都是**兩份一次合完**（step 折回群組
+        // 主人）。看起來違反「一顆按鈕只做它那一格的事」，但合併本來就只能一次做完
+        // ——兩個檔案要一起讀、一起判斷衝突。不給第二格按鈕的話那一格就是死的：
+        // 它寫著「已有你自己的版本，需要合併」，旁邊什麼都沒有（Reed 在 Codex 那張
+        // 卡上指出）。
+        ...cardChecks
+          .filter(
+            (check) => check.id !== rowCheck.id && check.mergeAction != null,
+          )
+          .map((check) => ({
+            action: check.mergeAction,
+            dataName: "mergeAction",
+            text: "用 AI 合併（會開終端）",
+            step: check.mergeStep ?? check.id,
+            rowId: checklistRowIds(check).install,
+          })),
         // ⚠️ noInstall 那種列（demo、寫一篇筆記）跳過：configRowModel 已經給了它
         // 自己那顆，而且文案不一樣——那顆是「開終端跑」（跑給你看），不是驗證。
         // 兩顆的 rowId 一樣，view 的 inlineActions 是 Map，後放的會把它蓋掉。
