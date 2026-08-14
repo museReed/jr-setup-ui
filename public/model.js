@@ -1017,54 +1017,17 @@ export function pendingMergeSibling(stepId, checks = []) {
   );
 }
 
-// 剛裝完 stepId 之後，同一張卡還有沒有沒裝的另一份。有的話先把它裝完再驗證。
-export function nextInstallStep(stepId, checks = []) {
-  const order = Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId));
+// ⚠️ 這裡曾經有 nextInstallStep：裝完一份自動接著裝同一張卡的另一份。拿掉了
+//（Reed 指定）——每一格現在都有自己的安裝鍵（app.js 那段 perRowInstall），一顆按鈕
+// 只做它那一格的事。代價是兩份都要裝的卡學生要按兩次，那是刻意的。
 
-  if (order === undefined) {
-    return null;
-  }
-
-  const byId = new Map(checks.map((check) => [check.id, check]));
-
-  for (const id of order.slice(order.indexOf(stepId) + 1)) {
-    const check = byId.get(id);
-
-    if (check !== undefined && check.status !== "ok") {
-      return check;
-    }
-  }
-
-  return null;
-}
-
-// 一張卡裝完之後，還有哪幾份等著驗證——**依卡片上的順序，不是「最後裝完的那一份」**。
+// ⚠️ 這裡曾經有 pendingVerifySteps：一張卡裝完之後，整張卡的驗證依序排隊跑。
 //
-// ⚠️ 這裡是 8/12 那個 bug 的正解。裝完之後接驗證的那段用的是 installedCheck（＝剛裝完
-// 的那一份），而合併卡會依序裝兩份，所以自動接的驗證永遠只驗到第二份，第一份的驗證
-// 從來沒被觸發過（VM 實測：「一次只跑一個指令」打勾了、「常用指令不用每次問你」空著）。
+// 它是 8/12 那個 bug 的解——當時裝完接驗證用的是「剛裝完的那一份」，而合併卡會自動
+// 依序裝兩份，所以第一份的驗證從來沒被觸發過。
 //
-// 這個 bug 跟 MERGE_ORDER 的順序無關——8/12 換順序之前也在，只是沒驗到的換了一格。
-// 把順序改回去不會解決它。
-//
-// 只回傳「還沒驗過」的：學生手動驗過其中一格再按重裝，不該又被拉去重跑那一格。
-// needsMerge 的不進來，理由跟 installVerificationFollowUp 那段一樣——還沒合併的驗證
-// 驗的是半完成的狀態。
-export function pendingVerifySteps(stepId, checks = [], verified = new Set()) {
-  const order =
-    Object.values(MERGE_ORDER).find((ids) => ids.includes(stepId)) ?? [stepId];
-  const byId = new Map(checks.map((check) => [check.id, check]));
-
-  return order
-    .map((id) => byId.get(id))
-    .filter(
-      (check) =>
-        check !== undefined &&
-        check.verifyAction != null &&
-        check.needsMerge !== true &&
-        !verified.has(check.id),
-    );
-}
+// 自動接力拿掉之後這個問題自己消失了：一顆安裝鍵只裝一格，接的驗證就是那一格
+//（app.js 的 justInstalled）。排隊那套留著反而會在「只裝了一格」的時候跑去驗另一格。
 
 export function flattenCheckCards(groupedSections, envChecks = []) {
   const envChecksById = new Map(envChecks.map((check) => [check.id, check]));

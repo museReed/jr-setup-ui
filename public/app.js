@@ -19,9 +19,7 @@ import {
   flattenCheckCards,
   groupChecks,
   mergeInvalidates,
-  nextInstallStep,
   pendingMergeSibling,
-  pendingVerifySteps,
   matchesFullscreenProof,
   SECTIONS,
   sectionGateState,
@@ -41,6 +39,7 @@ import {
   cardResultText,
   cardStatusModel,
   checklistGroups,
+  checklistRowIds,
   configRowModel,
   configSummary,
   currentCardIndex,
@@ -662,6 +661,36 @@ function renderWizard() {
               },
             ]
           : []),
+        // 每一格「安裝：…」也各自一顆按鈕，按下去**只裝那一格**（Reed 指定）。
+        //
+        // 原本整張卡只有一顆：按下去裝第一份，程式再自己接著裝第二份。畫面上的樣子是
+        // 「第一格旁邊那顆按鈕，把兩件事都做了」，而第二格從頭到尾沒有自己的入口——
+        // 學生沒辦法只重跑其中一件（Reed 在畫面前指出）。
+        //
+        // rowCheck 那一格不在這裡：它的按鈕由 configRowModel 給，那邊還要判斷「重裝／
+        // 裝好了整顆收掉／等著合併不給」。這裡補的是同一張卡上的其他格，判斷跟著抄。
+        ...cardChecks
+          .filter(
+            (check) =>
+              check.id !== rowCheck.id &&
+              check.installAction != null &&
+              check.needsMerge !== true,
+          )
+          .map((check) => {
+            const done =
+              check.status === "ok" ||
+              state.installedSteps.has(check.id) ||
+              verified.has(check.id);
+
+            return {
+              action: check.installAction,
+              dataName: "installAction",
+              text: done ? "重裝" : "安裝",
+              secondary: done,
+              step: check.id,
+              rowId: checklistRowIds(check).install,
+            };
+          }),
         // ⚠️ noInstall 那種列（demo、寫一篇筆記）跳過：configRowModel 已經給了它
         // 自己那顆，而且文案不一樣——那顆是「開終端跑」（跑給你看），不是驗證。
         // 兩顆的 rowId 一樣，view 的 inlineActions 是 Map，後放的會把它蓋掉。
@@ -1597,27 +1626,26 @@ async function handleDone(
   );
   resetRun();
 
-  // 合併的卡有兩份設定。裝完第一份先接著裝第二份，兩份都好了才輪到驗證——不然驗的
-  // 是只裝了一半的狀態。
-  const sibling =
-    action === "install-config-step"
-      ? nextInstallStep(step, state.lastChecks)
-      : null;
-
-  if (sibling !== null) {
-    view.addLine(`接著裝同一張卡的另一份：${sibling.label}`, "agent-status");
-    runConfigCheckAction(sibling, "install-config-step");
-    return;
-  }
-
-  // ⚠️ 要驗的不是「剛裝完的那一份」，是這張卡上**第一格還沒驗過的**。
+  // ⚠️ 一顆安裝鍵只做它那一格的事（Reed 指定）。
   //
-  // 兩份依序裝完之後，這裡的 installedCheck 一定是第二份，於是第一份的驗證從來沒
-  // 被觸發過（VM 實測，見 model.js 的 pendingVerifySteps）。現在改成整張卡排隊、
-  // 一格驗完接下一格。
-  const verifyQueue =
+  // 這裡曾經自動接著裝同一張卡的另一份，而且驗證是整張卡排隊跑。
+  // 畫面上的樣子是「第一格旁邊那顆按鈕，把兩件事都做了」——學生沒辦法只重跑其中
+  // 一件，而每一格現在都有自己的安裝鍵了，那條自動接力就是多餘的意外。
+  //
+  // 代價寫在這裡免得下次又被接回去：兩份都要裝的卡，學生要按兩次。這是刻意的——
+  // 兩顆按鈕各自說得出自己做了什麼，比一顆按鈕做兩件事好懂。
+  const justInstalled =
     action === "install-config-step"
-      ? pendingVerifySteps(step, state.lastChecks, state.verificationAttempted)
+      ? (state.lastChecks.find((candidate) => candidate.id === step) ?? null)
+      : null;
+  // 需要合併的不驗（驗的是半完成的狀態）、已經驗過的不重驗（學生手動驗過再按重裝，
+  // 不該又被拉去跑一次）。
+  const verifyQueue =
+    justInstalled !== null &&
+    justInstalled.verifyAction != null &&
+    justInstalled.needsMerge !== true &&
+    !state.verificationAttempted.has(justInstalled.id)
+      ? [justInstalled]
       : [];
   const verifyTarget = verifyQueue[0] ?? null;
   const followUp = installVerificationFollowUp({

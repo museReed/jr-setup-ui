@@ -547,15 +547,24 @@ try {
   );
   ok("每次重畫卡片都跟著重算分頁的鎖");
 
-  // 合併的卡有兩份設定：裝完第一份要接著裝第二份，兩份都好了才輪到驗證。順序反了
-  // 的話，驗的是只裝了一半的狀態。
+  // ⚠️ 一顆安裝鍵只做它那一格的事（Reed 指定）。這裡曾經接著裝同一張卡的另一份
+  // （nextInstallStep）——畫面上的樣子是「第一格旁邊那顆按鈕把兩件事都做了」，而
+  // 第二格從頭到尾沒有自己的入口。現在每一格都有自己的安裝鍵，那條接力就是意外。
+  assert(
+    !files.app.includes("nextInstallStep"),
+    "自動接著裝下一份已經拿掉了，別接回去",
+  );
   assert.match(
     files.app,
-    /if \(sibling !== null\) \{[\s\S]*?return;\s*\n\s*\}\s*\n[\s\S]*?const verifyQueue =/,
+    /const justInstalled =/,
+    "接的驗證對著剛裝完的那一格",
   );
-  // ⚠️ 兩份都裝完之後要驗的是**整張卡**，不是剛裝完的那一份。用 installedCheck 去接
-  // 驗證的話，第一份的驗證永遠不會被觸發（VM 實測：「一次只跑一個指令」打勾了、
-  // 「常用指令不用每次問你」空著）。
+  // 每一格「安裝：…」各自一顆按鈕，落點是那一格（checklistRowIds 算的，跟清單同一條）。
+  assert.match(
+    files.app,
+    /rowId: checklistRowIds\(check\)\.install/,
+    "其他格的安裝鍵要掛回它自己那一列",
+  );
   assert.match(files.app, /const verifyTarget = verifyQueue\[0\] \?\? null;/);
   assert.match(
     files.app,

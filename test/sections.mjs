@@ -9,9 +9,7 @@ import {
   groupChecks,
   matchesFullscreenProof,
   mergeInvalidates,
-  nextInstallStep,
   pendingMergeSibling,
-  pendingVerifySteps,
 } from "../public/model.js";
 import {
   cardIsComplete,
@@ -476,73 +474,15 @@ try {
   assert.match(mergedRules[0].detail, /兩份/);
   ok("規矩與回話風格合成一張卡，主 check 是帶驗證的那一份");
 
-  // 裝完第一份要接著裝第二份，兩份都好了才輪到驗證。
-  assert.equal(
-    nextInstallStep("claude-md", [
-      check("claude-md"),
-      { ...check("output-style"), status: "missing" },
-    ])?.id,
-    "output-style",
-  );
-  // 第二份已經好了就沒有下一步，直接進驗證。
-  assert.equal(
-    nextInstallStep("claude-md", [check("claude-md"), check("output-style")]),
-    null,
-  );
-  // 最後那份裝完之後也沒有下一步——它自己就是驗證要跑的那一份。
-  assert.equal(nextInstallStep("output-style", [check("claude-md")]), null);
-  // 沒有被合併的步驟照舊。
-  assert.equal(nextInstallStep("hook", [check("hook")]), null);
-  ok("裝完第一份會接著裝第二份，都好了才輪到驗證");
-
-  // 迴歸（VM 實測 2026-08-12）：權限卡按安裝會依序裝 allowlist 與 hook，而自動接的
-  // 驗證用的是「剛裝完的那一份」＝hook，於是 allowlist 那格的驗證從來沒被觸發，
-  // 清單看起來順序不對（第一格空著、第二格打勾）。要驗的是整張卡，依卡片上的順序。
+  // ⚠️ 這裡曾經有兩組測試：「裝完第一份會接著裝第二份」（nextInstallStep）與「裝完
+  // 之後整張卡排隊驗證」（pendingVerifySteps）。兩支函式都拿掉了（Reed 指定）。
   //
-  // ⚠️ 這跟 MERGE_ORDER 的順序無關，換順序只會換一格沒被驗到。
-  assert.deepEqual(
-    pendingVerifySteps("hook", [
-      { ...check("allowlist"), verifyAction: "verify-in-terminal" },
-      { ...check("hook"), verifyAction: "verify-in-terminal" },
-    ]).map(({ id }) => id),
-    ["allowlist", "hook"],
-    "兩格都要驗，而且白名單排前面",
-  );
-  // 已經驗過的不再排進去：學生自己先驗過一格再按重裝，不該被拉去重跑那一格。
-  assert.deepEqual(
-    pendingVerifySteps(
-      "hook",
-      [
-        { ...check("allowlist"), verifyAction: "verify-in-terminal" },
-        { ...check("hook"), verifyAction: "verify-in-terminal" },
-      ],
-      new Set(["allowlist"]),
-    ).map(({ id }) => id),
-    ["hook"],
-  );
-  // 沒有驗證的那一格不排隊；還等著合併的也不排——驗的會是半完成的狀態。
-  assert.deepEqual(
-    pendingVerifySteps("output-style", [
-      { ...check("claude-md"), needsMerge: true, verifyAction: "verify-behavior" },
-      { ...check("output-style"), verifyAction: "verify-behavior" },
-    ]).map(({ id }) => id),
-    ["output-style"],
-  );
-  assert.deepEqual(
-    pendingVerifySteps("hook", [
-      check("allowlist"),
-      { ...check("hook"), verifyAction: "verify-in-terminal" },
-    ]).map(({ id }) => id),
-    ["hook"],
-  );
-  // 沒被合併的單列卡照舊，只驗自己那一格。
-  assert.deepEqual(
-    pendingVerifySteps("codex-name", [
-      { ...check("codex-name"), verifyAction: "verify-in-terminal" },
-    ]).map(({ id }) => id),
-    ["codex-name"],
-  );
-  ok("裝完之後排隊要驗的是整張卡，依順序，不是剛裝完的那一份");
+  // 理由：那條自動接力在畫面上的樣子是「第一格旁邊那顆按鈕，把兩件事都做了」，而
+  // 第二格從頭到尾沒有自己的入口，學生沒辦法只重跑其中一件。現在每一格都有自己的
+  // 安裝鍵，一顆按鈕只做它那一格的事，接的驗證也就是那一格（app.js 的 justInstalled）。
+  //
+  // 排隊那套解掉的 8/12 bug（第一份的驗證從來沒被觸發）自己消失了：不再有「一次裝
+  // 兩份」這件事。守門改在 test/frontend-layers.mjs——那裡禁止把接力接回去。
 
   // 迴歸（Reed 在 VM 上看到的）：CLAUDE.md 說「已有你自己的版本，需要合併」之後，
   // 流程照樣往下裝 output-style 然後**馬上驗行為**。那次驗的是半完成的狀態——行為
