@@ -601,20 +601,31 @@ try {
   assert.match(files.app, /options: check\.verifyOptions,/);
   ok("每一格驗證都有自己的按鈕，參數帶得對");
 
-  // 驗證按鈕只能有一個家。一個驗證就放卡片底下，多個就一律回到各自那一格——兩邊都
-  // 畫的話，底下那顆跑的永遠是 card.check，在合併卡上看起來像「全部重跑」，實際只
-  // 重跑第一個（VM 實測：白名單已驗過，底下按下去開的是「一次只跑一個指令」的終端）。
+  // 驗證按鈕只能有一個家，而那個家是它負責的那一格（Reed 在 VM 上指定）。
+  //
+  // 原本只有「兩個以上驗證」才回到各自那一格，一個驗證的卡把按鈕留在卡片底部——
+  // 清單裡寫著「驗證：輸入框下面那條狀態列」，按鈕卻在下面某處，學生要自己把兩者
+  // 配起來。跟當初把安裝鍵搬進清單是同一個理由。
+  //
+  // 兩邊都畫還會說謊：底下那顆跑的永遠是 card.check，在合併卡上看起來像「全部
+  // 重跑」，實際只重跑第一個（VM 實測）。
   assert.match(
     files.app,
-    /const perRowVerify = verifyChecks\.length > 1;/,
-    "有幾個驗證決定按鈕放哪裡",
+    /const perRowVerify = verifyChecks\.length > 0;/,
+    "有驗證的規則卡一律把按鈕掛回那一格",
   );
   assert.match(
     files.app,
-    /showRetest: card\.kind === "env" \|\| \(row\?\.showRetest === true && !perRowVerify\)/,
-    "多驗證的卡片不畫底下那顆重跑驗證",
+    /showRetest:\s*\n?\s*card\.kind === "env" \|\|\s*\n?\s*\(row\?\.showRetest === true && !\(perRowVerify && card\.kind !== "setup"\)\)/,
+    "規則卡不畫底下那顆，但清單沒畫出來時要留著（不然一顆入口都沒有）",
   );
-  assert.match(files.app, /\.\.\.\(perRowVerify \? verifyChecks : \[\]\)\.map/);
+  // ⚠️ noInstall 那種列跳過：configRowModel 已經給了它自己那顆，而且文案不一樣
+  //（「開終端跑」是跑給你看，不是驗證）。兩顆 rowId 一樣，Map 會後蓋前。
+  assert.match(
+    files.app,
+    /verifyChecks\.filter\(\(check\) => check\.noInstall !== true\)/,
+    "noInstall 的列不重複加一顆，會蓋掉它自己那顆「開終端跑」",
+  );
   // 驗過的那一格按鈕不收掉，改寫成「重跑驗證」：收掉的話那一格就沒有入口了，
   // 而驗證會失敗、環境也會變，學生要能在原地再驗一次。
   assert.match(

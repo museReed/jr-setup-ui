@@ -596,13 +596,17 @@ function renderWizard() {
   // 因為驗證掛在它身上。
   const rowCheck =
     cardChecks.find((candidate) => candidate.status !== "ok") ?? card.check;
-  // 驗證按鈕只能有一個家：一個驗證就放卡片底下，多個就一律回到各自那一格。
+  // 驗證按鈕只能有一個家，而那個家是**它負責的那一格**（Reed 指定）。
   //
-  // 兩邊都畫的話，底下那顆跑的永遠是 card.check——合併卡上它看起來像「全部重跑」，
-  // 實際只重跑第一個驗證（VM 實測：白名單那格已驗過，底下按下去開的是「一次只跑
-  // 一個指令」的終端）。一顆按鈕說謊比少一顆按鈕更糟。
+  // 原本只有「一張卡兩個以上驗證」才回到各自那一格，一個驗證的卡把按鈕留在卡片
+  // 底部。但那顆離它驗的那一格隔著一整段——清單裡寫著「驗證：輸入框下面那條狀態
+  // 列」，按鈕卻在下面某處，學生要自己把兩者配起來（Reed 在 VM 上指出，跟當初把
+  // 安裝鍵搬進清單是同一個理由）。
+  //
+  // 兩邊都畫的話還會說謊：底下那顆跑的永遠是 card.check——合併卡上它看起來像
+  //「全部重跑」，實際只重跑第一個驗證（VM 實測）。一顆按鈕說謊比少一顆按鈕更糟。
   const verifyChecks = cardChecks.filter((check) => check.verifyAction != null);
-  const perRowVerify = verifyChecks.length > 1;
+  const perRowVerify = verifyChecks.length > 0;
   // 這張卡上還有檔案在等 AI 合併。驗證要等合併做完——驗一份還沒併進去的設定，拿到的
   // 結果跟列上那句「需要合併」互相矛盾，學生只能挑一句相信（VM 實測 codex-config：
   // 沒按「用 AI 合併」就跑了規矩與回話風格的測試）。
@@ -658,7 +662,13 @@ function renderWizard() {
               },
             ]
           : []),
-        ...(perRowVerify ? verifyChecks : []).map((check) => ({
+        // ⚠️ noInstall 那種列（demo、寫一篇筆記）跳過：configRowModel 已經給了它
+        // 自己那顆，而且文案不一樣——那顆是「開終端跑」（跑給你看），不是驗證。
+        // 兩顆的 rowId 一樣，view 的 inlineActions 是 Map，後放的會把它蓋掉。
+        ...(perRowVerify
+          ? verifyChecks.filter((check) => check.noInstall !== true)
+          : []
+        ).map((check) => ({
           action: check.verifyAction,
           dataName: "verifyAction",
           text: verified.has(check.id) ? "重跑驗證" : "驗證",
@@ -762,8 +772,14 @@ function renderWizard() {
             onInput: (value) => cardModel.onPasteProofInput(value),
           }
         : null,
-    // 多個驗證的卡片不畫底下那顆——按鈕已經回到各自那一格了（見 perRowVerify）。
-    showRetest: card.kind === "env" || (row?.showRetest === true && !perRowVerify),
+    // 規則卡不再畫底下那顆——驗證鍵已經回到它負責的那一格了（見 perRowVerify）。
+    // 環境卡的「再 check 一次」是另一回事：它重掃的是整張卡，本來就不屬於任何一格。
+    //
+    // ⚠️ 清單沒畫出來的話 inline 按鈕會**安靜地消失**（view.js 的 inlineActions
+    // 是 Map，查不到就什麼都不畫），那時底下這顆是唯一的入口，要留著。
+    showRetest:
+      card.kind === "env" ||
+      (row?.showRetest === true && !(perRowVerify && card.kind !== "setup")),
     // env 卡按下去是重新掃一次環境，config 卡按下去是真的跑一次驗證——同一顆按鈕
     // 兩件事，字要各講各的。原本一律叫「再 check 一次」，學生不知道它會開終端。
     //
