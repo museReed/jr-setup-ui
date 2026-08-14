@@ -1092,6 +1092,19 @@ try {
   assert(files.view.includes("inlineActions.get(item.id)"));
   // 放在那一格「裡面」而不是另起一列——另起一列會把清單撐高一截。
   assert(files.view.includes("label.append(inline)"));
+  // ⚠️ 一列可能不只一顆：合併卡的「驗證」與「還原成合併前」rowId 一樣，都住在
+  // system-<id>。這張表的值一旦變回單顆，後放的會把先放的**安靜地換掉**——驗證鍵
+  // 一律回到那一格之後，「還原成合併前」與「用 AI 合併」就這樣整顆消失。
+  assert.match(
+    files.view,
+    /inlineActions\.set\(row, \[\.\.\.\(inlineActions\.get\(row\) \?\? \[\]\), button\]\)/,
+    "一列要放得下多顆按鈕，不然同一格的第二顆會被安靜換掉",
+  );
+  assert.match(
+    files.view,
+    /for \(const inline of inlineActions\.get\(item\.id\) \?\? \[\]\)/,
+    "那一格的按鈕要全部畫出來，不是只畫一顆",
+  );
   // 已經畫進清單的那幾顆不再重複一次。落點的算法只有一份（inlineRow），下面那圈
   // 用同一個算——兩邊各自拼字串的話，帶 rowId 的按鈕會在清單裡和按鈕列各出現一次。
   assert(files.view.includes("if (inlineActions.has(inlineRow(spec))) continue;"));

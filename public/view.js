@@ -737,9 +737,10 @@ function checklistElement(
       //
       // 放在同一列而不是另起一列：另起一列會把清單撐高一截，而這一列本來就有
       // 兩行文字的高度，塞得下一顆小按鈕（Reed 指定）。
-      const inline = inlineActions.get(item.id);
-
-      if (inline !== undefined) {
+      // ⚠️ 一列可能不只一顆：合併卡的「驗證」與「還原成合併前」都住在同一格。
+      // 這裡曾經是 Map<rowId, 一顆按鈕>，後放的會把先放的**安靜地換掉**——驗證鍵
+      // 一律回到那一格之後，「還原成合併前」與「用 AI 合併」就這樣消失了。
+      for (const inline of inlineActions.get(item.id) ?? []) {
         inline.classList.add("checklist-inline-action");
         label.append(inline);
       }
@@ -942,12 +943,17 @@ function renderCard(model) {
           (spec) => spec.checkId !== undefined || spec.rowId !== undefined,
         )
       : [];
-    const inlineActions = new Map(
-      inlineSpecs.map((spec) => [
-        inlineRow(spec),
-        actionButton({ ...spec, hoverFill: true }, model.onActionClick),
-      ]),
-    );
+    // ⚠️ 一列可能不只一顆按鈕（合併卡的「驗證」與「還原成合併前」都掛在
+    // system-<id> 那一格），所以值是**陣列**不是單顆。原本是單顆，後放的會把先放的
+    // 安靜換掉——驗證鍵一律回到那一格之後，還原鍵就這樣不見了（守門測試盯著）。
+    const inlineActions = new Map();
+
+    for (const spec of inlineSpecs) {
+      const row = inlineRow(spec);
+      const button = actionButton({ ...spec, hoverFill: true }, model.onActionClick);
+
+      inlineActions.set(row, [...(inlineActions.get(row) ?? []), button]);
+    }
 
     if (model.showChecklist) {
       body.append(
