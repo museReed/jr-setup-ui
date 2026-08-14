@@ -573,6 +573,16 @@ try {
     /rowId: checklistRowIds\(check\)\.install/,
     "其他格的安裝鍵要掛回它自己那一列",
   );
+  // ⚠️ 這幾組補的按鈕只給規則卡。環境卡的 envCardRowModel 本來就每一列各給一顆
+  // 安裝鍵了，這裡再補一次那一列會長出兩顆一模一樣的「安裝」（Reed 在 GitHub CLI
+  // 那一列看到）。而且它在 inlineActions 改成一格可放多顆之前是**看不見的**——
+  // 第二顆會安靜地把第一顆換掉。
+  assert.equal(
+    (files.app.match(/\.\.\.\(card\.kind === "config" \? cardChecks : \[\]\)/g) ?? [])
+      .length,
+    2,
+    "補安裝鍵與補合併鍵這兩組都只給規則卡，環境卡不補",
+  );
   assert.match(files.app, /const verifyTarget = verifyQueue\[0\] \?\? null;/);
   assert.match(
     files.app,

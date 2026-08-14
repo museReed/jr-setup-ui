@@ -669,7 +669,14 @@ function renderWizard() {
         //
         // rowCheck 那一格不在這裡：它的按鈕由 configRowModel 給，那邊還要判斷「重裝／
         // 裝好了整顆收掉／等著合併不給」。這裡補的是同一張卡上的其他格，判斷跟著抄。
-        ...cardChecks
+        //
+        // ⚠️ 只有規則卡（config）要補。環境卡的 envCardRowModel **本來就已經**每一列
+        // 各給一顆安裝鍵了，這裡再補一次的話那一列會長出兩顆一模一樣的「安裝」
+        //（Reed 在 GitHub CLI 那一列看到，2026-08-14）。
+        //
+        // 這個 bug 之所以看得見，是因為同一天稍早把 view 的 inlineActions 從「一格
+        // 一顆」改成陣列——在那之前，第二顆會安靜地把第一顆換掉，畫面上看不出來。
+        ...(card.kind === "config" ? cardChecks : [])
           .filter(
             (check) =>
               check.id !== rowCheck.id &&
@@ -698,7 +705,7 @@ function renderWizard() {
         // ——兩個檔案要一起讀、一起判斷衝突。不給第二格按鈕的話那一格就是死的：
         // 它寫著「已有你自己的版本，需要合併」，旁邊什麼都沒有（Reed 在 Codex 那張
         // 卡上指出）。
-        ...cardChecks
+        ...(card.kind === "config" ? cardChecks : [])
           .filter(
             (check) => check.id !== rowCheck.id && check.mergeAction != null,
           )
