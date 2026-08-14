@@ -1420,7 +1420,9 @@ try {
   assert.doesNotMatch(mergeOutcome[0].text, /安裝成功/);
   assert.match(mergeOutcome[0].text, /沒有覆蓋/);
   assert.match(mergeOutcome[0].text, /用 AI 合併/);
-  assert.match(mergeOutcome[0].text, /重跑驗證/);
+  // ⚠️ 不寫死「重跑驗證」：那顆沒驗過時叫「驗證」，而這句話出現的時機正是還沒驗過。
+  assert.ok(!mergeOutcome[0].text.includes("重跑驗證"));
+  assert.match(mergeOutcome[0].text, /這一列的驗證鍵/);
   // 設計系統只有 prompt / ok / err，用不存在的 class 只會靜靜地沒有樣式。
   assert.match(mergeOutcome[0].className, /ds-term-line--(prompt|ok|err)$/);
   ok("需要合併的列不印假的「安裝成功」，改成講下一步");

@@ -1240,7 +1240,9 @@ export function terminalOutcomeLines({
           // 設計系統只有 prompt / ok / err 三個修飾 class，沒有 warn——用不存在的
           // class 不會報錯，只會靜靜地沒有樣式。這句不是錯誤，是「還要你做一件事」。
           className: "ds-term-line ds-term-line--prompt",
-          text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按「重跑驗證」。`,
+          // ⚠️ 後半句不寫死「重跑驗證」：那顆沒驗過時叫「驗證」，而這句話出現的時機
+          // 正是還沒驗過（見 PENDING_RUN_HINT 上面那段）。
+          text: `已有你自己的${label}，沒有覆蓋。請按「用 AI 合併」把工作坊的設定併進去，再按這一列的驗證鍵。`,
         },
       ];
     }
