@@ -1134,9 +1134,13 @@ try {
   assert(!tourModel.includes('element: "#wizard-next"'));
   ok("版面導覽只指不會被重畫的骨架，最後一步指按鈕不指整列");
 
-  // 跑到一半跳提示會蓋住終端正在印的字。
-  assert(tourModel.includes("if (runInProgress === true || tourRunning === true) return null;"));
-  ok("執行中不跳導覽提示");
+  // ⚠️ 單張卡的「先看這個」泡泡整套拿掉了（Reed 在 VM 上指定）：它蓋在卡片上、
+  // 箭頭指向奇怪的位置，而那些話卡片描述與清單文案本來就寫著。連 driver 實例
+  // 一起收掉，不然留一顆永遠不會被叫到的黏合層。
+  assert(!tour.includes("先看這個"));
+  assert(!tour.includes("hintDriver"));
+  assert(!tourModel.includes("CARD_HINTS"));
+  ok("單張卡的提示泡泡連黏合層一起拿掉了");
 
   // 重看導覽那顆也照灌色按鈕的規矩來。
   assert.match(

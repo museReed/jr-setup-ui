@@ -936,13 +936,7 @@ function renderWizard() {
   });
   // 導覽排在最後：翻頁按鈕這時候才決定要不要露臉，太早問會指到一顆還 hidden 的
   // 按鈕，泡泡就貼到畫面左上角去了。
-  onCardRendered({
-    cardId: card.checkId,
-    runInProgress: state.runInProgress,
-    // 已經做完的卡不跳提示：那六張的提示全是「不先知道就會卡死或誤判」，卡片綠了
-    // 之後那句話講的是一件已經發生過的事（見 tour-model.js 的 hintForCard）。
-    cardDone,
-  });
+  onCardRendered({ runInProgress: state.runInProgress });
   maybeRecheckAtSectionEnd(section.id, currentIndex, cardSection.cards.length);
 }
 

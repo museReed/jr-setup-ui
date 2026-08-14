@@ -1,11 +1,10 @@
-// 導覽的判斷邏輯：要不要跑版面導覽、這張卡要不要跳提示。
+// 導覽的判斷邏輯：要不要跑版面導覽、這張卡有哪些元件要講。
 // 畫泡泡那半在 tour.js（碰 DOM，測不了），這裡測的是它問的那些問題。
 import assert from "node:assert/strict";
+import * as tourModel from "../public/tour-model.js";
 import {
-  CARD_HINTS,
   COMPONENT_TOUR_STEPS,
   LAYOUT_TOUR_STEPS,
-  hintForCard,
   newComponentSteps,
   replayableSteps,
   shouldRunLayoutTour,
@@ -31,114 +30,13 @@ try {
   }
   ok("版面導覽每一步都指骨架的 id，而且標題與說明都有寫");
 
-  // 跑到一半跳提示會蓋住終端正在印的字。
-  assert.equal(
-    hintForCard({
-      cardId: "execution-policy",
-      seenIds: new Set(),
-      runInProgress: true,
-      tourRunning: false,
-    }),
-    null,
-  );
-  assert.equal(
-    hintForCard({
-      cardId: "execution-policy",
-      seenIds: new Set(),
-      runInProgress: false,
-      tourRunning: true,
-    }),
-    null,
-  );
-  ok("執行中或版面導覽進行中都不跳單張提示");
-
-  // 同一張卡只講一次。每次翻回來都跳一次泡泡，第三次就變成擋路的東西。
-  const hint = hintForCard({
-    cardId: "execution-policy",
-    seenIds: new Set(),
-    runInProgress: false,
-    tourRunning: false,
-  });
-  assert.equal(hint.cardId, "execution-policy");
-  assert.match(hint.description, /排在最前面/);
-  assert.equal(
-    hintForCard({
-      cardId: "execution-policy",
-      seenIds: new Set(["execution-policy"]),
-      runInProgress: false,
-      tourRunning: false,
-    }),
-    null,
-  );
-  ok("有提示的卡片會回傳文案，看過之後不再回傳");
-
-  // 已經做完的卡不跳。這幾張的提示全是「不先知道就會卡死或誤判」——「改完要重開
-  // 終端」「不先放行後面都會失敗」——那些話只在還沒做成的時候有用。卡片已經綠了
-  // 還跳出來教人怎麼做，是在講一件已經發生過的事（Reed 在中文編碼那張看到的：
-  // 清單寫著「讀得到中文」，泡泡還在說改完要重開）。
-  assert.equal(
-    hintForCard({
-      cardId: "powershell-encoding",
-      seenIds: new Set(),
-      runInProgress: false,
-      tourRunning: false,
-      cardDone: true,
-    }),
-    null,
-  );
-  assert.equal(
-    hintForCard({
-      cardId: "powershell-encoding",
-      seenIds: new Set(),
-      runInProgress: false,
-      tourRunning: false,
-      cardDone: false,
-    })?.cardId,
-    "powershell-encoding",
-  );
-  ok("已經做完的卡不跳提示——那句話講的是還沒做成時才成立的事");
-
-  // 沒登記的卡片安安靜靜。不是每張都要跳泡泡。
-  assert.equal(
-    hintForCard({
-      cardId: "node",
-      seenIds: new Set(),
-      runInProgress: false,
-      tourRunning: false,
-    }),
-    null,
-  );
-  assert.equal(
-    hintForCard({
-      cardId: "",
-      seenIds: new Set(),
-      runInProgress: false,
-      tourRunning: false,
-    }),
-    null,
-  );
-  assert.equal(
-    hintForCard({
-      cardId: undefined,
-      seenIds: new Set(),
-      runInProgress: false,
-      tourRunning: false,
-    }),
-    null,
-  );
-  ok("沒登記提示的卡片不跳泡泡，缺 cardId 也不會炸");
-
-  // 提示只留給「不講就會卡死或誤判」的那幾張。三十張卡有二十張跳泡泡的話，
-  // 第五張之後學生就開始無腦點掉了——泡泡的價值來自它很少出現。
-  //
-  // 這條會擋下「順手再加一張」。真的要加，先問自己：不講的話學生會不會卡死或
-  // 誤判？只是「知道會比較好」的，寫進卡片描述或清單的眼睛文案。
-  assert.deepEqual(Object.keys(CARD_HINTS).sort(), [
-    "execution-policy",
-    "powershell-encoding",
-    "tab-sync",
-  ]);
-  ok("只有三張會卡死或誤判的卡片有提示");
+  // ⚠️ 迴歸：單張卡的「先看這個」泡泡整套拿掉了（Reed 在 VM 上指定）。那顆泡泡會
+  // 蓋在卡片上、還帶一個指向奇怪位置的箭頭，而它講的話卡片描述與清單文案本來就
+  // 寫著。這一條擋的是「順手再加回來一張」——要打斷學生，門檻比原本估的高很多。
+  assert.equal(tourModel.CARD_HINTS, undefined);
+  assert.equal(tourModel.hintForCard, undefined);
+  assert.equal(tourModel.HINT_SEEN_PREFIX, undefined);
+  ok("單張卡的「先看這個」泡泡不存在了，連 export 都沒留");
 
   // ── 元件導覽 ────────────────────────────────────────────────
   //

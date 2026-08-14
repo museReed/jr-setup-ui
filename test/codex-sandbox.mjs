@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   currentPackageRoot,
@@ -321,6 +322,27 @@ try {
   );
   assert.ok(codexIds.includes("pwsh-store"));
   ok("只選 Claude 時兩列都濾掉，選了 Codex 才看得到 Store 版那列");
+
+  // ⚠️ 那顆按鈕印給學生的三步，第 2 步（權限確認視窗）**不一定會出現**：
+  //
+  //   第一次上課  帳號還沒建 → 跳 UAC
+  //   回鍋學生    帳號上一輪就在了 → 完全不跳，直接 Sandbox ready
+  //
+  // 兩種都在 2026-08-14 的 VM 上實測走過。寫死「會跳」的話，回鍋的那半（多數）
+  // 會停在那裡等一個不會出現的視窗——跟先前寫死「選 1」是同一種踩雷。
+  const setupScript = readFileSync(
+    new URL("../scripts/setup-codex-sandbox.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    setupScript.includes("沒跳出來也是正常的"),
+    "第 2 步要講「沒跳出來也正常」，不然回鍋學生會停在那裡等",
+  );
+  assert.ok(
+    !setupScript.includes('"  2. 跳出來的權限確認視窗要按「是」"'),
+    "第 2 步不可以寫死「會跳出來」",
+  );
+  ok("設定沙箱的三步文案兩種結果都講得通（跳 UAC 與不跳）");
 } catch (error) {
   console.error(error);
   process.exit(1);

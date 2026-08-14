@@ -7,8 +7,11 @@
 //
 //   A 版面導覽：只指不會被重畫的骨架（分頁列、里程碑、卡片區、終端、翻頁），
 //              一次跑完，學生第一次進來看一遍。
-//   B 單張提示：跟著卡片切換走，一次只高亮一個地方，順序仍然由 model.js 的
-//              卡片順序決定——driver 只負責畫泡泡，不管流程。
+//   C 元件導覽：卡片裡面那些元件怎麼用，以元件為單位記，遇到沒講過的才跳。
+//
+// ⚠️ 曾經有 B：單張卡的「先看這個」泡泡（執行原則、中文編碼、分頁標題三張）。
+// 拿掉了（Reed 指定）——那顆泡泡會蓋在卡片上、還帶一個指向奇怪位置的箭頭，而它
+// 講的話卡片描述與清單文案本來就寫著。要打斷學生的門檻比原本估的高很多。
 
 // 「看過了」的紀錄帶版本號。
 //
@@ -19,7 +22,6 @@
 const TOUR_VERSION = 3;
 
 export const TOUR_SEEN_KEY = `jr-setup-ui:tour-seen:v${TOUR_VERSION}`;
-export const HINT_SEEN_PREFIX = `jr-setup-ui:hint-seen:v${TOUR_VERSION}:`;
 export const COMPONENT_SEEN_PREFIX = `jr-setup-ui:comp-seen:v${TOUR_VERSION}:`;
 
 // A：版面導覽。element 全是 index.html 裡寫死的骨架，不隨卡片重畫消失。
@@ -77,38 +79,6 @@ export const LAYOUT_TOUR_STEPS = [
     description: "這張卡驗過了，右邊那顆才會亮。想回頭看做過的，左邊那顆可以往回翻。",
   },
 ];
-
-// B：單張卡的提示。
-//
-// 三十張卡有二十張跳泡泡的話，第五張之後學生就開始無腦點掉了——泡泡的價值來自
-// 它很少出現。所以只留「不講就會卡死或誤判」的那幾張，其餘的寫在卡片描述或
-// 清單的眼睛文案裡（那些地方學生本來就會看，不用打斷他）。
-//
-// 留下來的四種訊息：
-//   擋路的      執行原則沒放行，後面每張卡按下去都失敗
-//   改完要重開  中文編碼在原本那個視窗永遠是亂碼
-//
-// 刻意沒有的：合併卡（「兩份一起裝」卡片描述已經整段講完了，泡泡只是再講一次）、
-// 命名那幾張（「要看分頁標題」是清單裡眼睛那一格的文案，就在他要勾的地方）。
-//
-// key 是卡片的 checkId（renderCard 會把它寫進 data-card-id）。
-export const CARD_HINTS = {
-  "execution-policy": {
-    description:
-      "這張要排在最前面做。系統預設擋掉所有 .ps1 腳本，不先放行的話，" +
-      "後面每一張卡按下去都會失敗——不是那些卡壞了。",
-  },
-  "powershell-encoding": {
-    description:
-      "改完要把現在這個終端關掉、重開一個新的才算數。原本那個視窗印出來的中文" +
-      "還是會是問號，那不代表沒設定成功。",
-  },
-  "tab-sync": {
-    description:
-      "這張裝好之後，之後每個新開的終端才會把自己的名字放到分頁標題上。" +
-      "後面有幾張卡要你「看標題有沒有變」，靠的就是這個。",
-  },
-};
 
 // C：卡片裡面那些元件怎麼用。
 //
@@ -220,30 +190,4 @@ export function replayableSteps({ steps = COMPONENT_TOUR_STEPS, present }) {
       step.whileRunning !== true &&
       (!(present instanceof Set) || present.has(step.id)),
   );
-}
-
-// 跑到一半跳提示會蓋住終端正在印的字，所以 runInProgress 的時候一律不跳，
-// 等它跑完那一輪 render 再說。
-//
-// 已經完成的卡也不跳。這六張的提示全是「不先知道就會卡死或誤判」——「改完要重開
-// 終端」「不先放行後面都會失敗」「第一次要等瀏覽器下載」——這些話只在還沒做成的
-// 時候有用。卡片已經綠了還跳出來教人怎麼做，是在講一件已經發生過的事（Reed 在
-// 中文編碼那張看到的：清單寫著「讀得到中文」，泡泡還在說改完要重開）。
-export function hintForCard({
-  cardId,
-  seenIds,
-  runInProgress,
-  tourRunning,
-  cardDone,
-}) {
-  if (runInProgress === true || tourRunning === true) return null;
-  if (cardDone === true) return null;
-  if (typeof cardId !== "string" || cardId === "") return null;
-  if (seenIds instanceof Set && seenIds.has(cardId)) return null;
-
-  const hint = CARD_HINTS[cardId];
-
-  if (hint === undefined) return null;
-
-  return { cardId, ...hint };
 }

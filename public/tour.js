@@ -6,13 +6,10 @@
 
 import { driver } from "/vendor/driver.mjs";
 import {
-  CARD_HINTS,
   COMPONENT_SEEN_PREFIX,
   COMPONENT_TOUR_STEPS,
-  HINT_SEEN_PREFIX,
   LAYOUT_TOUR_STEPS,
   TOUR_SEEN_KEY,
-  hintForCard,
   newComponentSteps,
   replayableSteps,
   shouldRunLayoutTour,
@@ -44,7 +41,6 @@ const store = {
   },
 };
 
-const seenHints = new Set();
 const seenComponents = new Set();
 let tourRunning = false;
 
@@ -65,13 +61,11 @@ export function tourDiagnostics() {
   return {
     layoutSeen: store.get(TOUR_SEEN_KEY),
     seenComponents: [...seenComponents],
-    seenHints: [...seenHints],
     tourRunning,
   };
 }
 let layoutDriver = null;
 let cardDriver = null;
-let hintDriver = null;
 
 function makeDriver(options) {
   return driver({
@@ -150,14 +144,6 @@ function cardTour() {
     },
   });
   return cardDriver;
-}
-
-function singleHint() {
-  hintDriver ??= makeDriver({
-    allowClose: true,
-    overlayClickBehavior: "close",
-  });
-  return hintDriver;
 }
 
 // 翻頁按鈕平常是 hidden 的（第一張沒有「上一張」），指一個 hidden 的元素
@@ -266,13 +252,7 @@ function cardIsPainted() {
   return holder !== null && holder.childElementCount > 0;
 }
 
-function loadSeenHints() {
-  for (const cardId of Object.keys(CARD_HINTS)) {
-    if (store.get(`${HINT_SEEN_PREFIX}${cardId}`) === "1") {
-      seenHints.add(cardId);
-    }
-  }
-
+function loadSeenComponents() {
   for (const { id } of COMPONENT_TOUR_STEPS) {
     if (store.get(`${COMPONENT_SEEN_PREFIX}${id}`) === "1") {
       seenComponents.add(id);
@@ -280,42 +260,21 @@ function loadSeenHints() {
   }
 }
 
-// app.js 每畫完一輪卡片就叫這個。第一輪負責把版面導覽跑起來，之後負責元件導覽
-// 與單張提示。
-export function onCardRendered({ cardId, runInProgress, cardDone }) {
+// app.js 每畫完一輪卡片就叫這個。第一輪負責把版面導覽跑起來，之後負責元件導覽。
+//
+// ⚠️ 這裡曾經還有第三件事：單張卡切過來時跳一顆提示泡泡。整套拿掉了，理由見
+// tour-model.js 開頭那段。
+export function onCardRendered({ runInProgress }) {
   // 「這頁怎麼用」跟著這張卡有沒有元件走，每一輪重畫都要重算——上一張有、這一張
   // 沒有的話按下去會是一場空白的導覽。
   showReplay(replayableSteps({ present: presentComponents() }).length > 0);
 
   if (startLayoutTour()) return;
-  if (startComponentTour({ runInProgress })) return;
-
-  const hint = hintForCard({
-    cardId,
-    seenIds: seenHints,
-    runInProgress,
-    tourRunning,
-    cardDone,
-  });
-
-  if (hint === null) return;
-
-  const anchor = document.querySelector(
-    `[data-card-id="${cardId}"] .current-task-body, [data-card-id="${cardId}"]`,
-  );
-
-  if (anchor === null) return;
-
-  seenHints.add(cardId);
-  store.set(`${HINT_SEEN_PREFIX}${cardId}`, "1");
-  singleHint().highlight({
-    element: anchor,
-    popover: { title: "先看這個", description: hint.description },
-  });
+  startComponentTour({ runInProgress });
 }
 
 export function initTour() {
-  loadSeenHints();
+  loadSeenComponents();
 
   // 第一張卡還沒畫出來之前沒有元件可講，先收著；onCardRendered 每一輪會重算。
   showReplay(false);

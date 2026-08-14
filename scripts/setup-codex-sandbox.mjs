@@ -9,9 +9,9 @@
 //   2. 選了 1 會跳 UAC，而背景跑的 UAC 框會出現在嚮導視窗**後面**——學生順手
 //      關掉，我們只拿到一個沒頭沒尾的錯誤碼（那就是 1223 = ERROR_CANCELLED）
 //
-// ⚠️ 這支不判定成功與否。判定在 env-check 那一列：~/.codex/cap_sid 裡有沒有
-// workspace + readonly 兩個 SID（見 src/codex-sandbox.js 的 sandboxReady）。
-// 學生選完之後按「重新檢查」，那一列自己會轉綠。
+// ⚠️ 判定跟畫面上那一列共用同一支函式：config.toml 有沒有 [windows] sandbox
+//（見 src/codex-sandbox.js 的 sandboxAnswered）。這支只是邊等邊查同一件事，
+// 學生一設定好就自己往下走，不用按「重新檢查」、也不用等他關掉那個視窗。
 import { spawn } from "node:child_process";
 import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -108,15 +108,21 @@ if (process.platform !== "win32") {
   process.exit(0);
 }
 
-// ⚠️ 兩種結果都要講。真機實測：受限帳號還在的機器按下去**什麼都不問**，直接印
-// sandbox-ok；只有真的要重建帳號時才跳選單與 UAC。只講後者的話，前一種人會停在
-// 那裡等一個不會出現的選單（Reed 在畫面前指出文案跟他看到的不一樣）。
+// ⚠️ 第 2 步的權限視窗**不一定會出現**，兩種都要講：
+//
+//   第一次上課的機器  受限帳號還沒建 → 跳 UAC，要按「是」
+//   回鍋學生的機器    帳號上一輪就建好了 → **完全不跳**，直接 Sandbox ready
+//
+// 兩種都是 2026-08-14 在 VM 上實測走過的。只講前者的話，回鍋的那半會停在那裡等
+// 一個不會出現的視窗——而回鍋才是多數。這跟先前「選 1」寫死是同一種踩雷
+//（Reed 在畫面前指出文案跟他看到的不一樣）。
 console.log("會開一個新的終端視窗，在那裡把 Codex 叫起來。");
 console.log("");
 console.log("在那個視窗裡：");
 console.log("  1. 它會問「要設定哪種沙箱」——選 1（Set up default sandbox）再按 Enter");
-console.log("  2. 跳出來的權限確認視窗要按「是」");
+console.log("  2. 可能會跳出一個權限確認視窗，跳的話要按「是」");
 console.log("     ⚠️ 那個視窗預設選在「否」，順手按 Enter 就等於取消，而且不會有任何說明");
+console.log("     沒跳出來也是正常的——代表你機器上該有的東西已經齊了，往下看第 3 步");
 console.log("  3. 看到「Sandbox ready」就成功了");
 console.log("");
 console.log("設定好的那一刻嚮導就會自己往下走，不用等你關掉那個視窗。");
