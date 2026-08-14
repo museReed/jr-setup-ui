@@ -1550,7 +1550,14 @@ async function handleDone(
     // 只會把那段說明推走。剩下那幾格學生自己按「重跑驗證」。
     stopAutoVerifyChain();
     // 腳本自己講的那句話：那一列的說明與白話區印的是同一句，兩邊不要各講各的。
-    const reason = failureReason(runContext.rawOutput);
+    //
+    // ⚠️ 學生自己按取消時不要去輸出裡找理由——那不是失敗，是他的決定。找出來的會是
+    // 中止前的最後一行（多半是我們自己的內部日誌），那一列於是寫著一句他看不懂、又
+    // 像是出了系統級錯誤的話（Reed 在 GitHub CLI 那一列看到）。
+    const reason =
+      result.signal !== null && result.signal !== undefined
+        ? "你按了取消，這一步沒有做完"
+        : failureReason(runContext.rawOutput);
 
     if (step !== null && step !== undefined) {
       state.failedSteps.add(step);

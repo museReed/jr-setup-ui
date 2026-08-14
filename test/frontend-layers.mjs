@@ -573,6 +573,13 @@ try {
     /rowId: checklistRowIds\(check\)\.install/,
     "其他格的安裝鍵要掛回它自己那一列",
   );
+  // ⚠️ 學生自己按取消不要去輸出裡找理由——那不是失敗，是他的決定。找出來的會是中止
+  // 前的最後一行（多半是我們自己的內部日誌），那一列於是寫著一句他看不懂的話。
+  assert.match(
+    files.app,
+    /result\.signal !== null && result\.signal !== undefined\s*\n?\s*\? "你按了取消/,
+    "被取消時說「你按了取消」，不要去 rawOutput 裡撈一行當理由",
+  );
   // ⚠️ 這幾組補的按鈕只給規則卡。環境卡的 envCardRowModel 本來就每一列各給一顆
   // 安裝鍵了，這裡再補一次那一列會長出兩顆一模一樣的「安裝」（Reed 在 GitHub CLI
   // 那一列看到）。而且它在 inlineActions 改成一格可放多顆之前是**看不見的**——

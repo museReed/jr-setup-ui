@@ -2059,6 +2059,19 @@ try {
   assert.equal(failureReason(undefined), undefined);
   ok("沒有錯誤特徵時退回最後一行，空輸入不拋錯");
 
+  // ⚠️ 嚮導自己的內部日誌不算「理由」。學生按取消時 [terminateRun] 那行是最後一行，
+  // 而沒有錯誤特徵時我們拿最後一行當理由——於是那一列寫著
+  //「GitHub CLI：[terminateRun] 中止子行程，來源：cancel-endpoint」（Reed 在 VM 上
+  // 看到）。那句話對學生沒有意義，還看起來像出了系統級的錯。
+  assert.equal(
+    failureReason([
+      "正在安裝 GitHub CLI",
+      "[terminateRun] 中止子行程，來源：cancel-endpoint",
+    ]),
+    "正在安裝 GitHub CLI",
+  );
+  ok("嚮導自己的內部日誌不會被當成失敗的理由");
+
   assert.deepEqual(
     behaviorFallbackState({ exitCode: 0, signal: null }),
     { visible: false, question: "", checklist: [] },

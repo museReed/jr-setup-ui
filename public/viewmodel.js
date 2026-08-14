@@ -1538,6 +1538,11 @@ const NOISE_PATTERNS = [
   // npm 會把整段 async 堆疊當成 error 印出來，那是給維護者看的，不是給學生看的。
   /^\s*(npm error\s+)?at\s/i,
   /^\s*(npm )?(notice|warn|debug)\b/i,
+  // ⚠️ 這是**嚮導自己的內部日誌**，不是那個指令講的話。學生按取消時它是最後一行，
+  // 而 failureReason 找不到錯誤時會拿最後一行當理由——於是那一列的說明變成
+  //「GitHub CLI：[terminateRun] 中止子行程，來源：cancel-endpoint」（Reed 在 VM 上
+  // 看到）。那句話對學生沒有任何意義，而且看起來像出了什麼系統級的錯。
+  /^\[[a-zA-Z]+\]\s/,
 ];
 
 const REASON_TIERS = [
