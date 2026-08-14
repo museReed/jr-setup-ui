@@ -1626,7 +1626,15 @@ async function handleDone(
   //
   // 這就是 C1 說的「每個 action 宣告它讓哪份資料失效」。這條分支沒有 banner，
   // 但這裡有：合併讓同卡的驗證結論失效。
-  if (action === "merge-in-terminal" && step !== null && step !== undefined) {
+  //
+  // ⚠️ 還原走同一條。還原把兩份檔案退回合併前，那次驗證驗的是**合併後**的內容，
+  // 退回去之後就不算數了。少了這條，那顆按鈕會停在「重跑驗證」——它在說「你驗過
+  // 了」，而那件事剛剛被你自己取消掉（Reed 按下還原之後看到的）。
+  if (
+    (action === "merge-in-terminal" || action === "restore-merge-backup") &&
+    step !== null &&
+    step !== undefined
+  ) {
     for (const sibling of mergeInvalidates(step, state.lastChecks)) {
       forgetVerification(sibling);
     }

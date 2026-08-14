@@ -559,6 +559,14 @@ try {
     /const justInstalled =/,
     "接的驗證對著剛裝完的那一格",
   );
+  // ⚠️ 還原跟合併一樣要作廢同卡的驗證：還原把檔案退回合併前，而那次驗證驗的是
+  // 合併後的內容。少了這條，按鈕會停在「重跑驗證」——它在說「你驗過了」，而那件事
+  // 剛剛被學生自己取消掉（Reed 按下還原之後看到的）。
+  assert.match(
+    files.app,
+    /action === "merge-in-terminal" \|\| action === "restore-merge-backup"/,
+    "還原也要讓同卡的驗證結論失效",
+  );
   // 每一格「安裝：…」各自一顆按鈕，落點是那一格（checklistRowIds 算的，跟清單同一條）。
   assert.match(
     files.app,
