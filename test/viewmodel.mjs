@@ -319,6 +319,34 @@ try {
   );
   ok("伺服器說這一列不 ok 時，安裝鍵不會被「這次驗過了」收掉");
 
+  // ⚠️ 但等著合併的列不給安裝鍵：那個檔案是 protectExisting 的，安裝刻意不覆蓋學生
+  // 自己的內容，按下去只會印一句「已有你自己的 X，沒有覆蓋，請按『用 AI 合併』」。
+  // 而那顆「用 AI 合併」就在同一列旁邊——再放一顆按了沒事的鍵只是分散注意力
+  //（Reed 在畫面前指出）。
+  const awaitingMergeRow = configRowModel(
+    {
+      id: "claude-md",
+      label: "Claude Code CLI 做事的規矩",
+      status: "warn",
+      detail: "已有你自己的版本，需要合併",
+      installAction: "install-config-step",
+      mergeAction: "merge-in-terminal",
+      needsMerge: true,
+    },
+    true,
+  );
+  assert.ok(
+    !awaitingMergeRow.buttons.some(
+      (button) => button.dataName === "installAction",
+    ),
+    "等著合併的列不該有安裝鍵——按下去什麼都不會發生",
+  );
+  assert.ok(
+    awaitingMergeRow.buttons.some((button) => button.dataName === "mergeAction"),
+    "那一列真正該按的是「用 AI 合併」",
+  );
+  ok("等著合併的列只給合併鍵，不給按了沒事的安裝鍵");
+
   // 還沒裝的列才是「安裝」，而且是主要動作。
   const notInstalledYet = configRowModel({
     id: "hook",

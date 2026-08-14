@@ -555,13 +555,18 @@ async function checkVersion(id, label, cmd, args) {
       return timedOut(id, label);
     }
 
+    // ⚠️ 這三條路都判成 missing，所以畫面上一律講「尚未安裝」（Reed 指定）。
+    //
+    // 原本分成「未安裝」（ENOENT）與「檢查失敗」（跑得起來但非零）。那個分別對我們
+    // 有意義、對學生沒有：兩種情況他要做的事一模一樣——按那顆安裝鍵。而「檢查失敗」
+    // 讀起來像**嚮導壞了**，那一列旁邊還擺著一顆安裝鍵，兩個訊號互相矛盾。
+    //
+    // Python 在 Windows 上必然踩到後者：`python3` 指向 Store 的殼，它存在、跑得起來、
+    // 跳出商店頁面、exit code 非零但不是 ENOENT（見 checkPython 上面那段）。
+    //
+    // 真正的「檢查整段壞掉」是另一條路（runEnvCheck 的 catch），那裡仍然講「檢查失敗」。
     if (result.type === "error") {
-      return {
-        id,
-        label,
-        status: "missing",
-        detail: result.error?.code === "ENOENT" ? "未安裝" : "檢查失敗",
-      };
+      return { id, label, status: "missing", detail: "尚未安裝" };
     }
 
     if (result.exitCode === 0) {
@@ -574,9 +579,9 @@ async function checkVersion(id, label, cmd, args) {
       };
     }
 
-    return { id, label, status: "missing", detail: "檢查失敗" };
+    return { id, label, status: "missing", detail: "尚未安裝" };
   } catch {
-    return { id, label, status: "missing", detail: "檢查失敗" };
+    return { id, label, status: "missing", detail: "尚未安裝" };
   }
 }
 

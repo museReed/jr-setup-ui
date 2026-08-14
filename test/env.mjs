@@ -202,6 +202,22 @@ assert(
 );
 ok("整段沒有掉進那個把所有列變成「檢查失敗」的 catch");
 
+// ⚠️ 判成 missing 的列一律講「尚未安裝」，不准講「檢查失敗」（Reed 指定）。
+//
+// 那個分別對我們有意義、對學生沒有：兩種情況他要做的事一模一樣——按那顆安裝鍵。
+// 而「檢查失敗」讀起來像**嚮導壞了**，旁邊還擺著一顆安裝鍵，兩個訊號互相矛盾
+//（Reed 在 VM 上看到 Python 那一列）。Windows 的 Python 必然踩到這條：`python3`
+// 指向 Store 的殼，跑得起來、跳商店頁、非零但不是 ENOENT。
+//
+// 「檢查失敗」只留給真正的整段失敗（上面那個 catch）與 execution-policy 那種 warn。
+for (const check of result.checks) {
+  assert(
+    !(check.status === "missing" && check.detail === "檢查失敗"),
+    `${check.id} 判成沒裝卻寫「檢查失敗」——那句話讀起來像嚮導壞了`,
+  );
+}
+ok("沒裝的列講「尚未安裝」，不把它講成嚮導自己壞了");
+
 for (const check of result.checks) {
   assert(Object.hasOwn(check, "fixAction"));
   assert(

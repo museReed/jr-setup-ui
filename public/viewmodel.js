@@ -508,8 +508,16 @@ export function configRowModel(
     // 而那一列的說明正寫著「按這一列的安裝鍵會把它停用」，指向一顆不存在的按鈕
     //（Reed 在畫面前問「那個 button 在哪邊」）。伺服器說不 ok 就是不 ok，本次的
     // 樂觀記憶不能蓋過它。
+    //
+    // ⚠️ 但等著合併的列不算——那一列的 status 本來就不是 ok，而重跑安裝**什麼都不會
+    // 做**：檔案是 protectExisting 的，安裝刻意不覆蓋學生自己的內容，按下去只會印
+    // 一句「已有你自己的 X，沒有覆蓋，請按『用 AI 合併』」。同一列旁邊就擺著那顆
+    // 「用 AI 合併」，再放一顆按了沒事的鍵只是分散他的注意力（Reed 在畫面前指出，
+    // config-check.js 的 differs 那段也是同一個理由）。
     const rescueReinstall =
-      installationDone && (verificationFailed || check.status !== "ok");
+      installationDone &&
+      (verificationFailed ||
+        (check.status !== "ok" && check.needsMerge !== true));
     // 有些列裝好之後仍然要留一顆（check.reinstallable，見 config-check）：那些
     // 設定會被別的程式改掉，重跑安裝是唯一的自救手段。它不是主要動作，畫成次要的。
     const canRedo = installationDone && !rescueReinstall && check.reinstallable === true;
