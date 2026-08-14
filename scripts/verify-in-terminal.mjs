@@ -311,9 +311,19 @@ const CASES = {
         "先執行第 1 步。"
       );
     },
+    // ⚠️ 兩個檔名都收。第 2 步生出來的是 demo-page.html，第 3 步的 self_play.py
+    // 預設把自走版寫成 demo-page-self-play.html（見那支腳本的用法）。只等前者的話，
+    // 模型把頁面直接生成自走版的檔名、或中途換了名字，那一列就永遠等不到——而畫面
+    // 上 code 明明已經在逐字打（Reed 在乾淨的 Windows VM 上實測）。
+    //
+    // 兩個都算數不會變成假綠燈：兩者都只有真的跑完那幾步才生得出來，模型嘴上說
+    //「已完成」一個字都寫不出來。
     expect: () => ({
       kind: "file",
-      file: path.join(homedir(), "demo-page.html"),
+      file: [
+        path.join(homedir(), "demo-page.html"),
+        path.join(homedir(), "demo-page-self-play.html"),
+      ],
     }),
     watchFor:
       "跳出選項讓你選（網頁類型 / 主色調 / 風格 / 字體），回答完會生成網頁，最後逐字打 code 現場長出來",
@@ -575,14 +585,25 @@ function collectEvidence() {
 
   // file：指定的那個檔案有沒有在這一輪被寫出來。demo 用它——模型嘴上說「已完成」
   // 是生不出網頁檔的。
+  //
+  // ⚠️ 可以給**一組**檔名，任何一個出現就算數。demo 那格需要這個：第 3 步跑的
+  // self_play.py 預設把產出寫成 `<原檔名>-self-play.html`，所以那一輪結束時桌面上
+  // 是兩個檔——我們原本只等其中一個，模型只要少寫一個名字就永遠等不到（Reed 在
+  // 乾淨的 Windows VM 上實測：畫面明明已經在逐字打 code，那一列還停在驗證中）。
   if (expect.kind === "file") {
-    try {
-      return statSync(expect.file).mtimeMs >= startedAt
-        ? { detail: `產出了 ${expect.file}` }
-        : null;
-    } catch {
-      return null;
+    const candidates = Array.isArray(expect.file) ? expect.file : [expect.file];
+
+    for (const candidate of candidates) {
+      try {
+        if (statSync(candidate).mtimeMs >= startedAt) {
+          return { detail: `產出了 ${candidate}` };
+        }
+      } catch {
+        // 這個沒有，看下一個。
+      }
     }
+
+    return null;
   }
 
   // session-name：hook 真的跑完才會出現的檔案，跟模型說什麼無關。
@@ -686,7 +707,7 @@ console.log(
   expect.kind === "artifact"
     ? `      應該要出現在：${resultFile}（而且內容含「${expect.keyword}」）`
     : expect.kind === "file"
-      ? `      應該要產出：${expect.file}`
+      ? `      應該要產出：${[expect.file].flat().join(" 或 ")}`
       : `      應該要有新檔案出現在：${namesDir}`,
 );
 console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
