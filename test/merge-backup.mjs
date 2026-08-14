@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   latestStamp,
@@ -102,6 +103,25 @@ try {
     null,
   );
   ok("沒有快照、或沒有檔案時回 null，讓呼叫端講人話而不是丟例外");
+
+  // ⚠️ 合併 prompt 裡「重複的行留一份」那條，**理由要跟著 agent 走**。
+  //
+  // Claude 這組只合併 CLAUDE.md（Markdown，沒有 TOML），拿「TOML 有重複鍵」當理由
+  // 是一個明顯不成立的前提。而這份 prompt 通篇在要求「一字不差」——裡面放假前提等於
+  // 賭它的判斷力，偏偏這一步最貴的失敗正是它自己拿主意（Reed 讀 prompt 時抓到的）。
+  //
+  // 規則兩邊都要，只有理由分岔。
+  const mergeScript = readFileSync(
+    new URL("../scripts/merge-in-terminal.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    /group\.agent === "codex"\s*\n?\s*\? "TOML 有重複鍵/.test(mergeScript),
+    "TOML 那個理由只能給 codex 那組",
+  );
+  assert.ok(mergeScript.includes("同一條規則出現兩次只是雜訊"));
+  assert.ok(mergeScript.includes("兩邊完全相同的行，保留一份就好"));
+  ok("合併 prompt 的去重理由跟著 agent 走，Claude 那邊不會收到 TOML 的假前提");
 } catch (error) {
   console.error(error);
   process.exit(1);
