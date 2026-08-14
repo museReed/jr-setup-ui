@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { FIX_ACTIONS } from "../src/env-check.js";
+import { INSTALLERS } from "../src/installers.js";
 import {
   BEHAVIOR_CHECKLIST,
   BEHAVIOR_QUESTION,
@@ -1867,6 +1868,26 @@ try {
     }
   }
   ok("後端掛得出來的每一顆修復鍵都有人決定過按鈕文字");
+
+  // ⚠️ 同一列不准同時掛得出「安裝」與「修復」——兩顆的落點都是 system-<id>，畫出來
+  // 就是同一格裡兩顆按鈕，而學生分不出該按哪一顆。
+  //
+  // 這條是 2026-08-14 那次「GitHub CLI 那一列出現兩顆安裝」之後補的守門。那次的來源
+  // 不在這張表（是 app.js 補了第二顆），但同一個畫面症狀還有這條路可以走到，所以一起
+  // 釘住。目前唯一兩邊都登記的是 pwsh-store：它的修復鍵只在黃燈出現，而安裝鍵只在
+  // 紅燈出現，兩者互斥。
+  for (const [checkId, resolve] of Object.entries(FIX_ACTIONS)) {
+    if (!Object.hasOwn(INSTALLERS, checkId)) {
+      continue;
+    }
+
+    assert.equal(
+      resolve("missing", { status: "missing", fixLabel: "（測試用）" }),
+      null,
+      `${checkId} 在紅燈時同時掛得出安裝鍵與修復鍵——那一列會出現兩顆按鈕`,
+    );
+  }
+  ok("有安裝器的那幾列不會在紅燈時又長出一顆修復鍵");
 
   // 修某一格的按鈕要說得出它修的是哪一格：畫面上它掛回那一格底下（見 view.js 的
   // inlineActions）。原本「未登入」在清單裡、按鈕在清單外的按鈕列，學生要自己把
