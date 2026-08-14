@@ -294,6 +294,31 @@ try {
   );
   ok("驗證失敗過的列才把「重裝」放回來，而且不是主要動作");
 
+  // ⚠️ 迴歸：伺服器說這一列不 ok 時，那顆也要活過來——即使這次已經驗過了。
+  //
+  // installationDone 吃 installed / verified 這兩份「本次開著的網頁」的記憶。舊的
+  // service_tier = "default" 還在時檢查回 warn，而學生這次驗過 → 整顆被收掉，可是
+  // 那一列的說明正寫著「按這一列的安裝鍵會把它停用」，指向一顆不存在的按鈕
+  //（Reed 在畫面前問「那個 button 在哪邊」）。本次的樂觀記憶不能蓋過伺服器。
+  const staleAfterVerify = configRowModel(
+    {
+      id: "codex-config",
+      label: "Codex CLI 的規矩與回話風格",
+      status: "warn",
+      detail: '已併入工作坊設定，但舊的 service_tier = "default" 還在',
+      installAction: "install-config-step",
+      mergeAction: null,
+      verifyAction: "verify-behavior",
+      eyeCheck: null,
+    },
+    true,
+  );
+  assert.ok(
+    staleAfterVerify.buttons.some((button) => button.dataName === "installAction"),
+    "檢查說不 ok 的列一定要留得住安裝鍵，那是停用舊設定的唯一入口",
+  );
+  ok("伺服器說這一列不 ok 時，安裝鍵不會被「這次驗過了」收掉");
+
   // 還沒裝的列才是「安裝」，而且是主要動作。
   const notInstalledYet = configRowModel({
     id: "hook",

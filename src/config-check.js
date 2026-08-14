@@ -216,11 +216,14 @@ export async function checkCopyStep(materials, step) {
 
   // 舊 key 排在最前面：它在的時候，底下那兩種判斷得到的結論都不算數——新的那個
   // key 就算值是對的也沒生效。
+  // ⚠️ 文案要指得到畫面上真的存在的那顆按鈕。原本寫「重跑安裝」——但那顆按鈕在畫面
+  // 上叫「安裝」或「重裝」（看狀態），三個名字講同一顆，學生要自己配對（Reed 在畫面
+  // 前問「裡面講的重新安裝的 button 在哪邊」）。「這一列的安裝鍵」兩種字面都涵蓋得到。
   if (stale.length > 0) {
     return {
       ...result,
       status: "warn",
-      detail: `${result.detail}，但舊的 ${stale.join("、")} 還在，會讓新設定失效——重跑安裝會把它停用`,
+      detail: `${result.detail}，但舊的 ${stale.join("、")} 還在，會讓新設定失效——按這一列的安裝鍵會把它停用`,
     };
   }
 
@@ -228,7 +231,7 @@ export async function checkCopyStep(materials, step) {
     return {
       ...result,
       status: "warn",
-      detail: `${result.detail}，但少了 ${missing.join("、")}，重跑安裝就會補上`,
+      detail: `${result.detail}，但少了 ${missing.join("、")}，按這一列的安裝鍵就會補上`,
     };
   }
 

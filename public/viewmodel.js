@@ -498,9 +498,18 @@ export function configRowModel(
     // 後來改成灰色的「✅ 已安裝」，現在再進一步整顆收掉：那一列的狀態已經說完同一件
     // 事，一顆按不動的按鈕只是佔著位置又不能用（Reed 指定）。
     //
-    // 但驗證失敗時那顆要活過來：裝歪了（舊版、裝一半）而 check 仍是 ok 的情況存在，
-    // 那時重跑安裝是唯一的自救手段，拿掉就沒路走了。
-    const rescueReinstall = installationDone && verificationFailed;
+    // 但有兩種情況那顆要活過來，因為重跑安裝是唯一的自救手段，拿掉就沒路走了：
+    //
+    //   驗證失敗過        裝歪了（舊版、裝一半）而 check 仍是 ok 的情況存在
+    //   檢查說這一列不 ok  例如 config.toml 裡還留著新版不收的 service_tier
+    //
+    // ⚠️ 第二種是後來補的。installationDone 吃 installed / verified 這兩份**本次
+    // 開著的網頁**的記憶，於是「這次驗過了、但伺服器說這一列 warn」時整顆被收掉——
+    // 而那一列的說明正寫著「按這一列的安裝鍵會把它停用」，指向一顆不存在的按鈕
+    //（Reed 在畫面前問「那個 button 在哪邊」）。伺服器說不 ok 就是不 ok，本次的
+    // 樂觀記憶不能蓋過它。
+    const rescueReinstall =
+      installationDone && (verificationFailed || check.status !== "ok");
     // 有些列裝好之後仍然要留一顆（check.reinstallable，見 config-check）：那些
     // 設定會被別的程式改掉，重跑安裝是唯一的自救手段。它不是主要動作，畫成次要的。
     const canRedo = installationDone && !rescueReinstall && check.reinstallable === true;

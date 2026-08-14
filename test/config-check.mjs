@@ -196,8 +196,12 @@ process.stdin.on("end", () => {
   const staleKey = await checkCopyStep(MATERIALS, codexStep);
   assert.equal(staleKey.status, "warn");
   assert.match(staleKey.detail, /sandbox_mode/);
-  assert.match(staleKey.detail, /重跑安裝/);
-  ok("舊的 sandbox_mode 還在時不給綠燈——它會讓新設定失效");
+  // ⚠️ 文案要指得到畫面上真的存在的那顆按鈕。原本寫「重跑安裝」，但那顆在畫面上叫
+  // 「安裝」或「重裝」（看狀態）——三個名字講同一顆，學生要自己配對（Reed 在畫面前
+  // 問「裡面講的重新安裝的 button 在哪邊」）。
+  assert.match(staleKey.detail, /按這一列的安裝鍵/);
+  assert.ok(!staleKey.detail.includes("重跑安裝"));
+  ok("舊的 sandbox_mode 還在時不給綠燈，而且說明指得到真的存在的那顆按鈕");
 
   // 少了其中一行就不算——併一半跟沒併一樣會壞。
   writeFileSync(
