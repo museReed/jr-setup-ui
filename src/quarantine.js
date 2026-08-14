@@ -98,14 +98,19 @@ export function quarantineRow({ used, entries }, checks = []) {
     // 按鈕不看 status，所以綠燈照樣掛得上（見 viewmodel 的 envRowModel）。
     status: "ok",
     // ⚠️ 一行，右邊緊接著就是按鈕（守門測試盯著 40 字上限）。
-    detail: `搬走的 ${entries.length} 樣還留著，可以刪了`,
+    //
+    // 「可以刪了」曾經讀起來像一件待辦：這一列是綠的、卡片右上角寫「已完成」，
+    // 而這句話說「還留著」——三個訊號互相打架（Reed 在 VM 上第一句話就是「所以
+    // 這樣是清掉了嗎」）。改成「刪不刪都行」，讓它自己講出可選。
+    detail: `搬走的 ${entries.length} 樣還留著，刪不刪都行`,
     // 按之前先讓他看見要刪什麼。這是唯一一顆真的刪東西的按鈕，而刪掉就回不來了
     // ——所以清單畫在卡片上，不是按下去才在終端機裡追認。
     guidance: {
       symptom: `隔離區裡還留著 ${entries.length} 樣先前搬走的東西`,
       // 一併講「不會動到什麼」。刪除鍵最讓人不敢按的不是「會刪掉這些」，
       // 而是「還會不會順手刪掉別的」——尤其學生剛才才被合併改寫過自己的規則檔。
-      expected: "下面這幾樣會被刪掉，合併的還原點與 .bak 不動",
+      expected:
+        "刪或不刪都不影響這張卡的完成。要刪的話下面這幾樣會不見，合併的還原點與 .bak 不動",
       checks: entries.map((entry) => `${entry.what}：${entry.name}`),
       diagnose: null,
     },

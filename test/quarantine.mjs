@@ -110,6 +110,16 @@ try {
   );
   ok("有東西可刪時是綠燈、說明一行講完");
 
+  // ⚠️ 這一列同時發出三個互相打架的訊號：綠勾、卡片右上角的「已完成」、以及一句
+  // 說東西「還留著」的文案。Reed 在 VM 上看到的第一個反應就是「所以這樣是清掉了
+  // 嗎」——寫這張卡的人都要問，學生更會。所以文案自己要講出「可選」。
+  assert.ok(
+    row.detail.includes("刪不刪都行"),
+    `這一列的說明要自己講出可選，不能讀起來像待辦：${row.detail}`,
+  );
+  assert.ok(row.guidance.expected.includes("不影響這張卡的完成"));
+  ok("文案自己講出「刪不刪都算完成」，不用學生去猜綠勾的意思");
+
   // 「按之前先列出要刪什麼」——這是唯一一顆刪掉就回不來的按鈕。
   assert.equal(row.guidance.checks.length, state.entries.length);
   for (const entry of state.entries) {
