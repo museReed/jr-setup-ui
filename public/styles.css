@@ -1481,15 +1481,32 @@ body.wt-locked {
 }
 
 /* 沒有按鈕可按的那幾列的自救說明。刻意做得像卡片上的一段話而不是警告框——
-   它不是錯誤，是「這件事程式幫不了你，但你自己做得到」。 */
+   它不是錯誤，是「這件事程式幫不了你，但你自己做得到」。
+
+   預設收起來（<details>）：攤開來是一整面字，看起來像出事了。 */
 .card-guidance {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   width: 100%;
   padding: var(--space-3);
   border-radius: var(--r-sm);
   background: var(--color-bg-inset);
+}
+
+.card-guidance[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card-guidance-toggle {
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  /* 收起來的時候它就是整塊的全部，不要再多一段間距 */
+  margin: 0;
+}
+
+.card-guidance-toggle:hover {
+  color: var(--color-text);
 }
 
 .card-guidance-symptom,

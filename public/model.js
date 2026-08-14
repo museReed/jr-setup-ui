@@ -196,20 +196,23 @@ export const GUIDANCE = {
   // ——那次測的時候沙箱根本沒設定起來。8/12 把沙箱真的設定起來之後症狀立刻出現，
   // 完整的來龍去脈在 src/codex-sandbox.js 的檔頭。
   //
-  // ⚠️ 這一列沒有修復鍵，兩條自救都不是我們按得下去的：一個是 Windows 設定裡的
-  // 開關，一個是手動裝 MSI。所以這段文字就是學生唯一的線索，要寫得能照著做。
+  // ⚠️ 這一列有一顆「換成一般安裝版」（8/12 加的，帶 --installer-type wix），但那顆
+  // 不保證成功，所以文字要留一條學生自己走得完的退路。
+  //
+  // 八條砍成四條（Reed 指定）。拿掉的是：MSIX × 受限帳號為什麼互斥的機制、
+  // `[windows] sandbox = "unelevated"` 那條繞過方案、上游 issue 編號。前兩者搬進
+  // docs/returning-students.md，那是助教現場查的地方。
+  //
+  // ⚠️ unelevated 那條特別不能留在畫面上：它會**弱化沙箱**，而學生照做時不知道自己
+  // 放棄了什麼。那是教室現場才該給的建議，不是一段自助說明。
   "pwsh-store": {
     symptom: "Codex 執行指令時噴 `CreateProcessAsUserW failed: 1920`（或 2）",
     expected: "那一列顯示「是一般安裝版」，或乾脆沒裝 PowerShell 7",
     checks: [
-      "你的 PowerShell 7 是從 Microsoft Store 裝的，被系統封裝過（MSIX）",
-      "Codex 的沙箱用一個受限帳號跑指令，而 Windows 不准這種帳號啟動市集封裝的程式——所以它改得了檔案、卻一個指令都執行不了",
-      "按那一列的「換成一般安裝版」就會裝一份不被封裝的 PowerShell 7（會跳一次系統的權限確認，要按同意）",
+      "你的 PowerShell 7 是從 Microsoft Store 裝的，而 Codex 的沙箱叫不動那種版本——所以它改得了檔案、卻一個指令都執行不了",
+      "按那一列的「換成一般安裝版」就會裝一份叫得動的 PowerShell 7（會跳一次系統的權限確認，要按同意）",
       "裝完在新視窗跑 `where.exe pwsh`，第一行要是 C:\\Program Files\\PowerShell\\7\\pwsh.exe 才算成功",
       "按鈕失敗的話可以自己來：到 https://aka.ms/PSWindows 下載 .msi 裝一份，落點一樣",
-      "都不想裝的話，改 ~/.codex/config.toml 加上 [windows] sandbox = \"unelevated\"。這是 Codex 官方認可的退路，代價是沙箱防護比較弱",
-      "改完關掉嚮導、開一個新的終端視窗重跑",
-      "這是 Codex 自己的已知問題（openai/codex #35871），不是嚮導裝壞了",
     ],
     diagnose: null,
   },

@@ -1089,6 +1089,20 @@ try {
   );
   ok("會產生副作用的按鈕都防連點，冪等的不包");
 
+  // ⚠️ 自救說明預設收起來（Reed 指定）：攤開來是一整面字，看起來像出事了。而收起來
+  // 之後那一行要自己講清楚誰該點開，不標的話學生會以為那是他漏掉的一步。
+  assert.match(
+    files.view,
+    /const block = document\.createElement\("details"\)/,
+    "自救說明要是 details，預設收起來",
+  );
+  assert.match(
+    files.view,
+    /toggle\.textContent = "[^"]*助教[^"]*"/,
+    "那一行要標明是給助教看的，學生可以跳過",
+  );
+  ok("自救說明預設收起來，而且講清楚誰該點開");
+
   assert(files.view.includes("inlineActions.get(item.id)"));
   // 放在那一格「裡面」而不是另起一列——另起一列會把清單撐高一截。
   assert(files.view.includes("label.append(inline)"));

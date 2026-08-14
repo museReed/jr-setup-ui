@@ -1987,9 +1987,19 @@ export function shakeTerminal() {
 //
 // 順序是刻意的：學生先確認「我看到的是不是這件事」，再知道「好了會長怎樣」，
 // 最後才是動作。反過來的話他會照著做完卻不確定有沒有做對。
+// ⚠️ 預設收起來（Reed 指定）。這段是「程式幫不了你」時的自救說明，寫得很細——
+// pwsh-store 那段有八條，攤開來是一整面字，而學生大多數時候只需要按那一列的按鈕。
+// 攤在那裡的代價不是佔位置，是**看起來像出事了**。
+//
+// 收起來之後那一行就要自己講清楚「誰該點開」：不標的話學生會覺得那是他漏掉的一步。
 export function guidanceElement(guidance) {
-  const block = document.createElement("div");
+  const block = document.createElement("details");
   block.className = "card-guidance";
+
+  const toggle = document.createElement("summary");
+  toggle.className = "card-guidance-toggle";
+  toggle.textContent = "卡住了？點開看細節（這段是給助教看的，你可以先跳過）";
+  block.append(toggle);
 
   const symptom = document.createElement("p");
   symptom.className = "card-guidance-symptom";

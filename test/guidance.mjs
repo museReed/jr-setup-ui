@@ -120,6 +120,27 @@ try {
     assert.equal(actions["diagnose-title-path"], undefined);
   }
   ok("診斷 action 使用固定指令，Windows 專屬 action 只在 win32 註冊");
+
+  // ⚠️ 自救說明是給學生照著做的，不是給他讀的診斷報告。pwsh-store 那段原本八條，
+  // 攤在卡片上是一整面字——而學生只需要「按那顆鍵 → 確認 → 按鈕失敗就下載 .msi」。
+  //
+  // 兩條特別不能回來（Reed 指定）：
+  //
+  //   unelevated 那條  它會**弱化沙箱**，學生照做時不知道自己放棄了什麼。那是助教
+  //                    當場判斷的事，完整說法在 docs/returning-students.md
+  //   issue 編號       「不是嚮導壞了」有安撫價值，但編號本身是噪音
+  const pwshChecks = GUIDANCE["pwsh-store"].checks;
+  assert.ok(
+    pwshChecks.length <= 4,
+    `自救說明超過四條就是在寫報告了：現在 ${pwshChecks.length} 條`,
+  );
+  assert.ok(!pwshChecks.some((line) => line.includes("unelevated")));
+  assert.ok(!pwshChecks.some((line) => line.includes("#35871")));
+  // 學生真正要做的那三件事還在。
+  assert.ok(pwshChecks.some((line) => line.includes("換成一般安裝版")));
+  assert.ok(pwshChecks.some((line) => line.includes("where.exe pwsh")));
+  assert.ok(pwshChecks.some((line) => line.includes("aka.ms/PSWindows")));
+  ok("Store 版那段只留學生做得到的四條，繞過沙箱的那條不在畫面上");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);
