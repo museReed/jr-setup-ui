@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +32,12 @@ import {
   quarantineRow,
   quarantineState,
 } from "./quarantine.js";
-import { brewLeftoverRow, leftoverCommands } from "./brew-cli.js";
+import {
+  brewLeftoverRow,
+  brewNameFromTarget,
+  commandFromEntry,
+  leftoverCommands,
+} from "./brew-cli.js";
 import {
   conflictingLegacySkills,
   legacySkillRoot,
@@ -771,22 +776,56 @@ async function checkBrewLeftover() {
       return null;
     }
 
-    const commands = leftoverCommands(
-      readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name),
+    const entries = readdirSync(dir, { withFileTypes: true }).map(
+      (entry) => entry.name,
     );
+    const commands = leftoverCommands(entries);
 
     if (commands.length === 0) {
       return null;
     }
 
-    // brew 清單上還有沒有它。`--versions` 找不到時 exit code 非零，找得到才印一行
-    // ——比解析 `brew list` 整份輸出穩，而且一次只問一支。
+    // ⚠️ 要問 brew 的是**brew 上的名字**，不是指令名字。搬進來的那條連結還是連結，
+    // 讀得到它指向哪就還原得出來（codex 的 cask 就叫 codex，但 claude 的 cask 叫
+    // claude-code——拿指令名字去問，那支永遠會得到「沒裝」）。
+    const brewNames = new Map();
+
+    for (const entry of entries) {
+      const command = commandFromEntry(entry);
+
+      if (command === null) continue;
+
+      let name = command;
+
+      try {
+        name = brewNameFromTarget(readlinkSync(`${dir}/${entry}`)) ?? command;
+      } catch {
+        // 不是連結、或讀不到：退回指令名字，多數情況兩者相同。
+      }
+
+      brewNames.set(command, name);
+    }
+
+    // brew 清單上還有沒有它。
+    //
+    // ⚠️ **cask 與 formula 要各問一次**。`brew list --versions <名字>` 只查 formula，
+    // 而 claude-code 與 codex 在 Homebrew 上都是 cask——只問前者的話一律得到「沒裝」，
+    // 那一列一進來就是綠的，而 Caskroom 裡的東西原封不動（Reed 在 mac VM 上一眼看出
+    // 不對：他的 codex 明明還在 brew 的清單上）。
     const stillInstalled = [];
 
     for (const command of commands) {
-      const result = await runProbe("brew", ["list", "--versions", command]);
+      const name = brewNames.get(command) ?? command;
+      const probes = await Promise.all([
+        runProbe("brew", ["list", "--versions", name]),
+        runProbe("brew", ["list", "--cask", "--versions", name]),
+      ]);
 
-      if (result.type === "close" && result.exitCode === 0) {
+      if (
+        probes.some(
+          (result) => result.type === "close" && result.exitCode === 0,
+        )
+      ) {
         stillInstalled.push(command);
       }
     }

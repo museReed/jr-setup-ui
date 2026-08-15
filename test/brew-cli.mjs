@@ -1,7 +1,13 @@
 // brew 那批殘留的收尾：判準在 src/brew-cli.js，這裡測它問的那幾個問題。
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { brewLeftoverRow, commandFromEntry, leftoverCommands } from "../src/brew-cli.js";
+import {
+  brewLeftoverRow,
+  brewNameFromTarget,
+  commandFromEntry,
+  leftoverCommands,
+} from "../src/brew-cli.js";
 import { flattenCheckCards } from "../public/model.js";
 import { FIX_ACTIONS } from "../src/env-check.js";
 import { actions } from "../src/actions.js";
@@ -27,6 +33,29 @@ try {
   );
   assert.deepEqual(leftoverCommands([]), []);
   ok("同一支搬過兩次只算一支，排序固定");
+
+  // ⚠️ brew 上的名字不一定等於指令名字：codex 的 cask 就叫 codex，但 claude 的 cask
+  // 叫 claude-code。拿指令名字去問 brew，那支永遠得到「沒裝」，於是我們說收乾淨了而
+  // Caskroom 裡的東西原封不動。連結指向哪就還原得出正確的名字。
+  assert.equal(
+    brewNameFromTarget("/opt/homebrew/Caskroom/codex/0.147.0/bin/codex"),
+    "codex",
+  );
+  assert.equal(
+    brewNameFromTarget("/opt/homebrew/Caskroom/claude-code/2.1.226/bin/claude"),
+    "claude-code",
+  );
+  assert.equal(
+    brewNameFromTarget("/opt/homebrew/Cellar/some-tool/1.2.3/bin/x"),
+    "some-tool",
+  );
+  // npm 裝的解出來不含這兩個資料夾——回 null，呼叫端退回指令名字。
+  assert.equal(
+    brewNameFromTarget("/opt/homebrew/lib/node_modules/@openai/codex/bin/codex"),
+    null,
+  );
+  assert.equal(brewNameFromTarget(null), null);
+  ok("從連結指向哪還原得出 brew 上的名字（cask 名字常常不等於指令名字）");
 
   // 隔離區裡沒有 brew 那批＝這一列根本不該出現。它不是「沒事」，是「沒有這回事」
   // ——長一列「Homebrew：沒有東西」出來，對從來沒用 brew 裝過的人是純噪音。
@@ -62,6 +91,30 @@ try {
     "finish-brew-uninstall",
   );
   ok("收乾淨之後那一列留著打勾，而且不再長按鈕");
+
+  // ⚠️ 問 brew「這支還在不在」時 cask 與 formula 要各問一次：`brew list --versions`
+  // **只查 formula**，而 claude-code 與 codex 在 Homebrew 上都是 cask——只問前者的話
+  // 一律得到「沒裝」，那一列一進來就是綠的，而 Caskroom 裡的東西原封不動（Reed 在
+  // mac VM 上一眼看出不對：他的 codex 明明還在 brew 的清單上）。
+  const envSource = readFileSync(
+    new URL("../src/env-check.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    envSource,
+    /runProbe\("brew", \["list", "--cask", "--versions", name\]\)/,
+    "cask 也要問一次，不然 brew 裝的一律被當成沒裝",
+  );
+  const scriptSource = readFileSync(
+    new URL("../scripts/finish-brew-uninstall.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    scriptSource,
+    /brew\(\["list", "--cask", "--versions", name\]\)/,
+    "卸載腳本挑要卸誰的時候也要問 cask",
+  );
+  ok("查 brew 清單時 cask 與 formula 各問一次");
 
   // 那顆 action 真的註冊過，不然按下去會回 400。
   assert.notEqual(actions["finish-brew-uninstall"], undefined);

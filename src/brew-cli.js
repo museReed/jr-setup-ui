@@ -29,6 +29,25 @@ export function commandFromEntry(name) {
   return match === null ? name : match[1];
 }
 
+// 從搬進隔離區的那條連結指向哪，還原出**brew 上的名字**。
+//
+// ⚠️ brew 上的名字不一定等於指令名字：codex 的 cask 就叫 codex，但 claude 的 cask
+// 叫 claude-code。拿指令名字去問 brew，claude 那支永遠會得到「沒裝」——於是我們說
+// 收乾淨了，而 Homebrew 的清單上它還在。
+//
+//   /opt/homebrew/Caskroom/codex/0.147.0/bin/codex   → codex
+//   /opt/homebrew/Cellar/some-tool/1.2.3/bin/x       → some-tool
+//
+// 讀得到連結才有這個資訊，讀不到就退回指令名字（多數情況兩者相同）。
+export function brewNameFromTarget(target) {
+  if (typeof target !== "string") {
+    return null;
+  }
+
+  const match = target.match(/[\\/](?:Caskroom|Cellar)[\\/]([^\\/]+)[\\/]/);
+  return match === null ? null : match[1];
+}
+
 // 隔離區 brew-cli 分區裡有哪幾支（去重、排序，畫面上的字才穩定）。
 export function leftoverCommands(entries) {
   const names = (Array.isArray(entries) ? entries : [])
