@@ -45,6 +45,8 @@ try {
 // 已經登入就直接轉過去，中間那一頁看都看不到。
 const target = new URL(url);
 const open = `https://github.com/login?return_to=${encodeURIComponent(target.pathname)}`;
+// 網址的第一段就是帳號：/<誰>/obsidian-vault/commits/main/
+const owner = target.pathname.split("/")[1];
 
 console.log(`打開：${url}`);
 
@@ -56,8 +58,17 @@ const child =
 
 child.unref();
 
+// ⚠️ 帳號要講出來，而且要先講「打不開的話往哪裡想」。
+//
+// 筆記庫是 private：瀏覽器登在**別的** GitHub 帳號時，GitHub 不會說「你登錯人了」
+// ——它給的是一個殘缺的轉址結果或一頁 404。學生看到的是「這個網址壞了」，完全不會
+// 往「我瀏覽器登的是另一個帳號」想（Reed 自己就踩了一次，而他是知道自己有兩個帳號
+// 的人）。
+//
+// 這個情境在課堂上很常見：瀏覽器本來就登著個人帳號，課程用另一個帳號接 vault。
+// 網址裡本來就有帳號，但學生不會把它跟「現在登的是誰」對起來——所以直接講。
 emitJr({
   kind: "result",
   ok: true,
-  summary: "GitHub 上的改動歷史已經開起來了，每一行就是你的一次改動。",
+  summary: `開的是 ${owner} 的筆記庫，每一行就是你的一次改動。如果顯示 404，多半是瀏覽器登在別的 GitHub 帳號——換帳號登入再按一次。`,
 });
