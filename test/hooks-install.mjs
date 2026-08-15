@@ -6,6 +6,8 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { moduleFile } from "../src/paths.js";
+
 import {
   describeStep,
   hasAgentHookRegistrations,
@@ -51,11 +53,24 @@ try {
 
   const home = mkdtempSync(path.join(tmpdir(), "jr-hooks-install-"));
   const env = { ...process.env, HOME: home };
+  // ⚠️ 錨點是「這支測試檔在哪」，不是「shell 現在在哪」。
+  //
+  // 原本寫的是相對路徑加上 cwd: path.resolve(".")，於是這支測試會不會過取決於你在
+  // 哪個資料夾按下執行：從 repo 根目錄跑得過，從別的地方跑就 MODULE_NOT_FOUND。
+  // run-tests.mjs 一直都是從根目錄跑，所以它一路被藏著——直到有人單獨跑這一支，
+  // 然後看到一個「測試壞了」的假紅，跑去查一個不存在的 bug（實測踩過）。
+  //
+  // paths.mjs 與 emoji-guard.mjs 早就是這個寫法，這裡跟上。
+  const repoRoot = moduleFile("..", import.meta.url);
   const install = (step) =>
     execFileSync(
       process.execPath,
-      ["scripts/install-configs.mjs", `--step=${step}`, "--lang=zh-TW"],
-      { cwd: path.resolve("."), env, encoding: "utf8" },
+      [
+        path.join(repoRoot, "scripts", "install-configs.mjs"),
+        `--step=${step}`,
+        "--lang=zh-TW",
+      ],
+      { cwd: repoRoot, env, encoding: "utf8" },
     );
 
   install("tab-sync");
