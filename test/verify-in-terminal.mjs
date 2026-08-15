@@ -58,6 +58,31 @@ assert.match(
 );
 console.log("ok - 自己 spawn 的 PowerShell 腳本一律帶 Bypass，不依賴機器設定");
 
+// zsh 的特殊變數不能拿來當一般變數名。
+//
+// 這幾個小寫的名字在 zsh 裡是綁定的：`path` 就是 `PATH`、`fpath` 是函式搜尋路徑、
+// `status` 是上一個指令的結束碼。我們寫出來的啟動腳本是 #!/bin/zsh -i，所以
+// `path=…` 那一行實際上是「把這個視窗的指令搜尋路徑換成一個不存在的資料夾」——
+// 之後 sed、open 全部叫不到，瀏覽器不會開，而學生看到的是「command not found: sed」。
+//
+// ⚠️ 症狀跟原因完全對不上，靠讀程式碼看不出來（實際踩過一次）。所以用測試釘住。
+//
+// 掃之前先把註解拿掉：解釋這條規則的註解本身就會寫到 `path=`，不拿掉的話這一條
+// 會被自己的說明文字絆倒（寫這條的時候當場踩到）。
+const code = source
+  .split("\n")
+  .filter((line) => !line.trim().startsWith("//"))
+  .join("\n");
+
+for (const reserved of ["path", "cdpath", "fpath", "manpath", "status", "argv"]) {
+  assert.doesNotMatch(
+    code,
+    new RegExp(`[\`\\n]\\s*${reserved}=`),
+    `shell 變數不能叫 ${reserved}——那是 zsh 的特殊變數，賦值會蓋掉它原本的意思`,
+  );
+}
+console.log("ok - 寫出去的 shell 腳本不拿 zsh 的特殊變數當一般變數名");
+
 // 兩支監控腳本的測試開關名字不一樣，設錯的話門檻沒降下來，hook 永遠不會出聲。
 assert(
   source.includes("CODEX_TEST_MAX_CONTEXT_WINDOW"),

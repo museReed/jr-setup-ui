@@ -439,10 +439,20 @@ function browseVaultRepo() {
     ].join("\n");
   }
 
+  // ⚠️ 這個變數**不能**叫 path。啟動腳本是 #!/bin/zsh -i，而 zsh 的小寫 `path` 是
+  // `PATH` 的另一個名字（綁在一起的陣列形式）——`path=…` 等於把這個視窗的指令搜尋
+  // 路徑換成一個不存在的資料夾。
+  //
+  // 後果是那一行之後的外部指令全部叫不到（實測 `zsh -c 'path=/a/b; … | sed …'` →
+  // `command not found: sed`）：sed 回空字串、open 也不見了，瀏覽器根本不會開，而
+  // 學生看到的錯誤訊息是「找不到 sed」——指不到真正的原因。
+  //
+  // zsh 的特殊變數還有 cdpath / fpath / manpath / status / argv，同樣不能拿來當
+  // 一般變數名。守門測試盯著（test/verify-in-terminal.mjs）。
   return [
-    `path=$(git -C '${vault}' remote get-url origin | sed -e 's/\\.git$//' -e 's#https://github.com##')/commits/main/`,
+    `repoPath=$(git -C '${vault}' remote get-url origin | sed -e 's/\\.git$//' -e 's#https://github.com##')/commits/main/`,
     `echo '${note}'`,
-    'open "https://github.com/login?return_to=$(printf %s "$path" | sed -e \'s#/#%2F#g\')"',
+    'open "https://github.com/login?return_to=$(printf %s "$repoPath" | sed -e \'s#/#%2F#g\')"',
   ].join("\n");
 }
 
