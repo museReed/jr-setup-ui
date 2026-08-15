@@ -24,10 +24,18 @@ export function quarantineHome(home) {
 export const QUARANTINE_AREAS = [
   { dir: "codex-skills", what: "舊版 skill", from: "codex-legacy-skills" },
   { dir: "npm-cli", what: "npm 裝的舊版 CLI", from: "legacy-npm-cli" },
+  // brew 那批跟 npm 分開放，不是為了整齊：它們搬進來之後**還沒完**——Cellar 裡的
+  // 本體還在、brew 的清單上也還有它，之後要靠這個資料夾認出「哪幾支該去跑
+  // brew uninstall」。混進 npm-cli 就分不出來了。
+  { dir: "brew-cli", what: "Homebrew 裝的舊版 CLI", from: "legacy-npm-cli" },
 ];
 
 // 這一列要看哪幾列的臉色。跟 QUARANTINE_AREAS 的 from 是同一組，分開寫只會有一天
 // 加了新分區卻忘了把它的來源列進判準。
+//
+// ⚠️ 這裡會有重複的 id（npm-cli 與 brew-cli 都是 legacy-npm-cli 那一顆按鈕搬進去
+// 的），那是對的、不要去重：守門測試把「分區 ↔ 來源」寫成一對一，去重會讓它紅。
+// 下面用的是 every，同一個 id 查兩次結果一樣。
 export const CLEANUP_CHECK_IDS = QUARANTINE_AREAS.map((area) => area.from);
 
 function cleanupsSettled(checks) {

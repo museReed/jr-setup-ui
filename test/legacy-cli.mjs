@@ -216,6 +216,80 @@ try {
     [NPM_SHIM],
   );
   ok("孤兒沒有官方版當靠山也要清——留著只會讓每次呼叫都失敗");
+
+  // ── Homebrew 裝的（Reed 指定：也要搬進隔離區，之後另一張卡跑 brew uninstall）──
+  //
+  // ⚠️ 判準是 Cellar 不是 /opt/homebrew 前綴。上面那條 BREW_SHIM 的測試就是反例：
+  // 同一個 bin 目錄底下站著 npm 裝的東西，用前綴會把它搶去判成 brew。
+  const BREW_LINK = "/opt/homebrew/bin/claude";
+  const BREW_BODY = "/opt/homebrew/Cellar/claude-code/1.2.3/bin/claude";
+
+  assert.equal(classifyInstall(BREW_BODY), "brew");
+  assert.equal(classifyInstall(BREW_LINK, BREW_BODY), "brew");
+  // 迴歸護欄：同一個前綴、解出來是 node_modules 的那支仍然要判 npm，不能被 brew 搶走。
+  assert.equal(
+    classifyInstall(BREW_LINK, "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"),
+    "npm",
+  );
+  ok("brew 靠 Cellar 認，npm 仍然優先——同一個 bin 目錄底下兩種都可能");
+
+  const brewInstall = inspectCommand("claude", [BREW_LINK], {
+    exists: (candidate) => candidate === BREW_LINK || candidate === BREW_BODY,
+    realpath: (candidate) => (candidate === BREW_LINK ? BREW_BODY : null),
+  });
+  assert.equal(brewInstall.npm.length, 0, "brew 那支不該混進 npm 清單");
+  assert.equal(brewInstall.brew.length, 1);
+  assert.equal(brewInstall.brew[0].path, BREW_LINK, "要搬的是那條連結不是本體");
+  assert.equal(brewInstall.brew[0].kind, "brew", "腳本要靠 kind 決定搬進哪個分區");
+  assert.equal(brewInstall.brew[0].orphan, false, "Cellar 裡的本體還在");
+  ok("Homebrew 裝的獨立成一批，帶著 kind 走");
+
+  // ⚠️ brew 吃**同一條**安全規則：這台裝不回官方版就一支都不動。「brew 裝的一律要
+  // 換掉」是目標，不是可以把學生唯一能用的工具拆了不管的理由。
+  assert.deepEqual(
+    removableEntries([brewInstall], { reinstallable: ["claude"] }).map(
+      (entry) => entry.path,
+    ),
+    [BREW_LINK],
+  );
+  assert.deepEqual(removableEntries([brewInstall], { reinstallable: [] }), []);
+  ok("brew 裝的裝得回來才搬，裝不回來一支都不動");
+
+  const brewStatus = legacyCliStatus([brewInstall], { reinstallable: ["claude"] });
+  assert.equal(brewStatus.fixLabel, "搬走 Homebrew 裝的舊版");
+  assert.ok(brewStatus.detail.length <= 40, brewStatus.detail);
+  ok("只有 brew 時按鈕與說明都講 Homebrew");
+
+  // 兩種都有時不列舉——套進句型會變成「搬走 套件管理器 裝的舊版」。
+  const bothKinds = legacyCliStatus([brewInstall, coexist], {
+    reinstallable: ["claude", "codex"],
+  });
+  assert.equal(bothKinds.fixLabel, "搬走舊版 CLI");
+  assert.ok(bothKinds.detail.length <= 40, bothKinds.detail);
+  ok("npm 與 brew 同時存在時，按鈕的字不列舉是哪一種");
+
+  // ── 認不得的落點：報出來、不動手（Reed 拍板）──
+  const stray = inspectCommand("codex", ["/Users/reed/tools/codex"], {
+    exists: () => true,
+  });
+  assert.equal(stray.unknown.length, 1);
+  assert.equal(stray.npm.length, 0);
+  assert.equal(stray.brew.length, 0);
+  assert.deepEqual(removableEntries([stray], { reinstallable: ["codex"] }), []);
+  ok("認不得的落點只記下來，一支都不進可搬清單");
+
+  const strayStatus = legacyCliStatus([stray], { reinstallable: ["codex"] });
+  assert.equal(strayStatus.status, "ok", "認不得不算毛病，不該把這一列弄黃");
+  assert.equal(strayStatus.fixLabel, undefined, "不給清理按鈕");
+  assert.ok(strayStatus.guidance, "但要在卡片上講出來");
+  assert.ok(strayStatus.guidance.symptom.includes("codex"));
+  // ⚠️ 這一列會整包送到瀏覽器，而「這一頁卡住了」那顆會把它貼到公開的 issue 上。
+  // 路徑裡有學生的使用者名稱（常常是本名）——只講指令名字，不放完整路徑。
+  assert.ok(
+    !JSON.stringify(strayStatus.guidance).includes("/Users/reed"),
+    "說明裡不可以出現完整路徑",
+  );
+  ok("認不得的落點在卡片上講得出來，而且不洩漏路徑");
 } catch (error) {
   console.error(error);
   process.exit(1);

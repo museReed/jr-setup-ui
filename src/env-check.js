@@ -112,7 +112,7 @@ export function checksForPlatform(platform) {
     { id: "python", label: "Python 3" },
     { id: "shell-wrapper", label: "終端機裡的 claude / codex 是活的" },
     // 兩個平台都要：npm 全域安裝在 mac 上一樣會留下並存與孤兒 shim。
-    { id: "legacy-npm-cli", label: "沒有上一輪 npm 裝的殘留" },
+    { id: "legacy-npm-cli", label: "沒有上一輪套件管理器裝的殘留" },
   ];
 
   if (platform === "win32") {
@@ -646,12 +646,16 @@ async function checkShellWrapper() {
   return { id, label, ...shellWrapperStatus(dead) };
 }
 
-// 這一列查的是「上一輪用 npm 裝的還在不在，而且壞成哪一種」。判準在 legacy-cli.js。
-// 查的是 PATH 上**所有**同名的執行檔，不是第一支——npm 版與官方版並存時，誰先誰後
-// 決定學生打指令會叫到誰，只看第一支等於只看到一半。
+// 這一列查的是「上一輪用套件管理器裝的還在不在，而且壞成哪一種」。判準在
+// legacy-cli.js。查的是 PATH 上**所有**同名的執行檔，不是第一支——舊版與官方版
+// 並存時，誰先誰後決定學生打指令會叫到誰，只看第一支等於只看到一半。
+//
+// ⚠️ id 仍然叫 legacy-npm-cli，雖然它現在也管 Homebrew。改 id 會同時動到隔離區的
+// 分區來源、model.js 的卡片成員與好幾支守門測試，而那些都不會因此變得更正確——
+// 這一列對學生顯示的是 label，id 只是內部的名字。
 async function checkLegacyCli(tools) {
   const id = "legacy-npm-cli";
-  const label = "沒有上一輪 npm 裝的殘留";
+  const label = "沒有上一輪套件管理器裝的殘留";
 
   try {
     const env = await spawnEnv();
@@ -684,7 +688,7 @@ async function checkLegacyCli(tools) {
 
     return { id, label, ...legacyCliStatus(reports, { reinstallable }) };
   } catch {
-    return { id, label, status: "ok", detail: "沒有上一輪用 npm 裝的殘留" };
+    return { id, label, status: "ok", detail: "沒有上一輪套件管理器裝的殘留" };
   }
 }
 

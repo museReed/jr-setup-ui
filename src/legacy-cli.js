@@ -25,6 +25,23 @@ const NPM_MARKERS = [/[\\/]node_modules[\\/]/i, /[\\/]npm[\\/]/i, /[\\/]\.npm-gl
 // 官方安裝器的落點：Windows 是 %LOCALAPPDATA%\Programs\，mac / Linux 是 ~/.local/bin。
 const OFFICIAL_MARKERS = [/[\\/]Programs[\\/]/i, /[\\/]\.local[\\/]bin[\\/]/i];
 
+// Homebrew 的落點。
+//
+// ⚠️ 判準是 **Cellar**，不是 `/opt/homebrew` 前綴——這一條不能改成前綴，改了會把
+// 事情弄反。同一個 `/opt/homebrew/bin` 底下站著兩種完全不同的東西：
+//
+//   brew 裝的  bin/claude → ../Cellar/<formula>/<版本>/bin/claude
+//   npm 裝的   bin/claude → ../lib/node_modules/@anthropic-ai/claude-code/cli.js
+//                          （Node 是 brew 裝的時候，npm 的全域 bin 就是這裡，
+//                            見上面 2026-08-15 那則 mac VM 實測）
+//
+// 用前綴的話，npm 那支會被搶去判成 brew，於是走到「叫學生 brew uninstall」——
+// 而 brew 根本沒裝過它，那行指令只會回一句 No available formula。
+//
+// 解開 symlink 之後看 Cellar 就分得開。npm 那條解出來一定看得到 node_modules，
+// 而 node_modules 在下面先判，所以順序本身也是一道保險。
+const BREW_MARKERS = [/[\\/]Cellar[\\/]/i];
+
 // ⚠️ 第二個參數是「順著 symlink 解出來的真正位置」，可以不給。
 //
 // 為什麼需要它（Reed 的 mac VM 實測，2026-08-15）：那台的 Node 是 Homebrew 裝的，
@@ -49,6 +66,11 @@ export function classifyInstall(candidate, resolved = null) {
 
   if (paths.some((value) => NPM_MARKERS.some((marker) => marker.test(value)))) {
     return "npm";
+  }
+
+  // npm 判完才輪到 brew——順序見上面 BREW_MARKERS 的說明。
+  if (paths.some((value) => BREW_MARKERS.some((marker) => marker.test(value)))) {
+    return "brew";
   }
 
   return paths.some((value) =>
@@ -97,6 +119,8 @@ export function inspectCommand(
 ) {
   const packageName = NPM_PACKAGES[command];
   const npm = [];
+  const brew = [];
+  const unknown = [];
   const seen = new Set();
   let official = 0;
 
@@ -109,7 +133,11 @@ export function inspectCommand(
       continue;
     }
 
-    if (kind !== "npm") {
+    // 認不得的落點只記下來給那一列講，一支都不搬（Reed 拍板：報出來、不動手）。
+    // 學生自己下載丟進 PATH 的就落在這裡——那是他的東西，而且我們也說不出它壞在
+    // 哪，補一顆清理鍵只會清掉一個可能好好的安裝。
+    if (kind === "unknown") {
+      unknown.push({ command, path: candidate });
       continue;
     }
 
@@ -123,9 +151,17 @@ export function inspectCommand(
     //
     // 斷掉的 symlink 解不開，會落到第二條、找不到本體，判成孤兒——那正是對的。
     const linked = resolved !== null && resolved !== candidate;
-    const orphan = linked
-      ? !exists(resolved)
-      : !exists(findPackageRoot(candidate, packageName));
+    let orphan;
+
+    if (linked) {
+      orphan = !exists(resolved);
+    } else if (kind === "brew") {
+      // brew 認得出來的前提就是路徑裡有 Cellar。走到這裡代表候選路徑自己就在
+      // Cellar 底下（不是那條連結，是本體），本體當然在。
+      orphan = false;
+    } else {
+      orphan = !exists(findPackageRoot(candidate, packageName));
+    }
 
     for (const variant of shimVariants(candidate, command)) {
       const key = variant.toLowerCase();
@@ -137,11 +173,69 @@ export function inspectCommand(
       }
 
       seen.add(key);
-      npm.push({ command, path: variant, orphan });
+      // kind 要跟著走：兩種殘留搬進隔離區的**不同分區**，而且 brew 那批之後還要
+      // 靠它認出來去跑 brew uninstall（見 scripts/fix-legacy-cli.mjs）。
+      (kind === "brew" ? brew : npm).push({
+        command,
+        kind,
+        path: variant,
+        orphan,
+      });
     }
   }
 
-  return { command, npm, official };
+  return { command, npm, brew, unknown, official };
+}
+
+// npm 與 brew 裝的都是「要搬走的舊版」。判斷「這一列有沒有事」時兩者是同一件事，
+// 差別只在搬進隔離區的哪個分區、以及 brew 那批之後還要再跑一次 brew uninstall。
+function legacyEntries(report) {
+  return [...report.npm, ...(report.brew ?? [])];
+}
+
+// 說明裡要講「用什麼裝的」。兩種都有時不列舉——那一行只有 40 字。
+function installerWord(reports) {
+  const hasBrew = reports.some((report) => (report.brew ?? []).length > 0);
+  const hasNpm = reports.some((report) => report.npm.length > 0);
+
+  if (hasBrew && hasNpm) {
+    return "套件管理器";
+  }
+
+  return hasBrew ? "Homebrew" : "npm";
+}
+
+// 按鈕上的字。兩種都有時不套進句型——「搬走 套件管理器 裝的舊版」讀起來像機器寫的。
+function fixLabelFor(word) {
+  return word === "套件管理器" ? "搬走舊版 CLI" : `搬走 ${word} 裝的舊版`;
+}
+
+// 認不得的落點：報出來、不動手（Reed 拍板）。它不影響這一列的紅綠燈，只掛一段說明
+// ——所以綠燈那一支也要帶上它。
+//
+// ⚠️ 只講指令名字，**不要放完整路徑**。這一列會整包送到瀏覽器，而路徑裡有學生的
+// 使用者名稱（常常是本名），「這一頁卡住了」那顆會把畫面上的東西貼到公開的 issue
+// 上——跟 quarantineRow 那則是同一個理由。
+function unknownGuidance(reports) {
+  const names = reports
+    .filter((report) => (report.unknown ?? []).length > 0)
+    .map((report) => report.command);
+
+  if (names.length === 0) {
+    return {};
+  }
+
+  return {
+    guidance: {
+      symptom: `${names.join("、")} 是從我們認不得的地方裝的`,
+      expected:
+        "嚮導不會動它。要換成官方版的話，請自己確認它當初是怎麼裝的、用同一個方式移除，再回來按官方版的安裝鍵",
+      checks: names.map(
+        (name) => `${name}：不在 npm、Homebrew、官方安裝器的落點`,
+      ),
+      diagnose: null,
+    },
+  };
 }
 
 // 三種情況合成一列要說的話。⚠️ detail 一行——右邊緊接著就是按鈕。
@@ -150,45 +244,57 @@ export function inspectCommand(
 // 完全看它。
 export function legacyCliStatus(reports, { reinstallable = [] } = {}) {
   const canReinstall = new Set(reinstallable);
-  const withNpm = reports.filter((report) => report.npm.length > 0);
+  const withLegacy = reports.filter(
+    (report) => legacyEntries(report).length > 0,
+  );
+  const unknown = unknownGuidance(reports);
 
-  if (withNpm.length === 0) {
-    return { status: "ok", detail: "沒有上一輪用 npm 裝的殘留" };
+  if (withLegacy.length === 0) {
+    return { status: "ok", detail: "沒有上一輪套件管理器裝的殘留", ...unknown };
   }
 
-  const orphans = withNpm.filter((report) =>
-    report.npm.some((entry) => entry.orphan),
+  const orphans = withLegacy.filter((report) =>
+    legacyEntries(report).some((entry) => entry.orphan),
   );
-  // 只有 npm 版、而且沒有官方版的那幾支。清掉的話學生就完全沒得用了。
-  const onlyNpm = withNpm.filter(
-    (report) => report.official === 0 && !report.npm.some((entry) => entry.orphan),
+  // 只有舊版、而且沒有官方版的那幾支。清掉的話學生就完全沒得用了。
+  const onlyLegacy = withLegacy.filter(
+    (report) =>
+      report.official === 0 &&
+      !legacyEntries(report).some((entry) => entry.orphan),
   );
-  const coexisting = withNpm.filter(
-    (report) => report.official > 0 && !report.npm.some((entry) => entry.orphan),
+  const coexisting = withLegacy.filter(
+    (report) =>
+      report.official > 0 &&
+      !legacyEntries(report).some((entry) => entry.orphan),
   );
-  const stranded = onlyNpm.filter((report) => !canReinstall.has(report.command));
+  const stranded = onlyLegacy.filter(
+    (report) => !canReinstall.has(report.command),
+  );
   const names = (list) => list.map((report) => report.command).join("、");
+  const word = installerWord(withLegacy);
 
-  // 一支都動不了的情況：全部都是「只有 npm 版」而且我們裝不回來。
-  if (stranded.length === withNpm.length) {
+  // 一支都動不了的情況：全部都是「只有舊版」而且我們裝不回來。
+  if (stranded.length === withLegacy.length) {
     return {
       status: "warn",
       installable: false,
       // 這一種**不給清理按鈕**：那是他唯一叫得動的東西，而這台我們補不上。
-      detail: `${names(stranded)} 是上一輪用 npm 裝的，建議改用官方版重裝`,
+      detail: `${names(stranded)} 是上一輪用 ${word} 裝的，建議改用官方版重裝`,
       reports,
+      ...unknown,
     };
   }
 
-  // 只有「裝得回來的 only-npm」時，說法要講清楚它會先消失再回來——不然學生按完
+  // 只有「裝得回來的 only-legacy」時，說法要講清楚它會先消失再回來——不然學生按完
   // 發現 claude 不見了會嚇到。
   if (coexisting.length === 0 && orphans.length === 0) {
     return {
       status: "warn",
       installable: false,
-      fixLabel: "搬走 npm 裝的舊版",
-      detail: `${names(onlyNpm.filter((r) => canReinstall.has(r.command)))} 是 npm 裝的，搬走後改裝官方版`,
+      fixLabel: fixLabelFor(word),
+      detail: `${names(onlyLegacy.filter((r) => canReinstall.has(r.command)))} 是 ${word} 裝的，搬走後改裝官方版`,
       reports,
+      ...unknown,
     };
   }
 
@@ -198,25 +304,30 @@ export function legacyCliStatus(reports, { reinstallable = [] } = {}) {
   return {
     status: "warn",
     installable: false,
-    fixLabel: "搬走 npm 裝的舊版",
+    fixLabel: fixLabelFor(word),
     detail:
       orphans.length > 0
         ? `${names(orphans)} 有一支指向空氣的舊捷徑，打了一定失敗`
-        : `${names(coexisting)} 同時有 npm 版與官方版，會搶著被叫到`,
+        : `${names(coexisting)} 同時有舊版與官方版，會搶著被叫到`,
     reports,
+    ...unknown,
   };
 }
 
 // 真的可以動的那幾支：
 //   - 孤兒一定清（它只會失敗，留著沒有任何好處）
 //   - 已經有官方版當靠山的，搬走沒有空窗
-//   - 只有 npm 版、但這個平台裝得回來的，也搬（Reed 拍板）
-// 剩下的是「只有 npm 版而且我們補不上」——那種一支都不動。
+//   - 只有舊版、但這個平台裝得回來的，也搬（Reed 拍板）
+// 剩下的是「只有舊版而且我們補不上」——那種一支都不動。
+//
+// ⚠️ brew 裝的走**同一條**安全規則，不是無條件搬。它一樣是學生現在唯一叫得動的
+// 東西，這台裝不回官方版就搬不得——「brew 裝的一律要換掉」是目標，不是可以把人家
+// 的工具拆了不管的理由。
 export function removableEntries(reports, { reinstallable = [] } = {}) {
   const canReinstall = new Set(reinstallable);
 
   return reports.flatMap((report) =>
-    report.npm.filter(
+    legacyEntries(report).filter(
       (entry) =>
         entry.orphan ||
         report.official > 0 ||
