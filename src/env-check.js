@@ -53,6 +53,7 @@ import {
   pickRunnable,
   resolveSpawn,
 } from "./spawn-command.js";
+import { ghosttyAppPaths } from "./terminal-window.js";
 
 // 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
 // 但同學撞到的是「剛裝完的第一次啟動」——npm 剛寫完檔案、Defender 正在掃、
@@ -451,13 +452,10 @@ async function checkExecutionPolicy() {
 function checkGhostty() {
   const id = "ghostty";
   const label = "Ghostty 終端機";
-  const status = ghosttyStatus(
-    [
-      "/Applications/Ghostty.app",
-      join(homedir(), "Applications", "Ghostty.app"),
-    ],
-    existsSync,
-  );
+  // ⚠️ 路徑清單跟 terminal-window.js 共用同一份。分兩份的話會長出「這一列說已安裝，
+  // 驗證卻還是跑在系統 Terminal 上」這種矛盾——判「裝了沒」與判「用不用它開」看的
+  // 必須是同一個地方。
+  const status = ghosttyStatus(ghosttyAppPaths(homedir()), existsSync);
   return { id, label, ...status };
 }
 

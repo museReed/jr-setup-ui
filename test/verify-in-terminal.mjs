@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { terminalCommand } from "../src/terminal-window.js";
+
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(
   path.join(repoRoot, "scripts/verify-in-terminal.mjs"),
@@ -34,12 +36,26 @@ console.log("ok - 終端啟動腳本用陣列傳參數，不靠引號");
 // 裡面，所以標題同步那一格等於根本沒在驗。
 //
 // Bypass 只影響那一個行程，不動機器設定。機器本身的執行原則另有一張卡在管。
-for (const spawnSite of [
-  /"powershell\.exe",\s*\n\s*"-NoExit",[\s\S]*?"-ExecutionPolicy",\s*\n\s*"Bypass",/,
+//
+// ⚠️ 開視窗那一段搬進 src/terminal-window.js 之後，這裡改成**驗它真的產出什麼**，
+// 不再掃原始碼文字。掃文字的版本只要有人換行改一下就假紅，而且搬家之後它守的是
+// 一個已經不在這個檔案裡的東西。
+const windowsArgs = terminalCommand("C:\\tmp\\jr.ps1", {
+  platform: "win32",
+  home: "C:\\Users\\Reed",
+  exists: () => false,
+}).args;
+
+assert.deepEqual(
+  windowsArgs.slice(-4),
+  ["-ExecutionPolicy", "Bypass", "-File", "C:\\tmp\\jr.ps1"],
+  "自己寫出來的臨時腳本一律帶 Bypass",
+);
+assert.ok(windowsArgs.includes("-NoExit"), "跑完要留著視窗給學生看");
+assert.match(
+  source,
   /Start-Process powershell\.exe -ArgumentList @\('-NoProfile','-ExecutionPolicy','Bypass','-File'/,
-]) {
-  assert.match(source, spawnSite);
-}
+);
 console.log("ok - 自己 spawn 的 PowerShell 腳本一律帶 Bypass，不依賴機器設定");
 
 // 兩支監控腳本的測試開關名字不一樣，設錯的話門檻沒降下來，hook 永遠不會出聲。

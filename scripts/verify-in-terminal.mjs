@@ -18,6 +18,7 @@
 import { spawn } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -31,6 +32,7 @@ import path from "node:path";
 import { describeStep, VAULT_DIR } from "../src/config-install.js";
 import { findObsidianApp } from "../src/config-check.js";
 import { materialsDir, verifyShotPath } from "../src/paths.js";
+import { terminalCommand } from "../src/terminal-window.js";
 
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
@@ -539,32 +541,15 @@ function writeLauncher(prompt) {
   return file;
 }
 
+// ⚠️ loadProfile 一定要留 true：這一支跑的是學生平常那一支 claude / codex，而
+// wrapper 住在 profile 裡——不載入等於整個標題同步沒在驗。
 function openTerminal(launcher) {
-  if (process.platform === "win32") {
-    return {
-      cmd: "cmd.exe",
-      args: [
-        "/c",
-        "start",
-        "",
-        "wt.exe",
-        "powershell.exe",
-        "-NoExit",
-        // 我們自己寫出來的臨時腳本，不該看機器的執行原則臉色。Windows 預設是
-        // Restricted，新開的視窗會直接紅字「running scripts is disabled」，而嚮導這
-        // 邊看到的 exit code 還是 0——因為 cmd start 一開完就回來了（VM 實測）。
-        //
-        // Bypass 只影響這一個行程，不動機器設定。順帶把 profile 也救回來：Restricted
-        // 連 profile 都不載入，wrapper 就住在裡面，不載入等於整個標題同步沒在驗。
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        launcher,
-      ],
-    };
-  }
-
-  return { cmd: "open", args: [launcher] };
+  return terminalCommand(launcher, {
+    platform: process.platform,
+    home: homedir(),
+    exists: existsSync,
+    loadProfile: true,
+  });
 }
 
 // 副產物出現了嗎？出現就回傳判定過的證據，還沒有就回 null。

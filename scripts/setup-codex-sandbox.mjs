@@ -13,11 +13,19 @@
 //（見 src/codex-sandbox.js 的 sandboxAnswered）。這支只是邊等邊查同一件事，
 // 學生一設定好就自己往下走，不用按「重新檢查」、也不用等他關掉那個視窗。
 import { spawn } from "node:child_process";
-import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import { sandboxAnswered } from "../src/codex-sandbox.js";
+import { terminalCommand } from "../src/terminal-window.js";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -69,38 +77,23 @@ function launcher() {
   return file;
 }
 
+// ⚠️ loadProfile: false 是這一支的重點，合併與驗證那兩支刻意相反——別互相抄。
+//
+//   合併 / 驗證  要跑學生平常那一支 claude / codex，而 wrapper 住在 profile 裡
+//   這一支       只跑一個 codex 指令，profile 對它沒有任何用處
+//
+// 真機（Reed 的 arm64 VM）上載 profile 還會噴一段紅字：Smart App Control 開在評估中
+// → WDAC 使用者模式稽核 → 未簽章的 profile 被判成受限語言模式，而 PowerShell 載入
+// profile 用的正是 dot-source，於是拒絕載入。學生會看到「Cannot dot-source this
+// command because it was defined in a different language mode」，跟他要做的事一點
+// 關係都沒有。
 function openTerminal(file) {
-  if (process.platform === "win32") {
-    return {
-      cmd: "cmd.exe",
-      args: [
-        "/c",
-        "start",
-        "",
-        "wt.exe",
-        "powershell.exe",
-        "-NoExit",
-        // ⚠️ 這裡要 -NoProfile，合併那支刻意**不加**——兩支的需求相反，別互相抄。
-        //
-        //   合併    要跑學生平常那一支 claude / codex，而 wrapper 住在 profile 裡
-        //   這一支  只跑一個 codex 指令，profile 對它沒有任何用處
-        //
-        // 真機（Reed 的 arm64 VM）上載 profile 還會噴一段紅字：Smart App Control
-        // 開在評估中 → WDAC 使用者模式稽核 → 未簽章的 profile 被判成受限語言模式，
-        // PowerShell 載入 profile 用的正是 dot-source，於是拒絕載入。學生會看到
-        // 「Cannot dot-source this command because it was defined in a different
-        // language mode」，跟他要做的事一點關係都沒有。
-        "-NoProfile",
-        // 我們自己寫出來的臨時腳本不該看機器的執行原則臉色（跟合併那支同一個理由）。
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        file,
-      ],
-    };
-  }
-
-  return { cmd: "open", args: [file] };
+  return terminalCommand(file, {
+    platform: process.platform,
+    home: homedir(),
+    exists: existsSync,
+    loadProfile: false,
+  });
 }
 
 if (process.platform !== "win32") {

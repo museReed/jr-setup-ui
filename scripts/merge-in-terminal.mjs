@@ -35,6 +35,7 @@ import {
 } from "../src/merge-backup.js";
 import { mergeReport } from "../src/merge-report.js";
 import { materialsDir } from "../src/paths.js";
+import { terminalCommand } from "../src/terminal-window.js";
 
 const POLL_INTERVAL_MS = 1_000;
 // 合併比驗證慢得多：兩個檔案、要先讀完學生原本的內容，中間還可能停下來問。
@@ -171,28 +172,15 @@ function launcher() {
   return file;
 }
 
+// ⚠️ loadProfile 一定要留 true：合併要跑學生平常那一支 claude / codex，而 wrapper
+// 住在 profile 裡。沙箱那支刻意相反，別互相抄（判準在 src/terminal-window.js）。
 function openTerminal(file) {
-  if (process.platform === "win32") {
-    return {
-      cmd: "cmd.exe",
-      args: [
-        "/c",
-        "start",
-        "",
-        "wt.exe",
-        "powershell.exe",
-        "-NoExit",
-        // 我們自己寫出來的臨時腳本不該看機器的執行原則臉色。Restricted 的機器上
-        // 新視窗會直接紅字，而這邊看到的 exit code 還是 0（VM 實測）。
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        file,
-      ],
-    };
-  }
-
-  return { cmd: "open", args: [file] };
+  return terminalCommand(file, {
+    platform: process.platform,
+    home: homedir(),
+    exists: existsSync,
+    loadProfile: true,
+  });
 }
 
 const script = launcher();
