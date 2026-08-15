@@ -4,6 +4,8 @@ import {
   encodingProbeSource,
   ghosttyStatus,
   parsePowerShellVersion,
+  typelessAppPaths,
+  typelessStatus,
   windowsTerminalStatus,
 } from "../src/env-check.js";
 
@@ -50,6 +52,18 @@ assert.deepEqual(
   { status: "missing", detail: "未安裝" },
 );
 ok("Ghostty 任一路徑存在時已安裝，兩處都不存在時未安裝");
+
+// ⚠️ 這一條釘的是「沒裝時的狀態不能是 missing」。missing 會擋住整張卡完成
+// （cardIsComplete 要求每一列 ok），而 Typeless 是選用的——那就變成學生不裝
+// 就永遠打不了勾，跟 issue #4 一模一樣的死法。
+assert.equal(typelessStatus(true).status, "ok");
+assert.equal(typelessStatus(false).status, "optional");
+assert.match(typelessStatus(false).detail, /不裝也能上課/);
+assert.deepEqual(typelessAppPaths("/Users/test"), [
+  "/Applications/Typeless.app",
+  "/Users/test/Applications/Typeless.app",
+]);
+ok("Typeless 沒裝時是 optional 不是 missing，選用的東西不擋人");
 
 assert.deepEqual(windowsTerminalStatus({ WT_SESSION: "session-id" }, true), {
   status: "ok",

@@ -781,6 +781,17 @@ const ENV_CARD_META = {
     logo: "logo-terminal",
     description: "後面每一步都在這個視窗裡做，先確認它是好的",
   },
+  // 選用：這張卡不裝也算完成（那一列是 optional 燈）。放進來的理由是今天最花時間的
+  // 不是操作而是「把需求講清楚」——用講的，學生會講得比打得完整。
+  //
+  // ⚠️ 描述裡一定要講「裝完要自己開一次授權」：安裝指令跑完 App 還不能用，
+  // 沒講的話學生會以為壞掉。
+  typeless: {
+    agent: "other",
+    label: "用講的代替打字（選用）",
+    logo: "logo-terminal",
+    description: "裝完自己開一次 Typeless 授權麥克風，之後長 prompt 用講的就好",
+  },
 };
 
 const AGENT_ORDER = ["claude", "codex", "shared", "other"];

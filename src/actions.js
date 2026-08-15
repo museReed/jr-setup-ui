@@ -188,6 +188,7 @@ export const installerNames = {
   // 加 python 時順手做的這道守衛把它抓出來了。
   ghostty: "Ghostty 終端機",
   "windows-terminal": "Windows Terminal",
+  typeless: "Typeless 語音輸入",
 };
 
 for (const id of Object.keys(INSTALLERS)) {

@@ -175,6 +175,9 @@ if (process.platform === "darwin") {
   expectedIds.push("ghostty");
 }
 
+// 兩個平台都有的選用列，排在平台專屬那幾列之後（跟 checksForPlatform 一致）。
+expectedIds.push("typeless");
+
 assert.equal(result.checks.length, expectedIds.length);
 assert.deepEqual(
   result.checks.map(({ id }) => id),
@@ -184,7 +187,8 @@ assert.deepEqual(
 for (const check of result.checks) {
   assert.equal(typeof check.id, "string");
   assert.equal(typeof check.label, "string");
-  assert(["ok", "missing", "warn"].includes(check.status));
+  // optional：選用的東西沒裝時的狀態。不能算 missing——那會擋住整張卡完成。
+  assert(["ok", "missing", "warn", "optional"].includes(check.status));
   assert.equal(typeof check.detail, "string");
 }
 

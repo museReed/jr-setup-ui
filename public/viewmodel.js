@@ -57,6 +57,14 @@ const STATUS_DISPLAY = {
   missing: { symbol: "✗", label: "缺少" },
   warn: { symbol: "!", label: "需處理" },
   unverified: { symbol: "◐", label: "待驗證" },
+  // 「裝了更好，沒裝也能上課」的東西。
+  //
+  // ⚠️ 為什麼需要這個燈，而不是拿 ok 或 warn 來用：
+  //   warn  會擋住整張卡完成（cardIsComplete 要求每一列都 ok）——那就變成
+  //         issue #4 的翻版：學生沒裝一個選用軟體，整張卡永遠打不了勾。
+  //   ok    要在「其實沒裝」的那一列打勾，畫面直接說謊。
+  // 所以自己一格：看得出來沒裝，但不擋人往下走。
+  optional: { symbol: "○", label: "選用" },
 };
 
 const CARD_STATUS_DISPLAY = {
@@ -760,8 +768,10 @@ export function cardIsComplete(
 
   if (card.kind === "env") {
     return (
-      (card.checks ?? [card.check]).every((check) => check.status === "ok") &&
-      (card.manualIds ?? []).every((id) => checkedManualIds.has(id))
+      // optional 也算過關：那是「裝了更好」的東西，沒裝不該把學生擋在這張卡上。
+      (card.checks ?? [card.check]).every(
+        (check) => check.status === "ok" || check.status === "optional",
+      ) && (card.manualIds ?? []).every((id) => checkedManualIds.has(id))
     );
   }
 

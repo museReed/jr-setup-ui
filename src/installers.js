@@ -225,6 +225,31 @@ export const INSTALLERS = {
       env: BREW_ENV,
     },
   },
+  // 語音輸入（選用）。兩個平台各有官方通道，所以不用叫學生自己去官網抓 dmg／exe：
+  //   mac      Homebrew cask `typeless`
+  //   Windows  winget `SimplyCA.Typeless`
+  // ⚠️ 裝完還要學生自己開一次 App 授權麥克風與輔助使用權限——那一步沒辦法自動化，
+  // 所以卡片描述裡要講，不然他會以為裝完就能用。
+  typeless: {
+    darwin: {
+      cmd: "brew",
+      args: ["install", "--cask", "typeless"],
+      env: BREW_ENV,
+    },
+    win32: {
+      cmd: "winget",
+      args: [
+        "install",
+        "-e",
+        "--id",
+        "SimplyCA.Typeless",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--disable-interactivity",
+        "--silent",
+      ],
+    },
+  },
   // ⚠️ **`--installer-type wix` 這一項是這支存在的全部意義，不要拿掉。**
   //
   // 要修的問題：Codex 的沙箱以受限帳號跑指令，而 Windows 不准那種帳號啟動 MSIX

@@ -807,6 +807,41 @@ try {
   );
   ok("合併卡必須 CLI 與登入兩個 check 都通過才完成");
 
+  // ⚠️ issue #4 的翻版預防：選用的東西沒裝，不能把整張卡卡在未完成。
+  // Typeless 那一列沒裝時是 optional，卡片仍要算完成——用 warn 或 missing 的話，
+  // 學生只要不裝就永遠打不了勾，而那一列本來就寫著「不裝也能上課」。
+  const optionalCard = {
+    kind: "env",
+    checks: [
+      {
+        id: "typeless",
+        label: "Typeless 語音輸入（選用）",
+        status: "optional",
+        detail: "未安裝——按右邊可以裝，不裝也能上課",
+      },
+    ],
+  };
+  assert.equal(cardIsComplete(optionalCard), true);
+  assert.equal(
+    cardIsComplete({
+      ...optionalCard,
+      checks: [{ ...optionalCard.checks[0], status: "missing" }],
+    }),
+    false,
+    "missing 仍然要擋——這條防的是把 optional 寫回 missing",
+  );
+  assert.equal(envRowModel(optionalCard.checks[0]).symbol, "○");
+  assert.equal(envRowModel(optionalCard.checks[0]).ariaLabel, "選用");
+  ok("選用的那一列不擋卡片完成，但畫面上看得出來還沒裝");
+
+  // 沒有安裝鍵的選用列 = 一句「未安裝」配不上任何動作，學生只能乾瞪眼。
+  assert.deepEqual(
+    envRowModel({ ...optionalCard.checks[0], installAction: "install-typeless" })
+      .buttons.map((button) => button.text),
+    ["安裝"],
+  );
+  ok("選用那一列照樣長出安裝鍵");
+
   // 假綠燈防線：按過安裝不等於裝好。伺服器仍回 missing 時，安裝按鈕必須留著可按，
   // 否則學生看到一顆灰掉的「✅ 安裝」和一個裝不起來的項目，連重試都沒得按
   // （VM 實測 gh 就是這樣）。

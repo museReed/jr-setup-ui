@@ -147,6 +147,11 @@ export function checksForPlatform(platform) {
     checks.push({ id: "ghostty", label: "Ghostty 終端機" });
   }
 
+  // 兩個平台都有：mac 走 Homebrew cask，Windows 走 winget。
+  // 這一列是**選用**的（狀態 optional，不擋卡片完成）——沒裝也能上完整堂課，
+  // 但今天最花時間的是「把需求講清楚」，用講的比打字快，所以還是放進來。
+  checks.push({ id: "typeless", label: "Typeless 語音輸入（選用）" });
+
   return checks;
 }
 
@@ -393,8 +398,11 @@ export const FIX_ACTIONS = {
 
 function withActions(check) {
   // installable 為 false 的紅燈是「東西在、但用錯方式」——給安裝按鈕只會誤導。
+  // optional 跟 missing 一樣要給安裝鍵：那一列是「選用但可以裝」，
+  // 只認 missing 的話按鈕永遠不會出現，學生只看得到一句「未安裝」卻沒得按。
   const installer =
-    check.status === "missing" && check.installable !== false
+    (check.status === "missing" || check.status === "optional") &&
+    check.installable !== false
       ? resolveInstaller(check.id, process.platform)
       : null;
   // 第二個參數是整列結果：有幾列的按鈕給不給不只看 status（npm 殘留那列同樣是黃燈，
@@ -447,6 +455,46 @@ async function checkExecutionPolicy() {
   } catch {
     return { id, label, status: "warn", detail: "檢查失敗" };
   }
+}
+
+// 這台裝了 Typeless 沒有。回傳的狀態只有 ok / optional 兩種——
+// **永遠不會是 missing**，因為沒裝不是錯，只是還沒裝（見 STATUS_DISPLAY.optional）。
+export function typelessStatus(installed) {
+  return installed
+    ? { status: "ok", detail: "已安裝" }
+    : { status: "optional", detail: "未安裝——按右邊可以裝，不裝也能上課" };
+}
+
+// mac 的路徑固定：cask 一律裝進 /Applications。使用者自己搬走的情況不管，
+// 那種人本來就知道自己在做什麼。
+export function typelessAppPaths(home) {
+  return ["/Applications/Typeless.app", `${home}/Applications/Typeless.app`];
+}
+
+async function checkTypeless() {
+  const id = "typeless";
+  const label = "Typeless 語音輸入（選用）";
+
+  if (process.platform === "darwin") {
+    const installed = typelessAppPaths(homedir()).some((path) =>
+      existsSync(path),
+    );
+    return { id, label, ...typelessStatus(installed) };
+  }
+
+  // Windows：問 winget 本人，不去猜安裝路徑——它裝在哪由 installer 決定，
+  // 而且 app execution alias 的位置會因安裝方式而不同（跟 wt.exe 同一個教訓）。
+  const result = await runProbe("winget.exe", [
+    "list",
+    "-e",
+    "--id",
+    "SimplyCA.Typeless",
+  ]);
+  const installed =
+    result.type === "close" &&
+    result.code === 0 &&
+    /SimplyCA\.Typeless/i.test(result.stdout ?? "");
+  return { id, label, ...typelessStatus(installed) };
 }
 
 function checkGhostty() {
@@ -1165,6 +1213,8 @@ export async function runEnvCheck(tools = []) {
     if (process.platform === "darwin") {
       checksToRun.push(checkGhostty());
     }
+
+    checksToRun.push(checkTypeless());
 
     const checks = await Promise.all(checksToRun);
     // 補在最後：它要先看得到別人的結論才決定自己出不出現。
