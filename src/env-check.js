@@ -21,7 +21,11 @@ import {
   storePowerShellStatus,
 } from "./codex-sandbox.js";
 import { SKILL_NAMES } from "./config-install.js";
-import { inspectCommand, legacyCliStatus } from "./legacy-cli.js";
+import {
+  NPM_PACKAGES,
+  inspectCommand,
+  legacyCliStatus,
+} from "./legacy-cli.js";
 import {
   findDeadWrappers,
   shellProfilePaths,
@@ -37,7 +41,8 @@ import {
   brewNameFromTarget,
   commandFromEntry,
   leftoverCommands,
-} from "./brew-cli.js";
+  npmLeftoverRow,
+} from "./leftovers.js";
 import {
   conflictingLegacySkills,
   legacySkillRoot,
@@ -374,6 +379,8 @@ export const FIX_ACTIONS = {
   // 一列打勾的紀錄，沒有東西可按了。
   "brew-leftover": (status) =>
     status === "warn" ? "finish-brew-uninstall" : null,
+  "npm-leftover": (status) =>
+    status === "warn" ? "finish-npm-uninstall" : null,
   // ⚠️ 這一列的按鈕不是「黃燈就有」——只有 npm 版的情況也是黃燈，但那時不能清
   // （見 legacy-cli.js 的第 3 種）。所以按鈕跟著那一列自己回的 fixLabel 走。
   "legacy-npm-cli": (status, check) =>
@@ -764,7 +771,7 @@ function checkQuarantine(checks) {
 // 做到一半」才會出現，所以也不在 CHECKS 清單裡，由 runEnvCheck 在最後補上。
 //
 // 判準看的是隔離區 brew-cli 分區裡有誰，不是 brew 清單上有誰：只看 brew 的話，
-// 學生自己裝來平常用的東西也會被我們點名（見 brew-cli.js 開頭）。
+// 學生自己裝來平常用的東西也會被我們點名（見 leftovers.js 開頭）。
 async function checkBrewLeftover() {
   const id = "brew-leftover";
   const label = "Homebrew 那邊也收乾淨了";
@@ -835,6 +842,61 @@ async function checkBrewLeftover() {
   } catch {
     // 問不到 brew（沒裝、或這台不是 mac）就當作沒事。這一列是收尾用的，不該因為
     // 意外在整段已經全綠之後又長出一個學生修不了的東西。
+    return null;
+  }
+}
+
+// npm 那批的收尾，跟上面那支同一個形狀。兩個平台都要——npm 全域安裝在 Windows 上
+// 一樣會留下套件本體（見 leftovers.js 的 npmLeftoverRow）。
+//
+// ⚠️ 「還在不在」問的是**套件本體在不在 npm 的全域目錄底下**，不是 `npm ls -g` 的
+// 輸出。理由跟 legacy-cli.js 那則一樣：孤兒的情況 npm 自己也認不得（它以為沒裝），
+// 而我們要判的是「重裝時會不會把捷徑建回來」——那看的是本體。
+async function checkNpmLeftover() {
+  const id = "npm-leftover";
+  const label = "npm 那邊也收乾淨了";
+
+  try {
+    const dir = `${quarantineHome(homedir())}/npm-cli`;
+
+    if (!existsSync(dir)) {
+      return null;
+    }
+
+    const commands = leftoverCommands(
+      readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name),
+    );
+
+    if (commands.length === 0) {
+      return null;
+    }
+
+    const root = await runProbe("npm", ["root", "-g"]);
+
+    if (root.type !== "close" || root.exitCode !== 0) {
+      // 問不到 npm 的全域目錄就不要猜。這一列寧可不出現，也不要在整段全綠之後
+      // 長出一個學生修不了的黃燈。
+      return null;
+    }
+
+    const base = root.stdout.trim().split("\n").at(-1)?.trim();
+
+    if (!base) {
+      return null;
+    }
+
+    const stillInstalled = commands.filter((command) => {
+      const packageName = NPM_PACKAGES[command];
+
+      return (
+        packageName !== undefined &&
+        existsSync(join(base, ...packageName.split("/")))
+      );
+    });
+
+    const row = npmLeftoverRow({ commands, stillInstalled });
+    return row === null ? null : { id, label, ...row };
+  } catch {
     return null;
   }
 }
@@ -1109,10 +1171,15 @@ export async function runEnvCheck(tools = []) {
     const checks = await Promise.all(checksToRun);
     // 補在最後：它要先看得到別人的結論才決定自己出不出現。
     const quarantine = checkQuarantine(checks);
-    // brew 的收尾排在隔離區清理**之前**：那顆按鈕會刪掉隔離區裡的東西，而 brew
-    // 這一步萬一失敗，那份備份就是唯一還原得回去的東西。
-    const brewLeftover = await checkBrewLeftover();
-    const tail = [brewLeftover, quarantine].filter((row) => row !== null);
+    // 兩個收尾都排在隔離區清理**之前**：那顆按鈕會刪掉隔離區裡的東西，而收尾這兩步
+    // 萬一失敗，那份備份就是唯一還原得回去的東西。
+    const [npmLeftover, brewLeftover] = await Promise.all([
+      checkNpmLeftover(),
+      checkBrewLeftover(),
+    ]);
+    const tail = [npmLeftover, brewLeftover, quarantine].filter(
+      (row) => row !== null,
+    );
 
     return {
       os: { platform: process.platform, arch: process.arch, home: homedir() },

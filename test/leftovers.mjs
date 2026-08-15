@@ -1,4 +1,4 @@
-// brew 那批殘留的收尾：判準在 src/brew-cli.js，這裡測它問的那幾個問題。
+// 兩種殘留的收尾（brew 與 npm）：判準在 src/leftovers.js，這裡測它問的那幾個問題。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -7,7 +7,8 @@ import {
   brewNameFromTarget,
   commandFromEntry,
   leftoverCommands,
-} from "../src/brew-cli.js";
+  npmLeftoverRow,
+} from "../src/leftovers.js";
 import { flattenCheckCards } from "../public/model.js";
 import { FIX_ACTIONS } from "../src/env-check.js";
 import { actions } from "../src/actions.js";
@@ -119,7 +120,47 @@ try {
   // 那顆 action 真的註冊過，不然按下去會回 400。
   assert.notEqual(actions["finish-brew-uninstall"], undefined);
   assert.equal(actions["finish-brew-uninstall"].kind, "fixed");
-  ok("收尾那顆 action 註冊過了");
+  assert.notEqual(actions["finish-npm-uninstall"], undefined);
+  assert.equal(actions["finish-npm-uninstall"].kind, "fixed");
+  ok("兩顆收尾 action 都註冊過了");
+
+  // ── npm 那半 ──────────────────────────────────────────────────────────
+  //
+  // ⚠️ 這一列是後來補的（Reed 2026-08-15）。原本的界線是「我們只管 PATH 上這一支，
+  // 不管 npm 的帳本」，但 brew 補了收尾之後那個不對稱就站不住了：兩者都是「本體還在、
+  // 帳本還記得」，真正踩到時症狀一模一樣——捷徑被重新建回來、PATH 上又兩份。
+  assert.equal(npmLeftoverRow({ commands: [], stillInstalled: [] }), null);
+
+  const npmPending = npmLeftoverRow({
+    commands: ["codex"],
+    stillInstalled: ["codex"],
+  });
+  assert.equal(npmPending.status, "warn");
+  assert.equal(npmPending.fixLabel, "跑 npm uninstall 收尾");
+  assert.deepEqual(npmPending.pending, ["codex"]);
+  assert.equal(npmPending.installable, false);
+  assert.ok(
+    npmPending.detail.length <= 40,
+    `detail 太長會把按鈕擠出畫面：${npmPending.detail}`,
+  );
+  assert.equal(
+    FIX_ACTIONS["npm-leftover"]("warn", npmPending),
+    "finish-npm-uninstall",
+  );
+
+  const npmDone = npmLeftoverRow({ commands: ["codex"], stillInstalled: [] });
+  assert.equal(npmDone.status, "ok");
+  assert.equal(FIX_ACTIONS["npm-leftover"]("ok", npmDone), null);
+  ok("npm 那半跟 brew 同一個形狀：沒收完是黃燈，收完留著打勾");
+
+  // ⚠️ 判準看的是「本體在不在」不是 `npm ls -g` 的輸出——孤兒的情況 npm 自己也認不得
+  // （它以為沒裝），而我們要判的是「重裝時會不會把捷徑建回來」。
+  assert.match(
+    envSource,
+    /existsSync\(join\(base, \.\.\.packageName\.split\("\/"\)\)\)/,
+    "npm 那半要看套件本體在不在，不是問 npm ls -g",
+  );
+  ok("npm 那半判的是套件本體，不是 npm 的帳本");
 
   // ⚠️ 兩列同一張卡，而且順序不能反：刪備份那顆會把隔離區清空，brew 這一步萬一
   // 失敗，那份備份就是唯一還原得回去的東西（Reed 拍板同一張卡兩列）。
@@ -130,13 +171,42 @@ try {
       (card) => (card.checks ?? []).length > 0,
     );
 
+  // mac 上三列都可能同時出現：npm 收尾、brew 收尾、刪備份。
   const macCards = envCards([
+    row("npm-leftover", "npm 那邊也收乾淨了"),
     row("brew-leftover", "Homebrew 那邊也收乾淨了"),
     row("quarantine", "先前搬走的東西還留著"),
   ]);
-  assert.equal(macCards.length, 1, "兩列要合成一張卡，不是各自一張");
+  assert.equal(macCards.length, 1, "三列要合成一張卡，不是各自一張");
   assert.deepEqual(
     macCards[0].checks.map((check) => check.id),
+    ["npm-leftover", "brew-leftover", "quarantine"],
+    "兩個收尾都排在刪備份前面",
+  );
+  assert.equal(macCards[0].label, "收尾：清掉留下來的東西");
+
+  // ⚠️ Windows 沒有 brew 那一列，但 npm 那一列照樣會有（Reed 指定 Windows 也要有
+  // 這張收尾卡）。少了 npm-leftover 那一筆 meta 的話，這台的第一列就查不到卡片設定，
+  // 整張卡會退回機器寫的預設標題。
+  const winCardsWithNpm = envCards([
+    row("npm-leftover", "npm 那邊也收乾淨了"),
+    row("quarantine", "先前搬走的東西還留著"),
+  ]);
+  assert.equal(winCardsWithNpm.length, 1);
+  assert.deepEqual(
+    winCardsWithNpm[0].checks.map((check) => check.id),
+    ["npm-leftover", "quarantine"],
+  );
+  assert.equal(winCardsWithNpm[0].label, "收尾：清掉留下來的東西");
+
+  // brew 單獨在（npm 那批已經收完、或從來沒有）也要成立。
+  const brewOnly = envCards([
+    row("brew-leftover", "Homebrew 那邊也收乾淨了"),
+    row("quarantine", "先前搬走的東西還留著"),
+  ]);
+  assert.equal(brewOnly.length, 1);
+  assert.deepEqual(
+    brewOnly[0].checks.map((check) => check.id),
     ["brew-leftover", "quarantine"],
     "brew 收尾排在刪備份前面",
   );

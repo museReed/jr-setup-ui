@@ -21,7 +21,7 @@ import {
   brewNameFromTarget,
   commandFromEntry,
   leftoverCommands,
-} from "../src/brew-cli.js";
+} from "../src/leftovers.js";
 import { quarantineHome } from "../src/quarantine.js";
 
 const APPLY = process.argv.includes("--apply");

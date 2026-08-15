@@ -80,6 +80,10 @@ const finishBrewUninstallScript = moduleFile(
   "../scripts/finish-brew-uninstall.mjs",
   import.meta.url,
 );
+const finishNpmUninstallScript = moduleFile(
+  "../scripts/finish-npm-uninstall.mjs",
+  import.meta.url,
+);
 const restoreMergeBackupScript = moduleFile(
   "../scripts/restore-merge-backup.mjs",
   import.meta.url,
@@ -324,7 +328,7 @@ Object.assign(actions, {
   // 那兩顆搬移鍵的收尾。⚠️ 唯一一顆真的刪東西的按鈕——範圍與不碰什麼寫在
   // scripts/clear-quarantine.mjs 的開頭，畫面上按之前也會先列出要刪什麼。
   // brew 那批的收尾：搬走連結只做了一半，Caskroom 裡的本體還在、brew 的清單上也
-  // 還有它，下一次 brew upgrade 有機會把連結裝回來（見 src/brew-cli.js）。
+  // 還有它，下一次 brew upgrade 有機會把連結裝回來（見 src/leftovers.js）。
   //
   // ⚠️ 範圍只有隔離區 brew-cli 分區裡那幾支——我們親手搬走的那些。學生自己用 brew
   // 裝的其他東西一律不碰。
@@ -335,6 +339,19 @@ Object.assign(actions, {
     args: [finishBrewUninstallScript, "--apply"],
     description:
       "把先前搬進隔離區的那幾支 Homebrew 舊版從 brew 的清單上卸掉，連結才不會被裝回來。",
+  },
+  // npm 那批的收尾，跟上面那顆同一個道理：套件本體還在，下一次 npm i -g 或換 Node
+  // 版本重裝全域套件時，捷徑會被建回來。
+  //
+  // ⚠️ 只卸 NPM_PACKAGES 那張表上、而且我們剛才搬進隔離區的那幾支。學生自己 npm
+  // 裝的其他全域套件一律不碰。
+  "finish-npm-uninstall": {
+    kind: "fixed",
+    label: "跑 npm uninstall 收尾",
+    cmd: process.execPath,
+    args: [finishNpmUninstallScript, "--apply"],
+    description:
+      "把先前搬進隔離區的那幾支 npm 舊版從全域目錄卸掉，捷徑才不會被建回來。",
   },
   "clear-quarantine": {
     kind: "fixed",
