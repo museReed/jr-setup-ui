@@ -25,12 +25,19 @@ const NPM_MARKERS = [/[\\/]node_modules[\\/]/i, /[\\/]npm[\\/]/i, /[\\/]\.npm-gl
 // 官方安裝器的落點：Windows 是 %LOCALAPPDATA%\Programs\，mac / Linux 是 ~/.local/bin。
 const OFFICIAL_MARKERS = [/[\\/]Programs[\\/]/i, /[\\/]\.local[\\/]bin[\\/]/i];
 
-// Homebrew 的落點。
+// Homebrew 的落點。**兩個都要**，而且實際會遇到的是後者：
 //
-// ⚠️ 判準是 **Cellar**，不是 `/opt/homebrew` 前綴——這一條不能改成前綴，改了會把
-// 事情弄反。同一個 `/opt/homebrew/bin` 底下站著兩種完全不同的東西：
+//   Cellar    formula 裝的（brew install <名字>）
+//   Caskroom  cask 裝的（brew install --cask <名字>）
 //
-//   brew 裝的  bin/claude → ../Cellar/<formula>/<版本>/bin/claude
+// ⚠️ claude-code 與 codex 在 Homebrew 上**都是 cask 不是 formula**（實查 2026-08-15：
+// 兩者都來自 homebrew-cask/Casks/c/）。所以只認 Cellar 的話這個功能等於沒做——
+// 真正裝得到的那一種一支都抓不到。Cellar 留著是為了哪天它們變成 formula。
+//
+// ⚠️ 判準是這兩個資料夾名，不是 `/opt/homebrew` 前綴——這一條不能改成前綴，改了會
+// 把事情弄反。同一個 `/opt/homebrew/bin` 底下站著兩種完全不同的東西：
+//
+//   brew 裝的  bin/claude → ../Caskroom/claude-code/<版本>/claude
 //   npm 裝的   bin/claude → ../lib/node_modules/@anthropic-ai/claude-code/cli.js
 //                          （Node 是 brew 裝的時候，npm 的全域 bin 就是這裡，
 //                            見上面 2026-08-15 那則 mac VM 實測）
@@ -38,9 +45,9 @@ const OFFICIAL_MARKERS = [/[\\/]Programs[\\/]/i, /[\\/]\.local[\\/]bin[\\/]/i];
 // 用前綴的話，npm 那支會被搶去判成 brew，於是走到「叫學生 brew uninstall」——
 // 而 brew 根本沒裝過它，那行指令只會回一句 No available formula。
 //
-// 解開 symlink 之後看 Cellar 就分得開。npm 那條解出來一定看得到 node_modules，
+// 解開 symlink 之後看資料夾名就分得開。npm 那條解出來一定看得到 node_modules，
 // 而 node_modules 在下面先判，所以順序本身也是一道保險。
-const BREW_MARKERS = [/[\\/]Cellar[\\/]/i];
+const BREW_MARKERS = [/[\\/]Cellar[\\/]/i, /[\\/]Caskroom[\\/]/i];
 
 // ⚠️ 第二個參數是「順著 symlink 解出來的真正位置」，可以不給。
 //

@@ -221,11 +221,18 @@ try {
   //
   // ⚠️ 判準是 Cellar 不是 /opt/homebrew 前綴。上面那條 BREW_SHIM 的測試就是反例：
   // 同一個 bin 目錄底下站著 npm 裝的東西，用前綴會把它搶去判成 brew。
+  // ⚠️ 這裡用 Caskroom 不是 Cellar，因為 claude-code 與 codex 在 Homebrew 上**都是
+  // cask**（實查 2026-08-15：兩者都來自 homebrew-cask/Casks/c/）。只認 Cellar 的話
+  // 這個功能等於沒做——真正裝得到的那一種一支都抓不到。
   const BREW_LINK = "/opt/homebrew/bin/claude";
-  const BREW_BODY = "/opt/homebrew/Cellar/claude-code/1.2.3/bin/claude";
+  const BREW_BODY = "/opt/homebrew/Caskroom/claude-code/2.1.224/claude";
+  const BREW_CELLAR = "/opt/homebrew/Cellar/claude-code/2.1.224/bin/claude";
 
   assert.equal(classifyInstall(BREW_BODY), "brew");
   assert.equal(classifyInstall(BREW_LINK, BREW_BODY), "brew");
+  // formula 那條路留著：哪天它們從 cask 變成 formula 也要接得住。
+  assert.equal(classifyInstall(BREW_CELLAR), "brew");
+  assert.equal(classifyInstall(BREW_LINK, BREW_CELLAR), "brew");
   // 迴歸護欄：同一個前綴、解出來是 node_modules 的那支仍然要判 npm，不能被 brew 搶走。
   assert.equal(
     classifyInstall(BREW_LINK, "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"),
