@@ -7,12 +7,13 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import {
   VERIFICATION,
   checkAgentHooks,
+  checkAllowlist,
   checkCopyStep,
   checkTabSync,
   missingSourceLines,
@@ -22,6 +23,7 @@ import {
 } from "../src/config-check.js";
 import {
   describeStep,
+  expandAllowRules,
   mergeAgentHookRegistrations,
   upsertBlock,
 } from "../src/config-install.js";
@@ -420,6 +422,51 @@ process.stdin.on("end", () => {
     );
     assert.deepEqual(await missingSourceLines(MATERIALS, step), []);
     ok("合併的完成判準回「還缺哪幾行」，學生自己的內容不影響判定");
+
+    // ⚠️ 迴歸（學員回報 jr-setup-feedback#4，2026-08-15）：白名單規則齊了、但學生
+    // 自己把 defaultMode 設成別的值時，這一列**不可以判黃燈**。
+    //
+    // 判黃燈的連鎖反應：黃燈 → 「驗證：…」那一格永遠打不了勾（systemRowChecked 的
+    // 第二條要求這一列 status === "ok"）→ 行為驗證明明 PASS 了，畫面還寫著「還沒
+    // 實際跑跑看」→ 整張卡永遠完成不了。而旁邊那顆安裝鍵按下去也不會有事：安裝
+    // 刻意尊重他的選擇、不覆蓋。
+    //
+    // 他設 auto 是合法的選擇，不是壞掉。
+    const allowStep = describeStep("allowlist", {
+      lang: "zh-TW",
+      home: missDir,
+      platform: "darwin",
+    });
+    const allowlistSource = JSON.parse(
+      readFileSync(path.join(MATERIALS, allowStep.source), "utf8"),
+    );
+    mkdirSync(path.dirname(allowStep.settingsTarget), { recursive: true });
+    // ⚠️ 規則要照 expandAllowRules 展開過再寫進去（有一條帶家目錄路徑）。直接寫
+    // 原始那份的話會少一條，變成「38 / 39 條」——那是另一種黃燈，測不到這一條。
+    const writeSettings = (defaultMode) =>
+      writeFileSync(
+        allowStep.settingsTarget,
+        JSON.stringify({
+          permissions: {
+            ...allowlistSource.permissions,
+            allow: expandAllowRules(allowlistSource.permissions.allow, homedir()),
+            ...(defaultMode === null ? {} : { defaultMode }),
+          },
+        }),
+      );
+
+    writeSettings("auto");
+    const studentChose = await checkAllowlist(MATERIALS, allowStep);
+    assert.equal(studentChose.status, "ok", studentChose.detail);
+    assert.match(studentChose.detail, /你自己設的 auto/);
+
+    // 但「根本沒設」仍然是黃燈——那一種重跑安裝真的會補上，按鈕有用。
+    writeSettings(null);
+    const notSet = await checkAllowlist(MATERIALS, allowStep);
+    assert.equal(notSet.status, "warn");
+    assert.match(notSet.detail, /重跑安裝/);
+    assert.ok(notSet.detail.length <= 40, notSet.detail);
+    ok("學生自己設過預設模式是綠燈，沒設才是黃燈（黃燈會讓驗證那格永遠打不了勾）");
   } finally {
     rmSync(path.join(MATERIALS, sourceRel), { force: true });
     rmSync(missDir, { recursive: true, force: true });

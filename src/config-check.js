@@ -680,7 +680,7 @@ async function checkHook(step, materials) {
   };
 }
 
-async function checkAllowlist(materials, step) {
+export async function checkAllowlist(materials, step) {
   const source = path.join(materials, step.source);
 
   if (!existsSync(source)) {
@@ -710,17 +710,34 @@ async function checkAllowlist(materials, step) {
     };
   }
 
-  // 規則齊了但模式不對：分開講，因為要做的事不一樣。沒寫進去重跑安裝就好；
-  // 學生自己設過的話重跑也不會覆蓋（安裝那條刻意尊重他的選擇），叫他重裝是白按。
+  // 規則齊了但模式不是我們寫的那個：分成兩種，因為要做的事完全不同。
   if (installed === expected.length) {
+    // 沒寫進去：重跑安裝就會補上，所以是黃燈＋一顆真的有用的按鈕。
+    if (mode === null) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: `${installed} 條規則，但預設模式沒設，重跑安裝會補上`,
+      };
+    }
+
+    // ⚠️ 學生自己設過：這是**綠燈**，不是黃燈。
+    //
+    // 這一條 2026-08-15 被一位學員的回報打臉（jr-setup-feedback#4）：他自己把
+    // defaultMode 設成 auto，於是這一列一直是黃燈，而黃燈讓「驗證：…」那一格
+    // **永遠打不了勾**（systemRowChecked 的第二條要求這一列 status === "ok"）
+    // ——行為驗證明明已經 PASS 了，畫面還寫著「還沒實際跑跑看」，整張卡永遠完成
+    // 不了。旁邊那顆安裝鍵按下去也不會有事：安裝刻意尊重他的選擇、不覆蓋。
+    //
+    // 判成黃燈本來就講不通：他設 auto 是合法的選擇，不是壞掉。跟隔離區那一列同一
+    // 條原則——不是問題就不要判黃燈，否則會把人擋在段落閘門外。說明照樣講清楚
+    // 他的設定跟我們預期的不同。
     return {
       id: step.id,
       label: step.label,
-      status: "warn",
-      detail:
-        mode === null
-          ? `${installed} 條規則，但預設模式沒設成 ${CLAUDE_DEFAULT_MODE}，重跑安裝就會補上`
-          : `${installed} 條規則，但你自己把預設模式設成了 ${mode}`,
+      status: "ok",
+      detail: `${installed} 條規則，預設模式是你自己設的 ${mode}`,
     };
   }
 
