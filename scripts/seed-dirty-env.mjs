@@ -221,6 +221,25 @@ const STEPS = [
           ],
   },
   {
+    id: "brew-legacy",
+    label: "用 Homebrew 裝 codex 與 claude（另一種「上一輪的裝法」）",
+    // ⚠️ 一定要 --cask。claude-code 與 codex 在 Homebrew 上**都是 cask 不是
+    // formula**（實查 2026-08-15，兩者都來自 homebrew-cask/Casks/c/），所以東西
+    // 落在 Caskroom 而不是 Cellar——判準寫錯哪一個都會一支都抓不到。
+    //
+    // 這一步跟 npm-legacy 是兩種不同的污染，可以同時開：兩種都在的時候按鈕的字會
+    // 變成不列舉的「搬走舊版 CLI」，那是最容易判錯的一條路。
+    onlyMac: true,
+    reproduces: "brew 落點偵測、brew-cli 隔離分區、兩種殘留並存時的按鈕文案",
+    plan: () => [
+      {
+        kind: "exec",
+        cmd: "brew",
+        args: ["install", "--cask", "codex", "claude-code"],
+      },
+    ],
+  },
+  {
     id: "store-pwsh",
     label: "Store 版 PowerShell 7",
     reproduces: "sandbox 的 1312（沙箱換帳號跑，MSIX 綁帳號）",
@@ -330,6 +349,11 @@ if (!APPLY) {
 
 for (const step of STEPS) {
   if (step.onlyWin === true && !WIN) {
+    continue;
+  }
+
+  // Homebrew 那一步在 Windows 上沒有意義（也沒有 brew 可以叫）。
+  if (step.onlyMac === true && WIN) {
     continue;
   }
 
