@@ -305,6 +305,30 @@ export function legacyCliStatus(reports, { reinstallable = [] } = {}) {
     };
   }
 
+  // 「並存」與「只有舊版但裝得回來」同時存在時，兩邊都要講。
+  //
+  // ⚠️ 這是 2026-08-15 在 mac VM 上抓到的：那台 codex 並存、claude 只有 brew/npm 版
+  // 而 mac 裝得回官方版，於是按下去**兩支都被搬走**，說明卻只寫「codex 同時有舊版與
+  // 官方版」。claude 那支沒有官方版當靠山，搬走之後它會**暫時消失**，直到後面那張卡
+  // 把官方版裝回來——那正是最需要先講的一件事，而它被吃掉了。
+  //
+  // 上面那個單獨的分支已經為這種「會先消失再回來」寫了說明，這裡只是補上兩者並存
+  // 的情況。orphan 仍然優先：那一種更嚴重（打了一定失敗），而且它自己會被清掉。
+  const vanishing = onlyLegacy.filter((report) =>
+    canReinstall.has(report.command),
+  );
+
+  if (orphans.length === 0 && coexisting.length > 0 && vanishing.length > 0) {
+    return {
+      status: "warn",
+      installable: false,
+      fixLabel: fixLabelFor(word),
+      detail: `${names([...vanishing, ...coexisting])} 都會搬走，${names(vanishing)} 之後改裝官方版`,
+      reports,
+      ...unknown,
+    };
+  }
+
   // ⚠️ 說明只講**按下去會動到的那幾支**。三種情況可以同時存在（Reed 的 VM 就是
   // codex 並存 + claude 只有 npm），把全部串成一句會講出「claude 同時有 npm 版與
   // 官方版」這種假話——清理行為是對的，錯的是說明。剩下那幾支由腳本的輸出交代。

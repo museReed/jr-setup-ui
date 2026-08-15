@@ -173,6 +173,27 @@ try {
   assert.equal(mixed.fixLabel, "搬走 npm 裝的舊版");
   ok("混合情況時，說明只講按下去會動到的那幾支");
 
+  // ⚠️ 但同一種混合、而這台**裝得回 claude** 的時候，claude 也會被搬走——那時說明
+  // 就不能只講 codex（Reed 的 mac VM，2026-08-15：畫面寫「codex 同時有舊版與官方
+  // 版」，按下去 claude 也不見了）。
+  //
+  // 而且 claude 那支沒有官方版當靠山，搬走之後會**暫時消失**，直到後面那張卡把官方版
+  // 裝回來——那是最需要先講的一件事，不能被吃掉。
+  const mixedReinstallable = legacyCliStatus([claudeOnlyNpm, coexist], {
+    reinstallable: ["claude", "codex"],
+  });
+  assert.ok(mixedReinstallable.detail.includes("claude"));
+  assert.ok(mixedReinstallable.detail.includes("codex"));
+  assert.ok(
+    mixedReinstallable.detail.includes("官方版"),
+    `要講清楚 claude 會先消失再回來：${mixedReinstallable.detail}`,
+  );
+  assert.ok(
+    mixedReinstallable.detail.length <= 40,
+    mixedReinstallable.detail,
+  );
+  ok("兩支都會被搬走時兩支都要講，而且點名那支會先消失的");
+
   // 同一組資料，兩種 reinstallable 的結果不同——這是 Reed 拍板那條的分水嶺。
   assert.deepEqual(
     removableEntries([claudeOnlyNpm, coexist], { reinstallable: [] }).map(
