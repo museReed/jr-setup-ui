@@ -27,7 +27,12 @@ import {
   shellProfilePaths,
   shellWrapperStatus,
 } from "./shell-wrapper.js";
-import { quarantineRow, quarantineState } from "./quarantine.js";
+import {
+  quarantineHome,
+  quarantineRow,
+  quarantineState,
+} from "./quarantine.js";
+import { brewLeftoverRow, leftoverCommands } from "./brew-cli.js";
 import {
   conflictingLegacySkills,
   legacySkillRoot,
@@ -360,6 +365,10 @@ export const FIX_ACTIONS = {
   // ⚠️ 判準看的是 `clearable` 不是 status——清乾淨之後那一列**留著**（否則整張卡
   // 連同里程碑會消失），而那時它同樣是綠的，只是沒東西可刪了。
   quarantine: (status, check) => (check?.clearable === true ? "clear-quarantine" : null),
+  // brew 的收尾。這一列是黃燈才有按鈕（跟隔離區那一列相反）——收乾淨之後它就是
+  // 一列打勾的紀錄，沒有東西可按了。
+  "brew-leftover": (status) =>
+    status === "warn" ? "finish-brew-uninstall" : null,
   // ⚠️ 這一列的按鈕不是「黃燈就有」——只有 npm 版的情況也是黃燈，但那時不能清
   // （見 legacy-cli.js 的第 3 種）。所以按鈕跟著那一列自己回的 fixLabel 走。
   "legacy-npm-cli": (status, check) =>
@@ -746,6 +755,51 @@ function checkQuarantine(checks) {
   }
 }
 
+// brew 那批的收尾。跟隔離區那一列同一個性質——不是一次探測，是「前面那顆清理鍵
+// 做到一半」才會出現，所以也不在 CHECKS 清單裡，由 runEnvCheck 在最後補上。
+//
+// 判準看的是隔離區 brew-cli 分區裡有誰，不是 brew 清單上有誰：只看 brew 的話，
+// 學生自己裝來平常用的東西也會被我們點名（見 brew-cli.js 開頭）。
+async function checkBrewLeftover() {
+  const id = "brew-leftover";
+  const label = "Homebrew 那邊也收乾淨了";
+
+  try {
+    const dir = `${quarantineHome(homedir())}/brew-cli`;
+
+    if (!existsSync(dir)) {
+      return null;
+    }
+
+    const commands = leftoverCommands(
+      readdirSync(dir, { withFileTypes: true }).map((entry) => entry.name),
+    );
+
+    if (commands.length === 0) {
+      return null;
+    }
+
+    // brew 清單上還有沒有它。`--versions` 找不到時 exit code 非零，找得到才印一行
+    // ——比解析 `brew list` 整份輸出穩，而且一次只問一支。
+    const stillInstalled = [];
+
+    for (const command of commands) {
+      const result = await runProbe("brew", ["list", "--versions", command]);
+
+      if (result.type === "close" && result.exitCode === 0) {
+        stillInstalled.push(command);
+      }
+    }
+
+    const row = brewLeftoverRow({ commands, stillInstalled });
+    return row === null ? null : { id, label, ...row };
+  } catch {
+    // 問不到 brew（沒裝、或這台不是 mac）就當作沒事。這一列是收尾用的，不該因為
+    // 意外在整段已經全綠之後又長出一個學生修不了的東西。
+    return null;
+  }
+}
+
 // PATH 上第一支跑得動的 pwsh 落在哪。查路徑而不是跑指令：Store 版與一般版都答得出
 // 版本號，分不出來——差別只在它裝在 WindowsApps 底下。
 async function pwshSource() {
@@ -1016,12 +1070,14 @@ export async function runEnvCheck(tools = []) {
     const checks = await Promise.all(checksToRun);
     // 補在最後：它要先看得到別人的結論才決定自己出不出現。
     const quarantine = checkQuarantine(checks);
+    // brew 的收尾排在隔離區清理**之前**：那顆按鈕會刪掉隔離區裡的東西，而 brew
+    // 這一步萬一失敗，那份備份就是唯一還原得回去的東西。
+    const brewLeftover = await checkBrewLeftover();
+    const tail = [brewLeftover, quarantine].filter((row) => row !== null);
 
     return {
       os: { platform: process.platform, arch: process.arch, home: homedir() },
-      checks: (quarantine === null ? checks : [...checks, quarantine]).map(
-        withActions,
-      ),
+      checks: [...checks, ...tail].map(withActions),
     };
   } catch (error) {
     // ⚠️ 這個 catch 會把整段吞掉、每一列都變成「檢查失敗」，而 id 跟正常路徑一模一樣

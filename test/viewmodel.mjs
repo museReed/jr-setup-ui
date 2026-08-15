@@ -1835,6 +1835,9 @@ try {
     "setup-codex-sandbox",
     "fix-legacy-skills",
     "fix-legacy-cli",
+    // brew 的收尾。文字由那一列自己給（「跑 brew uninstall 收尾」）——它要講出
+    // 會跑哪一條指令，預設的「修正」看不出這顆會動到 Homebrew 的清單。
+    "finish-brew-uninstall",
     // ⚠️ 這一顆是安裝器（INSTALLERS 的 pwsh-store），但掛在 fixAction 上
     // ——那一列是黃燈不是紅燈，走不到 installAction 那條路。文字由那一列自己
     // 給（「換成一般安裝版」），不是預設的「安裝」。

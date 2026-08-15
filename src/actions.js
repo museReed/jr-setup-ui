@@ -76,6 +76,10 @@ const clearQuarantineScript = moduleFile(
   "../scripts/clear-quarantine.mjs",
   import.meta.url,
 );
+const finishBrewUninstallScript = moduleFile(
+  "../scripts/finish-brew-uninstall.mjs",
+  import.meta.url,
+);
 const restoreMergeBackupScript = moduleFile(
   "../scripts/restore-merge-backup.mjs",
   import.meta.url,
@@ -319,6 +323,19 @@ Object.assign(actions, {
   },
   // 那兩顆搬移鍵的收尾。⚠️ 唯一一顆真的刪東西的按鈕——範圍與不碰什麼寫在
   // scripts/clear-quarantine.mjs 的開頭，畫面上按之前也會先列出要刪什麼。
+  // brew 那批的收尾：搬走連結只做了一半，Caskroom 裡的本體還在、brew 的清單上也
+  // 還有它，下一次 brew upgrade 有機會把連結裝回來（見 src/brew-cli.js）。
+  //
+  // ⚠️ 範圍只有隔離區 brew-cli 分區裡那幾支——我們親手搬走的那些。學生自己用 brew
+  // 裝的其他東西一律不碰。
+  "finish-brew-uninstall": {
+    kind: "fixed",
+    label: "跑 brew uninstall 收尾",
+    cmd: process.execPath,
+    args: [finishBrewUninstallScript, "--apply"],
+    description:
+      "把先前搬進隔離區的那幾支 Homebrew 舊版從 brew 的清單上卸掉，連結才不會被裝回來。",
+  },
   "clear-quarantine": {
     kind: "fixed",
     label: "清掉隔離區",

@@ -639,6 +639,26 @@ const ENV_CARD_META = {
   // 排在整段最後：它不在 ENV_FIRST 裡，agent 又是 other（AGENT_ORDER 的最後一個），
   // 所以自然落在尾巴。時機也對——它只在該清的都清完之後才存在，那時學生本來就
   // 走到段落尾端，多一站是往前走不是打斷。
+  // brew 那批的收尾跟隔離區清理擺同一張卡，兩列各一顆按鈕（Reed 拍板）。
+  //
+  // 為什麼不各自一張卡：兩者都是「這一段的收尾」，拆開會讓 mac 學生的里程碑比
+  // Windows 多一站，兩邊進度看起來不一樣。為什麼不合成一顆按鈕：兩個都是不可逆的
+  // 動作，綁在一起學生沒辦法只做其中一件。
+  //
+  // ⚠️ 順序是 brew 在前、刪備份在後，而且不能反過來：刪備份那顆會把隔離區清空，
+  // 而 brew 這一步萬一失敗，那份備份就是唯一還原得回去的東西。
+  //
+  // ⚠️ 這一筆的 key 是 brew-leftover（checkIds 的第一個），不是 quarantine——
+  // flattenCheckCards 是拿「沒被合併掉的那個 id」去查 ENV_CARD_META 的。Windows 上
+  // brew-leftover 這一列根本不存在，那時底下 quarantine 那一筆自己會生成卡片。
+  "brew-leftover": {
+    agent: "other",
+    label: "收尾：清掉留下來的東西",
+    logo: "logo-terminal",
+    checkIds: ["brew-leftover", "quarantine"],
+    description:
+      "前面那幾顆清理鍵只把東西搬走。這張把它們真的收完：Homebrew 那邊要跑一次卸載（不做的話連結會被裝回來），搬走的備份則是刪不刪都可以",
+  },
   quarantine: {
     agent: "other",
     label: "清掉搬走的備份",
@@ -1032,8 +1052,14 @@ export function pendingMergeSibling(stepId, checks = []) {
 export function flattenCheckCards(groupedSections, envChecks = []) {
   const envChecksById = new Map(envChecks.map((check) => [check.id, check]));
   const mergedCheckIds = new Set(
-    Object.values(ENV_CARD_META).flatMap(({ checkIds = [] }) =>
-      checkIds.slice(1),
+    // ⚠️ 只有「主人真的在」的時候才把跟班藏起來。
+    //
+    // 原本是無條件藏：只要哪張卡登記了 checkIds，後面那幾個 id 就永遠不會自己
+    // 生成卡片。brew 收尾那張把 quarantine 收成第二列之後，這件事立刻咬人——
+    // Windows 上根本沒有 brew-leftover 那一列，於是 quarantine 被藏起來、又沒有
+    // 主人帶它出場，**整張「清掉搬走的備份」就消失了**（守門測試當場抓到）。
+    Object.entries(ENV_CARD_META).flatMap(([primaryId, { checkIds = [] }]) =>
+      envChecksById.has(primaryId) ? checkIds.slice(1) : [],
     ),
   );
   const envCards = envChecks
