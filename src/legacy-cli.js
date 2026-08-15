@@ -25,16 +25,35 @@ const NPM_MARKERS = [/[\\/]node_modules[\\/]/i, /[\\/]npm[\\/]/i, /[\\/]\.npm-gl
 // 官方安裝器的落點：Windows 是 %LOCALAPPDATA%\Programs\，mac / Linux 是 ~/.local/bin。
 const OFFICIAL_MARKERS = [/[\\/]Programs[\\/]/i, /[\\/]\.local[\\/]bin[\\/]/i];
 
-export function classifyInstall(candidate) {
-  if (typeof candidate !== "string" || candidate === "") {
+// ⚠️ 第二個參數是「順著 symlink 解出來的真正位置」，可以不給。
+//
+// 為什麼需要它（Reed 的 mac VM 實測，2026-08-15）：那台的 Node 是 Homebrew 裝的，
+// 於是 npm 的全域 bin 是 /opt/homebrew/bin——路徑裡**看不到** node_modules、npm、
+// .npm-global 任何一個字，所以 npm 裝的 claude 被判成 unknown，那一列大聲說
+//「沒有上一輪用 npm 裝的殘留」，而 npm ls -g 明明列著 @anthropic-ai/claude-code。
+//
+// 那不是少一個前綴的問題：學生的 prefix 可以是任何地方（brew、/usr/local、自己改的），
+// 列舉永遠追不完。但 npm 在 POSIX 上放的是一條**指向套件本體的 symlink**，解開來
+// 一定看得到 node_modules——所以解一次比多列幾個前綴可靠。
+//
+// Windows 不受影響也不會被弄壞：那邊的 shim 是真的檔案（.cmd/.ps1），解出來就是
+// 自己，仍然靠原本那幾個 marker 認。
+export function classifyInstall(candidate, resolved = null) {
+  const paths = [candidate, resolved].filter(
+    (value) => typeof value === "string" && value !== "",
+  );
+
+  if (paths.length === 0) {
     return "unknown";
   }
 
-  if (NPM_MARKERS.some((marker) => marker.test(candidate))) {
+  if (paths.some((value) => NPM_MARKERS.some((marker) => marker.test(value)))) {
     return "npm";
   }
 
-  return OFFICIAL_MARKERS.some((marker) => marker.test(candidate))
+  return paths.some((value) =>
+    OFFICIAL_MARKERS.some((marker) => marker.test(value)),
+  )
     ? "official"
     : "unknown";
 }
@@ -69,14 +88,21 @@ export function shimVariants(shimPath, command) {
   return SHIM_SUFFIXES.map((suffix) => `${dir}${separator}${command}${suffix}`);
 }
 
-export function inspectCommand(command, candidates, { exists }) {
+// realpath：順著 symlink 解到真正的位置，解不開（斷掉的連結、或本來就不是連結）
+// 回 null。給預設值是為了讓既有的呼叫端與測試不用全部改。
+export function inspectCommand(
+  command,
+  candidates,
+  { exists, realpath = () => null },
+) {
   const packageName = NPM_PACKAGES[command];
   const npm = [];
   const seen = new Set();
   let official = 0;
 
   for (const candidate of candidates) {
-    const kind = classifyInstall(candidate);
+    const resolved = realpath(candidate);
+    const kind = classifyInstall(candidate, resolved);
 
     if (kind === "official") {
       official += 1;
@@ -88,7 +114,18 @@ export function inspectCommand(command, candidates, { exists }) {
     }
 
     // 本體不在 = 孤兒。這一項決定它是「可以搬走」還是「非清不可」。
-    const orphan = !exists(findPackageRoot(candidate, packageName));
+    //
+    // ⚠️ 兩條路，因為兩個平台的 shim 根本不是同一種東西：
+    //
+    //   POSIX   shim 是一條指向套件本體的 symlink → 解得開而且目標在，本體就在
+    //           （本體可能在 /opt/homebrew/lib/…，跟 shim 不同層，往旁邊找找不到）
+    //   Windows shim 是真的檔案（.cmd/.ps1），解出來就是自己 → 照原本的往旁邊找
+    //
+    // 斷掉的 symlink 解不開，會落到第二條、找不到本體，判成孤兒——那正是對的。
+    const linked = resolved !== null && resolved !== candidate;
+    const orphan = linked
+      ? !exists(resolved)
+      : !exists(findPackageRoot(candidate, packageName));
 
     for (const variant of shimVariants(candidate, command)) {
       const key = variant.toLowerCase();

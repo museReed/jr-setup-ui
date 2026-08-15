@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -659,7 +659,20 @@ async function checkLegacyCli(tools) {
       inspectCommand(
         command,
         findAllExecutables(command, env, { fileExists: existsSync }),
-        { exists: existsSync },
+        {
+          exists: existsSync,
+          // 解得開就給真正的位置。Homebrew 裝的 Node 會把 npm 的全域 bin 放在
+          // /opt/homebrew/bin——那條路徑裡看不出 npm 的痕跡，只有解開 symlink 才
+          // 看得到 node_modules（Reed 的 mac VM 實測）。
+          realpath: (candidate) => {
+            try {
+              return realpathSync(candidate);
+            } catch {
+              // 斷掉的連結、或沒有權限。當作解不開，交給後面那條路判。
+              return null;
+            }
+          },
+        },
       ),
     );
 

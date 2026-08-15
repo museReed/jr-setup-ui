@@ -30,6 +30,39 @@ try {
   assert.equal(classifyInstall(null), "unknown");
   ok("兩個平台的 npm 落點與官方落點都分得出來，不認得的就說不認得");
 
+  // ⚠️ 迴歸（Reed 的 mac VM，2026-08-15）：Node 是 Homebrew 裝的時候，npm 的全域
+  // bin 是 /opt/homebrew/bin——路徑裡看不到 node_modules、npm、.npm-global 任何一個
+  // 字，於是 npm 裝的 claude 被判成 unknown，那一列大聲說「沒有上一輪用 npm 裝的
+  // 殘留」，而 npm ls -g 明明列著 @anthropic-ai/claude-code。
+  //
+  // 解法不是再列一個前綴（學生的 prefix 可以是任何地方），是**解開 symlink**：
+  // npm 在 POSIX 上放的是一條指向套件本體的連結，解開來一定看得到 node_modules。
+  const BREW_SHIM = "/opt/homebrew/bin/claude";
+  const BREW_REAL =
+    "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js";
+  assert.equal(classifyInstall(BREW_SHIM), "unknown");
+  assert.equal(classifyInstall(BREW_SHIM, BREW_REAL), "npm");
+  ok("Homebrew 的全域 bin 靠解開 symlink 才認得出是 npm 裝的");
+
+  // 那條連結解得開、目標也在＝本體健在，不是孤兒。往 shim 旁邊找 node_modules 會
+  // 找不到（本體在 /opt/homebrew/lib，不同層），所以這一種一定要走解開的那條路。
+  const brew = inspectCommand("claude", [BREW_SHIM], {
+    // 那條連結自己在，它指到的本體也在。
+    exists: (candidate) => candidate === BREW_REAL || candidate === BREW_SHIM,
+    realpath: (candidate) => (candidate === BREW_SHIM ? BREW_REAL : null),
+  });
+  assert.equal(brew.npm.length > 0, true, "Homebrew 那支要被算成 npm 殘留");
+  assert.equal(brew.npm[0].orphan, false, "本體還在，不該被判成孤兒");
+  assert.equal(brew.npm[0].path, BREW_SHIM, "要搬的是那條連結，不是套件本體");
+
+  // 斷掉的連結：解不開 → 退回往旁邊找 → 找不到本體 → 孤兒。那正是對的。
+  const dangling = inspectCommand("claude", [BREW_SHIM], {
+    exists: () => false,
+    realpath: () => null,
+  });
+  assert.equal(dangling.npm.length, 0, "解不開又不像 npm 落點時不亂認");
+  ok("Homebrew 那種安裝算 npm 殘留、本體健在不判成孤兒");
+
   assert.equal(findPackageRoot(NPM_SHIM, "@openai/codex"), NPM_PKG);
   assert.equal(
     findPackageRoot(POSIX_NPM, "@openai/codex"),
