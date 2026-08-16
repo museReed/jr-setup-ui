@@ -240,6 +240,35 @@ const STEPS = [
     ],
   },
   {
+    id: "root-owned-home",
+    label: "把 ~/.config 與 ~/.zshrc 變成 root 的",
+    // 兩份真實回報（museReed/jr-setup-feedback#6，2026-08-16）合起來就是這一種：
+    //
+    //   gh          ✓ Authentication complete → mkdir ~/.config/gh: permission denied
+    //   tab-sync    已備份 → .zshrc.bak.… → EACCES: permission denied, open '~/.zshrc'
+    //
+    // ⚠️ 家目錄本身**不要**動。回報裡那台就是這樣：.bak 建得出來（家目錄可寫）、
+    // 開 .zshrc 卻被拒絕（那個檔案是 root 的）。把整個家目錄弄成 root 的話重現的是
+    // 另一種更慘的狀態，而且那台 VM 之後大概也不用了。
+    //
+    // 怎麼變成這樣的：某個帶 sudo 的指令第一次建出它們。macOS 的 sudo 預設保留
+    // $HOME，root 跑出來的東西照樣落在學生家目錄裡——這門課自己就有一條這種指令
+    // （docs/returning-students.md 請學生跑 sudo npm uninstall -g）。
+    onlyMac: true,
+    reproduces: "家目錄裡的東西不是學生的（gh 存不進登入、規則檔寫不進去）",
+    plan: () => [
+      {
+        kind: "exec",
+        cmd: "bash",
+        args: [
+          "-c",
+          `mkdir -p '${HOME}/.config'; touch '${HOME}/.zshrc'; ` +
+            `sudo chown -R root:wheel '${HOME}/.config' '${HOME}/.zshrc'`,
+        ],
+      },
+    ],
+  },
+  {
     id: "store-pwsh",
     label: "Store 版 PowerShell 7",
     reproduces: "sandbox 的 1312（沙箱換帳號跑，MSIX 綁帳號）",

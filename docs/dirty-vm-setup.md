@@ -109,7 +109,7 @@ codex sandbox powershell -NoProfile -Command "Get-Location"
 
 ⚠️ **這些「失敗」都是預期的**——它們就是要重現的東西，不要去修。
 
-## 弄髒腳本做了哪七件事
+## 弄髒腳本做了哪幾件事
 
 | 項目 | 重現什麼 |
 |---|---|
@@ -119,6 +119,7 @@ codex sandbox powershell -NoProfile -Command "Get-Location"
 | `dirty-configs` | 設定檔加自己的內容 → 合併流程；含 `service_tier = "default"`，新版 codex 會拒絕啟動 |
 | `legacy-skill-root` | `~/.codex/skills` 放一支 → codex skill 舊落點 |
 | `native-codex` | 裝原生版 → 並存、junction 漏連（[openai/codex#30829](https://github.com/openai/codex/issues/30829)） |
+| `root-owned-home` | 把 `~/.config` 與 `~/.zshrc` 變成 root 的 → 家目錄裡的東西不是學生的（見 [home-permissions.md](home-permissions.md)） |
 | `store-pwsh` | **只印步驟**（見上） → 沙箱的 `1312` |
 
 Windows 上 `shadow-function` 會同時寫兩個 profile（5.1 與 7 各讀各的）——真機上撞過

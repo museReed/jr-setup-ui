@@ -64,6 +64,10 @@ const setupCodexSandboxScript = moduleFile(
   "../scripts/setup-codex-sandbox.mjs",
   import.meta.url,
 );
+const fixHomePermsScript = moduleFile(
+  "../scripts/fix-home-perms.mjs",
+  import.meta.url,
+);
 const fixLegacySkillsScript = moduleFile(
   "../scripts/fix-legacy-skills.mjs",
   import.meta.url,
@@ -309,6 +313,20 @@ Object.assign(actions, {
     options: { step: STEP_IDS },
     buildArgs: ({ step }) => [restoreMergeBackupScript, `--step=${step}`, "--apply"],
     description: "把這一步的設定檔還原成合併前的樣子。",
+  },
+  // ⚠️ 這顆開一個真的終端視窗，跟沙箱那顆同一個理由，但擋住的東西不一樣：chown 要
+  // sudo，而 sudo 要一個 tty 才問得到密碼。我們 spawn 出來的子行程是 stdio: pipe、
+  // 沒有 tty，sudo 在那裡只會直接失敗（docs/vm-setup-macos.md 記過同一件事）。
+  //
+  // ⚠️ 也不要在嚮導裡收密碼再餵給 sudo。那等於教學生「把 Mac 密碼打進一個網頁」，
+  // 而這門課後面整段都在講不要這樣做。
+  "fix-home-perms": {
+    kind: "fixed",
+    label: "修好檔案權限（開終端）",
+    cmd: process.execPath,
+    args: [fixHomePermsScript, "--apply"],
+    description:
+      "開一個終端跑 chown，把家目錄裡那幾樣被 root 拿走的設定檔改回學生自己的。",
   },
   "fix-legacy-cli": {
     kind: "fixed",

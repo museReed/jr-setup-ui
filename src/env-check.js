@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+} from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +38,11 @@ import {
   shellProfilePaths,
   shellWrapperStatus,
 } from "./shell-wrapper.js";
+import {
+  blockedWriteTargets,
+  ghConfigBlocked,
+  homePermsRow,
+} from "./home-perms.js";
 import {
   quarantineHome,
   quarantineRow,
@@ -393,7 +405,19 @@ export const FIX_ACTIONS = {
     status === "warn" && check?.fixLabel != null ? "fix-legacy-cli" : null,
   "claude-auth": (status) => (status === "warn" ? "login-claude" : null),
   "codex-auth": (status) => (status === "warn" ? "login-codex" : null),
-  "gh-auth": (status) => (status === "warn" ? "login-gh" : null),
+  // ⚠️ 這一列的按鈕不是只看 status。設定夾不是學生的時候，「開始登入」是一條死路
+  // ——授權會走完，然後 token 存不進去（museReed/jr-setup-feedback#6）。那時要給的
+  // 是修權限那顆，不是再登一次。
+  "gh-auth": (status, check) => {
+    if (status !== "warn") {
+      return null;
+    }
+
+    return check?.permBlocked === true ? "fix-home-perms" : "login-gh";
+  },
+  // 這一列只在真的有東西不是學生的時候才存在（見 home-perms.js），所以出現就一定
+  // 有按鈕——不像其他幾列要看 status。
+  "home-perms": () => "fix-home-perms",
 };
 
 function withActions(check) {
@@ -1118,7 +1142,55 @@ async function checkCodexAuth(installed) {
   }
 }
 
-async function checkGhAuth(installed) {
+// 家目錄裡有沒有東西不是學生的。同步、不 spawn，所以不進 Promise.all 那一批。
+//
+// ⚠️ Windows 一律回空的：那邊的設定落在 %AppData%，也沒有 sudo 這條把 root 的東西
+// 留在使用者家目錄裡的路徑（跟 installers.js 開頭記的那個差異同一回事）。
+function homePermsState() {
+  if (process.platform === "win32") {
+    return [];
+  }
+
+  try {
+    return blockedWriteTargets(homedir(), {
+      exists: existsSync,
+      // accessSync 是用拋錯回報結果的，這裡收成布林值——判斷「寫不寫得進去」不該
+      // 讓呼叫端每一處都包一次 try。
+      writable: (path) => {
+        try {
+          accessSync(path, constants.W_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+  } catch (error) {
+    // 探不到就當作沒問題。這一列是「幫學生先看一眼」，不該因為一個意外自己變成
+    // 一個他修不了的紅字。
+    console.error("[homePermsState] 探測失敗：", error);
+    return [];
+  }
+}
+
+function checkHomePerms(blocked) {
+  const id = "home-perms";
+  const label = "家目錄裡的設定檔是你的";
+  const row = homePermsRow(blocked);
+
+  return row === null ? null : { id, label, ...row };
+}
+
+// ⚠️ 第二個參數是「家目錄裡有哪幾樣不是學生的」。gh 登入失敗有兩種，而畫面上以前
+// 都寫「未登入」：
+//
+//   真的沒登入        按「開始登入」就對了
+//   設定夾不是他的    裝置授權會走完（log 上是 ✓ Authentication complete），
+//                     然後死在 mkdir ~/.config/gh: permission denied
+//
+// 後者按幾次都一樣——token 根本存不下來。實際回報裡那位同學就是這樣重試的
+//（museReed/jr-setup-feedback#6）。所以這一列改口，按鈕也換成修權限那顆。
+async function checkGhAuth(installed, homeBlocked = []) {
   const id = "gh-auth";
   const label = "GitHub 登入狀態";
 
@@ -1143,6 +1215,33 @@ async function checkGhAuth(installed) {
     }
 
     const loggedIn = result.exitCode === 0;
+
+    // ⚠️ 只有**失敗**時才看權限。設定夾不可寫、但 gh 仍然讀得到既有 token 的機器
+    // 是綠燈——把那種也改成黃燈的話，一台正常在用的機器會被我們判成有毛病。
+    if (!loggedIn && ghConfigBlocked(homeBlocked)) {
+      return {
+        id,
+        label,
+        status: "warn",
+        // 這一列沒有東西可以「安裝」。
+        installable: false,
+        // ⚠️ 按鈕看這一項決定要掛「開始登入」還是修權限那顆（見 FIX_ACTIONS）。
+        permBlocked: true,
+        // ⚠️ 一行，右邊緊接著就是按鈕（守門測試盯著 40 字上限）。
+        detail: "設定夾不是你的，登入存不進去",
+        guidance: {
+          symptom: "授權會成功，但 gh 把登入寫回 ~/.config 那一步被拒絕",
+          expected: "先把家目錄那幾樣改回你自己的，再回來登入一次",
+          checks: [
+            "按幾次都一樣：每一次都會走完網頁授權，然後死在同一行 permission denied",
+            "上面「家目錄裡的設定檔是你的」那一列有一顆修權限的按鈕，先按那顆",
+            "修好之後再按這一列的登入，代碼要重新拿一組（上一次的沒有存下來）",
+          ],
+          diagnose: null,
+        },
+      };
+    }
+
     return {
       id,
       label,
@@ -1159,6 +1258,8 @@ export async function runEnvCheck(tools = []) {
   const wanted = new Set(checksForTools(CHECKS, tools).map((check) => check.id));
 
   try {
+    // 先算這一項：gh 那一列要看它才知道「登入失敗」是哪一種。同步的，不花時間。
+    const homeBlocked = homePermsState();
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
@@ -1190,7 +1291,7 @@ export async function runEnvCheck(tools = []) {
     checksToRun.push(
       git,
       gh,
-      checkGhAuth(gh),
+      checkGhAuth(gh, homeBlocked),
       node,
       python,
       checkShellWrapper(),
@@ -1228,10 +1329,15 @@ export async function runEnvCheck(tools = []) {
     const tail = [npmLeftover, brewLeftover, quarantine].filter(
       (row) => row !== null,
     );
+    // ⚠️ 權限那一列排**最前面**，跟其他動態列相反。它不是一個收尾，是一個前提：
+    // 家目錄裡那幾樣不是學生的時候，下面每一顆按鈕都會撞到同一件事。排在後面的話
+    // 學生會照順序一路按下去，每一張卡各噴一次 permission denied——實際回報裡就是
+    // 這樣按了三次分頁標題那一步，家目錄裡多了六個沒用的 .bak。
+    const head = [checkHomePerms(homeBlocked)].filter((row) => row !== null);
 
     return {
       os: { platform: process.platform, arch: process.arch, home: homedir() },
-      checks: [...checks, ...tail].map(withActions),
+      checks: [...head, ...checks, ...tail].map(withActions),
     };
   } catch (error) {
     // ⚠️ 這個 catch 會把整段吞掉、每一列都變成「檢查失敗」，而 id 跟正常路徑一模一樣

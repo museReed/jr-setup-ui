@@ -340,6 +340,12 @@ macOS 的 `npm install -g` 會寫 `/usr/local/lib/node_modules`，而官方 .pkg
 它會把 npm 自己的 EACCES 印出來並回非零，**明確地失敗，不是靜靜地什麼都沒做**。那時
 請學生自己跑 `sudo npm uninstall -g <套件名>`。
 
+⚠️ 上面那一句是有代價的：`sudo` 跑出來的東西屬於 root，而 macOS 的 sudo 預設保留
+`$HOME`，所以它建出來的檔案照樣落在學生家目錄裡、而且他自己改不動。2026-08-16 那場
+課就出現了這種機器——`~/.config` 與 `~/.zshrc` 都是 root 的，gh 登入存不進去、分頁
+標題那一步也寫不進去。嚮導現在會在環境段第一列講出來並給一顆修復鍵，來龍去脈見
+[home-permissions.md](home-permissions.md)。
+
 ## 給學生的四句話
 
 1. 跑一鍵指令，跟第一次上課時一樣

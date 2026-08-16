@@ -5,7 +5,7 @@
 // 每做一件事就印一行，讓網頁那邊即時看得到。
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -58,9 +58,27 @@ function stamp() {
   return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
 }
 
+// ⚠️ 先確認改得動，再備份。順序反過來咬過一次（museReed/jr-setup-feedback#6）：
+// 那位同學的 ~/.zshrc 是 root 的，於是每按一次「分頁自己報上名字」就是
+//
+//   已備份 → ai-tab-sync.sh.bak.20260816144356
+//   已備份 → .zshrc.bak.20260816144356
+//   EACCES: permission denied, open '~/.zshrc'
+//
+// 他按了三次，家目錄裡多了六個沒有用的 .bak，而畫面上那句 EACCES 沒告訴他要做什麼。
+// 備份本身是對的，但備份一個我們接下來改不動的檔案沒有任何意義。
 async function backup(target) {
   if (!existsSync(target)) {
     return;
+  }
+
+  try {
+    accessSync(target, constants.W_OK);
+  } catch {
+    throw new Error(
+      `${path.basename(target)} 不是你的，改不動——` +
+        `回環境那一段按「修好檔案權限（開終端）」那顆，再回來按這一步`,
+    );
   }
 
   const backupPath = `${target}.bak.${stamp()}`;

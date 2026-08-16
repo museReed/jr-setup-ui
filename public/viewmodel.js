@@ -247,6 +247,10 @@ export const FIX_BUTTON_TEXT = {
   "login-claude": "開始登入",
   "login-codex": "開始登入",
   "login-gh": "開始登入",
+  // ⚠️ 文字裡要有「開終端」。這顆會跳出一個新的終端視窗跟學生要 Mac 密碼——沒有
+  // 先講的話，畫面上突然多一個問密碼的視窗，第一個反應是關掉它（沙箱那顆
+  // setup-codex-sandbox 就是這樣寫在標籤裡的）。
+  "fix-home-perms": "修好檔案權限（開終端）",
 };
 
 export function fixButtonText(check) {

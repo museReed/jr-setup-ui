@@ -613,6 +613,16 @@ const ENV_CARD_META = {
   //
   // 沒登記在這裡的話會走預設模板，標題被塞成「準備 <整句 label>，讓後面的課堂步驟
   // 可以正常進行。」——讀起來像機器寫的（VM 實測）。
+  // 排在整段最前面（見 ENV_FIRST）。這一列只在真的有東西不是學生的時候才出現，
+  // 而它一出現就代表後面每一顆按鈕都會撞到同一件事——排在後面的話，學生會照順序
+  // 一路按下去，每一張卡各噴一次 permission denied，看起來像五個毛病。
+  "home-perms": {
+    agent: "other",
+    label: "把被鎖住的設定檔改回你的",
+    logo: "logo-terminal",
+    description:
+      "你家目錄裡有幾樣東西現在屬於系統管理員，你的帳號改不動——多半是先前某個帶 sudo 的指令留下的。這張把它們改回你自己的，後面的登入與設定才寫得進去",
+  },
   "shell-wrapper": {
     agent: "other",
     label: "清掉上一輪留下的舊捷徑",
@@ -929,6 +939,10 @@ function setupOrder(card) {
 // Restricted 的話，後面每一支我們寫出來的腳本都跑不起來，包含裝 gh 那一步自己。
 // 所以順序是「機器本身 → GitHub（回報管道）→ 清掉舊的 → CLI」。
 const ENV_FIRST = [
+  // ⚠️ 排在所有東西之前。這一張不是「一個項目」，是後面每一顆按鈕的前提：家目錄裡
+  // 那幾樣不是學生的時候，登入存不進去、規則檔寫不進去、PATH 也加不上（實際回報
+  // museReed/jr-setup-feedback#6：同一台機器上 gh 與 .zshrc 兩張卡各壞一次）。
+  "home-perms",
   "execution-policy",
   "ghostty",
   "git",
