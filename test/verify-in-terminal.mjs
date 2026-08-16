@@ -253,3 +253,54 @@ for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
   );
 }
 console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
+
+// 啟動腳本不可以寫進 $TMPDIR。
+//
+// macOS 的 $TMPDIR 是 /var/folders/xx/xxxxxxxx/T，而終端機沒收到任何標題指令時就拿
+// 工作目錄的最後一段當分頁標題——學生看到的是一個沒頭沒尾的 `T`，而且改名怎麼做都
+// 還是 `T`（jr-setup-feedback#8）。開視窗的兩支腳本是同一個坑，一起釘。
+//
+// 附帶好處：開場那行「先把標題設成這一格在驗什麼」讓改名有了前後對照——沒有它的話
+// 「標題沒變」跟「標題本來就長這樣」在畫面上分不出來。
+const mergeSource = readFileSync(
+  path.join(repoRoot, "scripts/merge-in-terminal.mjs"),
+  "utf8",
+);
+
+for (const [name, text] of [
+  ["verify-in-terminal", source],
+  ["merge-in-terminal", mergeSource],
+]) {
+  assert(
+    !/path\.join\(tmpdir\(\)/.test(text),
+    `${name} 把啟動腳本寫進 $TMPDIR——分頁標題會變成一個 T`,
+  );
+  assert(
+    /windowTitle/.test(text),
+    `${name} 沒有在開場設分頁標題，改名有沒有生效就看不出來`,
+  );
+}
+console.log("ok - 開視窗的腳本不寫進 $TMPDIR，而且開場就設好分頁標題");
+
+// Codex 的改名有了可輪詢的落點（hook 會寫 ~/.ai-session-names/），所以那兩格不能再
+// 回去用「expect: null，交給眼睛」。回去的話就是把 issue#8 的盲區原封不動放回來。
+assert(
+  source.includes(".ai-session-names"),
+  "驗證沒有去看 ~/.ai-session-names——Codex 的命名等於沒在驗",
+);
+for (const [label, block] of [
+  ["naming", source.slice(source.indexOf("  naming: {"), source.indexOf("  title: {"))],
+  [
+    "skill-rename",
+    source.slice(
+      source.indexOf('  "skill-rename": {'),
+      source.indexOf('  "skill-handoff": {'),
+    ),
+  ],
+]) {
+  assert(
+    !/agent === "codex" \? null/.test(block),
+    `${label} 那格又把 Codex 改回人眼判定了——它現在有副產物可以等`,
+  );
+}
+console.log("ok - Codex 的兩格改名驗證有程式抓得到的副產物，不再只靠眼睛");

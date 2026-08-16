@@ -26,7 +26,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import { describeStep, VAULT_DIR } from "../src/config-install.js";
@@ -37,6 +37,17 @@ import { terminalCommand } from "../src/terminal-window.js";
 const POLL_INTERVAL_MS = 1_000;
 const TIMEOUT_MS = 240_000;
 const RESULT_DIR = path.join(homedir(), ".jr-setup", "verify");
+// ⚠️ 啟動腳本**不要**寫進 $TMPDIR。
+//
+// macOS 的 $TMPDIR 是 /var/folders/xx/xxxxxxxx/T，而終端機在沒收到任何標題指令時
+// 會拿工作目錄的最後一段當分頁標題——也就是一個大寫的 `T`。Ghostty 跑 .command 時
+// 不會注入它自己的 shell 整合（那只發生在它親自啟動 shell 的時候），所以整個驗證
+// 視窗從頭到尾沒有人設過標題，學生看到的就是一個沒頭沒尾的 `T`，而且怎麼改名都
+// 還是 `T`（jr-setup-feedback#8）。
+//
+// 換到一個名字講得出來的資料夾，再加上下面那行「先把標題設成這一格在驗什麼」，
+// 分頁標題才會從一開始就是有意義的字，改名有沒有生效也才看得出來。
+const LAUNCHER_DIR = path.join(homedir(), ".jr-setup", "launchers");
 
 function emitJr(event) {
   console.log(`@@JR ${JSON.stringify(event)}`);
@@ -64,10 +75,16 @@ const CASES = {
           "命名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。" +
           `最後把你取的名字寫進 ${resultFile}。`
         : "請照 hook 的指示把這個 session 命名，執行它給你的那條指令，然後用一句話告訴我你命名成什麼。",
-    // claude 的命名會留下檔案，不必靠模型回報；codex 寫的是 sqlite 與中繼檔，
-    // 沒有能穩定輪詢的落點，那一列維持人眼判定。
-    expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
-    watchFor: "分頁標題變成「{emoji} 中文敘述」，emoji 是規定的那 8 個之一",
+    // 兩邊都留得下檔案，所以兩邊都自動判定。
+    //
+    // Codex 這一路原本是 null（人眼判定）：它寫的是 sqlite 與中繼檔，前者要 thread id
+    // 才查得到、後者套用當下就被刪掉，沒有能穩定輪詢的落點。結果是「Codex 的分頁標題
+    // 從來沒被驗過」——真的壞掉時沒有一條測試會紅，只能等學生開 issue
+    //（jr-setup-feedback#8）。session-namer hook 現在會把套用成功的名字寫進
+    // ~/.ai-session-names/，這一格才終於有東西可以等。
+    expect: () => ({ kind: "session-name" }),
+    watchFor:
+      "分頁標題從「嚮導驗證：自動命名」變成「{emoji} 中文敘述」，emoji 是規定的那 8 個之一",
   },
   // 標題那格不該叫 AI——要驗的是「watcher 有沒有把名字放上分頁標題」，跟模型
   // 一點關係都沒有。這裡直接起裝好的 watcher、餵它一個名字，學生看標題就好：
@@ -78,7 +95,12 @@ const CASES = {
     env: () => ({}),
     prompt: () => "",
     expect: () => null,
-    watchFor: "分頁標題變成「🔍 標題同步測試」，五秒後自己還原",
+    // ⚠️ 不要寫「五秒後自己還原」。停掉 watcher 之後沒有任何人會把標題寫回去
+    //（會做這件事的是 shell 的 precmd，而這個視窗跑的是一支腳本、根本沒有提示字元）。
+    // 學生盯著等一個不會發生的還原，只會以為卡住了。改成講「從什麼變成什麼」——
+    // 開場標題現在是固定的，前後對照才是這一格真正要看的東西。
+    watchFor:
+      "分頁標題從「嚮導驗證：終端機標題同步」變成「🔍 標題同步測試」",
   },
   // 底部狀態列那一格：不驗任何東西，只負責把 Codex 開起來讓學生看一眼。
   // 那一條是純畫面（設定寫對了但沒重開 Codex，它還是舊的），程式抓不到。
@@ -249,9 +271,8 @@ const CASES = {
           "命名完之後再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。" +
           `最後把你取的名字寫進 ${resultFile}。`
         : "請使用 auto-rename skill 幫這個 session 命名，照它 SKILL.md 裡寫的指令執行。",
-    // Claude 那支 skill 會叫模型執行寫檔指令，檔案就是證據；Codex 寫的是 sqlite
-    // 與中繼檔，沒有能穩定輪詢的落點，維持人眼判定（跟命名 hook 那列同一個理由）。
-    expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
+    // 兩邊都留得下檔案（Codex 那邊的落點見命名那一格的說明），所以兩邊都自動判定。
+    expect: () => ({ kind: "session-name" }),
     watchFor: "模型說它用了 auto-rename skill，分頁標題跟著變成「{emoji} 中文敘述」",
   },
   "skill-handoff": {
@@ -410,7 +431,17 @@ const resultFile = path.join(RESULT_DIR, `${caseName}-${agent}.txt`);
 rmSync(resultFile, { force: true });
 
 const expect = testCase.expect({ agent });
-const namesDir = path.join(homedir(), ".claude", "session-names");
+// 兩家各寫各的落點，兩邊都看。
+//
+//   ~/.claude/session-names   Claude 的 set-session-name.sh 一直都有
+//   ~/.ai-session-names       Codex 的 session-namer hook 新加的（見那支 hook）
+//
+// 沒有第二個之前，Codex 的命名整條沒有程式抓得到的證據，那兩格只能寫「請學生自己
+// 看標題」——壞掉時沒有一條測試會紅，只能等學生開 issue（jr-setup-feedback#8）。
+const NAME_DIRS = [
+  path.join(homedir(), ".claude", "session-names"),
+  path.join(homedir(), ".ai-session-names"),
+];
 const startedAt = Date.now();
 
 // 腳本寫成檔案再交給終端跑：把整段指令塞進終端的參數裡，引號與換行會被各平台的
@@ -531,22 +562,34 @@ function writeLauncher(prompt) {
         ? agent
         : `${agent} '${prompt}'`;
 
+  // 開場先把分頁標題設成「這一格在驗什麼」。一次解決兩件事：
+  //   一、視窗不再頂著一個 `T`（理由寫在 LAUNCHER_DIR 上面）
+  //   二、改名那幾格有了「改之前長什麼樣」的對照——標題有沒有被換掉，學生分得出來
+  const windowTitle = `嚮導驗證：${testCase.label}`;
+  mkdirSync(LAUNCHER_DIR, { recursive: true });
+
   if (process.platform === "win32") {
-    const file = path.join(tmpdir(), `jr-verify-${stamp}.ps1`);
+    const file = path.join(LAUNCHER_DIR, `jr-verify-${stamp}.ps1`);
     const setEnv = envLines
       .map(([name, value]) => `$env:${name} = '${value}'`)
       .join("\n");
     // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    writeFileSync(file, `\ufeff${setEnv}\n${body}\n`, "utf8");
+    writeFileSync(
+      file,
+      `\ufeff$Host.UI.RawUI.WindowTitle = '${windowTitle}'\n${setEnv}\n${body}\n`,
+      "utf8",
+    );
     return file;
   }
 
-  const file = path.join(tmpdir(), `jr-verify-${stamp}.command`);
+  const file = path.join(LAUNCHER_DIR, `jr-verify-${stamp}.command`);
   const setEnv = envLines
     .map(([name, value]) => `export ${name}='${value}'`)
     .join("\n");
+  // 三個 OSC 都寫：0 是圖示＋標題、1 是分頁、2 是視窗，各家終端認的不一樣。
+  const setTitle = `printf '\\033]0;%s\\007\\033]1;%s\\007\\033]2;%s\\007' '${windowTitle}' '${windowTitle}' '${windowTitle}'`;
   // -i 讓 zsh 讀 ~/.zshrc，wrapper 才會存在。
-  writeFileSync(file, `#!/bin/zsh -i\n${setEnv}\n${body}\n`);
+  writeFileSync(file, `#!/bin/zsh -i\n${setTitle}\n${setEnv}\n${body}\n`);
   chmodSync(file, 0o755);
   return file;
 }
@@ -602,23 +645,26 @@ function collectEvidence() {
   }
 
   // session-name：hook 真的跑完才會出現的檔案，跟模型說什麼無關。
-  let entries = [];
-
-  try {
-    entries = readdirSync(namesDir);
-  } catch {
-    return null;
-  }
-
-  for (const name of entries) {
-    const file = path.join(namesDir, name);
+  for (const dir of NAME_DIRS) {
+    let entries = [];
 
     try {
-      if (statSync(file).mtimeMs < startedAt) continue;
-      const value = readFileSync(file, "utf8").trim();
-      if (value) return { detail: `hook 寫下了名字：${value}` };
+      entries = readdirSync(dir);
     } catch {
-      // 剛好被改寫到一半，下一輪再看。
+      // 這一家還沒建過那個資料夾，看下一家。
+      continue;
+    }
+
+    for (const name of entries) {
+      const file = path.join(dir, name);
+
+      try {
+        if (statSync(file).mtimeMs < startedAt) continue;
+        const value = readFileSync(file, "utf8").trim();
+        if (value) return { detail: `hook 寫下了名字：${value}` };
+      } catch {
+        // 剛好被改寫到一半，下一輪再看。
+      }
     }
   }
 
@@ -703,7 +749,7 @@ console.log(
     ? `      應該要出現在：${resultFile}（而且內容含「${expect.keyword}」）`
     : expect.kind === "file"
       ? `      應該要產出：${[expect.file].flat().join(" 或 ")}`
-      : `      應該要有新檔案出現在：${namesDir}`,
+      : `      應該要有新檔案出現在：${NAME_DIRS.join(" 或 ")}`,
 );
 console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
 emitJr({

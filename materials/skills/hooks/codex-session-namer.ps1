@@ -115,6 +115,15 @@ function Set-SessionName([string]$Name) {
     # fallback, since writing escapes to stdout would corrupt the payload.
     try { [Console]::Title = $Name } catch {}
   }
+
+  # 「名字真的套用上去了」的副產物，跟 .sh 那支同一個落點。
+  # 沒有它的話 Codex 這一路的命名沒有任何程式抓得到的證據，嚮導的驗證只能請學生
+  # 自己看標題——壞掉時沒有一條測試會紅（jr-setup-feedback#8 就是這樣拖出來的）。
+  try {
+    $namesDir = Join-Path $HOME '.ai-session-names'
+    New-Item -ItemType Directory -Force -Path $namesDir | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $namesDir "$sessionKey.txt"), $Name, $utf8)
+  } catch {}
 }
 
 # Apply a model-chosen name left in the relay file (sandbox-safe handoff).
@@ -134,7 +143,10 @@ if (Test-Path -LiteralPath $relayFile) {
   }
 }
 
-$relayCmd = "powershell -NoProfile -Command `"New-Item -ItemType Directory -Force -Path '$counterDir' | Out-Null; Set-Content -LiteralPath '$relayFile' -Value '{名稱}' -Encoding utf8`""
+# ⚠️ 一條指令就好，不要再串一個 New-Item。嚮導自己發給 Codex 的規矩（AGENTS.md）是
+# 「一個 shell 呼叫只做一件事，不要用 && || ; 串接」，注入違反自家規矩的指令等於在賭
+# 模型怎麼處理；而且那個 mkdir 本來就是多的——這支腳本一開頭就把 $counterDir 建好了。
+$relayCmd = "powershell -NoProfile -Command `"Set-Content -LiteralPath '$relayFile' -Value '{名稱}' -Encoding utf8`""
 
 $rules = @(
   '命名規則：'

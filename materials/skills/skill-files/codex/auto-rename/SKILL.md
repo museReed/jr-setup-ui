@@ -58,8 +58,11 @@ Key rules:
 Hook 注入的訊息若已給精確路徑，用那個路徑。手動觸發時用 `$PPID`（= Codex process PID）：
 
 ```bash
-mkdir -p /tmp/codex-session-namer && echo '{emoji} {名稱}' > /tmp/codex-session-namer/${PPID}.pending
+echo '{emoji} {名稱}' > /tmp/codex-session-namer/${PPID}.pending
 ```
+
+⚠️ 不要串 `mkdir -p … &&`：那個資料夾由 hook 建（每次事件開頭都會建一次），而
+AGENTS.md 規定一個 shell 呼叫只做一件事。
 
 這個寫入本身是一次 tool call → 觸發下一次 PostToolUse → hook 立即把名稱套用到
 SQLite（sidebar）與 `$AI_TAB_SYNC_FILE`（terminal tab，需用 `mycodex` wrapper 啟動）。
@@ -76,3 +79,4 @@ SQLite（sidebar）與 `$AI_TAB_SYNC_FILE`（terminal tab，需用 `mycodex` wra
 | 用最新一句話命名 | 不代表整個 session 的目的 | 回顧整個對話脈絡再決定 |
 | 名稱超過 40 字元 | sidebar 顯示被截斷 | 精簡敘述 |
 | 名稱含單引號 | shell quoting 壞掉 | 避免單引號，或用雙引號包 |
+| 串 `mkdir -p … &&` | 違反 AGENTS.md「一個 shell 呼叫只做一件事」，而且資料夾本來就在 | 只寫一條 `echo … > …` |

@@ -22,7 +22,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import { missingSourceLines } from "../src/config-check.js";
@@ -36,6 +36,11 @@ import {
 import { mergeReport } from "../src/merge-report.js";
 import { materialsDir } from "../src/paths.js";
 import { terminalCommand } from "../src/terminal-window.js";
+
+// 啟動腳本不要寫進 $TMPDIR：那個目錄的最後一段是 `T`，而終端機沒收到標題指令時
+// 就拿目錄末段當分頁標題，學生會看到一個沒頭沒尾的 `T`（跟 verify-in-terminal
+// 同一個坑，jr-setup-feedback#8）。理由完整版寫在那支的 LAUNCHER_DIR 上面。
+const LAUNCHER_DIR = path.join(homedir(), ".jr-setup", "launchers");
 
 const POLL_INTERVAL_MS = 1_000;
 // 合併比驗證慢得多：兩個檔案、要先讀完學生原本的內容，中間還可能停下來問。
@@ -157,17 +162,26 @@ async function pending() {
 
 function launcher() {
   const body = `${group.agent} '${prompt.replace(/'/g, "''")}'`;
+  // 開場先把分頁標題設成這個視窗在做什麼，理由同 LAUNCHER_DIR。
+  const windowTitle = `合併設定：${group.agent}`;
+  mkdirSync(LAUNCHER_DIR, { recursive: true });
 
   if (process.platform === "win32") {
-    const file = path.join(tmpdir(), `jr-merge-${stamp}.ps1`);
+    const file = path.join(LAUNCHER_DIR, `jr-merge-${stamp}.ps1`);
     // 不加 -NoProfile：wrapper 住在 profile 裡，跳過它跑的就不是學生平常那一支。
-    writeFileSync(file, `﻿${body}\n`, "utf8");
+    writeFileSync(
+      file,
+      `﻿$Host.UI.RawUI.WindowTitle = '${windowTitle}'\n${body}\n`,
+      "utf8",
+    );
     return file;
   }
 
-  const file = path.join(tmpdir(), `jr-merge-${stamp}.command`);
+  const file = path.join(LAUNCHER_DIR, `jr-merge-${stamp}.command`);
   // -i 讓 zsh 讀 ~/.zshrc，理由同上。
-  writeFileSync(file, `#!/bin/zsh -i\n${body}\n`);
+  // 三個 OSC 都寫：0 是圖示＋標題、1 是分頁、2 是視窗，各家終端認的不一樣。
+  const setTitle = `printf '\\033]0;%s\\007\\033]1;%s\\007\\033]2;%s\\007' '${windowTitle}' '${windowTitle}' '${windowTitle}'`;
+  writeFileSync(file, `#!/bin/zsh -i\n${setTitle}\n${body}\n`);
   chmodSync(file, 0o755);
   return file;
 }

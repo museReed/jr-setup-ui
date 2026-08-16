@@ -89,8 +89,10 @@ Commit 到當前 branch，不要切換 branch。
 改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`。唯一步驟＝寫 relay 檔：
 
 ```bash
-mkdir -p /tmp/codex-session-namer && echo '📦 {topic}' > /tmp/codex-session-namer/${PPID}.pending
+echo '📦 {topic}' > /tmp/codex-session-namer/${PPID}.pending
 ```
+
+⚠️ 不要串 `mkdir -p … &&`：資料夾由 hook 建，而 AGENTS.md 規定一個 shell 呼叫只做一件事。
 
 hook 會在下一個事件把名稱同步到 sidebar（SQLite）與 terminal tab。
 ⚠️ 不要直接 `sqlite3 UPDATE threads`（只動 sidebar、不同步 tab）。

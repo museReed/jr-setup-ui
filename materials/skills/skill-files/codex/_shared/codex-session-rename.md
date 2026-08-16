@@ -21,8 +21,12 @@ jr_ai_agent_skills installer 安裝）統一同步：
 
 ```bash
 # $PPID 在 Codex tool shell 裡 = Codex process PID（hook 用同一個 key 讀）
-mkdir -p /tmp/codex-session-namer && echo '📦 新名稱' > /tmp/codex-session-namer/${PPID}.pending
+echo '📦 新名稱' > /tmp/codex-session-namer/${PPID}.pending
 ```
+
+⚠️ **不要串 `mkdir -p … &&`**。那個資料夾是 hook 自己在每次事件開頭建的，session 走到
+這一步時一定存在；而 AGENTS.md 的規矩就是「一個 shell 呼叫只做一件事」。寫檔真的失敗
+（No such file or directory）代表 hook 根本沒裝，那是要去修 hook，不是補 mkdir。
 
 寫完即可回報。這個寫入本身是一次 tool call → 觸發 PostToolUse → hook 立即套用。
 
@@ -52,7 +56,7 @@ sqlite3 "$CODEX_DB" "UPDATE threads SET title='📦 新名稱', preview='📦 �
 | **Session 定位（驗證/備援用）** | 用 `$CODEX_THREAD_ID` 定位 thread。不要用 `ORDER BY updated_at_ms DESC LIMIT 1` — 多 session 同時開會改錯 |
 | **版號變更** | DB 檔名是 `state_5.sqlite`，升級後可能變 `state_6`。用 `ls -t state_*.sqlite \| head -1` 自動適配 |
 | **單引號轉義** | 名稱含 `'` 會壞 shell quoting；避免單引號 |
-| **Terminal tab 前提** | 需用 `mycodex` 啟動（watcher + `$AI_TAB_SYNC_FILE`）。VS Code 系（Cursor / Antigravity）另需 `"terminal.integrated.tabs.title": "${sequence}"` 設定 |
+| **Terminal tab 前提** | 用 `mycodex` 啟動時走 watcher（`$AI_TAB_SYNC_FILE`，每秒重寫，蓋得過別人）；沒有 wrapper 時 hook 會自己把 OSC 寫進控制終端，只寫一次。VS Code 系（Cursor / Antigravity）另需 `"terminal.integrated.tabs.title": "${sequence}"` 設定 |
 | **Claude Code 環境** | 偵測 `$HOME/.claude/session-names` 存在 → 走 Claude Code 路徑（直接寫 `$AI_TAB_SYNC_FILE` + session-names 檔），不走 relay |
 
 ## Schema 參考（threads 表關鍵欄位）
