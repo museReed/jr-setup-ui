@@ -162,6 +162,8 @@ hook 沒裝好的話 skill 裝了也叫不動。
 | Codex 的交接文件驗證失敗、改名那段沒動作 | `~/.agents/skills/_shared/` 沒跟著裝到 |
 | 跳出權限詢問要你同意命名指令 | 白名單沒生效，或 Windows 薄殼沒裝到 |
 | 名字寫進 `~/.claude/session-names/*.txt` 但標題不變 | watcher 沒起來、起錯方式、或被別人蓋掉 |
+| `/bg` 背景化之後，分頁標題沒跟著換 | 背景 session 沒有自己的終端，靠 `~/.claude/session-terminals/{session-id}` 留下的線索找回分頁。**已知限制**：daemon 有時會認領預熱好的 `claude bg-spare` 進程，那種 session 查不到來源，分頁就維持原樣——右下角名牌仍然正確 |
+| 背景 session 右下角仍是英文 slug | 那個名字來自 `~/.claude/jobs/{jobId}/state.json`，要下一次命名事件（下一句話、或 tool 用量到門檻）才會寫進去 |
 | `codex` 完全沒有命名動作 | hooks.json 沒寫出來，或信任提示沒接受 |
 | 串接指令 `echo a && echo b` 沒被擋 | hook 註冊的指令路徑壞了（不是腳本壞了） |
 

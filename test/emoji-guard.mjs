@@ -20,10 +20,17 @@ const script = path.join(
   "materials/skills/hooks/set-session-name.sh",
 );
 
+// cwd 設成 `/`、並拿掉 CLAUDE_PROJECT_DIR：腳本會依工作目錄加 [專案] 前綴，而根目錄不算
+// 專案，所以這裡拿到的是沒有前綴的乾淨名字。否則斷言會跟著「跑測試的人待在哪個資料夾」
+// 變動。（不用假 HOME 當 cwd：macOS 的 /var 是 /private/var 的 symlink，$PWD 解完跟
+// $HOME 對不起來，前綴照樣會冒出來。）前綴本身由 session-name-surfaces.mjs 負責測。
 function nameWritten(input) {
   const home = mkdtempSync(path.join(tmpdir(), "jr-emoji-"));
+  const env = { ...process.env, HOME: home };
+  delete env.CLAUDE_PROJECT_DIR;
   execFileSync("bash", [script, input, String(process.pid)], {
-    env: { ...process.env, HOME: home },
+    cwd: "/",
+    env,
     encoding: "utf8",
   });
   const dir = path.join(home, ".claude", "session-names");
