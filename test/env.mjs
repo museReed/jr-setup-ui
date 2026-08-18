@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 
 import {
+  codexVersionCheck,
   checksForTools,
   normalizeNotFound,
   parseClaudeAuth,
   parseCodexAuth,
   runEnvCheck,
   runProbe,
+  withActions as withEnvActions,
 } from "../src/env-check.js";
 import {
   installActionId,
@@ -121,6 +123,41 @@ ok("Codex 未登入輸出可解析");
 
 assert.doesNotThrow(() => parseCodexAuth(undefined));
 ok("Codex undefined 不拋錯");
+
+for (const [stdout, platform] of [
+  ["codex-cli 0.146.0", "darwin"],
+  ["codex-cli 0.146.0", "linux"],
+  ["codex-cli 0.200.1", "darwin"],
+]) {
+  assert.deepEqual(codexVersionCheck(stdout, platform), {
+    id: "codex",
+    label: "Codex CLI",
+    status: "ok",
+    detail: stdout,
+  });
+}
+ok("macOS／Linux 接受 Codex 0.146.0 與較新的穩定版");
+
+for (const stdout of [
+  "codex-cli 0.145.9",
+  "codex-cli 0.146.0-beta.1",
+  "不是版本",
+]) {
+  const checked = withEnvActions(codexVersionCheck(stdout, "darwin"));
+  assert.equal(checked.status, "missing");
+  assert.equal(checked.installAction, "install-codex");
+  assert.equal(checked.installLabel, "升級");
+  assert.match(checked.detail, /升級.*0\.146\.0/);
+}
+ok("舊版、pre-release 與不合法輸出會要求用官方 action 升級");
+
+assert.deepEqual(codexVersionCheck("codex-cli 0.145.9-beta.1", "win32"), {
+  id: "codex",
+  label: "Codex CLI",
+  status: "ok",
+  detail: "codex-cli 0.145.9-beta.1",
+});
+ok("Windows 只確認 Codex 指令可執行，不套 0.146.0 門檻");
 
 let timeout;
 const startedAt = Date.now();

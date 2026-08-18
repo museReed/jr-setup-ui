@@ -114,6 +114,19 @@ try {
   }
   ok("規則檔三種狀態沿用環境檢查圖示與讀屏文字");
 
+  assert.deepEqual(
+    envRowModel({
+      id: "codex",
+      label: "Codex CLI",
+      status: "missing",
+      detail: "請升級至 0.146.0 以上",
+      installAction: "install-codex",
+      installLabel: "升級",
+    }).buttons.map(({ text }) => text),
+    ["升級"],
+  );
+  ok("環境檢查有 installLabel 時用它當安裝按鈕文字");
+
   const configActions = configRowModel({
     id: "claude-md",
     label: "行為規則 CLAUDE.md",

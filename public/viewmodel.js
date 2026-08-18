@@ -272,7 +272,7 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: "安裝",
+      text: check.installLabel ?? "安裝",
       checkId: check.id,
     });
   }
@@ -359,7 +359,7 @@ export function envCardRowModel(card, installedSteps = new Set()) {
       buttons.push({
         action: "",
         dataName: "installAction",
-        text: "安裝",
+        text: check.installLabel ?? "安裝",
         checkId: check.id,
         disabled: true,
       });

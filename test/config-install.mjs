@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   countInstalledRules,
@@ -23,6 +26,7 @@ function ok(description) {
 
 const HOME = "/Users/student";
 const AT = { lang: "zh-TW", home: HOME };
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 try {
   assert.deepEqual(stepsForTools(["claude"]), [
@@ -126,7 +130,7 @@ try {
   assert.equal(tabSync.target, `${HOME}/.local/bin/ai-tab-sync.sh`);
   assert.equal(tabSync.rcTarget, `${HOME}/.zshrc`);
   assert.match(tabSync.rcBlock, /command claude "\$@"/);
-  assert.match(tabSync.rcBlock, /command codex "\$@"/);
+  assert.doesNotMatch(tabSync.rcBlock, /command codex "\$@"/);
 
   const windowsTabSync = describeStep("tab-sync", {
     ...AT,
@@ -135,7 +139,18 @@ try {
   assert.equal(windowsTabSync.watcherSource, "skills/bin/ai-tab-sync.ps1");
   assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
   assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
+  assert.match(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
   ok("tab sync 會描述 watcher、rc 檔與跳過函式的真正指令");
+
+  for (const lang of ["zh-TW", "zh-CN", "en"]) {
+    const template = readFileSync(
+      path.join(REPO_ROOT, "materials", "codex", lang, "config.toml.example"),
+      "utf8",
+    );
+    assert.match(template, /status_line = \[\s*"thread-title",/);
+    assert.match(template, /terminal_title = \["thread"\]/);
+  }
+  ok("三種語言的 Codex template 都顯示 thread 名稱與原生 terminal title");
 
   // watcher 用 [Console]::Title 改標題，那個 API 只作用在自己所在的 console。
   // -WindowStyle Hidden 會開一個新的 console，watcher 就改到自己的標題、碰不到

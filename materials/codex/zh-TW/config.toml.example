@@ -48,9 +48,11 @@ approvals_reviewer = "auto_review"
 # 用 /statusline 選單改的效果跟這段一樣，改的是同一個地方。
 [tui]
 status_line = [
+  "thread-title",
   "context-used",
   "model-with-reasoning",
   "current-dir",
   "weekly-limit",
 ]
 status_line_use_colors = true
+terminal_title = ["thread"]

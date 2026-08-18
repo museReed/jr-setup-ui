@@ -251,6 +251,36 @@ export function parseCodexAuth(stdout) {
   };
 }
 
+export function codexVersionCheck(stdout, platform = process.platform) {
+  const detail =
+    typeof stdout === "string" ? stdout.trim().split("\n")[0].trim() : "";
+  const base = { id: "codex", label: "Codex CLI" };
+
+  if (platform === "win32") {
+    return { ...base, status: "ok", detail };
+  }
+
+  const match = detail.match(/(?:^|\s)(\d+)\.(\d+)\.(\d+)$/);
+  const version = match?.slice(1).map(Number) ?? null;
+  const supported =
+    version !== null &&
+    (version[0] > 0 || (version[0] === 0 && version[1] >= 146));
+
+  if (supported) {
+    return { ...base, status: "ok", detail };
+  }
+
+  return {
+    ...base,
+    status: "missing",
+    detail:
+      version === null
+        ? "無法辨識版本，請升級至穩定版 0.146.0 以上"
+        : `版本 ${version.join(".")} 過舊，請升級至穩定版 0.146.0 以上`,
+    installLabel: "升級",
+  };
+}
+
 // Windows 上 npm 安裝的 CLI 是 claude.cmd / codex.cmd 這種包裝檔，沒有同名 .exe。
 // spawn 不開 shell 時找不到裸指令，必須補上 .cmd 再試一次。
 // （實測：PowerShell 直接跑 `claude` 會去找 claude.ps1；spawn 則是整個找不到。）
@@ -396,7 +426,7 @@ export const FIX_ACTIONS = {
   "gh-auth": (status) => (status === "warn" ? "login-gh" : null),
 };
 
-function withActions(check) {
+export function withActions(check) {
   // installable 為 false 的紅燈是「東西在、但用錯方式」——給安裝按鈕只會誤導。
   // optional 跟 missing 一樣要給安裝鍵：那一列是「選用但可以裝」，
   // 只認 missing 的話按鈕永遠不會出現，學生只看得到一句「未安裝」卻沒得按。
@@ -650,6 +680,15 @@ async function checkVersion(id, label, cmd, args) {
   } catch {
     return { id, label, status: "missing", detail: "尚未安裝" };
   }
+}
+
+async function checkCodexVersion() {
+  const checked = await checkVersion("codex", "Codex CLI", "codex", [
+    "--version",
+  ]);
+  return checked.status === "ok"
+    ? codexVersionCheck(checked.detail)
+    : checked;
 }
 
 // Python 在 Windows 上叫什麼，取決於誰裝的：
@@ -1173,7 +1212,7 @@ export async function runEnvCheck(tools = []) {
     }
 
     if (wanted.has("codex")) {
-      const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
+      const codex = checkCodexVersion();
       checksToRun.push(codex, checkCodexAuth(codex));
 
       if (wanted.has("codex-sandbox")) {

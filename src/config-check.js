@@ -323,7 +323,7 @@ export const VERIFICATION = {
   "codex-config": {
     behavior: "verify-behavior",
     options: { tools: "codex" },
-    eye: "Codex 視窗最下面那一條有四段：用掉多少、哪個模型、哪個資料夾、這週還剩多少",
+    eye: "Codex 視窗最下面那一條有五段：session 名稱、用掉多少、哪個模型、哪個資料夾、這週還剩多少",
   },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },

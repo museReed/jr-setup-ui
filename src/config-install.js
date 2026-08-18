@@ -422,9 +422,11 @@ function powershellTabSyncFunction(command, watcherTarget) {
 }
 
 function tabSyncBlock(platform, watcherTarget) {
-  const build =
-    platform === "win32" ? powershellTabSyncFunction : posixTabSyncFunction;
-  return `${build("claude", watcherTarget)}\n\n${build("codex", watcherTarget)}`;
+  if (platform !== "win32") {
+    return posixTabSyncFunction("claude", watcherTarget);
+  }
+
+  return `${powershellTabSyncFunction("claude", watcherTarget)}\n\n${powershellTabSyncFunction("codex", watcherTarget)}`;
 }
 
 function hookCommand(target, platform, args = []) {

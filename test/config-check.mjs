@@ -31,6 +31,10 @@ import { materialsDir } from "../src/paths.js";
 
 const MATERIALS = materialsDir();
 
+assert.match(VERIFICATION["codex-config"].eye, /session 名稱/);
+assert.match(VERIFICATION["codex-config"].eye, /五段/);
+ok("Codex config 人眼驗證列出 session 名稱加原本四段");
+
 // 裝進去的內容必須跟 materials 逐字相同，否則會被判成舊版——所以測試也要照真的裝。
 function installFrom(source, target) {
   mkdirSync(path.dirname(target), { recursive: true });
