@@ -387,7 +387,10 @@ async function spawnProbe(rawCmd, rawArgs) {
 export const FIX_ACTIONS = {
   "execution-policy": (status) =>
     status === "ok" ? null : "fix-execution-policy",
-  "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
+  "shell-wrapper": (status, check) =>
+    status === "warn" && check?.fixable !== false
+      ? "fix-shell-wrapper"
+      : null,
   // 2026-08-12 接上了。8/11 不接的理由是「Store 版底下沙箱完全正常」——那次的
   // 測試無效（沙箱根本沒設定起來，見 codex-sandbox.js）。真的設定起來之後，
   // 市集版的 pwsh 在沙箱裡 20/20 失敗（上游 openai/codex#35871 量的）。
@@ -734,26 +737,42 @@ async function checkPython() {
 
 // 這一列查的不是「裝了沒」，是「在你自己的終端機打得動嗎」。兩者會不一致：
 // 設定檔裡一個同名函式就能把裝好的執行檔整個蓋掉，而 PATH 上完全看不出異常。
-async function checkShellWrapper() {
+export async function checkShellWrapper({
+  home = homedir(),
+  platform = process.platform,
+  exists = existsSync,
+  read = readFile,
+} = {}) {
   const id = "shell-wrapper";
   const label = "終端機裡的 claude / codex 是活的";
   const dead = [];
+  let failed = false;
 
-  for (const profile of shellProfilePaths(homedir())) {
-    if (!existsSync(profile)) {
+  for (const profile of shellProfilePaths(home, platform)) {
+    if (!exists(profile)) {
       continue;
     }
 
     try {
-      const content = await readFile(profile, "utf8");
+      const content = await read(profile, "utf8");
 
-      for (const block of findDeadWrappers(content, { exists: existsSync })) {
+      for (const block of findDeadWrappers(content, { platform, exists })) {
         dead.push({ ...block, profile });
       }
     } catch {
-      // 讀不到就當作沒問題。這一列是額外的保險，不該因為權限之類的意外
-      // 讓學生看到一個他修不了的紅燈。
+      failed = true;
     }
+  }
+
+  if (failed) {
+    return {
+      id,
+      label,
+      status: "warn",
+      installable: false,
+      fixable: false,
+      detail: "無法讀取或解析 shell 設定檔，尚未完成檢查",
+    };
   }
 
   return { id, label, ...shellWrapperStatus(dead) };

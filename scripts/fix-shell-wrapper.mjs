@@ -28,6 +28,7 @@ async function backup(target) {
 }
 
 let cleaned = 0;
+const inspected = [];
 
 for (const profile of shellProfilePaths(homedir())) {
   if (!existsSync(profile)) {
@@ -37,6 +38,10 @@ for (const profile of shellProfilePaths(homedir())) {
   const content = await readFile(profile, "utf8");
   const dead = findDeadWrappers(content, { exists: existsSync });
 
+  inspected.push({ profile, content, dead });
+}
+
+for (const { profile, content, dead } of inspected) {
   if (dead.length === 0) {
     continue;
   }

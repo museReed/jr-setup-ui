@@ -19,21 +19,28 @@ import {
   missingSourceLines,
   probeHook,
   resolveBash,
+  withActions as withConfigActions,
   wiredToScript,
 } from "../src/config-check.js";
 import {
   describeStep,
   expandAllowRules,
   mergeAgentHookRegistrations,
+  transformStepSource,
   upsertBlock,
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
 
 const MATERIALS = materialsDir();
 
-assert.match(VERIFICATION["codex-config"].eye, /session 名稱/);
-assert.match(VERIFICATION["codex-config"].eye, /五段/);
-ok("Codex config 人眼驗證列出 session 名稱加原本四段");
+for (const id of ["codex-config", "codex-namer"]) {
+  const posix = withConfigActions({ id, status: "ok" }, "darwin");
+  const windows = withConfigActions({ id, status: "ok" }, "win32");
+  assert.match(posix.eyeCheck, /app-server|原生/);
+  assert.match(windows.eyeCheck, /SQLite/);
+  assert.match(windows.eyeCheck, /tab-sync/);
+}
+ok("Codex config 與 namer 的人眼驗證會依 POSIX／Windows 顯示真實同步路徑");
 
 // 裝進去的內容必須跟 materials 逐字相同，否則會被判成舊版——所以測試也要照真的裝。
 function installFrom(source, target) {
@@ -154,6 +161,44 @@ process.stdin.on("end", () => {
   assert.equal(mergedRow.needsMerge, undefined);
   assert.match(mergedRow.detail, /你自己的內容也還在/);
   ok("併過工作坊設定、又有自己的區塊時算完成，不再要求重複合併");
+
+  const wrongStatusSection = [
+    template.replace("[tui]", "[profiles.wrong]"),
+    "[tui]",
+    'status_line = ["context-used"]',
+    'terminal_title = ["thread"]',
+    "",
+  ].join("\n");
+  writeFileSync(codexStep.target, wrongStatusSection);
+  const misplacedStatus = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(misplacedStatus.status, "warn");
+  assert.match(misplacedStatus.detail, /status_line.*thread-title/);
+  ok("thread-title 只出現在其他 section 時不給綠燈");
+
+  const wrongTerminalArray = [
+    template.replace("[tui]", "[profiles.wrong]"),
+    "[tui]",
+    'status_line = ["thread-title", "context-used"]',
+    'terminal_title = ["thread", "model"]',
+    "",
+  ].join("\n");
+  writeFileSync(codexStep.target, wrongTerminalArray);
+  const wrongTerminal = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(wrongTerminal.status, "warn");
+  assert.match(wrongTerminal.detail, /terminal_title.*\["thread"\]/);
+  ok("[tui] terminal_title 是錯誤 array 時不給綠燈");
+
+  const windowsCodexStep = describeStep("codex-config", {
+    lang: "zh-TW",
+    home: path.join(dir, "windows"),
+    platform: "win32",
+  });
+  mkdirSync(path.dirname(windowsCodexStep.target), { recursive: true });
+  const windowsTemplate = transformStepSource(template, windowsCodexStep);
+  writeFileSync(windowsCodexStep.target, windowsTemplate);
+  assert.equal((await checkCopyStep(MATERIALS, windowsCodexStep)).status, "ok");
+  assert.doesNotMatch(windowsTemplate, /"thread-title"|^terminal_title\s*=/m);
+  ok("Windows config 不要求 thread-title 或 terminal_title 也能通過檢查");
 
   // 「用 AI 合併」那條路最容易壞的地方：整段內容都併進去了（所以檔案層算完成），
   // 但被放在某個 [section] 後面——TOML 的最上層到第一個 [section] 為止，於是那三個

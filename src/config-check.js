@@ -22,6 +22,7 @@ import {
   readDefaultMode,
   readRetiredCodexKeys,
   stepsForTools,
+  transformStepSource,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
 import {
@@ -89,7 +90,7 @@ async function sameAsSource(materials, step) {
     readFile(source, "utf8"),
     readFile(step.target, "utf8"),
   ]);
-  return a === b;
+  return transformStepSource(a, step) === b;
 }
 
 // protectExisting 的列（CLAUDE.md、config.toml）不能用逐字相同當作「完成」。
@@ -117,10 +118,11 @@ export async function missingSourceLines(materials, step) {
     return null;
   }
 
-  const [sourceText, targetText] = await Promise.all([
+  const [rawSourceText, targetText] = await Promise.all([
     readFile(source, "utf8"),
     readFile(step.target, "utf8"),
   ]);
+  const sourceText = transformStepSource(rawSourceText, step);
   const isToml = step.target.endsWith(".toml");
   const required = sourceText
     .split("\n")
@@ -199,7 +201,93 @@ async function codexModeIssues(step) {
     }
   }
 
-  return { missing, differs, stale };
+  return {
+    missing,
+    differs,
+    stale,
+    native:
+      step.sourceTransform === "omit-codex-native-title"
+        ? []
+        : codexNativeTitleIssues(content),
+  };
+}
+
+function stripTomlComment(line) {
+  let quote = null;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (quote === null && (char === '"' || char === "'")) {
+      quote = char;
+    } else if (quote === char && line[index - 1] !== "\\") {
+      quote = null;
+    } else if (quote === null && char === "#") {
+      return line.slice(0, index);
+    }
+  }
+
+  return line;
+}
+
+function tomlSection(content, name) {
+  const lines = (content ?? "").split("\n");
+  const pattern = new RegExp(`^\\s*\\[\\s*${name}\\s*\\]\\s*(?:#.*)?$`);
+  const starts = lines
+    .map((line, index) => (pattern.test(line) ? index : -1))
+    .filter((index) => index !== -1);
+
+  if (starts.length !== 1) {
+    return null;
+  }
+
+  const start = starts[0] + 1;
+  const relativeEnd = lines
+    .slice(start)
+    .findIndex((line) => /^\s*\[/.test(stripTomlComment(line)));
+  const end = relativeEnd === -1 ? lines.length : start + relativeEnd;
+  return lines.slice(start, end).map(stripTomlComment).join("\n");
+}
+
+function tomlStringArray(section, key) {
+  if (section === null) {
+    return null;
+  }
+
+  const pattern = new RegExp(
+    `^\\s*${key}\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*$`,
+    "gm",
+  );
+  const matches = [...section.matchAll(pattern)];
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  const raw = matches[0][1];
+  const strings = /"((?:\\.|[^"\\])*)"|'([^']*)'/g;
+  const values = [...raw.matchAll(strings)].map((match) => match[1] ?? match[2]);
+  const skeleton = raw.replace(strings, "__STRING__");
+  return /^\[\s*(?:__STRING__(?:\s*,\s*__STRING__)*\s*,?)?\s*\]$/.test(
+    skeleton,
+  )
+    ? values
+    : null;
+}
+
+function codexNativeTitleIssues(content) {
+  const tui = tomlSection(content, "tui");
+  const statusLine = tomlStringArray(tui, "status_line");
+  const terminalTitle = tomlStringArray(tui, "terminal_title");
+  const issues = [];
+
+  if (!statusLine?.includes("thread-title")) {
+    issues.push('[tui] status_line 必須包含 "thread-title"');
+  }
+  if (terminalTitle?.length !== 1 || terminalTitle[0] !== "thread") {
+    issues.push('[tui] terminal_title 必須是 ["thread"]');
+  }
+
+  return issues;
 }
 
 // 模式檢查只降級、不搶話：檔案層先講完（沒裝、需要合併、內容是舊版），都通過了才
@@ -212,7 +300,7 @@ export async function checkCopyStep(materials, step) {
     return result;
   }
 
-  const { missing, differs, stale } = await codexModeIssues(step);
+  const { missing, differs, stale, native } = await codexModeIssues(step);
 
   // 舊 key 排在最前面：它在的時候，底下那兩種判斷得到的結論都不算數——新的那個
   // key 就算值是對的也沒生效。
@@ -224,6 +312,14 @@ export async function checkCopyStep(materials, step) {
       ...result,
       status: "warn",
       detail: `${result.detail}，但舊的 ${stale.join("、")} 還在，會讓新設定失效——按這一列的安裝鍵會把它停用`,
+    };
+  }
+
+  if (native.length > 0) {
+    return {
+      ...result,
+      status: "warn",
+      detail: `${result.detail}，但 ${native.join("；")}`,
     };
   }
 
@@ -323,7 +419,8 @@ export const VERIFICATION = {
   "codex-config": {
     behavior: "verify-behavior",
     options: { tools: "codex" },
-    eye: "Codex 視窗最下面那一條有五段：session 名稱、用掉多少、哪個模型、哪個資料夾、這週還剩多少",
+    eye: "POSIX 的 Codex 視窗最下面有五段，分頁標題也用原生 session 名稱",
+    eyeWindows: "Windows 的 Codex sidebar 由 SQLite 顯示 session 名稱，分頁標題由 tab-sync 同步",
   },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
@@ -392,7 +489,8 @@ export const VERIFICATION = {
   "claude-monitor": { terminal: { case: "context", agent: "claude" } },
   "codex-namer": {
     terminal: { case: "naming", agent: "codex" },
-    eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
+    eye: "POSIX 的 Codex sidebar 與原生分頁標題都透過 app-server 變成命名",
+    eyeWindows: "Windows 的 Codex sidebar 透過 SQLite、分頁標題透過 tab-sync 變成命名",
   },
   // codex-monitor 的行為驗證加回來了（Reed 決定），跟 claude-monitor 對稱。
   //
@@ -1183,7 +1281,11 @@ export async function runConfigCheck({ tools, lang }) {
     }),
   );
 
-  return { lang, tools, checks: checks.map(withActions) };
+  return {
+    lang,
+    tools,
+    checks: checks.map((check) => withActions(check, process.platform)),
+  };
 }
 
 // 一列檢查結果 → 那一列該掛哪幾顆按鈕。抽出來是為了測得到：ViewModel 吃的是這個
@@ -1202,7 +1304,7 @@ function hasMergeSnapshot(id) {
   }
 }
 
-export function withActions(check) {
+export function withActions(check, platform = process.platform) {
   const spec = VERIFICATION[check.id];
 
   return {
@@ -1228,6 +1330,9 @@ export function withActions(check) {
       spec?.behavior ?? (spec?.terminal === undefined ? null : "verify-in-terminal"),
     verifyKind: spec?.terminal === undefined ? "page" : "terminal",
     verifyOptions: spec?.terminal ?? spec?.options ?? null,
-    eyeCheck: spec?.eye ?? null,
+    eyeCheck:
+      platform === "win32"
+        ? (spec?.eyeWindows ?? spec?.eye ?? null)
+        : (spec?.eye ?? null),
   };
 }

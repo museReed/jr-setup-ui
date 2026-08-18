@@ -810,6 +810,9 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         protectExisting: true,
         // 檔案已存在時也要把預設模式那兩個 key 補進去，不交給 AI 合併。
         mergeModes: true,
+        ...(platform === "win32"
+          ? { sourceTransform: "omit-codex-native-title" }
+          : {}),
       };
 
     case "codex-agents":
@@ -1048,6 +1051,23 @@ const CODEX_MODES = {
   approval_policy: '"on-request"',
   approvals_reviewer: '"auto_review"',
 };
+
+// Windows 仍靠 SQLite + tab-sync 命名；0.146 的原生 thread title 只用在 POSIX。
+// 共用同一份 template，安裝與檢查都走這個 transform，避免兩邊各維護一份內容。
+export function transformStepSource(content, step) {
+  if (step.sourceTransform !== "omit-codex-native-title") {
+    return content;
+  }
+
+  return content
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\s*terminal_title\s*=/.test(line) &&
+        !/^\s*["']thread-title["']\s*,?\s*(?:#.*)?$/.test(line),
+    )
+    .join("\n");
+}
 
 // Codex 有新舊兩套設定沙盒的方式，官方文件明說不能並存：
 // 「Don't combine with sandbox_mode or [sandbox_workspace_write]」。

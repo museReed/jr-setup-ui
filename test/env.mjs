@@ -185,6 +185,104 @@ assert.deepEqual(oldCodexAuth, {
 assert.deepEqual(codexProbeCalls, [["--version"]]);
 ok("舊版 Codex 的 auth row 要求先升級，且不執行 login probe");
 
+async function probeCodexRows(results, platform = "darwin") {
+  const calls = [];
+  const rows = await checkCodexRows({
+    platform,
+    probe: async (cmd, args, options) => {
+      calls.push([cmd, args, options]);
+      return results[calls.length - 1];
+    },
+  });
+  return { calls, rows };
+}
+
+const codexVersionCall = [
+  "codex",
+  ["--version"],
+  { emptyFailureMeansMissing: true },
+];
+const codexLoginCall = ["codex", ["login", "status"], undefined];
+
+const supportedLogin = await probeCodexRows([
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "codex-cli 0.146.0\n",
+    stderr: "",
+    output: "codex-cli 0.146.0\n",
+  },
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "",
+    stderr: "Logged in using ChatGPT\n",
+    output: "Logged in using ChatGPT\n",
+  },
+]);
+assert.deepEqual(supportedLogin.calls, [
+  codexVersionCall,
+  codexLoginCall,
+]);
+assert.equal(supportedLogin.rows[0].status, "ok");
+assert.deepEqual(supportedLogin.rows[1], {
+  id: "codex-auth",
+  label: "Codex 登入狀態",
+  status: "ok",
+  detail: "已登入",
+});
+ok("支援版本且已登入時依序執行 version、login probe");
+
+const loggedOut = await probeCodexRows([
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "codex-cli 0.146.0\n",
+    stderr: "",
+    output: "codex-cli 0.146.0\n",
+  },
+  {
+    type: "close",
+    exitCode: 1,
+    stdout: "",
+    stderr: "Not logged in\n",
+    output: "Not logged in\n",
+  },
+]);
+assert.deepEqual(loggedOut.calls, [codexVersionCall, codexLoginCall]);
+assert.equal(loggedOut.rows[1].status, "warn");
+assert.equal(loggedOut.rows[1].detail, "未登入");
+ok("未登入不會被誤判成 Codex 缺少");
+
+const missingCodex = await probeCodexRows([
+  { type: "error", error: { code: "ENOENT" } },
+]);
+assert.deepEqual(missingCodex.calls, [codexVersionCall]);
+assert.equal(missingCodex.rows[0].status, "missing");
+assert.deepEqual(missingCodex.rows[1], {
+  id: "codex-auth",
+  label: "Codex 登入狀態",
+  status: "missing",
+  detail: "需要先安裝",
+});
+ok("Codex 缺少時只執行 version probe，不再執行 login probe");
+
+const authTimeout = await probeCodexRows([
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "codex-cli 0.146.0\n",
+    stderr: "",
+    output: "codex-cli 0.146.0\n",
+  },
+  { type: "timeout" },
+]);
+assert.deepEqual(authTimeout.calls, [codexVersionCall, codexLoginCall]);
+assert.equal(authTimeout.rows[0].status, "ok");
+assert.equal(authTimeout.rows[1].status, "warn");
+assert.match(authTimeout.rows[1].detail, /逾時/);
+ok("登入 probe 逾時會保留 CLI 綠燈並回報 auth 逾時");
+
 let timeout;
 const startedAt = Date.now();
 const result = await Promise.race([

@@ -12,6 +12,8 @@
 import { TAB_SYNC_MARKER } from "./config-install.js";
 
 const WRAPPED_COMMANDS = ["claude", "codex"];
+const TAB_SYNC_START = `# >>> ${TAB_SYNC_MARKER} >>>`;
+const TAB_SYNC_END = `# <<< ${TAB_SYNC_MARKER} <<<`;
 
 // 兩個平台都要掃「不只一份」：
 // Windows 的 PowerShell 5.1 與 7 各讀各的 profile，而學生用哪一個我們不知道
@@ -76,42 +78,91 @@ function aliasesMycodex(line) {
   return /(?:^|[\\/])mycodex$/.test(value);
 }
 
+function markedBlock(lines) {
+  const starts = [];
+  const ends = [];
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+
+    if (trimmed === TAB_SYNC_START) starts.push(index);
+    if (trimmed === TAB_SYNC_END) ends.push(index);
+  }
+
+  if (starts.length > 1 || ends.length > 1) {
+    throw new Error(`${TAB_SYNC_MARKER} 標記重複，未修改設定檔`);
+  }
+
+  if (starts.length !== ends.length || (starts[0] ?? 0) > (ends[0] ?? 0)) {
+    throw new Error(`${TAB_SYNC_MARKER} 標記不成對，未修改設定檔`);
+  }
+
+  return starts.length === 0
+    ? null
+    : { firstLine: starts[0], lastLine: ends[0] };
+}
+
+function wrapperLastLine(lines, firstLine, limit) {
+  const first = lines[firstLine];
+
+  if (first.indexOf("}", first.indexOf("{") + 1) !== -1) {
+    return firstLine;
+  }
+
+  for (let index = firstLine + 1; index < limit; index += 1) {
+    if (lines[index].trim() === "}") {
+      return index;
+    }
+  }
+
+  throw new Error("舊 Codex wrapper 不完整，未修改設定檔");
+}
+
 // 找出「函式主體裡寫死一條路徑，而那條路徑不存在」的區塊。
 //
-// ⚠️ 新版 Claude-only 與 Windows 的 tab-sync 區塊要跳過；只有 POSIX 舊區塊仍開
-// codex() 時才整段列為待移除。watcher 腳本路徑暫時不存在不等於區塊壞掉。
+// ⚠️ 新版 Claude-only 與 Windows 的 tab-sync 區塊要跳過；POSIX 舊區塊仍開
+// codex() 時只移除那支函式，保留 Claude wrapper。watcher 腳本路徑暫時不存在
+// 不等於區塊壞掉。
 export function findDeadWrappers(content, { platform = process.platform, exists }) {
   const lines = content.split(/\r?\n/);
   const found = [];
-  let ourBlock = null;
+  const ourBlock = markedBlock(lines);
   let open = null;
 
   for (const [index, line] of lines.entries()) {
-    if (line.includes(TAB_SYNC_MARKER)) {
-      if (ourBlock === null) {
-        ourBlock = { firstLine: index, hasCodex: false };
-      } else {
-        if (platform !== "win32" && ourBlock.hasCodex) {
-          found.push({
-            command: "codex",
-            reason: "native-title",
-            firstLine: ourBlock.firstLine,
-            lastLine: index,
-            removeLeadingComments: false,
-          });
+    if (ourBlock !== null && index === ourBlock.firstLine) {
+      if (platform !== "win32") {
+        for (
+          let blockLine = ourBlock.firstLine + 1;
+          blockLine < ourBlock.lastLine;
+          blockLine += 1
+        ) {
+          if (opensWrapper(lines[blockLine], platform) === "codex") {
+            const lastLine = wrapperLastLine(
+              lines,
+              blockLine,
+              ourBlock.lastLine,
+            );
+            found.push({
+              command: "codex",
+              reason: "native-title",
+              firstLine: blockLine,
+              lastLine,
+              removeLeadingComments: false,
+            });
+            blockLine = lastLine;
+          }
         }
-
-        ourBlock = null;
       }
 
       continue;
     }
 
-    if (ourBlock !== null) {
-      if (platform !== "win32" && opensWrapper(line, platform) === "codex") {
-        ourBlock.hasCodex = true;
-      }
-
+    if (
+      ourBlock !== null &&
+      index > ourBlock.firstLine &&
+      index <= ourBlock.lastLine
+    ) {
       continue;
     }
 
@@ -173,6 +224,24 @@ export function shellWrapperStatus(dead) {
   );
 
   if (overridesNativeTitle) {
+    const deadNames = [
+      ...new Set(
+        dead
+          .filter((block) => block.reason !== "native-title")
+          .map((block) => block.command),
+      ),
+    ].join("、");
+
+    if (deadNames.length > 0) {
+      return {
+        status: "warn",
+        installable: false,
+        fixLabel: `清除舊 Codex wrapper 與廢棄的 ${deadNames} 引用`,
+        detail: `舊 Codex wrapper 覆蓋標題，${deadNames} 也指到失效檔案`,
+        deadPath: dead.find((block) => block.deadPath)?.deadPath,
+      };
+    }
+
     return {
       status: "warn",
       installable: false,

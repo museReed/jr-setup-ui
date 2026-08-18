@@ -75,11 +75,15 @@ def receive_json(reader):
 def receive_response(reader, request_id):
     while True:
         message = receive_json(reader)
+        if not isinstance(message, dict):
+            raise ValueError("malformed app-server response")
         if message.get("id") != request_id:
             continue
         if "error" in message:
             raise RuntimeError(message["error"])
-        return message.get("result")
+        if "result" not in message:
+            raise ValueError("app-server response is missing result")
+        return message["result"]
 
 
 def connect(socket_path):

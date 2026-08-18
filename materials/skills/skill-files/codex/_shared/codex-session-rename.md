@@ -7,11 +7,12 @@
 
 ## 原理
 
-session-namer hook（`~/.codex/hooks/codex-session-namer.sh`）透過 Codex app-server
-更新 thread 名稱，Codex 會把同一個名稱顯示在兩個地方：
+session-namer hook（`~/.codex/hooks/codex-session-namer.sh`）依平台走不同路徑：
 
-1. **Sidebar**：顯示 thread 名稱
-2. **Terminal tab**：原生 `terminal_title = ["thread"]` 顯示同一個名稱
+| 平台 | Sidebar | Terminal tab |
+|---|---|---|
+| **POSIX（macOS / Linux）** | Codex app-server 更新 thread | 原生 `terminal_title = ["thread"]` 顯示同一個名稱 |
+| **Windows** | hook 更新 SQLite | hook 寫 tab-sync 同步檔，由 PowerShell wrapper 更新標題 |
 
 模型在 sandbox 裡**不能**直接寫 SQLite 或 `~/.ai-session-names/`（readonly database / 路徑限制），
 所以唯一要做的是寫一個 **relay 檔**（`/tmp` 永遠可寫）；hook 在下一次 hook 事件
@@ -36,7 +37,7 @@ sqlite3 -header -column "$CODEX_DB" \
 
 ## 備援：直接 UPDATE SQLite（僅 hook 未安裝時）
 
-⚠️ 只改本機資料庫；正常情況一律走 relay 檔，讓 Codex app-server 更新狀態。
+⚠️ 只改本機資料庫；正常情況一律走 relay 檔，讓 hook 依平台完成 sidebar 與分頁同步。
 
 ```bash
 CODEX_DB=$(ls -t ~/.codex/state_*.sqlite 2>/dev/null | head -1)
@@ -52,7 +53,8 @@ sqlite3 "$CODEX_DB" "UPDATE threads SET name='📦 新名稱', title='📦 新�
 | **Session 定位（驗證/備援用）** | 用 `$CODEX_THREAD_ID` 定位 thread。不要用 `ORDER BY updated_at_ms DESC LIMIT 1` — 多 session 同時開會改錯 |
 | **版號變更** | DB 檔名是 `state_5.sqlite`，升級後可能變 `state_6`。用 `ls -t state_*.sqlite \| head -1` 自動適配 |
 | **單引號轉義** | 名稱含 `'` 會壞 shell quoting；避免單引號 |
-| **Terminal tab 前提** | Codex `config.toml` 設定 `terminal_title = ["thread"]`。VS Code 系（Cursor / Antigravity）另需 `"terminal.integrated.tabs.title": "${sequence}"` 設定 |
+| **POSIX Terminal tab 前提** | Codex `config.toml` 設定 `terminal_title = ["thread"]`。VS Code 系（Cursor / Antigravity）另需 `"terminal.integrated.tabs.title": "${sequence}"` 設定 |
+| **Windows Terminal tab 前提** | PowerShell profile 已載入 Codex tab-sync wrapper，且 watcher 能讀到同步檔 |
 | **Claude Code 環境** | 偵測 `$HOME/.claude/session-names` 存在 → 走 Claude Code 路徑（直接寫 `$AI_TAB_SYNC_FILE` + session-names 檔），不走 relay |
 
 ## Schema 參考（threads 表關鍵欄位）

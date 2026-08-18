@@ -10,7 +10,8 @@ description: >-
 ## Quick Reference
 
 根據對話內容為 session 命名。名稱寫入 /tmp relay 檔，由 session-namer hook
-（不受 sandbox 限制）透過 Codex app-server 套用名稱。
+（不受 sandbox 限制）依平台套用名稱：POSIX（macOS / Linux）透過 Codex
+app-server 更新 thread；Windows 更新 SQLite sidebar 與 tab-sync 同步檔。
 
 1. 讀對話脈絡 → 決定 `{emoji} {中文敘述}`（≤ 40 字元，emoji 見 §Emoji Mapping）
 2. 一個 shell 指令寫 relay 檔（見 §Execution Flow Step 2）
@@ -62,7 +63,12 @@ mkdir -p /tmp/codex-session-namer && echo '{emoji} {名稱}' > /tmp/codex-sessio
 ```
 
 這個寫入本身是一次 tool call → 觸發下一次 PostToolUse → hook 立即把名稱套用到
-Codex thread；sidebar 與原生 `terminal_title = ["thread"]` 會一起更新。
+Codex session：
+
+- **POSIX（macOS / Linux）**：app-server 更新 thread；sidebar 與原生
+  `terminal_title = ["thread"]` 一起更新
+- **Windows**：hook 更新 SQLite sidebar，並寫入 tab-sync 同步檔讓 PowerShell
+  wrapper 更新分頁標題
 
 ### Step 3: 回報
 

@@ -18,6 +18,7 @@ import {
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
+  transformStepSource,
 } from "../src/config-install.js";
 
 function ok(description) {
@@ -134,6 +135,34 @@ try {
   // 而學生不會知道要去翻備份。
   assert.equal(describeStep("codex-agents", AT).protectExisting, true);
   ok("每步知道自己的來源與目標，會蓋掉使用者內容的步驟有標記");
+
+  const posixCodexConfig = describeStep("codex-config", {
+    ...AT,
+    platform: "linux",
+  });
+  const windowsCodexConfig = describeStep("codex-config", {
+    ...AT,
+    platform: "win32",
+  });
+  const codexTemplate = readFileSync(
+    path.join(REPO_ROOT, "materials", posixCodexConfig.source),
+    "utf8",
+  );
+  assert.equal(posixCodexConfig.sourceTransform, undefined);
+  assert.equal(windowsCodexConfig.sourceTransform, "omit-codex-native-title");
+  assert.equal(
+    transformStepSource(codexTemplate, posixCodexConfig),
+    codexTemplate,
+  );
+  const windowsCodexTemplate = transformStepSource(
+    codexTemplate,
+    windowsCodexConfig,
+  );
+  assert.doesNotMatch(windowsCodexTemplate, /"thread-title"/);
+  assert.doesNotMatch(windowsCodexTemplate, /^terminal_title\s*=/m);
+  assert.match(windowsCodexTemplate, /^status_line\s*=\s*\[/m);
+  assert.match(windowsCodexTemplate, /"context-used"/);
+  ok("Windows 用 step metadata 從共用 template 排除原生命名，POSIX 保留原內容");
 
   const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
   assert.equal(tabSync.kind, "tab-sync");

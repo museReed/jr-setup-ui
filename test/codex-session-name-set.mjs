@@ -64,6 +64,57 @@ function readClientFrame(buffer) {
   };
 }
 
+let appServerCase = 0;
+
+async function runAppServerCase({ dir, responses, threadId = "thread-55" }) {
+  appServerCase += 1;
+  const socketPath = path.join(dir, `case-${appServerCase}.sock`);
+  const messages = [];
+  const server = createServer((socket) => {
+    let buffer = Buffer.alloc(0);
+    let upgraded = false;
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (!upgraded) {
+        const end = buffer.indexOf("\r\n\r\n");
+        if (end === -1) return;
+        const headers = buffer.subarray(0, end).toString("utf8");
+        const key = headers.match(/^Sec-WebSocket-Key: (.+)$/im)?.[1].trim();
+        assert(key);
+        const accept = createHash("sha1")
+          .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+          .digest("base64");
+        socket.write(
+          "HTTP/1.1 101 Switching Protocols\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+        );
+        buffer = buffer.subarray(end + 4);
+        upgraded = true;
+      }
+
+      while (true) {
+        const frame = readClientFrame(buffer);
+        if (frame === null) return;
+        buffer = frame.rest;
+        messages.push(frame.value);
+        if (frame.value.id === 1) {
+          socket.write(websocketFrame(responses.initialize));
+        } else if (frame.value.id === 2) {
+          socket.write(websocketFrame(responses.rename));
+        }
+      }
+    });
+  });
+  await new Promise((resolve) => server.listen(socketPath, resolve));
+  const result = await runPython(HELPER, [threadId, "修正原生命名"], {
+    CODEX_APP_SERVER_SOCKET: socketPath,
+  });
+  await new Promise((resolve) => server.close(resolve));
+  return { messages, result };
+}
+
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HELPER = path.join(
   REPO_ROOT,
@@ -101,50 +152,13 @@ try {
   assert.equal(prematureEof.status, 1);
   ok("WebSocket handshake 提前 EOF 時立即 exit 1，不等 socket timeout");
 
-  const socketPath = path.join(dir, "app-server.sock");
-  const messages = [];
-  const server = createServer((socket) => {
-    let buffer = Buffer.alloc(0);
-    let upgraded = false;
-    socket.on("data", (chunk) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (!upgraded) {
-        const end = buffer.indexOf("\r\n\r\n");
-        if (end === -1) return;
-        const headers = buffer.subarray(0, end).toString("utf8");
-        const key = headers.match(/^Sec-WebSocket-Key: (.+)$/im)?.[1].trim();
-        assert(key);
-        const accept = createHash("sha1")
-          .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-          .digest("base64");
-        socket.write(
-          "HTTP/1.1 101 Switching Protocols\r\n" +
-            "Upgrade: websocket\r\n" +
-            "Connection: Upgrade\r\n" +
-            `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
-        );
-        buffer = buffer.subarray(end + 4);
-        upgraded = true;
-      }
-
-      while (true) {
-        const frame = readClientFrame(buffer);
-        if (frame === null) return;
-        buffer = frame.rest;
-        messages.push(frame.value);
-        if (frame.value.id === 1) {
-          socket.write(websocketFrame({ id: 1, result: {} }));
-        } else if (frame.value.id === 2) {
-          socket.write(websocketFrame({ id: 2, result: {} }));
-        }
-      }
-    });
+  const { messages, result } = await runAppServerCase({
+    dir,
+    responses: {
+      initialize: { id: 1, result: {} },
+      rename: { id: 2, result: {} },
+    },
   });
-  await new Promise((resolve) => server.listen(socketPath, resolve));
-  const result = await runPython(HELPER, ["thread-55", "修正原生命名"], {
-    CODEX_APP_SERVER_SOCKET: socketPath,
-  });
-  await new Promise((resolve) => server.close(resolve));
 
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(
@@ -156,6 +170,36 @@ try {
     name: "修正原生命名",
   });
   ok("helper 依序 initialize、initialized、thread/name/set 並成功 exit 0");
+
+  const missingResult = await runAppServerCase({
+    dir,
+    responses: {
+      initialize: { id: 1, result: {} },
+      rename: { id: 2 },
+    },
+  });
+  assert.equal(missingResult.result.status, 1);
+  ok("matching id 缺少 result 時 exit 1");
+
+  const appServerError = await runAppServerCase({
+    dir,
+    responses: {
+      initialize: { id: 1, result: {} },
+      rename: { id: 2, error: { code: -1, message: "rename failed" } },
+    },
+  });
+  assert.equal(appServerError.result.status, 1);
+  ok("matching id 回傳 error 時 exit 1");
+
+  const malformed = await runAppServerCase({
+    dir,
+    responses: {
+      initialize: [],
+      rename: { id: 2, result: {} },
+    },
+  });
+  assert.equal(malformed.result.status, 1);
+  ok("matching response 不是 object 時 exit 1");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

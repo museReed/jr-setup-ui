@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -44,6 +46,8 @@ function fixture() {
   const source = path.join(root, "source");
   const target = path.join(root, "materials", "skills");
   const sentinel = path.join(target, "skill-files", "keep.txt");
+  const shim = path.join(target, "hooks", "set-session-name-shim.sh");
+  const extra = path.join(target, "wizard-extra", "keep.txt");
   mkdirSync(path.dirname(copiedScript), { recursive: true });
   mkdirSync(path.dirname(sentinel), { recursive: true });
   cpSync(SCRIPT, copiedScript);
@@ -75,21 +79,64 @@ function fixture() {
     "Codex native thread naming\n",
   );
   writeFileSync(sentinel, "must survive\n");
-  return { copiedScript, source, target, sentinel };
+  mkdirSync(path.dirname(shim), { recursive: true });
+  mkdirSync(path.dirname(extra), { recursive: true });
+  writeFileSync(shim, "wizard-owned shim\n");
+  writeFileSync(extra, "wizard-owned extra\n");
+  return { copiedScript, source, target, sentinel, shim, extra };
 }
 
-function runSync({ copiedScript, source }) {
-  return spawnSync("bash", [copiedScript, source], { encoding: "utf8" });
+function runSync({ copiedScript, source }, env = {}) {
+  return spawnSync("bash", [copiedScript, source], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+function snapshot(root) {
+  const result = {};
+
+  function visit(directory, prefix = "") {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relative = path.join(prefix, entry.name);
+      const absolute = path.join(directory, entry.name);
+
+      if (entry.isDirectory()) {
+        result[`${relative}/`] = "directory";
+        visit(absolute, relative);
+      } else {
+        result[relative] = readFileSync(absolute).toString("base64");
+      }
+    }
+  }
+
+  visit(root);
+  return result;
+}
+
+function fakeCommand(current, name, body) {
+  const bin = path.join(path.dirname(path.dirname(current.copiedScript)), "fake-bin");
+  const command = path.join(bin, name);
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(command, `#!/bin/sh\n${body}\n`);
+  chmodSync(command, 0o755);
+  return bin;
 }
 
 function expectPreDeleteFailure(current, pattern) {
+  const before = snapshot(current.target);
   const result = runSync(current);
   assert.notEqual(result.status, 0);
-  assert.equal(existsSync(current.sentinel), true);
+  assert.deepEqual(snapshot(current.target), before);
   assert.match(`${result.stdout}${result.stderr}`, pattern);
 }
 
 try {
+  const syncScript = readFileSync(SCRIPT, "utf8");
+  assert.doesNotMatch(syncScript, /0\.146 原生命名/);
+  assert.match(syncScript, /跨平台命名/);
+  ok("sync compatibility gate 文案描述跨平台命名，不把 Windows 說成原生命名");
+
   const missingNonCodex = fixture();
   rmSync(path.join(missingNonCodex.source, "installer", "bin", "ai-tab-sync.sh"));
   expectPreDeleteFailure(missingNonCodex, /bin\/ai-tab-sync\.sh/);
@@ -115,6 +162,19 @@ try {
   expectPreDeleteFailure(oldKey, /session_id key/);
   ok("上游仍用 PPID key 時 compatibility gate 先停止");
 
+  const commentedKey = fixture();
+  writeFileSync(
+    path.join(
+      commentedKey.source,
+      "installer",
+      "hooks",
+      "codex-session-namer.sh",
+    ),
+    '# KEY="${SESSION_ID:-$PPID}"\nKEY="$PPID"\n',
+  );
+  expectPreDeleteFailure(commentedKey, /session_id key/);
+  ok("只有 comment 提到新 assignment 時 compatibility gate 不會被騙過");
+
   const oldDocs = fixture();
   writeFileSync(
     path.join(oldDocs.source, "installer", "skills", "codex", "fixture.txt"),
@@ -122,6 +182,34 @@ try {
   );
   expectPreDeleteFailure(oldDocs, /mycodex/);
   ok("上游文件仍要求 mycodex 時 compatibility gate 先停止");
+
+  const stagingFailure = fixture();
+  const beforeStagingFailure = snapshot(stagingFailure.target);
+  const fakeCp = fakeCommand(
+    stagingFailure,
+    "cp",
+    'case "$*" in *codex-session-name-set.py*) exit 73 ;; esac\nexec /bin/cp "$@"',
+  );
+  const failedStage = runSync(stagingFailure, {
+    PATH: `${fakeCp}:${process.env.PATH}`,
+  });
+  assert.notEqual(failedStage.status, 0);
+  assert.deepEqual(snapshot(stagingFailure.target), beforeStagingFailure);
+  ok("staging 複製中途失敗時完整 target 快照不變");
+
+  const replacementFailure = fixture();
+  const beforeReplacementFailure = snapshot(replacementFailure.target);
+  const fakeMv = fakeCommand(
+    replacementFailure,
+    "mv",
+    'case "$1" in *.skills-stage.*) exit 74 ;; esac\nexec /bin/mv "$@"',
+  );
+  const failedReplacement = runSync(replacementFailure, {
+    PATH: `${fakeMv}:${process.env.PATH}`,
+  });
+  assert.notEqual(failedReplacement.status, 0);
+  assert.deepEqual(snapshot(replacementFailure.target), beforeReplacementFailure);
+  ok("replacement 失敗時會恢復完整舊 target");
 
   const compatible = fixture();
   const success = runSync(compatible);
@@ -133,7 +221,10 @@ try {
     ),
     "# compatible helper\n",
   );
-  ok("完整相容來源可同步，且 app-server helper 會被複製");
+  assert.equal(readFileSync(compatible.shim, "utf8"), "wizard-owned shim\n");
+  assert.equal(readFileSync(compatible.extra, "utf8"), "wizard-owned extra\n");
+  assert.equal(existsSync(compatible.sentinel), false);
+  ok("完整相容來源可同步，保留 wizard-owned 檔案並替換受管目錄");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

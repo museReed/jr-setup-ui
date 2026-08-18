@@ -21,6 +21,7 @@ import {
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   mergeOutputStyle,
+  transformStepSource,
   upsertBlock,
 } from "../src/config-install.js";
 import { checkExternalSkill, findObsidianApp } from "../src/config-check.js";
@@ -132,7 +133,8 @@ async function copyStep(step) {
   const source = sourcePath(step);
   await mkdir(path.dirname(step.target), { recursive: true });
   await backup(step.target);
-  await copyFile(source, step.target);
+  const content = transformStepSource(await readFile(source, "utf8"), step);
+  await writeFile(step.target, content);
   logProgress(`${step.label} → ${step.target}`);
 }
 
