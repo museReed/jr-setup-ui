@@ -1,4 +1,4 @@
-// 把 shell 設定檔裡「指向已刪檔案的 claude / codex 函式」整段刪掉。
+// 把 shell 設定檔裡擋住新版 CLI 或原生標題的舊 wrapper 刪掉。
 //
 //   先看不動：  node scripts/fix-shell-wrapper.mjs
 //   真的清掉：  node scripts/fix-shell-wrapper.mjs --apply
@@ -42,9 +42,15 @@ for (const profile of shellProfilePaths(homedir())) {
   }
 
   for (const block of dead) {
-    console.log(
-      `${path.basename(profile)}：${block.command} 指到 ${block.deadPath}（那個檔案已經不在）`,
-    );
+    if (block.reason === "native-title") {
+      console.log(
+        `${path.basename(profile)}：舊 Codex wrapper 會覆蓋原生分頁標題`,
+      );
+    } else {
+      console.log(
+        `${path.basename(profile)}：${block.command} 指到 ${block.deadPath}（那個檔案已經不在）`,
+      );
+    }
   }
 
   if (!APPLY) {
@@ -59,7 +65,7 @@ for (const profile of shellProfilePaths(homedir())) {
 }
 
 if (cleaned === 0) {
-  console.log("設定檔裡沒有指向空路徑的 claude / codex，不用清。");
+  console.log("設定檔裡沒有會擋住新版的舊 claude / codex wrapper，不用清。");
 } else if (APPLY) {
   console.log("");
   console.log("清完了。要開一個新的終端視窗，改動才會生效。");

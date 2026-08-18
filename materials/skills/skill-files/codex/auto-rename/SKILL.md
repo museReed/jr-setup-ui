@@ -10,7 +10,7 @@ description: >-
 ## Quick Reference
 
 根據對話內容為 session 命名。名稱寫入 /tmp relay 檔，由 session-namer hook
-（不受 sandbox 限制）代寫 Codex SQLite（sidebar 名稱）+ tab sync file。
+（不受 sandbox 限制）透過 Codex app-server 套用名稱。
 
 1. 讀對話脈絡 → 決定 `{emoji} {中文敘述}`（≤ 40 字元，emoji 見 §Emoji Mapping）
 2. 一個 shell 指令寫 relay 檔（見 §Execution Flow Step 2）
@@ -55,14 +55,14 @@ Key rules:
 
 ### Step 2: 寫 relay 檔
 
-Hook 注入的訊息若已給精確路徑，用那個路徑。手動觸發時用 `$PPID`（= Codex process PID）：
+Hook 注入的訊息若已給精確路徑，用那個路徑。手動觸發時優先用 `$CODEX_THREAD_ID`：
 
 ```bash
-mkdir -p /tmp/codex-session-namer && echo '{emoji} {名稱}' > /tmp/codex-session-namer/${PPID}.pending
+mkdir -p /tmp/codex-session-namer && echo '{emoji} {名稱}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
 ```
 
 這個寫入本身是一次 tool call → 觸發下一次 PostToolUse → hook 立即把名稱套用到
-SQLite（sidebar）與 `$AI_TAB_SYNC_FILE`（terminal tab，需用 `mycodex` wrapper 啟動）。
+Codex thread；sidebar 與原生 `terminal_title = ["thread"]` 會一起更新。
 
 ### Step 3: 回報
 

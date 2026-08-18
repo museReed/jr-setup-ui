@@ -265,7 +265,7 @@ export function agentForStep(id) {
   return CODEX_STEPS.includes(id) ? "codex" : null;
 }
 
-export function stepsForTools(tools) {
+export function stepsForTools(tools, platform = process.platform) {
   const selected = tools.filter((tool) => TOOLS.includes(tool));
 
   if (selected.length === 0) {
@@ -275,7 +275,7 @@ export function stepsForTools(tools) {
   return [
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
-    "tab-sync",
+    ...(selected.includes("claude") || platform === "win32" ? ["tab-sync"] : []),
     // 命名與 context 監控拆開：兩者的檔案、註冊、驗證方式都不一樣，綁在一起的話
     // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
     ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
@@ -490,6 +490,13 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/hooks/${file}`,
     };
   });
+  if (id === "codex-namer" && platform !== "win32") {
+    hookFiles.push({
+      base: "codex-session-name-set",
+      source: "skills/hooks/codex-session-name-set.py",
+      target: `${agentDir}/hooks/codex-session-name-set.py`,
+    });
+  }
   // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
   // （原文：Command spawns a nested PowerShell process which cannot be validated），
   // 而「以後不要再問」寫下的規則含 session id，下次必失效。多裝一支 bash 薄殼把

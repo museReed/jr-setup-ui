@@ -50,10 +50,9 @@ try {
     "obsidian-vault",
     "vault-agent-claude",
   ]);
-  assert.deepEqual(stepsForTools(["codex"]), [
+  assert.deepEqual(stepsForTools(["codex"], "darwin"), [
     "codex-config",
     "codex-agents",
-    "tab-sync",
     "codex-namer",
     "codex-monitor",
     "skill-codex-auto-rename",
@@ -102,7 +101,19 @@ try {
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
-  ok("既有規則之後才出現共用 tab sync 與各工具的 hooks");
+  assert.equal(stepsForTools(["codex"], "darwin").includes("tab-sync"), false);
+  assert.equal(stepsForTools(["codex"], "linux").includes("tab-sync"), false);
+  assert.equal(stepsForTools(["codex"], "win32").includes("tab-sync"), true);
+  assert.equal(stepsForTools(["claude"], "darwin").includes("tab-sync"), true);
+  assert.equal(
+    stepsForTools(["claude", "codex"], "linux").includes("tab-sync"),
+    true,
+  );
+  assert.deepEqual(
+    stepsForTools(["claude"]),
+    stepsForTools(["claude"], process.platform),
+  );
+  ok("POSIX Codex-only 不裝 tab sync；Claude、Windows 與既有 caller 維持原行為");
 
   assert.equal(hookFileName("context-monitor", "linux"), "context-monitor.sh");
   assert.equal(hookFileName("context-monitor", "darwin"), "context-monitor.sh");

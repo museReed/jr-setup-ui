@@ -642,9 +642,9 @@ async function checkPowerShellEncoding() {
   }
 }
 
-async function checkVersion(id, label, cmd, args) {
+async function checkVersion(id, label, cmd, args, probe = runProbe) {
   try {
-    const result = await runProbe(cmd, args, {
+    const result = await probe(cmd, args, {
       emptyFailureMeansMissing: true,
     });
 
@@ -682,12 +682,19 @@ async function checkVersion(id, label, cmd, args) {
   }
 }
 
-async function checkCodexVersion() {
-  const checked = await checkVersion("codex", "Codex CLI", "codex", [
-    "--version",
-  ]);
+async function checkCodexVersion(
+  probe = runProbe,
+  platform = process.platform,
+) {
+  const checked = await checkVersion(
+    "codex",
+    "Codex CLI",
+    "codex",
+    ["--version"],
+    probe,
+  );
   return checked.status === "ok"
-    ? codexVersionCheck(checked.detail)
+    ? codexVersionCheck(checked.detail, platform)
     : checked;
 }
 
@@ -1120,7 +1127,7 @@ async function checkClaudeAuth(installed) {
   }
 }
 
-async function checkCodexAuth(installed) {
+async function checkCodexAuth(installed, probe = runProbe) {
   const id = "codex-auth";
   const label = "Codex 登入狀態";
 
@@ -1129,12 +1136,18 @@ async function checkCodexAuth(installed) {
 
     if (cli.status !== "ok") {
       // CLI 那項自己逾時的話，這裡跟著說「需要先安裝」是二次誤導。
-      return cli.status === "warn"
-        ? timedOut(id, label)
-        : { id, label, status: "missing", detail: "需要先安裝" };
+      if (cli.status === "warn") {
+        return timedOut(id, label);
+      }
+      return {
+        id,
+        label,
+        status: "missing",
+        detail: cli.installLabel === "升級" ? "請先升級 Codex" : "需要先安裝",
+      };
     }
 
-    const result = await runProbe("codex", ["login", "status"]);
+    const result = await probe("codex", ["login", "status"]);
 
     if (result.type === "timeout") {
       return timedOut(id, label);
@@ -1155,6 +1168,14 @@ async function checkCodexAuth(installed) {
   } catch {
     return { id, label, status: "warn", detail: "無法判讀登入狀態" };
   }
+}
+
+export async function checkCodexRows({
+  probe = runProbe,
+  platform = process.platform,
+} = {}) {
+  const cli = checkCodexVersion(probe, platform);
+  return Promise.all([cli, checkCodexAuth(cli, probe)]);
 }
 
 async function checkGhAuth(installed) {
@@ -1212,8 +1233,11 @@ export async function runEnvCheck(tools = []) {
     }
 
     if (wanted.has("codex")) {
-      const codex = checkCodexVersion();
-      checksToRun.push(codex, checkCodexAuth(codex));
+      const codexRows = checkCodexRows();
+      checksToRun.push(
+        codexRows.then(([cli]) => cli),
+        codexRows.then(([, auth]) => auth),
+      );
 
       if (wanted.has("codex-sandbox")) {
         checksToRun.push(checkCodexSandbox());

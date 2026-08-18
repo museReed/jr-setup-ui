@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  checkCodexRows,
   codexVersionCheck,
   checksForTools,
   normalizeNotFound,
@@ -158,6 +159,31 @@ assert.deepEqual(codexVersionCheck("codex-cli 0.145.9-beta.1", "win32"), {
   detail: "codex-cli 0.145.9-beta.1",
 });
 ok("Windows 只確認 Codex 指令可執行，不套 0.146.0 門檻");
+
+const codexProbeCalls = [];
+const [oldCodex, oldCodexAuth] = await checkCodexRows({
+  platform: "darwin",
+  probe: async (_cmd, args) => {
+    codexProbeCalls.push(args);
+    return {
+      type: "close",
+      exitCode: 0,
+      stdout: "codex-cli 0.145.9\n",
+      stderr: "",
+      output: "codex-cli 0.145.9\n",
+    };
+  },
+});
+assert.equal(oldCodex.status, "missing");
+assert.equal(oldCodex.installLabel, "升級");
+assert.deepEqual(oldCodexAuth, {
+  id: "codex-auth",
+  label: "Codex 登入狀態",
+  status: "missing",
+  detail: "請先升級 Codex",
+});
+assert.deepEqual(codexProbeCalls, [["--version"]]);
+ok("舊版 Codex 的 auth row 要求先升級，且不執行 login probe");
 
 let timeout;
 const startedAt = Date.now();

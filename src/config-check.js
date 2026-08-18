@@ -1142,7 +1142,7 @@ export function checkDemo(step) {
 
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
-  const ids = stepsForTools(tools);
+  const ids = stepsForTools(tools, process.platform);
 
   // 併行，跟 runEnvCheck 的 Promise.all 一致。序列跑的話 31 項裡那幾個會 spawn
   // 子行程的（hook 探測是 bash 一支、node 一支、還有 spawnEnv）成本是相加的，

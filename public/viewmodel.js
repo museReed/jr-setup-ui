@@ -1635,7 +1635,7 @@ export function installStatusMessage(action, result) {
   // ——設定檔是開視窗時讀的。不講的話他會以為修好了，回去打指令還是失敗。
   if (action === "fix-shell-wrapper") {
     return {
-      text: "已清除廢棄的引用。要開一個新的終端視窗，改動才會生效。",
+      text: "已清除舊 wrapper。要開一個新的終端視窗，改動才會生效。",
       failed: false,
     };
   }
