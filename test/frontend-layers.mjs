@@ -695,10 +695,13 @@ try {
   // 鎖住不等於關死：失敗時給一顆寫明白的「先跳過這張」。它不慶祝、不算完成，
   // 只登記在 skippedCards 裡讓學生走得掉。
   assert.match(files.app, /state\.skippedCards\.add\(cardId\)/, "跳過要登記");
+  // 學生那條路沒放寬：仍然只有「被鎖住、而且原因是驗證失敗」才給逃生口。多出來的
+  // state.devMode 由伺服器端的 JR_DEV 決定（backend-layers.mjs 釘住那件事），學生的
+  // one-liner 帶不到它。
   assert.match(
     files.app,
-    /const canSkip =\s*\n?\s*card\.kind === "config" && !nextUnlocked && verificationFailedHere;/,
-    "只有「被鎖住而且原因是驗證失敗」才給逃生口",
+    /const canSkip =\s*\n?\s*!nextUnlocked && \(state\.devMode \|\| \(card\.kind === "config" && verificationFailedHere\)\);/,
+    "逃生口的條件：學生要驗證失敗，開發模式則一律給",
   );
   assert.match(
     files.app,

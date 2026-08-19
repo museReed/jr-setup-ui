@@ -13,6 +13,14 @@
 
 EVENT="${1:-tool}"
 
+# hook payload 帶著這個 session 的 id，一路傳給 set-session-name.sh 去留下 breadcrumb
+# ——那是背景 session 之後找回「顯示我的那個 tab」的唯一線索（它掛在 daemon 底下，沒有
+# tty，也沒有自己的 watcher）。stdin 要在所有其他讀取之前吃掉；解析失敗就留空，命名退回
+# 舊的 pid-only 行為。
+PAYLOAD=$(cat)
+SESSION_ID=$(printf '%s' "$PAYLOAD" |
+  python3 -c "import json,sys;print(json.load(sys.stdin).get('session_id') or '')" 2>/dev/null)
+
 CLAUDE_PID=$PPID
 COUNTER_DIR="/tmp/claude-session-namer"
 mkdir -p "$COUNTER_DIR"
@@ -38,7 +46,7 @@ fi
 # and one whitelist rule covers it. Pass the hook's own CLAUDE_PID literally; it
 # must NOT be re-expanded as $PPID in the AI's Bash-tool shell, which can sit one
 # process layer deeper → off-by-one → the name lands in the wrong session-name file.
-WRITE_CMD="$HOME/.claude/hooks/set-session-name.sh '{名稱}' ${CLAUDE_PID}"
+WRITE_CMD="$HOME/.claude/hooks/set-session-name.sh '{名稱}' ${CLAUDE_PID} ${SESSION_ID}"
 
 RULES="命名規則：\n- 格式：{emoji} {中文敘述}，emoji 取代英文動詞，技術名詞可保留英文\n- 總長度 ≤ 40 字元\n- emoji 只能從這 8 個選：🏗️ build/implement/refactor、🔧 fix、🐛 debug、📐 plan/design、📋 review/audit、💬 discuss、⛴️ pilot/spike、🔍 research\n- 例外：skill 明確指定前綴時以 skill 為準（handoff 用 📦 標記「已交接」）"
 

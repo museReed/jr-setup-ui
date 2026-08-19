@@ -130,6 +130,10 @@ const state = {
   // 驗證失敗、學生按了「先跳過這張」的卡。只放行「下一張」，不算完成——徽章、圓點、
   // 進度條走的仍然是 cardIsComplete，跳過的卡在那裡照樣是失敗。
   skippedCards: new Set(),
+  // JR_DEV=1 啟動時為 true：每張卡都給那顆「先跳過這張」，不必等驗證真的失敗。
+  // 驗 PR 的人要走完整條流程，而 VM 裡登入、開終端那幾張本來就過不了。
+  // 伺服器端決定（見 GET /state），前端只是顯示。
+  devMode: false,
   manualCheckedIds: new Set(),
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
@@ -269,6 +273,7 @@ async function loadVerifiedSteps() {
     state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
     state.changedSteps = new Set(result.changed ?? []);
     state.manualCheckedIds = new Set(result.manual ?? []);
+    state.devMode = result.dev === true;
 
     for (const id of state.manualCheckedIds) {
       state.completedGateIds.add(id);
@@ -566,8 +571,15 @@ function renderWizard() {
           });
   // 只在「真的被鎖住、而且鎖住的原因是驗證失敗」時給出口。人工項沒勾、還沒安裝
   // 那種不給——那些他自己按得動，給了只是繞過去。
+  //
+  // 開發模式（JR_DEV=1）例外：任何被鎖住的卡都給出口。驗 PR 的人要走完整條流程，
+  // 而 VM 裡登入、開終端那幾張本來就過不了，卡在那裡後面就都驗不到了。
+  //
+  // ⚠️ 刻意沿用同一顆「先跳過這張」而不是另做一顆「標記為通過」：跳過**不會**把卡片
+  // 記成完成，徽章、圓點、進度條走的仍然是 cardIsComplete。真的標成完成的話，驗 PR
+  // 時看到的畫面就不是學生會看到的畫面了，反而更難發現壞掉的地方。
   const canSkip =
-    card.kind === "config" && !nextUnlocked && verificationFailedHere;
+    !nextUnlocked && (state.devMode || (card.kind === "config" && verificationFailedHere));
   // 「這張卡完成了嗎」全站只有一個答案：cardIsComplete。
   //
   // 這裡原本另外收三條路：
@@ -1117,7 +1129,12 @@ function renderWizardNav({
             onClick: () => goToSection(nextSection.id, "first"),
           }
       : canSkip
-        ? skipNavSpec(cardId, "先跳過這張", onNext)
+        ? skipNavSpec(
+            cardId,
+            // 開發模式那顆標出來，免得驗 PR 的人把它當成學生也看得到的出口。
+            state.devMode ? "先跳過這張（測試模式）" : "先跳過這張",
+            onNext,
+          )
         : { show: nextUnlocked, label: "下一張", onClick: onNext },
   });
 }

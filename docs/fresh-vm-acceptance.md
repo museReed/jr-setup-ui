@@ -40,8 +40,12 @@ irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 |
 macOS：
 
 ```bash
-JR_BRANCH=feature/ui-cards curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | bash
+curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | JR_BRANCH=feature/ui-cards bash
 ```
+
+⚠️ `JR_BRANCH=` 要放在 **`bash` 前面**。放在 `curl` 前面（本文件原本就是那樣寫的）只會
+把變數設給 `curl`，`bash` 收不到，於是**靜靜地抓 `main`**——畫面上唯一的破綻是「下載
+嚮導」括號裡印的分支名，不特別看就過去了。
 
 Windows：
 
@@ -49,7 +53,25 @@ Windows：
 $JrBranch="feature/ui-cards"; irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 | iex
 ```
 
-**要看到**：「下載嚮導」那行後面括號印的是你指定的分支，不是 `main`。
+**要看到**：「下載嚮導」那行後面括號印的是你指定的分支，不是 `main`。事後也查得到：
+
+```bash
+cat ~/.jr-setup/app/.jr-source
+```
+
+### 驗 PR 時跳過過不了的卡
+
+VM 裡登入、開終端那幾張卡本來就過不了，卡在那裡後面就全部驗不到。啟動時帶 `JR_DEV=1`，
+每張被鎖住的卡都會多一顆「先跳過這張（測試模式）」：
+
+```bash
+curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | JR_BRANCH=feature/ui-cards JR_DEV=1 bash
+```
+
+⚠️ 它**不會**把卡片記成完成——徽章、圓點、進度條走的仍然是真正的判定。這是刻意的：
+驗 PR 時看到的畫面要跟學生看到的一樣，標成完成反而會蓋掉真正壞掉的地方。
+
+學生那條 one-liner 帶不到這個變數，所以他們永遠看不到這顆鍵。
 
 ⚠️ bootstrap 腳本**自己**還是從 `main` 抓的。PR 若動到 `setup.ps1` / `setup.sh`
 本身，這條路徑驗不到那個改動——那種 PR 要合併進 `main` 之後再照本文件重跑一次。
@@ -162,6 +184,8 @@ hook 沒裝好的話 skill 裝了也叫不動。
 | Codex 的交接文件驗證失敗、改名那段沒動作 | `~/.agents/skills/_shared/` 沒跟著裝到 |
 | 跳出權限詢問要你同意命名指令 | 白名單沒生效，或 Windows 薄殼沒裝到 |
 | 名字寫進 `~/.claude/session-names/*.txt` 但標題不變 | watcher 沒起來、起錯方式、或被別人蓋掉 |
+| `/bg` 背景化之後，分頁標題沒跟著換 | 背景 session 沒有自己的終端，靠 `~/.claude/session-terminals/{session-id}` 留下的線索找回分頁。**已知限制**：daemon 有時會認領預熱好的 `claude bg-spare` 進程，那種 session 查不到來源，分頁就維持原樣——右下角名牌仍然正確 |
+| 背景 session 右下角仍是英文 slug | 那個名字來自 `~/.claude/jobs/{jobId}/state.json`，要下一次命名事件（下一句話、或 tool 用量到門檻）才會寫進去 |
 | `codex` 完全沒有命名動作 | hooks.json 沒寫出來，或信任提示沒接受 |
 | 串接指令 `echo a && echo b` 沒被擋 | hook 註冊的指令路徑壞了（不是腳本壞了） |
 
