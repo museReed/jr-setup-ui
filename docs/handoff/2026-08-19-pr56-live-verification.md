@@ -18,6 +18,7 @@ Date: 2026-08-19
 - 直接啟動 Codex 0.148.0 真實 TUI，session `01a01a28-0c34-7dd3-a1f1-d5a756c686ba` 成功改名為 `🔧 PR56 原生命名驗證`。
 - TUI 實際輸出 OSC 0 `🔧 PR56 原生命名驗證`，footer 同步顯示新名稱，SQLite `threads.name` 也一致。
 - 驗證期間沒有建立 `jr-tab-sync-codex-*` 暫存檔；測試 Codex session 與嚮導 server 均已關閉。
+- 完整測試以乾淨 HOME 重跑：48/48 個測試檔、761 項測試全數通過；真實 HOME 的 46/48 是安裝後多了兩個動態環境列，固定數量斷言受到本機環境影響。
 
 ## 必讀檔案
 
