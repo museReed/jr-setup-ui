@@ -109,26 +109,36 @@ function createRpcClient(socket) {
   };
 }
 
-function chooseThread(threads) {
-  if (requestedThreadId) {
-    const requested = threads.find(({ id }) => id === requestedThreadId);
-    if (!requested) {
-      throw new Error(
-        `thread/list 找不到 CODEX_THREAD_ID=${requestedThreadId}`,
-      );
-    }
-    return requested;
+async function chooseThread(rpc) {
+  const loaded = await rpc.call("thread/loaded/list");
+  const loadedIds = loaded.data ?? [];
+
+  let threadId = requestedThreadId;
+  if (!threadId && loadedIds.length === 1) {
+    [threadId] = loadedIds;
   }
 
-  const loaded = threads.find(
-    ({ status }) => status?.type && status.type !== "notLoaded",
-  );
-  if (!loaded) {
+  if (!threadId && loadedIds.length === 0) {
     throw new Error(
       "找不到已載入的 Codex thread；請先在 remote TUI 送出一則訊息",
     );
   }
-  return loaded;
+  if (!threadId) {
+    throw new Error(
+      `目前載入了 ${loadedIds.length} 個 thread；請設定 CODEX_THREAD_ID 後重跑：${loadedIds.join(", ")}`,
+    );
+  }
+  if (requestedThreadId && !loadedIds.includes(requestedThreadId)) {
+    throw new Error(
+      `CODEX_THREAD_ID=${requestedThreadId} 目前未載入；已載入：${loadedIds.join(", ") || "<無>"}`,
+    );
+  }
+
+  const current = await rpc.call("thread/read", {
+    threadId,
+    includeTurns: false,
+  });
+  return current.thread;
 }
 
 const socket = new WebSocket(serverUrl);
@@ -146,13 +156,7 @@ try {
   });
   rpc.notify("initialized");
 
-  const list = await rpc.call("thread/list", {
-    limit: 10,
-    sortKey: "updated_at",
-    sortDirection: "desc",
-    sourceKinds: ["cli"],
-  });
-  const current = chooseThread(list.data ?? []);
+  const current = await chooseThread(rpc);
   const newName =
     requestedName ||
     `Windows watcher-free rename ${new Date()

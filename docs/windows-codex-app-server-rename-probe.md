@@ -6,14 +6,14 @@
 
 - Codex CLI 0.146.0 或更新版本。
 - Node.js 22 或更新版本；測試腳本使用 Node 內建的 WebSocket client。
-- 三個 Windows Terminal 分頁。
+- 三個 Windows Terminal 分頁；Windows PowerShell 5.1 即可。
 
-每個分頁都先執行 `pwsh -NoProfile`，避免既有 PowerShell profile 啟動 tab-sync Watcher。
+每個分頁都先執行 `powershell.exe -NoProfile`，避免既有 PowerShell profile 啟動 tab-sync Watcher。
 
 ## 1. 分頁 A：啟動 app-server
 
 ```powershell
-pwsh -NoProfile
+powershell.exe -NoProfile
 ```
 
 ```powershell
@@ -29,7 +29,7 @@ codex app-server --listen ws://127.0.0.1:4500
 ## 2. 分頁 B：連接 Codex TUI
 
 ```powershell
-pwsh -NoProfile
+powershell.exe -NoProfile
 ```
 
 ```powershell
@@ -37,7 +37,7 @@ Remove-Item Env:AI_TAB_SYNC_FILE -ErrorAction SilentlyContinue
 ```
 
 ```powershell
-codex -c 'tui.status_line=["thread-title"]' -c 'tui.terminal_title=["thread"]' --remote ws://127.0.0.1:4500
+codex -c "tui.status_line=['thread-title']" -c "tui.terminal_title=['thread']" --remote ws://127.0.0.1:4500
 ```
 
 進入 TUI 後送出以下訊息，等 Codex 回答完，再保持 TUI 開啟：
@@ -54,7 +54,7 @@ WINDOWS_APP_SERVER_RENAME_PROBE
 node .\scripts\test-windows-codex-app-server-rename.mjs
 ```
 
-腳本會挑最近更新且仍載入中的 CLI thread，呼叫 `thread/name/set`，再用 `thread/read` 確認名稱已保存。
+腳本會透過 `thread/loaded/list` 找出 app-server 中唯一載入的 thread，呼叫 `thread/name/set`，再用 `thread/read` 確認名稱已保存。
 
 若同時開著多個 Codex TUI，可指定 thread id：
 
