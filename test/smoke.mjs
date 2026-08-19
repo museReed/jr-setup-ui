@@ -179,8 +179,14 @@ try {
   const expectedChecks =
     13 + (process.platform === "darwin" ? 1 : 0) +
     (process.platform === "win32" ? 6 : 0);
-  assert.equal(env.checks.length, expectedChecks);
-  ok(`正確 token 的 GET /env 回傳 os 與 ${expectedChecks} 筆 checks`);
+  // npm-leftover / brew-leftover / quarantine 是條件列，出不出現取決於這台機器有沒有隔離區殘留
+  // （見 test/env.mjs 的同一段說明）。不濾掉的話有殘留的機器會多兩列而無故變紅。
+  const conditionalIds = new Set(["quarantine", "npm-leftover", "brew-leftover"]);
+  const fixedChecks = env.checks.filter(
+    (check) => !conditionalIds.has(check.id),
+  );
+  assert.equal(fixedChecks.length, expectedChecks);
+  ok(`正確 token 的 GET /env 回傳 os 與 ${expectedChecks} 筆固定 checks`);
 
   assert(
     env.checks.every((check) => Object.hasOwn(check, "installAction")),

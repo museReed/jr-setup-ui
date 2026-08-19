@@ -339,11 +339,18 @@ if (process.platform === "darwin") {
 // 兩個平台都有的選用列，排在平台專屬那幾列之後（跟 checksForPlatform 一致）。
 expectedIds.push("typeless");
 
-assert.equal(result.checks.length, expectedIds.length);
-assert.deepEqual(
-  result.checks.map(({ id }) => id),
-  expectedIds,
-);
+// runEnvCheck 最後會補上兩列「看完別人的結果才決定要不要出現」的條件列
+// （npm-leftover / brew-leftover / quarantine，見 env-check.js）。它們不在 CHECKS 清單裡，出不出現
+// 取決於這台機器有沒有隔離區殘留——回鍋學生一定有，開發機跑過一輪清理也會有。
+// 所以比對前要濾掉，否則在有殘留的機器上跑測試會多兩列而無故變紅，看起來像 env
+// 檢查壞了（實測查了一輪才發現是 ~/.jr-setup/quarantine 留著）。
+const CONDITIONAL_CHECK_IDS = new Set(["quarantine", "npm-leftover", "brew-leftover"]);
+const actualIds = result.checks
+  .map(({ id }) => id)
+  .filter((id) => !CONDITIONAL_CHECK_IDS.has(id));
+
+assert.equal(actualIds.length, expectedIds.length);
+assert.deepEqual(actualIds, expectedIds);
 
 for (const check of result.checks) {
   assert.equal(typeof check.id, "string");
