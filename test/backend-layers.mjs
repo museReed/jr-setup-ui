@@ -174,6 +174,27 @@ try {
     "sse.js 不依賴任何一層——它只是事件格式",
   );
   ok("sse.js 是純協定層，不依賴任何人");
+
+  // 開發模式會讓每張卡都長出「先跳過這張」。學生按得到的話整套驗收就作廢了，所以
+  // 這件事只能由伺服器端的環境變數決定：學生那條 one-liner 帶不到它，而放在前端的話
+  // devtools 改個變數就有了。
+  assert.match(
+    read("server.js"),
+    /dev: process\.env\.JR_DEV === "1"/,
+    "開發模式要由伺服器端的 JR_DEV 決定",
+  );
+  const app = read("../public/app.js");
+  assert.match(
+    app,
+    /state\.devMode = result\.dev === true;/,
+    "前端的 devMode 只能從伺服器回應讀，不可以自己算",
+  );
+  assert.equal(
+    (app.match(/state\.devMode =/g) ?? []).length,
+    1,
+    "devMode 只有一個賦值點——多一個就等於多一條打開它的路",
+  );
+  ok("開發模式的跳過鍵由伺服器端 JR_DEV 決定，前端改不出來");
 } catch (error) {
   console.log(`not ok - ${error.message}`);
   process.exitCode = 1;

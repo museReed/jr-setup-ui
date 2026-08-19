@@ -40,8 +40,12 @@ irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 |
 macOS：
 
 ```bash
-JR_BRANCH=feature/ui-cards curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | bash
+curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | JR_BRANCH=feature/ui-cards bash
 ```
+
+⚠️ `JR_BRANCH=` 要放在 **`bash` 前面**。放在 `curl` 前面（本文件原本就是那樣寫的）只會
+把變數設給 `curl`，`bash` 收不到，於是**靜靜地抓 `main`**——畫面上唯一的破綻是「下載
+嚮導」括號裡印的分支名，不特別看就過去了。
 
 Windows：
 
@@ -49,7 +53,25 @@ Windows：
 $JrBranch="feature/ui-cards"; irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 | iex
 ```
 
-**要看到**：「下載嚮導」那行後面括號印的是你指定的分支，不是 `main`。
+**要看到**：「下載嚮導」那行後面括號印的是你指定的分支，不是 `main`。事後也查得到：
+
+```bash
+cat ~/.jr-setup/app/.jr-source
+```
+
+### 驗 PR 時跳過過不了的卡
+
+VM 裡登入、開終端那幾張卡本來就過不了，卡在那裡後面就全部驗不到。啟動時帶 `JR_DEV=1`，
+每張被鎖住的卡都會多一顆「先跳過這張（測試模式）」：
+
+```bash
+curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | JR_BRANCH=feature/ui-cards JR_DEV=1 bash
+```
+
+⚠️ 它**不會**把卡片記成完成——徽章、圓點、進度條走的仍然是真正的判定。這是刻意的：
+驗 PR 時看到的畫面要跟學生看到的一樣，標成完成反而會蓋掉真正壞掉的地方。
+
+學生那條 one-liner 帶不到這個變數，所以他們永遠看不到這顆鍵。
 
 ⚠️ bootstrap 腳本**自己**還是從 `main` 抓的。PR 若動到 `setup.ps1` / `setup.sh`
 本身，這條路徑驗不到那個改動——那種 PR 要合併進 `main` 之後再照本文件重跑一次。

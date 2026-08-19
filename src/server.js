@@ -283,6 +283,12 @@ export async function startServer({
     changed: await loadChangedSteps(),
     manual: await loadManualChecked(),
     selection: await loadSelection(),
+    // 開發模式：每張卡都給一顆「先跳過這張」，不必等驗證真的失敗。驗 PR 時卡在
+    // 一張過不了的卡上就走不下去了（VM 裡登入、開終端那幾張特別容易卡）。
+    //
+    // ⚠️ 判斷放在伺服器端，前端只是顯示。學生那條 one-liner 不可能帶到這個環境
+    // 變數，而放在前端的話 devtools 改個變數就有了。
+    dev: process.env.JR_DEV === "1",
   });
   return;
   },
