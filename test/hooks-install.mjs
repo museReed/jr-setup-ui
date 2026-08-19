@@ -157,6 +157,11 @@ try {
   );
   assert.equal(codexSettings.hooks.PostToolUse.length, 1);
   assert.equal(codexSettings.hooks.UserPromptSubmit.length, 1);
+  const codexHelper = codexStep.hookFiles.find(
+    (file) => file.base === "codex-session-name-set",
+  );
+  assert(codexHelper, "POSIX Codex namer 必須連 helper 一起安裝");
+  assert.equal(readFileSync(codexHelper.target, "utf8").length > 0, true);
   ok("Codex 命名 hook 實際安裝可重跑，hooks.json 保留單份註冊");
 
   // 迴歸：規則不能是「powershell -File …」那種形狀。Claude Code 拒絕用白名單

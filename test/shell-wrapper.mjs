@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { TAB_SYNC_MARKER } from "../src/config-install.js";
+import * as envCheck from "../src/env-check.js";
 import {
   findDeadWrappers,
   removeWrapperBlocks,
@@ -15,6 +26,7 @@ function ok(description) {
 const DEAD = "C:\\Users\\Reed\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.exe";
 const nothingExists = () => false;
 const everythingExists = () => true;
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 try {
   // seed-dirty-env 塞進去的就是這個形狀。
@@ -69,6 +81,121 @@ try {
     0,
   );
   ok("tab-sync 自己的區塊不會被當成壞掉的 wrapper");
+
+  const oldPosixTabSync = [
+    "export KEEP_BEFORE=1",
+    `# >>> ${TAB_SYNC_MARKER} >>>`,
+    "claude() { command claude \"$@\"; }",
+    "codex() { command codex \"$@\"; }",
+    `# <<< ${TAB_SYNC_MARKER} <<<`,
+    "export KEEP_AFTER=1",
+  ].join("\n");
+  const oldPosixBlocks = findDeadWrappers(oldPosixTabSync, {
+    platform: "darwin",
+    exists: everythingExists,
+  });
+  assert.equal(oldPosixBlocks.length, 1);
+  assert.equal(oldPosixBlocks[0].reason, "native-title");
+  assert.equal(
+    removeWrapperBlocks(oldPosixTabSync, oldPosixBlocks),
+    [
+      "export KEEP_BEFORE=1",
+      `# >>> ${TAB_SYNC_MARKER} >>>`,
+      'claude() { command claude "$@"; }',
+      `# <<< ${TAB_SYNC_MARKER} <<<`,
+      "export KEEP_AFTER=1",
+    ].join("\n"),
+  );
+  ok("POSIX 舊 tab-sync marker 只移除 codex()，保留 Claude wrapper");
+
+  const markerMention = [
+    `# 文件提到 ${TAB_SYNC_MARKER}，但這不是區塊標記`,
+    "codex() {",
+    "  '/gone/codex' \"$@\"",
+    "}",
+  ].join("\n");
+  assert.equal(
+    findDeadWrappers(markerMention, {
+      platform: "darwin",
+      exists: nothingExists,
+    }).length,
+    1,
+  );
+  ok("普通註解提到 marker 不會改變 wrapper 掃描範圍");
+
+  const unmatchedMarker = [
+    `# >>> ${TAB_SYNC_MARKER} >>>`,
+    'claude() { command claude "$@"; }',
+  ].join("\n");
+  assert.throws(
+    () =>
+      findDeadWrappers(unmatchedMarker, {
+        platform: "darwin",
+        exists: everythingExists,
+      }),
+    /標記不成對/,
+  );
+  ok("缺少 end marker 時 fail-safe，不猜要刪哪一段");
+
+  const duplicateMarkers = [
+    `# >>> ${TAB_SYNC_MARKER} >>>`,
+    'claude() { command claude "$@"; }',
+    `# <<< ${TAB_SYNC_MARKER} <<<`,
+    `# >>> ${TAB_SYNC_MARKER} >>>`,
+    'claude() { command claude "$@"; }',
+    `# <<< ${TAB_SYNC_MARKER} <<<`,
+  ].join("\n");
+  assert.throws(
+    () =>
+      findDeadWrappers(duplicateMarkers, {
+        platform: "darwin",
+        exists: everythingExists,
+      }),
+    /重複/,
+  );
+  ok("重複 marker 時 fail-safe，不猜哪一組才是真的");
+
+  const claudeOnlyTabSync = [
+    `# >>> ${TAB_SYNC_MARKER} >>>`,
+    "claude() { command claude \"$@\"; }",
+    `# <<< ${TAB_SYNC_MARKER} <<<`,
+  ].join("\n");
+  assert.equal(
+    findDeadWrappers(claudeOnlyTabSync, {
+      platform: "darwin",
+      exists: nothingExists,
+    }).length,
+    0,
+  );
+  ok("POSIX 新 Claude-only tab-sync marker 不誤報");
+
+  const mycodexAliases = [
+    "export KEEP_A=1",
+    "alias codex=$HOME/.local/bin/mycodex",
+    "export KEEP_B=1",
+    "alias codex='/opt/tools/mycodex'",
+    "export KEEP_C=1",
+  ].join("\n");
+  const aliasBlocks = findDeadWrappers(mycodexAliases, {
+    platform: "linux",
+    exists: everythingExists,
+  });
+  assert.equal(aliasBlocks.length, 2);
+  assert(aliasBlocks.every(({ reason }) => reason === "native-title"));
+  assert.equal(
+    removeWrapperBlocks(mycodexAliases, aliasBlocks),
+    ["export KEEP_A=1", "export KEEP_B=1", "export KEEP_C=1"].join("\n"),
+  );
+  ok("POSIX 有無引號的 mycodex alias 都只移除該行，鄰行保留");
+
+  assert.equal(
+    findDeadWrappers("alias codex='codex --model gpt-5'", {
+      platform: "darwin",
+      exists: everythingExists,
+    }).length,
+    0,
+  );
+  ok("不是 mycodex 的 codex alias 不誤傷");
 
   // 相對路徑判斷不了它相對於誰，標成壞的只會誤傷學生自己寫的函式。
   const relative = ["function claude {", "  & 'bin/claude' @args", "}"].join(
@@ -153,6 +280,97 @@ try {
   // 路徑仍然要拿得到——只是不放在那一列上。
   assert.equal(claudeOnly.deadPath, "/gone/claude");
   ok("死路徑另外附在結果上，需要時才顯示");
+
+  const nativeTitle = shellWrapperStatus(oldPosixBlocks);
+  assert.equal(nativeTitle.status, "warn");
+  assert.match(nativeTitle.fixLabel, /Codex wrapper/);
+  assert.match(nativeTitle.detail, /覆蓋.*原生.*標題/);
+  ok("舊 Codex wrapper 的狀態文案會說明它覆蓋原生標題");
+
+  const nativeTitleAndDeadClaude = shellWrapperStatus([
+    ...oldPosixBlocks,
+    { command: "claude", deadPath: "/gone/claude" },
+  ]);
+  assert.match(nativeTitleAndDeadClaude.fixLabel, /Codex wrapper.*claude/);
+  assert.match(nativeTitleAndDeadClaude.detail, /Codex.*claude/);
+  ok("舊 Codex wrapper 與失效 Claude wrapper 同時存在時文案兩者都會顯示");
+
+  assert.equal(typeof envCheck.checkShellWrapper, "function");
+  const unreadableProfile = await envCheck.checkShellWrapper({
+    home: "/fake-home",
+    platform: "darwin",
+    exists: (target) => target.endsWith(".zshrc"),
+    read: async () => {
+      throw new Error("EACCES");
+    },
+  });
+  assert.equal(unreadableProfile.status, "warn");
+  assert.match(unreadableProfile.detail, /無法讀取/);
+  assert.equal(envCheck.withActions(unreadableProfile).fixAction, null);
+  ok("profile 讀取失敗會回黃燈，且不提供會誤導的修復鍵");
+
+  const fakeHome = mkdtempSync(path.join(tmpdir(), "jr-shell-wrapper-home-"));
+  const zshrc = path.join(fakeHome, ".zshrc");
+  writeFileSync(zshrc, `${oldPosixTabSync}\nalias codex=\"$HOME/bin/mycodex\"\n`);
+  const runFix = () =>
+    execFileSync(
+      process.execPath,
+      [path.join(REPO_ROOT, "scripts", "fix-shell-wrapper.mjs"), "--apply"],
+      {
+        env: { ...process.env, HOME: fakeHome },
+        encoding: "utf8",
+      },
+    );
+  runFix();
+  const afterFirstFix = readFileSync(zshrc, "utf8");
+  assert.equal(
+    afterFirstFix,
+    [
+      "export KEEP_BEFORE=1",
+      `# >>> ${TAB_SYNC_MARKER} >>>`,
+      'claude() { command claude "$@"; }',
+      `# <<< ${TAB_SYNC_MARKER} <<<`,
+      "export KEEP_AFTER=1",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(
+    readdirSync(fakeHome).filter((name) => name.startsWith(".zshrc.bak.")).length,
+    1,
+  );
+  runFix();
+  assert.equal(readFileSync(zshrc, "utf8"), afterFirstFix);
+  assert.equal(
+    readdirSync(fakeHome).filter((name) => name.startsWith(".zshrc.bak.")).length,
+    1,
+  );
+  ok("修復腳本會先備份 fake HOME profile，且重跑保持冪等");
+
+  const malformedHome = mkdtempSync(
+    path.join(tmpdir(), "jr-shell-wrapper-malformed-home-"),
+  );
+  const malformedZshrc = path.join(malformedHome, ".zshrc");
+  const malformedBashrc = path.join(malformedHome, ".bashrc");
+  const validDirtyProfile = 'alias codex="$HOME/bin/mycodex"\n';
+  const invalidProfile = `${unmatchedMarker}\n`;
+  writeFileSync(malformedZshrc, validDirtyProfile);
+  writeFileSync(malformedBashrc, invalidProfile);
+  const malformedFix = spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "fix-shell-wrapper.mjs"), "--apply"],
+    {
+      env: { ...process.env, HOME: malformedHome },
+      encoding: "utf8",
+    },
+  );
+  assert.notEqual(malformedFix.status, 0);
+  assert.equal(readFileSync(malformedZshrc, "utf8"), validDirtyProfile);
+  assert.equal(readFileSync(malformedBashrc, "utf8"), invalidProfile);
+  assert.equal(
+    readdirSync(malformedHome).filter((name) => name.includes(".bak.")).length,
+    0,
+  );
+  ok("任一 profile marker 異常時修復腳本整批不改檔，也不產生備份");
 } catch (error) {
   console.error(error);
   process.exit(1);

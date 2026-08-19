@@ -177,12 +177,12 @@ export const GUIDANCE = {
   // 這一列的說明只有一行（放長了會把修復鍵擠出畫面），完整的說法寫在這裡。
   // 它是整段唯一「東西都裝好了、但還是叫不動」的狀況，不講清楚學生會以為是誤報。
   "shell-wrapper": {
-    symptom: "終端機打 codex 說找不到指令，但這裡明明顯示已安裝",
-    expected: "打 codex 會回版本號",
+    symptom: "終端機打 Claude 或 Codex 叫不動，或分頁標題沒有跟著 session 名稱更新",
+    expected: "Claude 與 Codex 都叫得動，分頁標題也會走目前平台的命名路徑",
     checks: [
-      "你的 shell 設定檔裡有一個同名的舊捷徑，指向上一輪課程留下、後來被移除的檔案",
-      "它排在真正的程式前面，所以每次都是它接手——不清掉的話，重裝幾次都一樣",
-      "按那一列的「清除廢棄的引用」，清完要開一個新的終端視窗才會生效",
+      "shell 設定檔可能同時留著失效的 Claude 捷徑，以及會接手 Codex 標題的舊 wrapper",
+      "它們排在真正的程式前面，所以會讓 CLI 叫不動，或把 Codex 的平台命名路徑蓋掉",
+      "按那一列的清除按鈕，清完要開一個新的終端視窗才會生效",
     ],
     diagnose: null,
   },
@@ -287,6 +287,8 @@ export const GUIDANCE = {
     checks: [
       "安裝後有沒有關掉舊分頁，再開一個新分頁",
       "第一次使用 Codex 時，有沒有接受 hook 信任提示",
+      "macOS / Linux：Codex 的 config.toml 裡有沒有設定 `terminal_title = [\"thread\"]`",
+      "Windows：有沒有先完成「分頁自己報上名字」，讓 Codex tab-sync wrapper 載入 PowerShell profile",
     ],
     diagnose: null,
   },
@@ -294,7 +296,7 @@ export const GUIDANCE = {
     symptom: "名字已經寫進同步檔，但終端分頁標題沒有動",
     expected: "同步檔一出現新名字，分頁標題就跟著更新",
     checks: [
-      "shell profile 裡有沒有載入 claude / codex wrapper",
+      "shell profile 裡有沒有載入 claude wrapper",
       "安裝 wrapper 後有沒有關掉舊分頁，再開一個新分頁",
     ],
     diagnose: "diagnose-title-path",
@@ -314,6 +316,7 @@ export const GUIDANCE = {
     checks: [
       "有沒有在新終端分頁啟動 Codex",
       "第一次使用 Codex 時，有沒有接受 hook 信任提示",
+      "macOS / Linux 看原生 terminal title；Windows 看 tab-sync wrapper 更新的標題",
     ],
     diagnose: null,
   },
@@ -618,7 +621,7 @@ const ENV_CARD_META = {
     label: "清掉上一輪留下的舊捷徑",
     logo: "logo-terminal",
     description:
-      "上過課的機器常留著指向已刪程式的舊捷徑，會讓後面裝好的東西全都叫不動。這張把它清掉",
+      "上過課的機器可能同時留著 Claude 與 Codex 的舊捷徑，會讓 CLI 叫不動或蓋掉分頁標題。這張把它清掉",
   },
   // 跟上面那張同一個性質、同一段時機：都是「上一輪留下的東西擋著這一輪」。
   // 兩張都排在 CLI 之前（見 ENV_FIRST），不然學生會先裝完再發現裝的那支叫不到。

@@ -53,9 +53,11 @@ approvals_reviewer = "auto_review"
 # The /statusline menu edits this exact setting — same effect.
 [tui]
 status_line = [
+  "thread-title",
   "context-used",
   "model-with-reasoning",
   "current-dir",
   "weekly-limit",
 ]
 status_line_use_colors = true
+terminal_title = ["thread"]

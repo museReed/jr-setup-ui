@@ -251,6 +251,36 @@ export function parseCodexAuth(stdout) {
   };
 }
 
+export function codexVersionCheck(stdout, platform = process.platform) {
+  const detail =
+    typeof stdout === "string" ? stdout.trim().split("\n")[0].trim() : "";
+  const base = { id: "codex", label: "Codex CLI" };
+
+  if (platform === "win32") {
+    return { ...base, status: "ok", detail };
+  }
+
+  const match = detail.match(/(?:^|\s)(\d+)\.(\d+)\.(\d+)$/);
+  const version = match?.slice(1).map(Number) ?? null;
+  const supported =
+    version !== null &&
+    (version[0] > 0 || (version[0] === 0 && version[1] >= 146));
+
+  if (supported) {
+    return { ...base, status: "ok", detail };
+  }
+
+  return {
+    ...base,
+    status: "missing",
+    detail:
+      version === null
+        ? "無法辨識版本，請升級至穩定版 0.146.0 以上"
+        : `版本 ${version.join(".")} 過舊，請升級至穩定版 0.146.0 以上`,
+    installLabel: "升級",
+  };
+}
+
 // Windows 上 npm 安裝的 CLI 是 claude.cmd / codex.cmd 這種包裝檔，沒有同名 .exe。
 // spawn 不開 shell 時找不到裸指令，必須補上 .cmd 再試一次。
 // （實測：PowerShell 直接跑 `claude` 會去找 claude.ps1；spawn 則是整個找不到。）
@@ -357,7 +387,10 @@ async function spawnProbe(rawCmd, rawArgs) {
 export const FIX_ACTIONS = {
   "execution-policy": (status) =>
     status === "ok" ? null : "fix-execution-policy",
-  "shell-wrapper": (status) => (status === "warn" ? "fix-shell-wrapper" : null),
+  "shell-wrapper": (status, check) =>
+    status === "warn" && check?.fixable !== false
+      ? "fix-shell-wrapper"
+      : null,
   // 2026-08-12 接上了。8/11 不接的理由是「Store 版底下沙箱完全正常」——那次的
   // 測試無效（沙箱根本沒設定起來，見 codex-sandbox.js）。真的設定起來之後，
   // 市集版的 pwsh 在沙箱裡 20/20 失敗（上游 openai/codex#35871 量的）。
@@ -396,7 +429,7 @@ export const FIX_ACTIONS = {
   "gh-auth": (status) => (status === "warn" ? "login-gh" : null),
 };
 
-function withActions(check) {
+export function withActions(check) {
   // installable 為 false 的紅燈是「東西在、但用錯方式」——給安裝按鈕只會誤導。
   // optional 跟 missing 一樣要給安裝鍵：那一列是「選用但可以裝」，
   // 只認 missing 的話按鈕永遠不會出現，學生只看得到一句「未安裝」卻沒得按。
@@ -612,9 +645,9 @@ async function checkPowerShellEncoding() {
   }
 }
 
-async function checkVersion(id, label, cmd, args) {
+async function checkVersion(id, label, cmd, args, probe = runProbe) {
   try {
-    const result = await runProbe(cmd, args, {
+    const result = await probe(cmd, args, {
       emptyFailureMeansMissing: true,
     });
 
@@ -650,6 +683,22 @@ async function checkVersion(id, label, cmd, args) {
   } catch {
     return { id, label, status: "missing", detail: "尚未安裝" };
   }
+}
+
+async function checkCodexVersion(
+  probe = runProbe,
+  platform = process.platform,
+) {
+  const checked = await checkVersion(
+    "codex",
+    "Codex CLI",
+    "codex",
+    ["--version"],
+    probe,
+  );
+  return checked.status === "ok"
+    ? codexVersionCheck(checked.detail, platform)
+    : checked;
 }
 
 // Python 在 Windows 上叫什麼，取決於誰裝的：
@@ -688,26 +737,42 @@ async function checkPython() {
 
 // 這一列查的不是「裝了沒」，是「在你自己的終端機打得動嗎」。兩者會不一致：
 // 設定檔裡一個同名函式就能把裝好的執行檔整個蓋掉，而 PATH 上完全看不出異常。
-async function checkShellWrapper() {
+export async function checkShellWrapper({
+  home = homedir(),
+  platform = process.platform,
+  exists = existsSync,
+  read = readFile,
+} = {}) {
   const id = "shell-wrapper";
   const label = "終端機裡的 claude / codex 是活的";
   const dead = [];
+  let failed = false;
 
-  for (const profile of shellProfilePaths(homedir())) {
-    if (!existsSync(profile)) {
+  for (const profile of shellProfilePaths(home, platform)) {
+    if (!exists(profile)) {
       continue;
     }
 
     try {
-      const content = await readFile(profile, "utf8");
+      const content = await read(profile, "utf8");
 
-      for (const block of findDeadWrappers(content, { exists: existsSync })) {
+      for (const block of findDeadWrappers(content, { platform, exists })) {
         dead.push({ ...block, profile });
       }
     } catch {
-      // 讀不到就當作沒問題。這一列是額外的保險，不該因為權限之類的意外
-      // 讓學生看到一個他修不了的紅燈。
+      failed = true;
     }
+  }
+
+  if (failed) {
+    return {
+      id,
+      label,
+      status: "warn",
+      installable: false,
+      fixable: false,
+      detail: "無法讀取或解析 shell 設定檔，尚未完成檢查",
+    };
   }
 
   return { id, label, ...shellWrapperStatus(dead) };
@@ -1081,7 +1146,7 @@ async function checkClaudeAuth(installed) {
   }
 }
 
-async function checkCodexAuth(installed) {
+async function checkCodexAuth(installed, probe = runProbe) {
   const id = "codex-auth";
   const label = "Codex 登入狀態";
 
@@ -1090,12 +1155,18 @@ async function checkCodexAuth(installed) {
 
     if (cli.status !== "ok") {
       // CLI 那項自己逾時的話，這裡跟著說「需要先安裝」是二次誤導。
-      return cli.status === "warn"
-        ? timedOut(id, label)
-        : { id, label, status: "missing", detail: "需要先安裝" };
+      if (cli.status === "warn") {
+        return timedOut(id, label);
+      }
+      return {
+        id,
+        label,
+        status: "missing",
+        detail: cli.installLabel === "升級" ? "請先升級 Codex" : "需要先安裝",
+      };
     }
 
-    const result = await runProbe("codex", ["login", "status"]);
+    const result = await probe("codex", ["login", "status"]);
 
     if (result.type === "timeout") {
       return timedOut(id, label);
@@ -1116,6 +1187,14 @@ async function checkCodexAuth(installed) {
   } catch {
     return { id, label, status: "warn", detail: "無法判讀登入狀態" };
   }
+}
+
+export async function checkCodexRows({
+  probe = runProbe,
+  platform = process.platform,
+} = {}) {
+  const cli = checkCodexVersion(probe, platform);
+  return Promise.all([cli, checkCodexAuth(cli, probe)]);
 }
 
 async function checkGhAuth(installed) {
@@ -1173,8 +1252,11 @@ export async function runEnvCheck(tools = []) {
     }
 
     if (wanted.has("codex")) {
-      const codex = checkVersion("codex", "Codex CLI", "codex", ["--version"]);
-      checksToRun.push(codex, checkCodexAuth(codex));
+      const codexRows = checkCodexRows();
+      checksToRun.push(
+        codexRows.then(([cli]) => cli),
+        codexRows.then(([, auth]) => auth),
+      );
 
       if (wanted.has("codex-sandbox")) {
         checksToRun.push(checkCodexSandbox());
