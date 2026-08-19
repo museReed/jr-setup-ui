@@ -22,8 +22,12 @@ const script = path.join(
 
 function nameWritten(input) {
   const home = mkdtempSync(path.join(tmpdir(), "jr-emoji-"));
+  // CLAUDE_PROJECT_DIR 指到假 HOME：腳本會在工作目錄等於家目錄時跳過專案前綴，
+  // 所以這裡量到的就是純粹的 emoji 校驗結果。不設的話前綴會跟著跑測試時的所在
+  // 目錄變動（在 repo 裡是 [jr-setup-ui]，在別處是那層資料夾的名字），斷言會飄。
+  // 前綴本身另外由 session-name-project-tag.mjs 驗。
   execFileSync("bash", [script, input, String(process.pid)], {
-    env: { ...process.env, HOME: home },
+    env: { ...process.env, HOME: home, CLAUDE_PROJECT_DIR: home },
     encoding: "utf8",
   });
   const dir = path.join(home, ".claude", "session-names");
