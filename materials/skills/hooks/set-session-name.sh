@@ -146,8 +146,11 @@ live_sync_file() {
   fi
   for w in $(pgrep -f 'ai-tab-sync.sh' 2>/dev/null); do
     if [ "$(ps -o ppid= -p "$w" 2>/dev/null | tr -d ' ')" = "$TERMINAL_PID" ]; then
-      # watcher 的 argv 是：bash .../ai-tab-sync.sh <sync 檔> <tty>
-      ps -o args= -p "$w" 2>/dev/null | awk '{print $3}'
+      # watcher 的 argv 結尾固定是 `<sync 檔> <tty>`，但前面不固定：.zshrc 裝的
+      # wrapper 直接執行腳本（`ai-tab-sync.sh 檔 tty`），開發機的 myclaude 則是
+      # `bash ai-tab-sync.sh 檔 tty`。取倒數第二個欄位兩種都對；寫死第 3 個的話，
+      # 前者會取到 tty 路徑，然後把名字直接寫進終端裝置。
+      ps -o args= -p "$w" 2>/dev/null | awk '{print $(NF - 1)}'
       return
     fi
   done
