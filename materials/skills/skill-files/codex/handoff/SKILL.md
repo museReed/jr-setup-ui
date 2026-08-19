@@ -89,11 +89,13 @@ Commit 到當前 branch，不要切換 branch。
 改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`。唯一步驟＝寫 relay 檔：
 
 ```bash
-mkdir -p /tmp/codex-session-namer && echo '📦 {topic}' > /tmp/codex-session-namer/${PPID}.pending
+mkdir -p /tmp/codex-session-namer && echo '📦 {topic}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
 ```
 
-hook 會在下一個事件把名稱同步到 sidebar（SQLite）與 terminal tab。
-⚠️ 不要直接 `sqlite3 UPDATE threads`（只動 sidebar、不同步 tab）。
+hook 會在下一個事件依平台改名：POSIX（macOS / Linux）透過 Codex app-server
+更新 sidebar 與原生 terminal title；Windows 由 hook 更新 SQLite sidebar，再寫
+tab-sync 同步檔更新分頁標題。
+⚠️ 不要自行執行 `sqlite3 UPDATE threads`，正常路徑一律交給 hook。
 
 #### 5b: 回報
 
@@ -114,7 +116,7 @@ Branch: {current_branch}
 | 已完成的工作寫成長篇報告 | 新 session 花大量 context 讀 | ≤ 10 行，detail 指向必讀檔案 |
 | 缺「下一步」 | 新 session 不知道做什麼 | 必填，寫具體動作 |
 | 必讀檔案只列路徑 | 新 session 不知道為什麼要讀 | 每項附原因 |
-| 直接 sqlite3 UPDATE 改名 | 只動 sidebar，terminal tab 不同步 | Step 5a 寫 relay 檔 |
-| 用 ORDER BY updated_at_ms 找 session | 多 session 同時開會改錯 | relay 檔用 `${PPID}` key，hook 自己定位 |
+| 自行 sqlite3 UPDATE 改名 | 繞過平台對應的 hook 流程，sidebar 與分頁可能不同步 | Step 5a 寫 relay 檔 |
+| 用 ORDER BY updated_at_ms 找 session | 多 session 同時開會改錯 | relay 檔用 `${CODEX_THREAD_ID}` key，hook 自己定位 |
 | 起始 prompt 重述整份交接內容 | 浪費輸出，新 session 讀檔就有 | 只給 `讀 {絕對路徑}` 一行 |
 | 起始 prompt 用相對路徑 | 新 session cwd 不同會 404 | 一律絕對路徑 |

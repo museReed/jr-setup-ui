@@ -265,7 +265,7 @@ export function agentForStep(id) {
   return CODEX_STEPS.includes(id) ? "codex" : null;
 }
 
-export function stepsForTools(tools) {
+export function stepsForTools(tools, platform = process.platform) {
   const selected = tools.filter((tool) => TOOLS.includes(tool));
 
   if (selected.length === 0) {
@@ -275,7 +275,7 @@ export function stepsForTools(tools) {
   return [
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
-    "tab-sync",
+    ...(selected.includes("claude") || platform === "win32" ? ["tab-sync"] : []),
     // 命名與 context 監控拆開：兩者的檔案、註冊、驗證方式都不一樣，綁在一起的話
     // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
     ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
@@ -422,9 +422,11 @@ function powershellTabSyncFunction(command, watcherTarget) {
 }
 
 function tabSyncBlock(platform, watcherTarget) {
-  const build =
-    platform === "win32" ? powershellTabSyncFunction : posixTabSyncFunction;
-  return `${build("claude", watcherTarget)}\n\n${build("codex", watcherTarget)}`;
+  if (platform !== "win32") {
+    return posixTabSyncFunction("claude", watcherTarget);
+  }
+
+  return `${powershellTabSyncFunction("claude", watcherTarget)}\n\n${powershellTabSyncFunction("codex", watcherTarget)}`;
 }
 
 function hookCommand(target, platform, args = []) {
@@ -488,6 +490,13 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/hooks/${file}`,
     };
   });
+  if (id === "codex-namer" && platform !== "win32") {
+    hookFiles.push({
+      base: "codex-session-name-set",
+      source: "skills/hooks/codex-session-name-set.py",
+      target: `${agentDir}/hooks/codex-session-name-set.py`,
+    });
+  }
   // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
   // （原文：Command spawns a nested PowerShell process which cannot be validated），
   // 而「以後不要再問」寫下的規則含 session id，下次必失效。多裝一支 bash 薄殼把
@@ -801,6 +810,9 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         protectExisting: true,
         // 檔案已存在時也要把預設模式那兩個 key 補進去，不交給 AI 合併。
         mergeModes: true,
+        ...(platform === "win32"
+          ? { sourceTransform: "omit-codex-native-title" }
+          : {}),
       };
 
     case "codex-agents":
@@ -1039,6 +1051,23 @@ const CODEX_MODES = {
   approval_policy: '"on-request"',
   approvals_reviewer: '"auto_review"',
 };
+
+// Windows 仍靠 SQLite + tab-sync 命名；0.146 的原生 thread title 只用在 POSIX。
+// 共用同一份 template，安裝與檢查都走這個 transform，避免兩邊各維護一份內容。
+export function transformStepSource(content, step) {
+  if (step.sourceTransform !== "omit-codex-native-title") {
+    return content;
+  }
+
+  return content
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\s*terminal_title\s*=/.test(line) &&
+        !/^\s*["']thread-title["']\s*,?\s*(?:#.*)?$/.test(line),
+    )
+    .join("\n");
+}
 
 // Codex 有新舊兩套設定沙盒的方式，官方文件明說不能並存：
 // 「Don't combine with sandbox_mode or [sandbox_workspace_write]」。

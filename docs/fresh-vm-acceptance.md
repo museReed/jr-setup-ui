@@ -74,13 +74,20 @@ Claude Code / Codex / GitHub 逐一登入。
 
 **要看到**：每列裝完變成 **待驗證 ◐**，不是綠燈。綠燈要等驗證過才會出現。
 
+Codex 命名要按平台驗，不要把其中一條路徑套到另一個平台：
+
+| 平台 | Sidebar | 分頁標題 |
+|---|---|---|
+| **POSIX（macOS / Linux）** | hook 透過 app-server 更新 thread | Codex 原生 `terminal_title = ["thread"]` |
+| **Windows** | hook 更新 SQLite | PowerShell 的 Codex tab-sync wrapper 讀同步檔更新標題 |
+
 ## 五、三道人工關卡
 
 嚮導只能提示，不能代勞。漏掉任何一道，後面的驗證都會失敗：
 
 | # | 做什麼 | 為什麼 |
 |---|---|---|
-| 1 | **關掉終端分頁，開一個新的** | wrapper 寫在 `~/.zshrc` / PowerShell profile，舊分頁不會載入 |
+| 1 | **關掉終端分頁，開一個新的** | Claude wrapper 與 Windows 的 Codex tab-sync wrapper 要由新 shell 載入；POSIX Codex 則用原生標題 |
 | 2 | 第一次跑 `codex` 時**接受 hook 信任提示** | 沒接受的話 `~/.codex/config.toml` 的 `[hooks.state]` 是空的，整組 hook 不跑 |
 | 3 | 最後**回終端看分頁標題** | 沒有程式驗得到這一格 |
 

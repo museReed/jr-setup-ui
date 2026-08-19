@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   countInstalledRules,
@@ -15,6 +18,7 @@ import {
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
+  transformStepSource,
 } from "../src/config-install.js";
 
 function ok(description) {
@@ -23,6 +27,7 @@ function ok(description) {
 
 const HOME = "/Users/student";
 const AT = { lang: "zh-TW", home: HOME };
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 try {
   assert.deepEqual(stepsForTools(["claude"]), [
@@ -46,10 +51,9 @@ try {
     "obsidian-vault",
     "vault-agent-claude",
   ]);
-  assert.deepEqual(stepsForTools(["codex"]), [
+  assert.deepEqual(stepsForTools(["codex"], "darwin"), [
     "codex-config",
     "codex-agents",
-    "tab-sync",
     "codex-namer",
     "codex-monitor",
     "skill-codex-auto-rename",
@@ -98,7 +102,19 @@ try {
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
-  ok("既有規則之後才出現共用 tab sync 與各工具的 hooks");
+  assert.equal(stepsForTools(["codex"], "darwin").includes("tab-sync"), false);
+  assert.equal(stepsForTools(["codex"], "linux").includes("tab-sync"), false);
+  assert.equal(stepsForTools(["codex"], "win32").includes("tab-sync"), true);
+  assert.equal(stepsForTools(["claude"], "darwin").includes("tab-sync"), true);
+  assert.equal(
+    stepsForTools(["claude", "codex"], "linux").includes("tab-sync"),
+    true,
+  );
+  assert.deepEqual(
+    stepsForTools(["claude"]),
+    stepsForTools(["claude"], process.platform),
+  );
+  ok("POSIX Codex-only 不裝 tab sync；Claude、Windows 與既有 caller 維持原行為");
 
   assert.equal(hookFileName("context-monitor", "linux"), "context-monitor.sh");
   assert.equal(hookFileName("context-monitor", "darwin"), "context-monitor.sh");
@@ -120,13 +136,41 @@ try {
   assert.equal(describeStep("codex-agents", AT).protectExisting, true);
   ok("每步知道自己的來源與目標，會蓋掉使用者內容的步驟有標記");
 
+  const posixCodexConfig = describeStep("codex-config", {
+    ...AT,
+    platform: "linux",
+  });
+  const windowsCodexConfig = describeStep("codex-config", {
+    ...AT,
+    platform: "win32",
+  });
+  const codexTemplate = readFileSync(
+    path.join(REPO_ROOT, "materials", posixCodexConfig.source),
+    "utf8",
+  );
+  assert.equal(posixCodexConfig.sourceTransform, undefined);
+  assert.equal(windowsCodexConfig.sourceTransform, "omit-codex-native-title");
+  assert.equal(
+    transformStepSource(codexTemplate, posixCodexConfig),
+    codexTemplate,
+  );
+  const windowsCodexTemplate = transformStepSource(
+    codexTemplate,
+    windowsCodexConfig,
+  );
+  assert.doesNotMatch(windowsCodexTemplate, /"thread-title"/);
+  assert.doesNotMatch(windowsCodexTemplate, /^terminal_title\s*=/m);
+  assert.match(windowsCodexTemplate, /^status_line\s*=\s*\[/m);
+  assert.match(windowsCodexTemplate, /"context-used"/);
+  ok("Windows 用 step metadata 從共用 template 排除原生命名，POSIX 保留原內容");
+
   const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
   assert.equal(tabSync.kind, "tab-sync");
   assert.equal(tabSync.watcherSource, "skills/bin/ai-tab-sync.sh");
   assert.equal(tabSync.target, `${HOME}/.local/bin/ai-tab-sync.sh`);
   assert.equal(tabSync.rcTarget, `${HOME}/.zshrc`);
   assert.match(tabSync.rcBlock, /command claude "\$@"/);
-  assert.match(tabSync.rcBlock, /command codex "\$@"/);
+  assert.doesNotMatch(tabSync.rcBlock, /command codex "\$@"/);
 
   const windowsTabSync = describeStep("tab-sync", {
     ...AT,
@@ -135,7 +179,18 @@ try {
   assert.equal(windowsTabSync.watcherSource, "skills/bin/ai-tab-sync.ps1");
   assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
   assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
+  assert.match(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
   ok("tab sync 會描述 watcher、rc 檔與跳過函式的真正指令");
+
+  for (const lang of ["zh-TW", "zh-CN", "en"]) {
+    const template = readFileSync(
+      path.join(REPO_ROOT, "materials", "codex", lang, "config.toml.example"),
+      "utf8",
+    );
+    assert.match(template, /status_line = \[\s*"thread-title",/);
+    assert.match(template, /terminal_title = \["thread"\]/);
+  }
+  ok("三種語言的 Codex template 都顯示 thread 名稱與原生 terminal title");
 
   // watcher 用 [Console]::Title 改標題，那個 API 只作用在自己所在的 console。
   // -WindowStyle Hidden 會開一個新的 console，watcher 就改到自己的標題、碰不到

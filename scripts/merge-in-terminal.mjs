@@ -34,6 +34,10 @@ import {
   snapshotFile,
 } from "../src/merge-backup.js";
 import { mergeReport } from "../src/merge-report.js";
+import {
+  stageMergeSources,
+  withMergeSourceFailureCleanup,
+} from "../src/merge-sources.js";
 import { materialsDir } from "../src/paths.js";
 import { terminalCommand } from "../src/terminal-window.js";
 
@@ -104,11 +108,13 @@ console.log("");
 // 是 config-check 的 missingSourceLines——**跟畫面上那一列同一支函式**，不是各寫一份。
 // 各寫一份的結果會是「終端說完成、卡片說需要合併」。
 const materials = materialsDir();
+const mergeSources = stageMergeSources(materials, existing);
 const prompt = [
   `我要把工作坊的設定合併進我已經有的檔案，語言版本是 ${lang}。`,
   `要處理這 ${existing.length} 份：`,
   ...existing.map(
-    (entry) => `- 我的檔案 ${entry.target}，工作坊的新版在 ${path.join(materials, entry.source)}`,
+    (entry) =>
+      `- 我的檔案 ${entry.target}，工作坊的新版在 ${mergeSources.sourceFor(entry)}`,
   ),
   "請先把兩邊都讀完，再把工作坊的規則合併進我的檔案。",
   // 這三句是針對「AI 潤飾造成的缺行」寫的——那是這一步最常見的壞法。
@@ -183,44 +189,60 @@ function openTerminal(file) {
   });
 }
 
-const script = launcher();
-const { cmd, args } = openTerminal(script);
-spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
+const { outstanding, script } = await withMergeSourceFailureCleanup(
+  mergeSources,
+  async () => {
+    let script = null;
 
-console.log("已經開了一個新的終端視窗，合併在那裡進行。");
-console.log("請看那個視窗——它可能會問你問題，回答完它才會繼續。");
-console.log("");
+    try {
+      script = launcher();
+      const { cmd, args } = openTerminal(script);
+      spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
 
-// 等的是「工作坊那段真的進去了」，不是等視窗關掉、也不是等 agent 給訊號。
-//
-// ⚠️ **不要再回去用「請 agent 自己寫一個完成標記檔」。** 那是請求不是保證，跟
-// 「請你先備份」同一個性質——而備份我們早就改成自己拍了。2026-08-12 在 VM 上連續
-// 兩次驗證：Claude 與 Codex 都沒有寫那個檔案，其中一次還在回報裡寫著「已寫入
-// jr-merge-claude-md-…done」。學生看到的是「合併明明成功了，卡片卻停在安裝中」。
-//
-// 判準用 config-check 的 missingSourceLines——**跟畫面上那一列同一支函式**。
-// 各寫一份的結果會是「終端說完成、卡片說需要合併」。
-//
-// ⚠️ 要**全部**都到位才算完成。只看被按的那一份的話，AI 併完第一個就會被判成完成，
-// 而第二份根本沒動——那正是改成一顆按鈕之前的問題，不要用一個 bug 換另一個。
-const deadline = Date.now() + TIMEOUT_MS;
-let outstanding = await pending();
-let lastReportAt = 0;
+      console.log("已經開了一個新的終端視窗，合併在那裡進行。");
+      console.log("請看那個視窗——它可能會問你問題，回答完它才會繼續。");
+      console.log("");
 
-while (outstanding.length > 0 && Date.now() <= deadline) {
-  // 三十秒講一次，不是每一輪都講：一秒一行的話，等五分鐘就是三百行，把上面那句
-  // 「請看那個視窗」洗掉。逐檔講，學生才知道要回去跟 agent 說哪一份沒好。
-  if (Date.now() - lastReportAt >= 30_000) {
-    lastReportAt = Date.now();
+      // 等的是「工作坊那段真的進去了」，不是等視窗關掉、也不是等 agent 給訊號。
+      //
+      // ⚠️ **不要再回去用「請 agent 自己寫一個完成標記檔」。** 那是請求不是保證，跟
+      // 「請你先備份」同一個性質——而備份我們早就改成自己拍了。2026-08-12 在 VM 上連續
+      // 兩次驗證：Claude 與 Codex 都沒有寫那個檔案，其中一次還在回報裡寫著「已寫入
+      // jr-merge-claude-md-…done」。學生看到的是「合併明明成功了，卡片卻停在安裝中」。
+      //
+      // 判準用 config-check 的 missingSourceLines——**跟畫面上那一列同一支函式**。
+      // 各寫一份的結果會是「終端說完成、卡片說需要合併」。
+      //
+      // ⚠️ 要**全部**都到位才算完成。只看被按的那一份的話，AI 併完第一個就會被判成完成，
+      // 而第二份根本沒動——那正是改成一顆按鈕之前的問題，不要用一個 bug 換另一個。
+      const deadline = Date.now() + TIMEOUT_MS;
+      let outstanding = await pending();
+      let lastReportAt = 0;
 
-    for (const { entry, missing } of outstanding) {
-      console.log(`還差 ${missing.length} 行：${entry.target}`);
+      while (outstanding.length > 0 && Date.now() <= deadline) {
+        // 三十秒講一次，不是每一輪都講：一秒一行的話，等五分鐘就是三百行，把上面那句
+        // 「請看那個視窗」洗掉。逐檔講，學生才知道要回去跟 agent 說哪一份沒好。
+        if (Date.now() - lastReportAt >= 30_000) {
+          lastReportAt = Date.now();
+
+          for (const { entry, missing } of outstanding) {
+            console.log(`還差 ${missing.length} 行：${entry.target}`);
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        outstanding = await pending();
+      }
+
+      return { outstanding, script };
+    } catch (error) {
+      if (script !== null) {
+        rmSync(script, { force: true });
+      }
+      throw error;
     }
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-  outstanding = await pending();
-}
+  },
+);
 
 rmSync(script, { force: true });
 
@@ -253,6 +275,8 @@ if (outstanding.length > 0) {
   console.log(`合併前的樣子還在 ${snapshot}，隨時還原得回去。`);
   process.exit(1);
 }
+
+mergeSources.cleanup();
 
 // ── 3. 比對缺行 ────────────────────────────────────────────────────────────
 const report = mergeReport(

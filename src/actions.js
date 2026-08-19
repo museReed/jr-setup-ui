@@ -250,11 +250,11 @@ Object.assign(actions, {
     kind: "fixed",
     // 畫面上那顆的文字由 env-check 的 fixLabel 決定（要指名壞掉的是哪一支）。
     // 這裡是 action 註冊表的名字，兩支都可能，所以不指名。
-    label: "清除廢棄的引用",
+    label: "清除舊 wrapper",
     cmd: process.execPath,
     args: [fixShellWrapperScript, "--apply"],
     description:
-      "刪掉 shell 設定檔裡指向已刪檔案的 claude / codex 函式，讓安裝完的 CLI 叫得動。",
+      "刪掉 shell 設定檔裡擋住新版 CLI 或 Codex 原生標題的舊 wrapper。",
   },
   // 只有 Windows 用得到，但註冊在共用區：mac 上那一列根本不會出現，
   // 而把它藏進 win32 分支會讓 test/viewmodel.mjs 的守門測試在 mac 上看不到它。
