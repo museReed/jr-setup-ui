@@ -473,7 +473,11 @@ export const VERIFICATION = {
     terminal: { case: "statusline", agent: "claude" },
     eye: "輸入框下面多出一行，裡面有模型名、一條進度條、專案名",
   },
-  // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
+  // 這一格不叫 AI：要驗的是名字有沒有上到分頁標題，跟模型無關。
+  //
+  // POSIX 上已經沒有 watcher 了——標題由命名 hook 自己寫 OSC 進 tty，而這一步只負責
+  // 那個 shell function（設 CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1，不然 Claude Code
+  // 自己的標題會蓋掉 hook 寫的名字）。要看的畫面兩邊一樣，所以文案不分平台。
   "tab-sync": {
     terminal: { case: "title", agent: "claude" },
     eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
@@ -848,7 +852,11 @@ export async function checkAllowlist(materials, step) {
 }
 
 export async function checkTabSync(step, materials) {
-  if (!existsSync(step.target)) {
+  // POSIX 拿掉 watcher 之後這一步沒有要安裝的檔案，step.target 是 undefined——
+  // 只有 rc 區塊要驗。有 target 的（Windows）才走下面「檔案在不在、是不是舊版」。
+  const hasWatcher = step.target !== undefined;
+
+  if (hasWatcher && !existsSync(step.target)) {
     return {
       id: step.id,
       label: step.label,
@@ -862,19 +870,24 @@ export async function checkTabSync(step, materials) {
     : "";
 
   if (!hasMarkedBlock(rcContent, step.rcMarker)) {
+    // 有 watcher 檔的（Windows）是「裝一半」——檔案已經在了，缺的是 shell function，
+    // 所以是 warn。POSIX 這一步除了 rc 區塊什麼都沒有，缺了就是整步沒裝。
     return {
       id: step.id,
       label: step.label,
-      status: "warn",
-      detail: "檔案在，但 shell function 沒寫進去",
+      status: hasWatcher ? "warn" : "missing",
+      detail: hasWatcher ? "檔案在，但 shell function 沒寫進去" : "尚未安裝",
     };
   }
 
-  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow）。
-  // 舊版兩者都是「檔案在、標記在」，只看存在與否會給綠燈，但標題不會變。
-  const staleWatcher = await staleTargets(materials, [
-    { source: step.watcherSource, target: step.target },
-  ]);
+  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow、
+  // POSIX 整個不再起 watcher）。舊版一樣是「檔案在、標記在」，只看存在與否會給綠燈，
+  // 但標題不會變——POSIX 的舊區塊還會每秒把 agent 的名字蓋掉。所以要比對內容。
+  const staleWatcher = hasWatcher
+    ? await staleTargets(materials, [
+        { source: step.watcherSource, target: step.target },
+      ])
+    : [];
 
   if (staleWatcher.length > 0 || !rcContent.includes(step.rcBlock.trim())) {
     return {

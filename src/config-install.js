@@ -357,34 +357,30 @@ export function isInteractiveInvocation(args) {
   return !args.some((arg) => NON_INTERACTIVE_ARGS.has(arg));
 }
 
-function posixTabSyncFunction(command, watcherTarget) {
-  // POSIX 每次都用 command 動態查 PATH，且沒有 Windows shim 副檔名，不必預先挑路徑。
+// POSIX 不再需要 watcher。分頁標題由命名 hook 自己寫 OSC 進 /dev/ttysNNN——
+// set-session-name.sh 在命名的當下寫一次，session-auto-namer.sh 每個 hook 事件再
+// 寫一次，跟 watcher 用的是同一招。
+//
+// 差別在頻率，而那正是重點：watcher 每秒無條件重寫，所以在這個分頁裡看背景 agent
+// 時，Claude Code 剛寫進去的 agent 名字會在一秒內被蓋回本分頁的名字（畫面上就是
+// 「閃一下正確名字又跳回去」）。改成事件驅動之後，看 agent 期間本 session 沒有 hook
+// 事件，也就沒人去蓋，agent 的名字留得住——而那個名字本來就是 auto-rename 寫進
+// job state 的名字。
+//
+// CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 是必要條件，不是可選的：少了它，Claude Code
+// 自己寫的標題會蓋掉 hook 寫的名字，而事件驅動的頻率搶不回來（macOS 實測 2026-08-19，
+// 有設才穩定）。
+//
+// ⚠️ 用指令前綴而不是 export：export 會讓這個 shell 之後開的每個程序都拿到。前綴仍
+// 會被 claude 的子程序繼承（包含它可能生出來的 daemon），這一點擋不掉——萬一 daemon
+// 拿到，底下的背景 agent 就不再寫標題，看 agent 時分頁會停在本分頁的名字。那等於改動
+// 前的結果（只是不閃），不會更糟，所以沒有為它多做防護。
+//
+// Windows 仍然走 watcher：那邊沒有 /dev/ttysNNN 這種可寫的裝置，而且 codex 要 0.146+
+// 才有原生 thread title。見 powershellTabSyncFunction。
+function posixTabSyncFunction(command) {
   return `${command}() {
-  local arg sync_file tty_path watcher_pid exit_code
-  for arg in "$@"; do
-    case "$arg" in
-      -p|exec|--version|--help) command ${command} "$@"; return $? ;;
-    esac
-  done
-
-  sync_file="\${TMPDIR:-/tmp}/jr-tab-sync-${command}-$$-\${RANDOM}.txt"
-  printf '%s\\n' '(等待命名)' > "$sync_file"
-  tty_path="$(tty 2>/dev/null)"
-  AI_TAB_SYNC_FILE="$sync_file"
-  export AI_TAB_SYNC_FILE
-
-  watcher_pid=""
-  if [ -n "$tty_path" ] && [ "$tty_path" != "not a tty" ]; then
-    "${watcherTarget}" "$sync_file" "$tty_path" &
-    watcher_pid=$!
-  fi
-
-  command ${command} "$@"
-  exit_code=$?
-  [ -n "$watcher_pid" ] && kill "$watcher_pid" 2>/dev/null
-  rm -f "$sync_file"
-  unset AI_TAB_SYNC_FILE
-  return "$exit_code"
+  CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command ${command} "$@"
 }`;
 }
 
@@ -429,7 +425,7 @@ function powershellTabSyncFunction(command, watcherTarget) {
 
 function tabSyncBlock(platform, watcherTarget) {
   if (platform !== "win32") {
-    return posixTabSyncFunction("claude", watcherTarget);
+    return posixTabSyncFunction("claude");
   }
 
   return powershellTabSyncFunction("claude", watcherTarget);
@@ -921,17 +917,19 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       };
 
     case "tab-sync": {
+      // POSIX 只剩 rc 區塊，沒有要安裝的檔案——watcher 拿掉之後 watcherSource /
+      // target 就都是 undefined。下游要能吃這個：安裝時不複製檔案、檢查時不比對
+      // 版本、進度只看 rc 檔。Windows 維持原樣。
       const file = hookFileName("ai-tab-sync", platform);
       const target =
-        platform === "win32"
-          ? `${home}/.jr-setup/bin/${file}`
-          : `${home}/.local/bin/${file}`;
+        platform === "win32" ? `${home}/.jr-setup/bin/${file}` : undefined;
       return {
         id,
         label: "分頁自己報上名字",
         kind: "tab-sync",
-        watcherSource: `skills/bin/${file}`,
-        target,
+        ...(platform === "win32"
+          ? { watcherSource: `skills/bin/${file}`, target }
+          : {}),
         rcTarget:
           platform === "win32"
             ? `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`
