@@ -1,5 +1,5 @@
-// claude-hud 的狀態列（Windows）。Claude Code 每 5 秒跑一次這支，並把一段 JSON 從
-// stdin 餵進來，把 stdout 畫在輸入框下面。
+// claude-hud 的狀態列（mac 與 Windows 共用）。Claude Code 每 5 秒跑一次這支，並把一段
+// JSON 從 stdin 餵進來，把 stdout 畫在輸入框下面。
 //
 // 為什麼是 node 而不是 PowerShell —— Windows VM 上一路踩出來的：
 //
@@ -15,14 +15,16 @@
 // node 本來就是硬需求（claude-hud 自己就是 node 跑的），拿它當入口：一個程序取代兩個、
 // 啟動快一個數量級，而且指令裡只剩兩個被引號包好的絕對路徑，沒有東西需要跳脫。
 //
-// mac 那邊維持原本的一行 bash：那條實測是好的，而 bash 啟動本來就快，沒有理由跟著改。
+// mac 後來也走這條。原本是一整行 bash 塞進 settings.json 直接 exec claude-hud，但那個
+// 形狀裝不下底下「先印 session 名字」那段——名字在 stdin 那段 JSON 裡，一行 bash 沒有
+// 地方放緩衝、解析與退路，而學生機器上不保證有 jq。
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 // Claude Code 會把子程序的 stdout 導向管線，所以 process.stdout.columns 讀不到——
-// 只能靠環境變數，讀不到就退回 120。減 4 是留給輸入框左右各 2 欄（跟 mac 那支一樣）。
+// 只能靠環境變數，讀不到就退回 120。減 4 是留給輸入框左右各 2 欄。
 const columns = Number.parseInt(process.env.COLUMNS ?? "", 10);
 const width = Number.isInteger(columns) && columns > 4 ? columns : 120;
 process.env.COLUMNS = String(width - 4);
@@ -80,6 +82,49 @@ function listDirs(dir) {
   }
 }
 
+// Claude Code 從 stdin 餵進來的那段 JSON。claude-hud 也要用，所以先整段接住，最後再原封
+// 不動轉給它——不能直接讓它接 stdin，因為底下要先把 session 名字挑出來。
+//
+// 手動執行（沒有 stdin）時讀不到東西，那是正常的：拿空字串繼續，名字那行就不印。
+function readPayload() {
+  try {
+    return readFileSync(0, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+// 狀態列是分頁裡唯一還看得出「這個 session 叫什麼」的地方——Ghostty 沒有 per-split 標題，
+// 同一個分頁切成好幾個 split 時，分頁標題只有一個、shell 提示字元又被 TUI 蓋住。
+//
+// 名字取自 payload 的 session_name，但要濾掉 Claude Code 自己推導的那種：那是純小寫英文
+// 加連字號（"test-auto-rename"），而命名 hook 寫出來的一定帶 emoji、中文或 [專案] 前綴。
+// 分不出來的話，還沒被命名的 session 會顯示一串它自己編的 slug，比空白更容易誤導。
+function sessionName(payload) {
+  let name;
+
+  try {
+    name = JSON.parse(payload).session_name;
+  } catch {
+    return null;
+  }
+
+  if (typeof name !== "string" || name === "" || /^[a-z0-9-]+$/.test(name)) {
+    return null;
+  }
+
+  return name;
+}
+
+const payload = readPayload();
+const name = sessionName(payload);
+
+// #F4731C，只上前景色。試過整條加背景色，但色塊到文字結尾就停、不會填滿整列，
+// 看起來像一塊誤觸的螢光筆。
+if (name !== null) {
+  process.stdout.write(`\u001b[38;2;244;115;28m${name}\u001b[0m\n`);
+}
+
 const entry = newestEntry();
 
 // 找不到就安靜結束。狀態列不該在學生的畫面上噴錯——那條沒出現本身就是訊號，
@@ -92,10 +137,16 @@ if (entry !== null) {
   // 用 import 載入時那個判斷是 false，於是什麼都不做——狀態列一樣空白，而且這種失敗
   // 完全不會有錯誤訊息。舊的寫法是 `node index.js`，那個判斷才成立。
   //
-  // 我們控制不了那支 bundle 怎麼寫，也不該賭。stdio: "inherit" 讓 stdin/stdout 直接
-  // 接到 Claude Code，跟舊行為一模一樣——換掉的只有 powershell 那一層。
+  // 我們控制不了那支 bundle 怎麼寫，也不該賭。
+  //
+  // stdin 不能用 "inherit"：上面已經整段讀走了，再 inherit 它只會拿到一個已經到底的
+  // 串流，然後畫出一條沒有任何資訊的狀態列。把接住的原文用 input 原封不動餵回去。
+  // stdout/stderr 維持 inherit，直接接到 Claude Code。
   //
   // 代價是兩個 node 程序（各約 50 毫秒），仍然比 powershell 冷啟動的 1～2 秒快一個
   // 數量級，而那正是狀態列在 Windows 上不出現的原因。
-  spawnSync(process.execPath, [entry], { stdio: "inherit" });
+  spawnSync(process.execPath, [entry], {
+    input: payload,
+    stdio: ["pipe", "inherit", "inherit"],
+  });
 }

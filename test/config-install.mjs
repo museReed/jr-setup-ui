@@ -221,9 +221,16 @@ try {
     hudWin.scriptTarget,
     `${HOME}/.claude/plugins/claude-hud/statusline.mjs`,
   );
+  // mac 這條原本是塞進 settings.json 的一行 bash，直接 exec claude-hud。那個形狀裝不下
+  // 「先印 session 名字再交給 claude-hud」——名字要從 stdin 的 payload 拿，一行裡沒有
+  // 地方放緩衝、解析與退路，而學生機器上不保證有 jq。所以兩個平台改跑同一支 node 腳本。
+  //
+  // 這條不是美化：claude-hud 卡片會覆蓋 statusLine，學生同時裝「命名 hook」和這張卡時
+  // 狀態列上的名字整個不見（2026-08-19 開發機實測）。名字得由這支腳本自己印。
   const hudMac = describeStep("claude-hud", { ...AT, platform: "darwin" });
-  assert.equal(hudMac.scriptTarget, null, "mac 那條照舊直接寫進 settings.json");
-  ok("Windows 的狀態列由 node 當入口，mac 維持一行 bash");
+  assert.equal(hudMac.commandTemplate, hudWin.commandTemplate);
+  assert.equal(hudMac.scriptTarget, hudWin.scriptTarget);
+  ok("兩個平台的狀態列跑同一支 node 腳本，名字由它自己印");
 
   const claudeHooks = describeStep("claude-namer", { ...AT, platform: "linux" });
   const claudeMonitor = describeStep("claude-monitor", {

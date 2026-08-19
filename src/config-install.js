@@ -776,13 +776,14 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         previousTarget: `${claudeDir}/plugins/claude-hud/previous-statusline.txt`,
         // cache 路徑第一層是 marketplace 名、第二層才是 plugin 名，中間那層不能省。
         cacheRoot: `${claudeDir}/plugins/cache`,
-        // 兩個平台的狀態列差在「誰當入口」：mac 是一行 bash（用 ls + sort 找最新版，
-        // {RUNTIME} 換成這台機器的 node 絕對路徑），Windows 是一支 node 腳本，
-        // settings.json 裡只留「node 的路徑 + 腳本的路徑」。
-        commandTemplate:
-          platform === "win32"
-            ? "claude-code/claude-hud/statusline.mjs.template"
-            : "claude-code/claude-hud/statusline.sh.template",
+        // 兩個平台跑同一支 node 腳本，settings.json 裡只留「node 的路徑 + 腳本的路徑」。
+        //
+        // mac 原本是另一條路：一整行 bash 塞進 settings.json，直接 exec claude-hud。
+        // 那個形狀裝不下「先印 session 名字、再把 payload 交給 claude-hud」——名字在
+        // stdin 那段 JSON 裡，一行 bash 沒有地方放緩衝、解析與退路，而學生機器上不保證
+        // 有 jq。既然 claude-hud 本來就是 node 跑的，就讓 node 一路當入口，兩邊共用同一
+        // 份邏輯，不要維護兩份會各自漂移的名字處理。
+        commandTemplate: "claude-code/claude-hud/statusline.mjs.template",
         // Windows 這條走了兩輪才到位，理由寫在 statusline.mjs.template 開頭：
         //
         //   一行 powershell -Command   引號被下一層 shell 咬掉，整條不啟動
@@ -794,10 +795,10 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         //
         // 對照組實測：同一時間把指令換成 `cmd /c echo PROBE-OK`，狀態列當場出現
         // PROBE-OK——所以機制是活的，問題在 PowerShell 那一層。
-        scriptTarget:
-          platform === "win32"
-            ? `${claudeDir}/plugins/claude-hud/statusline.mjs`
-            : null,
+        // 這張卡會覆蓋 statusLine，所以名字得由這支腳本自己印：學生同時裝「命名 hook」
+        // 和這張卡時，狀態列上的名字整個不見，而且兩張卡各自看起來都裝成功了
+        //（2026-08-19 開發機實測）。
+        scriptTarget: `${claudeDir}/plugins/claude-hud/statusline.mjs`,
       };
 
     case "codex-config":

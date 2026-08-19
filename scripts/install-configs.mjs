@@ -425,7 +425,12 @@ async function claudeHudStep(step) {
     await mkdir(path.dirname(step.scriptTarget), { recursive: true });
     await writeFile(step.scriptTarget, filled, "utf8");
     logProgress(`狀態列腳本已寫進 ${step.scriptTarget}`);
-    command = `"${process.execPath}" "${step.scriptTarget.replaceAll("/", "\\")}"`;
+    // 路徑只有 Windows 要轉成反斜線；mac 轉了會變成一個不存在的檔名。
+    const scriptPath =
+      process.platform === "win32"
+        ? step.scriptTarget.replaceAll("/", "\\")
+        : step.scriptTarget;
+    command = `"${process.execPath}" "${scriptPath}"`;
   } else {
     command = filled.trim();
   }
