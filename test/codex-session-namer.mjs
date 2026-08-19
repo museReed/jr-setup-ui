@@ -46,6 +46,12 @@ function runHook({
       CODEX_HOME: path.join(home, ".codex"),
       CODEX_SESSION_NAMER_DIR: counterDir,
       CODEX_APP_SERVER_SOCKET: path.join(home, "missing.sock"),
+      // 明確清掉，不能只靠「開發機剛好沒設」。apply_name 的成功條件是「SQLite 寫成
+      // 功 **且** tab 寫成功」，所以在有裝 tab-sync wrapper 的終端裡跑測試時，這個
+      // 變數會被繼承進來、讓本該失敗的那幾個案例變成成功，relay 被消掉——症狀是
+      // 「SQLite fallback 保留 relay」那一項無故變紅，而且看起來像 hook 壞了。
+      // 需要它的案例自己用 env 設回去（見「AI_TAB_SYNC_FILE 成功但 changes=0」那組）。
+      AI_TAB_SYNC_FILE: undefined,
       ...env,
     },
   });
