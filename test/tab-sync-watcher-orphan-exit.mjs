@@ -66,8 +66,9 @@ assert(alive(watcherPid), `watcher ${watcherPid} 起來就死了`);
 parent.kill("SIGKILL");
 
 let exited = false;
-// watcher 一輪一秒，5 秒足夠讓它發現自己成了孤兒。
-for (let round = 0; round < 25 && !exited; round += 1) {
+// watcher 一輪一秒，但孤兒檢查每 10 輪才做一次（那個檢查要 fork 一支 ps，是迴圈裡最貴
+// 的一件事）。所以最久要等約 10 秒，這裡給到 15 秒。
+for (let round = 0; round < 75 && !exited; round += 1) {
   await sleep(200);
   exited = !alive(watcherPid);
 }
@@ -82,7 +83,7 @@ if (!exited) {
 
 assert(
   exited,
-  `父行程死了 5 秒後 watcher ${watcherPid} 還活著：它會一直往回收後的 tty 寫標題，造成分頁標題閃爍`,
+  `父行程死了 15 秒後 watcher ${watcherPid} 還活著：它會一直往回收後的 tty 寫標題，造成分頁標題閃爍`,
 );
 
 console.log("ok - 父行程消失後 watcher 自己退出");
