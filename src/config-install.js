@@ -254,6 +254,7 @@ const CLAUDE_STEPS = [
 const CODEX_STEPS = ["codex-config", "codex-agents"];
 export const TAB_SYNC_MARKER = "jr-setup-ui tab sync";
 export const CODEX_APP_SERVER_MARKER = "jr-setup-ui codex shared app-server";
+export const CODEX_VERSION_GUARD_MARKER = "jr-setup-ui codex version guard";
 
 // 這一步是誰家的設定。合併要用同一家的 agent 去做——Codex 的 config.toml 交給
 // Claude 合併的話，動手的是沒在用那份設定的那一個（Reed 實測看到「Claude：思考中」
@@ -449,6 +450,13 @@ function codex-server-restart {
 }`;
 }
 
+function posixCodexVersionGuardBlock(guardTarget) {
+  const quotedTarget = guardTarget.replaceAll("'", "'\"'\"'");
+  return `codex() {
+  '${quotedTarget}' "$@"
+}`;
+}
+
 function hookCommand(target, platform, args = []) {
   const command =
     platform === "win32"
@@ -519,6 +527,11 @@ function agentHooks(id, home, platform) {
           target: `${agentDir}/hooks/codex-session-name-set.ps1`,
         },
         {
+          base: "codex-app-server-common",
+          source: "skills/hooks/codex-app-server-common.ps1",
+          target: `${agentDir}/hooks/codex-app-server-common.ps1`,
+        },
+        {
           base: "codex-shared-app-server",
           source: "skills/hooks/codex-shared-app-server.ps1",
           target: `${agentDir}/hooks/codex-shared-app-server.ps1`,
@@ -541,6 +554,15 @@ function agentHooks(id, home, platform) {
           source: "skills/hooks/codex-server-restart.sh",
           target: `${home}/.local/bin/codex-server-restart`,
         },
+        ...(platform === "darwin"
+          ? [
+              {
+                base: "codex-version-guard",
+                source: "skills/hooks/codex-version-guard.sh",
+                target: `${agentDir}/hooks/codex-version-guard.sh`,
+              },
+            ]
+          : []),
       );
     }
   }
@@ -575,6 +597,16 @@ function agentHooks(id, home, platform) {
           ),
         }
       : undefined;
+  const posixCodexProfile =
+    id === "codex-namer" && platform === "darwin"
+      ? {
+          target: `${home}/.zshrc`,
+          marker: CODEX_VERSION_GUARD_MARKER,
+          block: posixCodexVersionGuardBlock(
+            byBase["codex-version-guard"].target,
+          ),
+        }
+      : undefined;
   const registrations = spec.events.map((entry) => ({
     event: entry.event,
     command: hookCommand(byBase[entry.base].target, platform, entry.args),
@@ -598,6 +630,7 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/${source.split("/").pop()}`,
     })),
     windowsCodexProfile,
+    posixCodexProfile,
   };
 }
 

@@ -7,6 +7,7 @@ CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CONTROL_DIR="$CODEX_HOME_DIR/app-server-control"
 SOCKET="${CODEX_APP_SERVER_SOCKET:-$CONTROL_DIR/app-server-control.sock}"
 LOG="$CONTROL_DIR/app-server.log"
+STATE_FILE="$CONTROL_DIR/macos-app-server.state"
 
 CODEX_BIN=$(command -v codex 2>/dev/null || true)
 if [ -z "$CODEX_BIN" ]; then
@@ -76,6 +77,9 @@ attempt=0
 while [ "$attempt" -lt 50 ]; do
   if [ -S "$SOCKET" ] && kill -0 "$NEW_PID" 2>/dev/null; then
     VERSION=$("$CODEX_BIN" --version 2>/dev/null | head -1)
+    TEMP_STATE="$STATE_FILE.$$.tmp"
+    printf "%s\t%s\t%s\n" "$NEW_PID" "$VERSION" "$SOCKET" > "$TEMP_STATE"
+    mv -f -- "$TEMP_STATE" "$STATE_FILE"
     echo "Codex 背景 server 已更新至 $VERSION。"
     echo '現在可以重新執行 codex。'
     exit 0

@@ -17,10 +17,11 @@ try {
   assert.match(windows, /仍有 Codex 視窗連著背景 server（偵測到 .*個連線）/);
   assert.match(windows, /exit 2/);
   assert.match(windows, /codex-server-restart/);
-  assert.match(windows, /Get-CimInstance Win32_Process/);
-  assert.match(windows, /app-server', '--listen'/);
-  assert.match(windows, /Test-AppServerReady/);
-  ok("Windows restart 有連線中的 TUI 就拒絕，且只重啟確認過的 Codex server");
+  assert.match(windows, /Read-JrAppServerState/);
+  assert.match(windows, /Test-JrManagedState/);
+  assert.match(windows, /Start-JrAppServer/);
+  assert.match(windows, /連線位置：/);
+  ok("Windows restart 讀取共用狀態、拒絕中斷 TUI，並用動態 port 重啟");
 
   const mac = read("codex-server-restart.sh");
   const syntax = spawnSync("bash", ["-n"], { input: mac, encoding: "utf8" });
@@ -30,7 +31,9 @@ try {
   assert.match(mac, /exit 2/);
   assert.match(mac, /codex\*app-server\*--listen/);
   assert.match(mac, /app-server --listen unix:\/\//);
-  ok("macOS restart 會找 Unix socket client，仍有 TUI 時拒絕並通過 bash 語法檢查");
+  assert.match(mac, /macos-app-server\.state/);
+  assert.match(mac, /printf .*NEW_PID.*VERSION.*SOCKET/);
+  ok("macOS restart 會拒絕中斷 TUI，重啟後記錄 server 版本");
 
   const winStep = describeStep("codex-namer", {
     lang: "zh-TW",

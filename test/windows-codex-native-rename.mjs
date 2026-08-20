@@ -11,14 +11,25 @@ const read = (name) =>
 const ok = (message) => console.log("ok - " + message);
 
 try {
+  const common = read("codex-app-server-common.ps1");
+  assert.match(common, /windows-app-server\.json/);
+  assert.match(common, /JrPortStart = 4500/);
+  assert.match(common, /JrPortEnd = 4599/);
+  assert.match(common, /Get-NetTCPConnection[\s\S]*-State Listen/);
+  assert.match(common, /Start-Process[\s\S]*app-server', '--listen'/);
+  assert.match(common, /Local\\jr-setup-ui-codex-app-server/);
+  assert.match(common, /codexVersion = \$CodexVersion/);
+
   const launcher = read("codex-shared-app-server.ps1");
-  assert.match(launcher, /app-server', '--listen'/);
-  assert.match(launcher, /--remote \$endpoint/);
-  assert.match(launcher, /\/readyz/);
-  assert.match(launcher, /Start-Process/);
-  assert.match(launcher, /WaitOne\(10000\)/);
+  assert.match(launcher, /Get-JrAppServer/);
+  assert.match(launcher, /--remote \$state\.endpoint/);
+  assert.match(launcher, /CODEX_APP_SERVER_URL = \[string\]\$state\.endpoint/);
+  assert.match(launcher, /本次改用原生模式；Codex 可正常使用，auto-rename 暫停/);
+  assert.match(launcher, /Codex 已更新至 .*背景 server 仍是/);
+  assert.match(launcher, /Invoke-NativeCodex \$realCodex \$InvocationArgs -DisableAutoRename/);
+  assert.match(launcher, /JR_CODEX_AUTO_RENAME_DISABLED/);
   assert.match(launcher, /'exec'.*'review'.*'login'/s);
-  ok("Windows wrapper 延遲啟動一個 app-server，互動 TUI 全部用 --remote 共用");
+  ok("Windows wrapper 會共用動態 port；啟動失敗或版本不符時退回原生 Codex");
 
   const setter = read("codex-session-name-set.ps1");
   assert.match(setter, /ClientWebSocket/);
@@ -30,6 +41,7 @@ try {
 
   const namer = read("codex-session-namer.ps1");
   assert.match(namer, /codex-session-name-set\.ps1/);
+  assert.match(namer, /JR_CODEX_AUTO_RENAME_DISABLED/);
   assert.doesNotMatch(namer, /state_\*\.sqlite|sqlite3|CODEX_DB/);
   assert.doesNotMatch(namer, /AI_TAB_SYNC_FILE|Console\]::Title/);
   assert.match(
@@ -43,7 +55,7 @@ try {
     home: "C:/Users/Reed",
     platform: "win32",
   });
-  assert.equal(step.hookFiles.length, 4);
+  assert.equal(step.hookFiles.length, 5);
   assert.match(step.windowsCodexProfile.block, /function codex/);
   assert.match(step.windowsCodexProfile.block, /codex-shared-app-server\.ps1/);
   assert.match(step.windowsCodexProfile.block, /function codex-server-restart/);

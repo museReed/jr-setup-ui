@@ -927,11 +927,23 @@ export async function checkAgentHooks(step, materials) {
       content.includes(profile.block.trim());
   }
 
+  let posixCodexProfileInstalled = true;
+  if (step.posixCodexProfile !== undefined) {
+    const profile = step.posixCodexProfile;
+    const content = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    posixCodexProfileInstalled =
+      hasMarkedBlock(content, profile.marker) &&
+      content.includes(profile.block.trim());
+  }
+
   if (
     filesExist &&
     registered &&
     allowRuleInstalled &&
-    windowsCodexProfileInstalled
+    windowsCodexProfileInstalled &&
+    posixCodexProfileInstalled
   ) {
     return {
       id: step.id,
@@ -947,6 +959,15 @@ export async function checkAgentHooks(step, materials) {
       label: step.label,
       status: "warn",
       detail: "hook 已註冊，但 PowerShell profile 還沒接上共用 app-server",
+    };
+  }
+
+  if (filesExist && registered && !posixCodexProfileInstalled) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "hook 已註冊，但 shell profile 還沒接上版本提醒",
     };
   }
 

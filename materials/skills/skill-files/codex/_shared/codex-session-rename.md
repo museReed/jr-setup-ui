@@ -10,7 +10,7 @@
 | 平台 | 共用 app-server | 命名通道 |
 |---|---|---|
 | **macOS / Linux** | Codex 的本機 control socket | Unix socket + `thread/name/set` |
-| **Windows** | 第一個 `codex` 指令在背景啟動，後續 TUI 共用 | localhost WebSocket + `thread/name/set` |
+| **Windows** | 第一個 `codex` 在 `4500–4599` 找空 port 啟動，後續 TUI 讀狀態檔共用 | localhost WebSocket + `thread/name/set` |
 
 兩邊都不直接改 SQLite，也不使用 Codex Watcher 或 tab-sync。
 
@@ -33,7 +33,7 @@ Hook 注入的訊息已經包含這個 session 的精確 relay 路徑；直接�
 |---|---|
 | **Codex 版本** | Windows 使用支援 `app-server --listen`、`--remote` 與 `thread/name/set` 的版本 |
 | **Codex 設定** | `status_line` 包含 `"thread-title"`，`terminal_title = ["thread"]` |
-| **Windows 啟動方式** | 從已載入 PowerShell profile 的終端執行 `codex`；wrapper 會自動啟動或重用背景 app-server |
+| **Windows 啟動方式** | 從已載入 PowerShell profile 的終端執行 `codex`；wrapper 會自動啟動或重用背景 app-server。啟動失敗時改走原生 Codex，只有 auto-rename 暫停 |
 | **Session 定位** | 一律使用 hook 給的 `session_id`／`CODEX_THREAD_ID`，不猜「最近更新」的 thread |
 
 ## 使用方式
@@ -47,7 +47,7 @@ Hook 注入的訊息已經包含這個 session 的精確 relay 路徑；直接�
 ## 更新背景 server
 
 安裝 auto-rename 時也會安裝全域 `codex-server-restart`，在哪個資料夾都能直接執行。
-更新 Codex 後若背景 server 仍是舊版，先關閉所有 Codex 視窗，再開新的
+Windows 與 macOS 的 `codex` 啟動入口會比較 CLI 與背景 server 版本；不同時只提醒，不會關閉既有視窗。先關閉所有 Codex 視窗，再開新的
 PowerShell／Terminal 視窗執行：
 
 ```text

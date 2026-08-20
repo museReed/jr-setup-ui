@@ -267,6 +267,18 @@ async function agentHooksStep(step) {
     await writeFile(profile.target, `\ufeff${next.replace(/^\ufeff/, "")}`);
     logProgress(`Codex 共用 app-server 入口 → ${profile.target}`);
   }
+
+  if (step.posixCodexProfile !== undefined) {
+    const profile = step.posixCodexProfile;
+    const current = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    const next = upsertBlock(current, profile.marker, profile.block);
+    await mkdir(path.dirname(profile.target), { recursive: true });
+    await backup(profile.target);
+    await writeFile(profile.target, next);
+    logProgress(`Codex 版本檢查入口 → ${profile.target}`);
+  }
 }
 
 async function skillStep(step) {

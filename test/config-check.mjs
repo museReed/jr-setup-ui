@@ -363,6 +363,37 @@ process.stdin.on("end", () => {
   );
   ok("Windows Codex 命名要有共用 app-server profile 才給綠燈");
 
+  const macAgentStep = describeStep("codex-namer", {
+    lang: "zh-TW",
+    home: path.join(dir, "mac-agent"),
+    platform: "darwin",
+  });
+  for (const file of macAgentStep.hookFiles) {
+    installFrom(file.source, file.target);
+  }
+  const macSettings = mergeAgentHookRegistrations(
+    {},
+    {
+      registrations: macAgentStep.registrations,
+      hookMarkers: macAgentStep.hookFiles.map((file) => file.base),
+    },
+  );
+  mkdirSync(path.dirname(macAgentStep.settingsTarget), { recursive: true });
+  writeFileSync(macAgentStep.settingsTarget, JSON.stringify(macSettings));
+  const missingMacProfile = await checkAgentHooks(macAgentStep, MATERIALS);
+  assert.equal(missingMacProfile.status, "warn");
+  assert.match(missingMacProfile.detail, /shell profile/);
+  writeFileSync(
+    macAgentStep.posixCodexProfile.target,
+    upsertBlock(
+      "",
+      macAgentStep.posixCodexProfile.marker,
+      macAgentStep.posixCodexProfile.block,
+    ),
+  );
+  assert.equal((await checkAgentHooks(macAgentStep, MATERIALS)).status, "ok");
+  ok("macOS Codex 命名要有版本提醒 profile 才給綠燈");
+
   // 舊版 hook 檔案：三項全綠，但模型每次命名還是會被權限層擋下。
   writeFileSync(agentStep.hookFiles[0].target, "舊版內容");
   const staleHook = await checkAgentHooks(agentStep, MATERIALS);

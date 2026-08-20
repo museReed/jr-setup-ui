@@ -17,6 +17,7 @@ param([string]$EventName = 'tool')
 $ErrorActionPreference = 'Continue'
 $stdinJson = ''
 if ([Console]::IsInputRedirected) { $stdinJson = [Console]::In.ReadToEnd() }
+if ($env:JR_CODEX_AUTO_RENAME_DISABLED -eq '1') { exit 0 }
 
 function Get-ParentPid([int]$ProcessId) {
   if ($ProcessId -le 0) { return 0 }

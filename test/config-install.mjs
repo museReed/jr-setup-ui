@@ -250,7 +250,7 @@ try {
 
   assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
   assert.equal(codexHooks.namingAllowRule, undefined);
-  assert.equal(codexHooks.hookFiles.length, 4);
+  assert.equal(codexHooks.hookFiles.length, 5);
   assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
   assert.equal(
     codexHooks.windowsCodexProfile.target,

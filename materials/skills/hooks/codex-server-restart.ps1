@@ -5,109 +5,65 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$endpoint = if ($env:CODEX_APP_SERVER_URL) { $env:CODEX_APP_SERVER_URL } else { 'ws://127.0.0.1:4500' }
-$uri = [Uri]$endpoint
+. (Join-Path $PSScriptRoot 'codex-app-server-common.ps1')
 
-if ($uri.Scheme -ne 'ws' -or $uri.Host -notin @('127.0.0.1', 'localhost', '::1')) {
-  Write-Error "只會重啟本機 Codex app-server：$endpoint"
-  exit 1
+$preferredEndpoint = if ($env:CODEX_APP_SERVER_URL) {
+  $env:CODEX_APP_SERVER_URL
+} else {
+  'ws://127.0.0.1:4500'
 }
-
-function Get-RealCodexPath {
-  $candidates = @(Get-Command codex -CommandType Application -All -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path -LiteralPath $_.Source -PathType Leaf })
-  $native = @($candidates | Where-Object {
-    [System.IO.Path]::GetExtension($_.Source) -in @('.exe', '.com')
-  } | ForEach-Object { $_.Source })
-  if ($native.Count -gt 0) { return $native[0] }
-  $all = @($candidates | ForEach-Object { $_.Source })
-  if ($all.Count -gt 0) { return $all[0] }
-  return $null
-}
-
-function Test-AppServerReady {
-  try {
-    $response = Invoke-WebRequest `
-      -Uri "http://$($uri.Host):$($uri.Port)/readyz" `
-      -UseBasicParsing `
-      -TimeoutSec 1
-    return $response.StatusCode -eq 200
-  } catch {
-    return $false
-  }
-}
-
-$realCodex = Get-RealCodexPath
+$realCodex = Get-JrRealCodexPath
 if ($null -eq $realCodex) {
   Write-Error '找不到真正的 Codex 執行檔，請先重新安裝 Codex CLI。'
   exit 1
 }
+$currentVersion = Get-JrCodexVersion $realCodex
 
-$controlDir = Join-Path $HOME '.codex\app-server-control'
-$pidFile = Join-Path $controlDir 'windows-app-server.pid'
-$listener = @(Get-NetTCPConnection `
-  -LocalPort $uri.Port `
-  -State Listen `
-  -ErrorAction SilentlyContinue | Select-Object -First 1)
+$mutex = New-Object System.Threading.Mutex($false, 'Local\jr-setup-ui-codex-app-server')
+$locked = $false
+try {
+  try { $locked = $mutex.WaitOne(10000) } catch [System.Threading.AbandonedMutexException] { $locked = $true }
+  if (-not $locked) { throw '等待 Codex app-server 啟動鎖逾時。' }
 
-if ($listener.Count -gt 0) {
-  $serverPid = [int]$listener[0].OwningProcess
-  $knownPid = if (Test-Path -LiteralPath $pidFile) {
-    (Get-Content -LiteralPath $pidFile -Raw -ErrorAction SilentlyContinue).Trim()
-  } else { '' }
-  $server = Get-CimInstance Win32_Process -Filter "ProcessId = $serverPid" -ErrorAction SilentlyContinue
-  $looksLikeCodex = $server.Name -in @('codex.exe', 'codex') -and (
-    $knownPid -eq [string]$serverPid -or $server.CommandLine -match 'app-server'
-  )
-
-  if (-not $looksLikeCodex) {
-    Write-Error "連接埠 $($uri.Port) 不是由 jr-setup-ui 啟動的 Codex app-server 使用；不會停止 PID $serverPid。"
-    exit 1
+  $state = Read-JrAppServerState
+  if (-not (Test-JrManagedState $state)) {
+    $state = Get-JrLegacyState $currentVersion
   }
 
-  $clients = @(Get-NetTCPConnection `
-    -LocalPort $uri.Port `
-    -State Established `
-    -ErrorAction SilentlyContinue)
-  if ($clients.Count -gt 0) {
-    Write-Host "無法重啟：仍有 Codex 視窗連著背景 server（偵測到 $($clients.Count) 個連線）。"
-    Write-Host '請先關閉所有 Codex 視窗，再開新的 PowerShell 視窗執行：'
-    Write-Host 'codex-server-restart'
-    exit 2
+  if ($null -ne $state -and (Test-JrManagedState $state)) {
+    $uri = [Uri]$state.endpoint
+    $clients = @(Get-NetTCPConnection `
+      -LocalPort $uri.Port `
+      -State Established `
+      -ErrorAction SilentlyContinue)
+    if ($clients.Count -gt 0) {
+      Write-Host "無法重啟：仍有 Codex 視窗連著背景 server（偵測到 $($clients.Count) 個連線）。"
+      Write-Host '請先關閉所有 Codex 視窗，再開新的 PowerShell 視窗執行：'
+      Write-Host 'codex-server-restart'
+      exit 2
+    }
+
+    Stop-Process -Id ([int]$state.pid) -ErrorAction Stop
+    foreach ($attempt in 1..30) {
+      if ($null -eq (Get-Process -Id ([int]$state.pid) -ErrorAction SilentlyContinue)) { break }
+      Start-Sleep -Milliseconds 100
+    }
+    if ($null -ne (Get-Process -Id ([int]$state.pid) -ErrorAction SilentlyContinue)) {
+      throw "舊 Codex app-server（PID $($state.pid)）沒有停止；未啟動新 server。"
+    }
   }
 
-  Stop-Process -Id $serverPid -ErrorAction Stop
-  foreach ($attempt in 1..30) {
-    if ($null -eq (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) { break }
-    Start-Sleep -Milliseconds 100
-  }
-  if ($null -ne (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) {
-    Write-Error "舊 Codex app-server（PID $serverPid）沒有停止；未啟動新 server。"
-    exit 1
-  }
+  Remove-Item -LiteralPath $script:JrStateFile -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $script:JrPidFile -Force -ErrorAction SilentlyContinue
+  $newState = Start-JrAppServer $realCodex $currentVersion $preferredEndpoint
+  Write-Host "Codex 背景 server 已更新至 $($currentVersion)。"
+  Write-Host "連線位置：$($newState.endpoint)"
+  Write-Host '現在可以重新執行 codex。'
+  exit 0
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+} finally {
+  if ($locked) { $mutex.ReleaseMutex() }
+  $mutex.Dispose()
 }
-
-New-Item -ItemType Directory -Force -Path $controlDir | Out-Null
-$stdout = Join-Path $controlDir 'windows-app-server.out.log'
-$stderr = Join-Path $controlDir 'windows-app-server.err.log'
-$process = Start-Process -FilePath $realCodex `
-  -ArgumentList @('app-server', '--listen', $endpoint) `
-  -WindowStyle Hidden `
-  -RedirectStandardOutput $stdout `
-  -RedirectStandardError $stderr `
-  -PassThru
-[System.IO.File]::WriteAllText($pidFile, "$($process.Id)")
-
-foreach ($attempt in 1..50) {
-  if (Test-AppServerReady) {
-    $version = (& $realCodex --version 2>$null | Select-Object -First 1)
-    Write-Host "Codex 背景 server 已更新至 $version。"
-    Write-Host '現在可以重新執行 codex。'
-    exit 0
-  }
-  if ($process.HasExited) { break }
-  Start-Sleep -Milliseconds 100
-}
-
-Write-Error "新版 Codex app-server 沒有成功啟動，請查看：$stderr"
-exit 1

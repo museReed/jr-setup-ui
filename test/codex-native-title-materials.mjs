@@ -55,7 +55,16 @@ try {
         target === "/Users/student/.local/bin/codex-server-restart",
     ),
   );
-  ok("installer 依平台安裝 app-server helper，Windows 另裝自動啟動 wrapper");
+  assert(
+    posix.hookFiles.some(
+      ({ source, target }) =>
+        source === "skills/hooks/codex-version-guard.sh" &&
+        target === "/Users/student/.codex/hooks/codex-version-guard.sh",
+    ),
+  );
+  assert.equal(posix.posixCodexProfile.target, "/Users/student/.zshrc");
+  assert.match(posix.posixCodexProfile.block, /codex-version-guard\.sh/);
+  ok("installer 依平台安裝 app-server helper，並接上各平台的啟動入口");
 
   for (const file of [
     ["materials", "skills", "skill-files", "codex", "auto-rename", "SKILL.md"],

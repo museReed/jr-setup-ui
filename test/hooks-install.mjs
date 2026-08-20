@@ -168,7 +168,19 @@ try {
   assert(codexRestart, "Codex namer 必須連全域 restart 指令一起安裝");
   assert.equal(readFileSync(codexRestart.target, "utf8").length > 0, true);
   assert.equal(statSync(codexRestart.target).mode & 0o111, 0o111);
-  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 與全域 restart 指令都保持單份");
+  if (codexStep.posixCodexProfile !== undefined) {
+    const profile = readFileSync(codexStep.posixCodexProfile.target, "utf8");
+    assert.equal(
+      profile.split(codexStep.posixCodexProfile.marker).length - 1,
+      2,
+    );
+    const versionGuard = codexStep.hookFiles.find(
+      (file) => file.base === "codex-version-guard",
+    );
+    assert(versionGuard, "macOS Codex namer 必須連版本提醒一起安裝");
+    assert.equal(statSync(versionGuard.target).mode & 0o111, 0o111);
+  }
+  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 與啟動入口都保持單份");
 
   // 迴歸：規則不能是「powershell -File …」那種形狀。Claude Code 拒絕用白名單
   // 放行會生出巢狀直譯器的指令（原文 Command spawns a nested PowerShell process
