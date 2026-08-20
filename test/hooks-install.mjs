@@ -82,8 +82,17 @@ try {
   });
   const rc = readFileSync(tabStep.rcTarget, "utf8");
   assert.equal(rc.match(/# >>> jr-setup-ui tab sync >>>/g).length, 1);
-  assert.equal(readFileSync(tabStep.target, "utf8").length > 0, true);
-  ok("tab sync 實際安裝可重跑，watcher 與 shell function 都會落地");
+
+  // POSIX 沒有 watcher 檔要裝（step.target 是 undefined），只寫 rc 區塊；Windows
+  // 仍然要落地那支 .ps1。兩邊都要能重跑而不重複追加。
+  if (tabStep.target === undefined) {
+    assert.equal(process.platform === "win32", false);
+    assert.match(rc, /CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command claude/);
+    ok("POSIX 的 tab sync 可重跑，只寫 shell function、不裝 watcher");
+  } else {
+    assert.equal(readFileSync(tabStep.target, "utf8").length > 0, true);
+    ok("tab sync 實際安裝可重跑，watcher 與 shell function 都會落地");
+  }
 
   install("claude-namer");
   install("claude-namer");

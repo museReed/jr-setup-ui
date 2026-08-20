@@ -164,13 +164,27 @@ try {
   assert.equal(windowsCodexTemplate, codexTemplate);
   ok("Windows 與 POSIX 都保留 Codex 原生 thread title 設定");
 
+  // POSIX 這一步沒有要安裝的檔案了：分頁標題改由命名 hook 自己寫 OSC，watcher
+  // 整支不再啟動，所以 watcherSource / target 都是 undefined，只剩 rc 區塊。
   const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
   assert.equal(tabSync.kind, "tab-sync");
-  assert.equal(tabSync.watcherSource, "skills/bin/ai-tab-sync.sh");
-  assert.equal(tabSync.target, `${HOME}/.local/bin/ai-tab-sync.sh`);
+  assert.equal(tabSync.watcherSource, undefined);
+  assert.equal(tabSync.target, undefined);
   assert.equal(tabSync.rcTarget, `${HOME}/.zshrc`);
   assert.match(tabSync.rcBlock, /command claude "\$@"/);
   assert.doesNotMatch(tabSync.rcBlock, /command codex "\$@"/);
+
+  // 少了這一行，Claude Code 自己寫的標題會蓋掉 hook 寫的名字，而事件驅動的頻率
+  // 搶不回來（macOS 實測）。它是這個做法的必要條件，不是可有可無的裝飾。
+  assert.match(
+    tabSync.rcBlock,
+    /CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command claude/,
+  );
+  // watcher 的痕跡要全部消失：sync 檔、背景執行、kill。留著任何一個都代表
+  // 「每秒無條件重寫」還在，看背景 agent 時標題又會被蓋回去。
+  assert.doesNotMatch(tabSync.rcBlock, /AI_TAB_SYNC_FILE/);
+  assert.doesNotMatch(tabSync.rcBlock, /ai-tab-sync/);
+  assert.doesNotMatch(tabSync.rcBlock, /kill /);
 
   const windowsTabSync = describeStep("tab-sync", {
     ...AT,
@@ -180,7 +194,14 @@ try {
   assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
   assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
   assert.doesNotMatch(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
-  ok("tab sync 只包 Claude；Codex 不再啟動 watcher");
+  // Windows 仍然走 watcher：那邊的 hook 是子行程，寫進去的標題一退出就被還原，只有
+  // 長壽的 watcher 留得住（見 docs/windows-tab-title-why-watcher.md）。這裡守著
+  // 「POSIX 拿掉不會順手把 Windows 也拿掉」。
+  //
+  // 這個區塊現在只包 claude——codex 改用 app-server 原生命名之後就搬出去了，所以直接
+  // 對整塊比對就是在驗 claude 那一段。
+  assert.match(windowsTabSync.rcBlock, /AI_TAB_SYNC_FILE/);
+  ok("POSIX 只剩 rc 區塊；Windows 只包 Claude，且仍走 watcher");
 
   for (const lang of ["zh-TW", "zh-CN", "en"]) {
     const template = readFileSync(

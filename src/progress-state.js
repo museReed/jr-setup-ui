@@ -35,7 +35,9 @@ function installedTargets(step) {
   }
 
   if (step.kind === "tab-sync") {
-    return [step.target, step.rcTarget];
+    // POSIX 沒有 watcher 檔可以看，只剩 rc 區塊。filter 掉 undefined，否則進度會
+    // 去 stat 一個 "undefined" 路徑，永遠算成沒裝好。
+    return [step.target, step.rcTarget].filter(Boolean);
   }
 
   if (step.kind === "agent-hooks") {

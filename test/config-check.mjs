@@ -105,31 +105,65 @@ process.stdin.on("end", () => {
   assert.equal(resolveBash(() => false, "win32"), "bash");
   ok("Windows 上會去常見位置找 Git Bash，找不到才退回 PATH");
 
+  // POSIX 這一步只剩 rc 區塊：watcher 拿掉之後沒有檔案要裝，所以「沒裝」的唯一
+  // 判準就是 rc 檔裡沒有那個區塊。
   const tabStep = describeStep("tab-sync", {
     lang: "zh-TW",
     home: dir,
     platform: "linux",
   });
-  mkdirSync(path.dirname(tabStep.target), { recursive: true });
-  writeFileSync(tabStep.target, "watcher");
+  assert.equal(tabStep.target, undefined);
   // 標題是文案，會跟著改。這裡要驗的是「檢查結果對不對」，所以照 step 自己的
   // label 比，不要把當下的字釘進測試。
   assert.deepEqual(await checkTabSync(tabStep, MATERIALS), {
     id: "tab-sync",
     label: tabStep.label,
-    status: "warn",
-    detail: "檔案在，但 shell function 沒寫進去",
+    status: "missing",
+    detail: "尚未安裝",
   });
+  ok("POSIX 沒有 rc 區塊時回報尚未安裝，不會因為缺檔案而爆掉");
+
+  // 舊版的區塊：標記在、函式也在，但它會起 watcher 每秒重寫標題——只看「標記在
+  // 不在」會給綠燈，於是學生留著舊行為卻以為已經更新（看背景 agent 時標題照閃）。
+  writeFileSync(
+    tabStep.rcTarget,
+    upsertBlock(
+      "",
+      tabStep.rcMarker,
+      'claude() {\n  AI_TAB_SYNC_FILE=/tmp/x command claude "$@"\n}',
+    ),
+  );
+  const staleBlock = await checkTabSync(tabStep, MATERIALS);
+  assert.equal(staleBlock.status, "warn");
+  assert.match(staleBlock.detail, /舊版/);
+  ok("rc 區塊是舊版（還在起 watcher）時不給綠燈");
+
   writeFileSync(
     tabStep.rcTarget,
     upsertBlock("", tabStep.rcMarker, tabStep.rcBlock),
   );
-  // 這裡的 watcher 還是那個假的 "watcher" 字串——內容跟 materials 不同，
-  // 舊版就長這樣：檔案在、標記在，但標題不會變。
-  const staleWatcher = await checkTabSync(tabStep, MATERIALS);
-  assert.equal(staleWatcher.status, "warn");
-  assert.match(staleWatcher.detail, /舊版/);
-  ok("watcher 是舊版時不給綠燈——只看檔案在不在會漏掉");
+  const freshBlock = await checkTabSync(tabStep, MATERIALS);
+  assert.equal(freshBlock.status, "ok");
+  ok("rc 區塊是新版時給綠燈");
+
+  // Windows 那條路沒有跟著改：仍然要有 watcher 檔，而且內容要跟 materials 一致。
+  const winTabStep = describeStep("tab-sync", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "win32",
+  });
+  assert.notEqual(winTabStep.target, undefined);
+  assert.deepEqual(await checkTabSync(winTabStep, MATERIALS), {
+    id: "tab-sync",
+    label: winTabStep.label,
+    status: "missing",
+    detail: "尚未安裝",
+  });
+  mkdirSync(path.dirname(winTabStep.target), { recursive: true });
+  writeFileSync(winTabStep.target, "watcher");
+  const winStale = await checkTabSync(winTabStep, MATERIALS);
+  assert.equal(winStale.status, "warn");
+  ok("Windows 仍然檢查 watcher 檔在不在、是不是舊版");
 
   // protectExisting 的列不能用逐字相同當作完成：那些檔案的正常狀態就是「工作坊的
   // 內容 + 學生自己的內容」。實測踩到——學生按了「用 AI 合併」，工作坊那段確實整段
@@ -282,9 +316,14 @@ process.stdin.on("end", () => {
   assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "warn");
   ok("AGENTS.md 也受保護，且 Markdown 標題算實質內容");
 
-  installFrom(tabStep.watcherSource, tabStep.target);
-  assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");
-  ok("tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
+  installFrom(winTabStep.watcherSource, winTabStep.target);
+  mkdirSync(path.dirname(winTabStep.rcTarget), { recursive: true });
+  writeFileSync(
+    winTabStep.rcTarget,
+    upsertBlock("", winTabStep.rcMarker, winTabStep.rcBlock),
+  );
+  assert.equal((await checkTabSync(winTabStep, MATERIALS)).status, "ok");
+  ok("Windows 的 tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
 
   const agentStep = describeStep("claude-namer", {
     lang: "zh-TW",

@@ -183,14 +183,17 @@ async function allowlistStep(step) {
 }
 
 async function tabSyncStep(step) {
-  const source = sourcePath({ source: step.watcherSource });
-  await mkdir(path.dirname(step.target), { recursive: true });
-  await backup(step.target);
-  // PowerShell 5.1 靠 BOM 判讀中文字；二進位複製才不會在安裝時弄丟。
-  await copyFile(source, step.target);
+  // POSIX 沒有 watcher 檔要裝（step.target 是 undefined），只寫 rc 區塊。
+  if (step.target !== undefined) {
+    const source = sourcePath({ source: step.watcherSource });
+    await mkdir(path.dirname(step.target), { recursive: true });
+    await backup(step.target);
+    // PowerShell 5.1 靠 BOM 判讀中文字；二進位複製才不會在安裝時弄丟。
+    await copyFile(source, step.target);
 
-  if (process.platform !== "win32") {
-    await chmod(step.target, 0o755);
+    if (process.platform !== "win32") {
+      await chmod(step.target, 0o755);
+    }
   }
 
   const current = existsSync(step.rcTarget)
