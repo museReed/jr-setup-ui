@@ -503,15 +503,28 @@ function titleScript() {
     ].join("\n");
   }
 
+  // POSIX 這一格改成直接叫命名腳本，因為 watcher 已經不再安裝了（見
+  // docs/windows-tab-title-why-watcher.md）。標題現在是 set-session-name.sh 自己把
+  // OSC 寫進 /dev/ttysNNN——那才是學生真正會走的路徑，這一格就該驗它。
+  //
+  // ⚠️ 不要退回「在背景啟動 ai-tab-sync.sh」的舊寫法。那支腳本 POSIX 上已經不裝了，
+  // 但上一輪安裝留下的殘檔會讓它照樣跑起來、標題照樣變——這一格於是給出假的綠燈
+  // （2026-08-20 在 macOS VM 上實測踩到：機器先裝過 main，再裝分支，驗證仍然過）。
+  //
+  // CLAUDE_PROJECT_DIR 指到家目錄：命名腳本會依工作目錄加上 [專案] 前綴，指到家目錄
+  // 就不加，學生看到的字才跟卡片上寫的那句話一模一樣。
+  //
+  // 第二個參數要傳這個 shell 自己的 pid：腳本是用它去查 tty 的。
+  const namer = '"$HOME/.claude/hooks/set-session-name.sh"';
+
   return [
-    'sync="$(mktemp)"',
-    `printf '%s\\n' '${name}' > "$sync"`,
-    '"$HOME/.local/bin/ai-tab-sync.sh" "$sync" "$(tty)" &',
-    "watcher=$!",
-    "sleep 5",
-    'kill "$watcher" 2>/dev/null',
-    'rm -f "$sync"',
-    'echo "標題測試結束——剛才那五秒分頁標題有變嗎？"',
+    `if [ ! -x ${namer} ]; then`,
+    '  echo "找不到命名腳本——請先把「對話自己取名字」那張卡裝好再回來。"',
+    "  exit 0",
+    "fi",
+    "unset AI_TAB_SYNC_FILE",
+    `CLAUDE_PROJECT_DIR="$HOME" ${namer} '${name}' "$$"`,
+    `echo "標題測試結束——這個視窗的分頁標題現在是「${name}」嗎？"`,
   ].join("\n");
 }
 
