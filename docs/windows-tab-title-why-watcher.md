@@ -72,6 +72,53 @@ Get-Content …\session-names\xxx.txt -Encoding UTF8     # 🔧 前綴測試
 名稱檔是 UTF-8 **不帶 BOM**，PowerShell 5.1 的 `Get-Content` 預設用系統 ANSI
 codepage 讀。讀的時候一定要加 `-Encoding UTF8`。
 
+## Windows 也有「閃一下又跳回去」，成因跟 macOS 相同
+
+在分頁裡進入一個背景 agent 時，標題會先出現**那個 agent 的正確名字**，一秒內又跳回
+**上一個互動 session 的名字**。macOS 在拿掉 watcher 之前是同一個現象。
+
+鏈條兩個平台一樣：
+
+1. 進入 agent → **Claude Code 自己把 agent 的名字寫進標題**（那個名字就是 auto-rename
+   寫進 `jobs/{id}/state.json` 的名字）
+2. ≤1 秒後 → **watcher 把 sync 檔的內容寫上去**
+
+sync 檔裡是那個互動 session 的名字：背景 session 的命名走 job state 分支，不寫 sync
+檔，所以檔案內容從頭到尾沒變，watcher 就一直把舊名字貼回去。
+
+差別只在寫入手段（macOS 是 OSC 進裝置、Windows 是 `SetConsoleTitle`）。現象、成因、
+時間長度都一致。
+
+## 為什麼 Windows 不能照 macOS 那樣修
+
+macOS 的修法是**拿掉 watcher，改成事件驅動**——命名 hook 自己在需要的時候寫一次。
+看 agent 期間本 session 沒有 hook 事件，沒人去蓋，agent 的名字就留得住。
+
+Windows 卡在第一步：**hook 寫不進標題**（見上一節）。所以「拿掉 watcher」等於沒有
+任何人寫標題。
+
+那退一步呢——**留著 watcher，但只在 sync 檔變動時才寫**？看 agent 期間 watcher 不動，
+名字一樣留得住。這個想法自相矛盾：
+
+> watcher 那個「每秒無條件重寫」，正是它贏過 Claude Code 的唯一手段。改成事件驅動
+> 之後，互動 session 的標題就會被 Claude Code 蓋掉。
+
+那用 `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` 讓 Claude Code 閉嘴呢？**也不行**——閉嘴
+之後，鏈條第 1 步那個「Claude Code 寫入 agent 正確名字」會一起消失，標題只會停在舊
+名字，連閃都不閃。
+
+**Claude Code 同時是敵人和唯一的來源**：互動 session 的標題要贏過它，看 agent 時又
+只有它會寫出正確的名字。這是目前解不開的地方。
+
+### 還沒探索的方向
+
+`ai-tab-sync.ps1` 的註解提到 Windows **可以把標題讀回來**（`[Console]::Title` 的
+getter），macOS 的 bash 做不到。理論上 watcher 可以「讀回來判斷是誰寫的，是 Claude
+Code 寫的 agent 名字就別動」。
+
+但要怎麼可靠地分辨「Claude Code 寫的 agent 名字」和「其他程式亂寫的」，目前沒有判準。
+**這是個方向，不是方案。**
+
 ## 那要拿掉 Windows 的 watcher，需要什麼
 
 不是「再驗一次」就能解決的，需要其中之一：
