@@ -43,9 +43,10 @@ try {
     home: "C:/Users/Reed",
     platform: "win32",
   });
-  assert.equal(step.hookFiles.length, 3);
+  assert.equal(step.hookFiles.length, 4);
   assert.match(step.windowsCodexProfile.block, /function codex/);
   assert.match(step.windowsCodexProfile.block, /codex-shared-app-server\.ps1/);
+  assert.match(step.windowsCodexProfile.block, /function codex-server-restart/);
   assert.equal(stepsForTools(["codex"], "win32").includes("tab-sync"), false);
   assert.equal(stepsForTools(["claude", "codex"], "win32").includes("tab-sync"), true);
   ok("Codex-only 不再安裝 Watcher；同時選 Claude 時 tab-sync 只留給 Claude");

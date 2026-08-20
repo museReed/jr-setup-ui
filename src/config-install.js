@@ -434,11 +434,17 @@ function tabSyncBlock(platform, watcherTarget) {
   return powershellTabSyncFunction("claude", watcherTarget);
 }
 
-function windowsCodexAppServerBlock(launcherTarget) {
+function windowsCodexAppServerBlock(launcherTarget, restartTarget) {
   const quotedTarget = launcherTarget.replaceAll("'", "''");
+  const quotedRestart = restartTarget.replaceAll("'", "''");
   return `function codex {
   param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
   & '${quotedTarget}' @InvocationArgs
+  $global:LASTEXITCODE = $LASTEXITCODE
+}
+
+function codex-server-restart {
+  & '${quotedRestart}'
   $global:LASTEXITCODE = $LASTEXITCODE
 }`;
 }
@@ -517,13 +523,25 @@ function agentHooks(id, home, platform) {
           source: "skills/hooks/codex-shared-app-server.ps1",
           target: `${agentDir}/hooks/codex-shared-app-server.ps1`,
         },
+        {
+          base: "codex-server-restart",
+          source: "skills/hooks/codex-server-restart.ps1",
+          target: `${agentDir}/hooks/codex-server-restart.ps1`,
+        },
       );
     } else {
-      hookFiles.push({
-        base: "codex-session-name-set",
-        source: "skills/hooks/codex-session-name-set.py",
-        target: `${agentDir}/hooks/codex-session-name-set.py`,
-      });
+      hookFiles.push(
+        {
+          base: "codex-session-name-set",
+          source: "skills/hooks/codex-session-name-set.py",
+          target: `${agentDir}/hooks/codex-session-name-set.py`,
+        },
+        {
+          base: "codex-server-restart",
+          source: "skills/hooks/codex-server-restart.sh",
+          target: `${home}/.local/bin/codex-server-restart`,
+        },
+      );
     }
   }
   // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
@@ -549,6 +567,7 @@ function agentHooks(id, home, platform) {
           marker: CODEX_APP_SERVER_MARKER,
           block: windowsCodexAppServerBlock(
             byBase["codex-shared-app-server"].target,
+            byBase["codex-server-restart"].target,
           ),
           legacyCodexTabSyncBlock: powershellTabSyncFunction(
             "codex",

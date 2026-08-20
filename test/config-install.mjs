@@ -250,7 +250,7 @@ try {
 
   assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
   assert.equal(codexHooks.namingAllowRule, undefined);
-  assert.equal(codexHooks.hookFiles.length, 3);
+  assert.equal(codexHooks.hookFiles.length, 4);
   assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
   assert.equal(
     codexHooks.windowsCodexProfile.target,
@@ -258,6 +258,8 @@ try {
   );
   assert.match(codexHooks.windowsCodexProfile.block, /function codex/);
   assert.match(codexHooks.windowsCodexProfile.block, /codex-shared-app-server\.ps1/);
+  assert.match(codexHooks.windowsCodexProfile.block, /function codex-server-restart/);
+  assert.match(codexHooks.windowsCodexProfile.block, /codex-server-restart\.ps1/);
   assert.match(codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock, /AI_TAB_SYNC_FILE/);
   const legacyProfile = `${windowsTabSync.rcBlock}\n\n${codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock}`;
   const migratedProfile = removeLegacyCodexTabSyncBlock(

@@ -34,3 +34,22 @@ remote TUI。server 採延遲啟動，不需要排程工作，也不需要常駐
 | helper | Python Unix WebSocket client | PowerShell `ClientWebSocket` |
 | 命名 API | `thread/name/set` | `thread/name/set` |
 | Watcher / SQLite / tab-sync | 原生成功後不使用；舊版 fallback 尚保留 | 正式路徑完全移除 |
+
+## 更新背景 server
+
+安裝「Codex 對話自己取名字」後，PowerShell profile 會提供全域
+`codex-server-restart` 指令，不需要切換到 jr-setup-ui 或任何特定資料夾。
+
+若 Codex 已更新但背景 server 還是舊版本，先顯示：
+
+```text
+Codex 已更新，但背景 server 還是舊版本。
+
+請先關閉所有 Codex 視窗，再開一個新的 PowerShell 視窗，貼上：
+
+codex-server-restart
+```
+
+restart 會先檢查 `4500` 是否仍有 TUI 連線。有連線就拒絕停止並再次說明；沒有連線
+才會確認 PID 是 jr-setup-ui 啟動的 Codex app-server、停止舊程序、用目前 CLI 啟動新版並
+等待 `/readyz`。它不會只看 port 就停止未知程序。

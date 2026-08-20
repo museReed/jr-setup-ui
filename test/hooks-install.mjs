@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { AGENT_HOOK_TIMEOUT_SECONDS } from "../src/config-install.js";
 import { namingAllowRule } from "../src/config-install.js";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -162,7 +162,13 @@ try {
   );
   assert(codexHelper, "POSIX Codex namer 必須連 helper 一起安裝");
   assert.equal(readFileSync(codexHelper.target, "utf8").length > 0, true);
-  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 保留單份註冊");
+  const codexRestart = codexStep.hookFiles.find(
+    (file) => file.base === "codex-server-restart",
+  );
+  assert(codexRestart, "Codex namer 必須連全域 restart 指令一起安裝");
+  assert.equal(readFileSync(codexRestart.target, "utf8").length > 0, true);
+  assert.equal(statSync(codexRestart.target).mode & 0o111, 0o111);
+  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 與全域 restart 指令都保持單份");
 
   // 迴歸：規則不能是「powershell -File …」那種形狀。Claude Code 拒絕用白名單
   // 放行會生出巢狀直譯器的指令（原文 Command spawns a nested PowerShell process

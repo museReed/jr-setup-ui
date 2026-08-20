@@ -42,6 +42,19 @@ try {
     ),
   );
   assert.match(windows.windowsCodexProfile.block, /function codex/);
+  assert.match(windows.windowsCodexProfile.block, /function codex-server-restart/);
+  assert(
+    windows.hookFiles.some(
+      ({ source }) => source === "skills/hooks/codex-server-restart.ps1",
+    ),
+  );
+  assert(
+    posix.hookFiles.some(
+      ({ source, target }) =>
+        source === "skills/hooks/codex-server-restart.sh" &&
+        target === "/Users/student/.local/bin/codex-server-restart",
+    ),
+  );
   ok("installer 依平台安裝 app-server helper，Windows 另裝自動啟動 wrapper");
 
   for (const file of [

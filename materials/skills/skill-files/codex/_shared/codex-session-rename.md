@@ -43,3 +43,17 @@ Hook 注入的訊息已經包含這個 session 的精確 relay 路徑；直接�
 ```text
 改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`
 ```
+
+## 更新背景 server
+
+安裝 auto-rename 時也會安裝全域 `codex-server-restart`，在哪個資料夾都能直接執行。
+更新 Codex 後若背景 server 仍是舊版，先關閉所有 Codex 視窗，再開新的
+PowerShell／Terminal 視窗執行：
+
+```text
+codex-server-restart
+```
+
+Windows 會檢查 localhost WebSocket 連線；macOS 會檢查 Unix socket client。只要仍有
+Codex 視窗連線就拒絕停止，避免中斷進行中的工作。確認沒有人使用後，script 才會驗證
+server 身分、停止舊程序並以目前的 Codex CLI 建立新版 server。
