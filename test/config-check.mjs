@@ -431,7 +431,7 @@ process.stdin.on("end", () => {
     ),
   );
   assert.equal((await checkAgentHooks(macAgentStep, MATERIALS)).status, "ok");
-  ok("macOS Codex 命名要有版本提醒 profile 才給綠燈");
+  ok("macOS Codex 命名要有 core daemon profile 才給綠燈");
 
   // 舊版 hook 檔案：三項全綠，但模型每次命名還是會被權限層擋下。
   writeFileSync(agentStep.hookFiles[0].target, "舊版內容");

@@ -134,6 +134,23 @@ async function interruptClaim({ newerPending }) {
 }
 
 try {
+  const source = readFileSync(HOOK, "utf8");
+  assert.match(source, /JR_CODEX_AUTO_RENAME_DISABLED/);
+  assert.match(source, /JR_CODEX_NATIVE_DAEMON/);
+
+  const disabledHome = mkdtempSync(path.join(tmpdir(), "jr-codex-namer-disabled-"));
+  const disabledCounters = path.join(disabledHome, "counters");
+  const disabled = runHook({
+    sessionId: "session-disabled",
+    home: disabledHome,
+    counterDir: disabledCounters,
+    env: { JR_CODEX_AUTO_RENAME_DISABLED: "1" },
+  });
+  assert.equal(disabled.status, 0, disabled.stderr);
+  assert.equal(existsSync(disabledCounters), false);
+  assert.equal(disabled.stdout, "");
+  ok("launcher 降級時 hook 不建立命名工作");
+
   const home = mkdtempSync(path.join(tmpdir(), "jr-codex-namer-home-"));
   const counterDir = path.join(home, "counters");
   const first = runHook({ sessionId: "session-a", home, counterDir });
@@ -207,6 +224,29 @@ try {
     "新的名稱|新的名稱|新的名稱",
   );
   ok("SQLite fallback 只同步 sidebar，保留 relay/default 等待 tab 同步");
+
+  execFileSync("sqlite3", [
+    db,
+    "INSERT INTO threads VALUES ('session-native', 'original', 'original', 'original');",
+  ]);
+  const nativeRelay = path.join(counterDir, "session-native.pending");
+  const nativeTab = path.join(home, "native-tab.txt");
+  writeFileSync(nativeRelay, "daemon 稍後重試\n");
+  const nativeFailure = runHook({
+    event: "tool",
+    sessionId: "session-native",
+    home,
+    counterDir,
+    env: { JR_CODEX_NATIVE_DAEMON: "1", AI_TAB_SYNC_FILE: nativeTab },
+  });
+  assert.equal(nativeFailure.status, 0, nativeFailure.stderr);
+  assert.equal(readFileSync(nativeRelay, "utf8"), "daemon 稍後重試\n");
+  assert.equal(existsSync(nativeTab), false);
+  assert.equal(
+    execFileSync("sqlite3", [db, "SELECT name FROM threads WHERE id='session-native';"], { encoding: "utf8" }).trim(),
+    "original",
+  );
+  ok("core daemon 暫時失敗時保留 relay，不改 SQLite 或 legacy tab-sync");
 
   writeFileSync(path.join(counterDir, "session-no-row.pending"), "找不到資料列\n");
   const noChanges = runHook({

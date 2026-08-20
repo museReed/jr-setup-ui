@@ -9,10 +9,11 @@
 
 | 平台 | 共用 app-server | 命名通道 |
 |---|---|---|
-| **macOS / Linux** | Codex 的本機 control socket | Unix socket + `thread/name/set` |
+| **macOS** | `codex app-server daemon start` 管理的 core daemon | Unix socket + `thread/name/set` |
+| **Linux** | Codex 的本機 control socket | Unix socket + `thread/name/set` |
 | **Windows** | 第一個 `codex` 在 `4500–4599` 找空 port 啟動，後續 TUI 讀狀態檔共用 | localhost WebSocket + `thread/name/set` |
 
-兩邊都不直接改 SQLite，也不使用 Codex Watcher 或 tab-sync。
+macOS 與 Windows 不直接改 SQLite，也不使用 Codex Watcher 或 tab-sync；Linux 暫時保留舊版 fallback。
 
 ## 改名指令
 
@@ -31,8 +32,9 @@ Hook 注入的訊息已經包含這個 session 的精確 relay 路徑；直接�
 
 | 項目 | 說明 |
 |---|---|
-| **Codex 版本** | Windows 使用支援 `app-server --listen`、`--remote` 與 `thread/name/set` 的版本 |
+| **Codex 版本** | macOS 使用支援 `app-server daemon` 的版本；Windows 使用支援 `app-server --listen`、`--remote` 與 `thread/name/set` 的版本 |
 | **Codex 設定** | `status_line` 包含 `"thread-title"`，`terminal_title = ["thread"]` |
+| **macOS 啟動方式** | 從已載入 zsh profile 的終端執行 `codex`；launcher 會啟動或重用 Codex core daemon，再把 TUI 接上 daemon |
 | **Windows 啟動方式** | 從已載入 PowerShell profile 的終端執行 `codex`；wrapper 會自動啟動或重用背景 app-server。啟動失敗時改走原生 Codex，只有 auto-rename 暫停 |
 | **Session 定位** | 一律使用 hook 給的 `session_id`／`CODEX_THREAD_ID`，不猜「最近更新」的 thread |
 
@@ -56,4 +58,4 @@ codex-server-restart
 
 Windows 會檢查 localhost WebSocket 連線；macOS 會檢查 Unix socket client。只要仍有
 Codex 視窗連線就拒絕停止，避免中斷進行中的工作。確認沒有人使用後，script 才會驗證
-server 身分、停止舊程序並以目前的 Codex CLI 建立新版 server。
+server 是否仍被使用。macOS 交給 `codex app-server daemon restart` 更新；Windows 才由 jr-setup-ui 的 wrapper 停止舊程序並建立新版 server。

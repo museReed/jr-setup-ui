@@ -18,6 +18,11 @@
 EVENT="${1:-tool}"
 STDIN_JSON=$(cat)
 
+# The launcher disables auto-rename when the native daemon is unavailable.
+if [ "${JR_CODEX_AUTO_RENAME_DISABLED:-}" = "1" ]; then
+  exit 0
+fi
+
 SESSION_ID=$(echo "$STDIN_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null || true)
 
 HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -35,6 +40,12 @@ apply_name() {
   local tab_applied=false
   if [ -n "$SESSION_ID" ] && python3 "$HOOK_DIR/codex-session-name-set.py" "$SESSION_ID" "$name" >/dev/null 2>&1; then
     return 0
+  fi
+
+  # A daemon-backed TUI must use thread/name/set so the sidebar, status line,
+  # and terminal tab receive one native update. Keep the relay for a retry.
+  if [ "${JR_CODEX_NATIVE_DAEMON:-}" = "1" ]; then
+    return 1
   fi
 
   # Keep the sidebar useful on older/mixed setups, but this does not prove the

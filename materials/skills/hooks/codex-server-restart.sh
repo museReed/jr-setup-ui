@@ -1,37 +1,35 @@
 #!/bin/bash
-# Safely restart the shared macOS Codex control server after every TUI is closed.
+# Safely restart Codex's native daemon after every connected TUI is closed.
 
 set -u
 
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-CONTROL_DIR="$CODEX_HOME_DIR/app-server-control"
-SOCKET="${CODEX_APP_SERVER_SOCKET:-$CONTROL_DIR/app-server-control.sock}"
-LOG="$CONTROL_DIR/app-server.log"
-STATE_FILE="$CONTROL_DIR/macos-app-server.state"
-
+DEFAULT_SOCKET="$CODEX_HOME_DIR/app-server-control/app-server-control.sock"
 CODEX_BIN=$(command -v codex 2>/dev/null || true)
+
 if [ -z "$CODEX_BIN" ]; then
   echo '找不到真正的 Codex 執行檔，請先重新安裝 Codex CLI。' >&2
   exit 1
 fi
+
+CURRENT_INFO=$("$CODEX_BIN" app-server daemon version 2>/dev/null || true)
+SOCKET=$(printf '%s' "$CURRENT_INFO" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("socketPath", ""))
+except (json.JSONDecodeError, AttributeError):
+    pass
+' 2>/dev/null)
+[ -n "$SOCKET" ] || SOCKET="$DEFAULT_SOCKET"
 
 if [ -S "$SOCKET" ]; then
   SOCKET_ROWS=$(lsof -n -P -U "$SOCKET" 2>/dev/null || true)
   SERVER_PID=$(printf '%s\n' "$SOCKET_ROWS" | awk 'NR > 1 { print $2; exit }')
 
   if [ -z "$SERVER_PID" ]; then
-    echo "找到舊 socket，但找不到它的 Codex app-server；不會刪除：$SOCKET" >&2
+    echo "找到 daemon socket，但找不到它的 Codex 程序；不會重啟：$SOCKET" >&2
     exit 1
   fi
-
-  SERVER_COMMAND=$(ps -p "$SERVER_PID" -o command= 2>/dev/null || true)
-  case "$SERVER_COMMAND" in
-    *codex*app-server*--listen*) ;;
-    *)
-      echo "socket 不是由 Codex app-server 使用；不會停止 PID $SERVER_PID。" >&2
-      exit 1
-      ;;
-  esac
 
   SOCKET_NODES=$(printf '%s\n' "$SOCKET_ROWS" | awk 'NR > 1 { print $8 }')
   ALL_UNIX=$(lsof -n -P -U 2>/dev/null || true)
@@ -45,51 +43,54 @@ if [ -S "$SOCKET" ]; then
   CLIENT_COUNT=$(printf '%s\n' "$CLIENT_PIDS" | awk 'NF { count++ } END { print count + 0 }')
 
   if [ "$CLIENT_COUNT" -gt 0 ]; then
-    echo "無法重啟：仍有 Codex 視窗連著背景 server（偵測到 $CLIENT_COUNT 個連線）。"
+    echo "無法重啟：仍有 Codex 視窗連著 core daemon（偵測到 $CLIENT_COUNT 個連線）。"
     echo '請先關閉所有 Codex 視窗，再開新的 Terminal 視窗執行：'
     echo 'codex-server-restart'
     exit 2
   fi
-
-  kill "$SERVER_PID" 2>/dev/null || {
-    echo "無法停止舊 Codex app-server（PID $SERVER_PID）。" >&2
-    exit 1
-  }
-  attempt=0
-  while kill -0 "$SERVER_PID" 2>/dev/null && [ "$attempt" -lt 30 ]; do
-    sleep 0.1
-    attempt=$((attempt + 1))
-  done
-  if kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo "舊 Codex app-server（PID $SERVER_PID）沒有停止；未啟動新 server。" >&2
-    exit 1
-  fi
-  [ ! -S "$SOCKET" ] || rm -f -- "$SOCKET"
 fi
 
-umask 077
-mkdir -p -- "$CONTROL_DIR"
-nohup "$CODEX_BIN" -c features.code_mode_host=true app-server --listen unix:// \
-  >"$LOG" 2>&1 &
-NEW_PID=$!
+RESTART_OUTPUT=$("$CODEX_BIN" app-server daemon restart 2>&1)
+RESTART_EXIT=$?
+if [ "$RESTART_EXIT" -ne 0 ]; then
+  echo 'Codex core daemon 重啟失敗。' >&2
+  [ -z "$RESTART_OUTPUT" ] || printf '%s\n' "$RESTART_OUTPUT" >&2
+  exit "$RESTART_EXIT"
+fi
 
-attempt=0
-while [ "$attempt" -lt 50 ]; do
-  if [ -S "$SOCKET" ] && kill -0 "$NEW_PID" 2>/dev/null; then
-    VERSION=$("$CODEX_BIN" --version 2>/dev/null | head -1)
-    TEMP_STATE="$STATE_FILE.$$.tmp"
-    printf "%s\t%s\t%s\n" "$NEW_PID" "$VERSION" "$SOCKET" > "$TEMP_STATE"
-    mv -f -- "$TEMP_STATE" "$STATE_FILE"
-    echo "Codex 背景 server 已更新至 $VERSION。"
-    echo '現在可以重新執行 codex。'
-    exit 0
-  fi
-  if ! kill -0 "$NEW_PID" 2>/dev/null; then
-    break
-  fi
-  sleep 0.1
-  attempt=$((attempt + 1))
-done
+VERSION_OUTPUT=$("$CODEX_BIN" app-server daemon version 2>&1)
+VERSION_EXIT=$?
+if [ "$VERSION_EXIT" -ne 0 ]; then
+  echo 'Codex core daemon 已執行 restart，但無法確認狀態。' >&2
+  [ -z "$VERSION_OUTPUT" ] || printf '%s\n' "$VERSION_OUTPUT" >&2
+  exit "$VERSION_EXIT"
+fi
 
-echo "新版 Codex app-server 沒有成功啟動，請查看：$LOG" >&2
-exit 1
+VERSION_FIELDS=$(printf '%s' "$VERSION_OUTPUT" | python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin)
+    print(value.get("status", ""))
+    print(value.get("cliVersion", ""))
+    print(value.get("appServerVersion", ""))
+    print(value.get("socketPath", ""))
+except (json.JSONDecodeError, AttributeError):
+    raise SystemExit(1)
+' 2>/dev/null || true)
+STATUS=$(printf '%s\n' "$VERSION_FIELDS" | sed -n '1p')
+CLI_VERSION=$(printf '%s\n' "$VERSION_FIELDS" | sed -n '2p')
+SERVER_VERSION=$(printf '%s\n' "$VERSION_FIELDS" | sed -n '3p')
+NEW_SOCKET=$(printf '%s\n' "$VERSION_FIELDS" | sed -n '4p')
+
+if [ "$STATUS" != 'running' ] || [ -z "$NEW_SOCKET" ] || [ ! -S "$NEW_SOCKET" ]; then
+  echo 'Codex core daemon 沒有回報可用狀態。' >&2
+  exit 1
+fi
+
+if [ -n "$CLI_VERSION" ] && [ -n "$SERVER_VERSION" ] && [ "$CLI_VERSION" != "$SERVER_VERSION" ]; then
+  echo "Codex CLI 是 $CLI_VERSION，但 core daemon 仍是 $SERVER_VERSION。" >&2
+  exit 1
+fi
+
+echo "Codex core daemon 已更新至 ${SERVER_VERSION:-目前版本}。"
+echo '現在可以重新執行 codex。'

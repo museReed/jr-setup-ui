@@ -980,7 +980,7 @@ export async function checkAgentHooks(step, materials) {
       id: step.id,
       label: step.label,
       status: "warn",
-      detail: "hook 已註冊，但 shell profile 還沒接上版本提醒",
+      detail: "hook 已註冊，但 shell profile 還沒接上 Codex core daemon",
     };
   }
 

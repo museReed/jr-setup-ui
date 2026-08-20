@@ -258,7 +258,7 @@ export function codexVersionCheck(stdout, platform = process.platform) {
 
   const match = detail.match(/(?:^|\s)(\d+)\.(\d+)\.(\d+)$/);
   const version = match?.slice(1).map(Number) ?? null;
-  const minimumMinor = platform === "win32" ? 148 : 146;
+  const minimumMinor = platform === "linux" ? 146 : 148;
   const minimum = `0.${minimumMinor}.0`;
   const supported =
     version !== null &&

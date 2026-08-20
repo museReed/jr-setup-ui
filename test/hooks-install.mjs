@@ -211,7 +211,7 @@ try {
     const versionGuard = codexStep.hookFiles.find(
       (file) => file.base === "codex-version-guard",
     );
-    assert(versionGuard, "macOS Codex namer 必須連版本提醒一起安裝");
+    assert(versionGuard, "macOS Codex namer 必須連 core daemon launcher 一起安裝");
     assert.equal(statSync(versionGuard.target).mode & 0o111, 0o111);
   }
   ok("Codex 命名 hook 實際安裝可重跑，hooks.json 與啟動入口都保持單份");

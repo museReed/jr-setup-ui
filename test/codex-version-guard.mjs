@@ -9,7 +9,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,9 +23,11 @@ const guard = path.join(
 const source = readFileSync(guard, "utf8");
 const syntax = spawnSync("bash", ["-n", guard], { encoding: "utf8" });
 assert.equal(syntax.status, 0, syntax.stderr);
-assert.match(source, /macos-app-server\.state/);
-assert.match(source, /背景 server 仍是/);
-assert.match(source, /codex-server-restart/);
+assert.match(source, /app-server daemon start/);
+assert.match(source, /--remote "unix:\/\/.*socket_path"/);
+assert.match(source, /JR_CODEX_NATIVE_DAEMON=1/);
+assert.match(source, /JR_CODEX_AUTO_RENAME_DISABLED=1/);
+assert.doesNotMatch(source, /macos-app-server\.state/);
 
 const temp = mkdtempSync("/tmp/cvg-");
 const home = path.join(temp, "home");
@@ -38,18 +39,36 @@ mkdirSync(bin, { recursive: true });
 mkdirSync(control, { recursive: true });
 writeFileSync(
   path.join(bin, "codex"),
-  `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "$FAKE_CODEX_VERSION"; exit 0; fi\nprintf '%s\\n' "$*" >> "$FAKE_CODEX_CALLS"\nexit 7\n`,
-);
-writeFileSync(
-  path.join(bin, "lsof"),
-  "#!/bin/sh\nprintf 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\\n'\nprintf 'codex 4242 user 9u unix 0x0 0t0 123 app-server-control.sock\\n'\n",
+  `#!/bin/sh
+if [ "$*" = "app-server daemon start" ]; then
+  if [ "\${FAKE_DAEMON_EXIT:-0}" -ne 0 ]; then echo "daemon failed"; exit "$FAKE_DAEMON_EXIT"; fi
+  printf '%s\\n' "$FAKE_DAEMON_JSON"
+  exit 0
+fi
+printf 'native=%s disabled=%s socket=%s args=%s\\n' "\${JR_CODEX_NATIVE_DAEMON:-}" "\${JR_CODEX_AUTO_RENAME_DISABLED:-}" "\${CODEX_APP_SERVER_SOCKET:-}" "$*" >> "$FAKE_CODEX_CALLS"
+exit 7
+`,
 );
 chmodSync(path.join(bin, "codex"), 0o755);
-chmodSync(path.join(bin, "lsof"), 0o755);
-writeFileSync(
-  path.join(control, "macos-app-server.state"),
-  `4242\tcodex-cli 0.148.0\t${socket}\n`,
-);
+
+const runGuard = (extraEnv = {}, args = ["--sandbox", "read-only"]) =>
+  spawnSync("bash", [guard, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      CODEX_HOME: path.join(home, ".codex"),
+      PATH: `${bin}:${process.env.PATH}`,
+      FAKE_CODEX_CALLS: calls,
+      FAKE_DAEMON_JSON: JSON.stringify({
+        status: "running",
+        socketPath: socket,
+        cliVersion: "0.149.0",
+        appServerVersion: "0.149.0",
+      }),
+      ...extraEnv,
+    },
+  });
 
 const server = net.createServer();
 await new Promise((resolve, reject) => {
@@ -57,25 +76,51 @@ await new Promise((resolve, reject) => {
   server.listen(socket, resolve);
 });
 try {
-  const result = spawnSync("bash", [guard, "--sandbox", "read-only"], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      HOME: home,
-      CODEX_HOME: path.join(home, ".codex"),
-      PATH: `${bin}:${process.env.PATH}`,
-      FAKE_CODEX_VERSION: "codex-cli 0.149.0",
-      FAKE_CODEX_CALLS: calls,
-    },
+  const success = runGuard();
+  assert.equal(success.status, 7, JSON.stringify(success));
+  assert.equal(success.stderr, "");
+  assert.equal(
+    readFileSync(calls, "utf8"),
+    `native=1 disabled= socket=${socket} args=--remote unix://${socket} --sandbox read-only\n`,
+  );
+
+  writeFileSync(calls, "");
+  const mismatch = runGuard({
+    FAKE_DAEMON_JSON: JSON.stringify({
+      status: "running",
+      socketPath: socket,
+      cliVersion: "0.150.0",
+      appServerVersion: "0.149.0",
+    }),
   });
-  assert.equal(result.status, 7, JSON.stringify(result));
-  assert.match(result.stderr, /Codex 已更新至 codex-cli 0\.149\.0/);
-  assert.match(result.stderr, /背景 server 仍是 codex-cli 0\.148\.0/);
-  assert.match(result.stderr, /codex-server-restart/);
-  assert.equal(readFileSync(calls, "utf8"), "--sandbox read-only\n");
+  assert.equal(mismatch.status, 7, JSON.stringify(mismatch));
+  assert.match(mismatch.stderr, /CLI 已更新至 0\.150\.0/);
+  assert.match(mismatch.stderr, /core daemon 仍是 0\.149\.0/);
+  assert.match(mismatch.stderr, /codex-server-restart/);
+  assert.equal(
+    readFileSync(calls, "utf8"),
+    "native= disabled=1 socket= args=--sandbox read-only\n",
+  );
+
+  writeFileSync(calls, "");
+  const failed = runGuard({ FAKE_DAEMON_EXIT: "9" });
+  assert.equal(failed.status, 7, JSON.stringify(failed));
+  assert.match(failed.stderr, /core daemon 無法啟動/);
+  assert.equal(
+    readFileSync(calls, "utf8"),
+    "native= disabled=1 socket= args=--sandbox read-only\n",
+  );
+
+  writeFileSync(calls, "");
+  const bypass = runGuard({}, ["app-server", "daemon", "version"]);
+  assert.equal(bypass.status, 7, JSON.stringify(bypass));
+  assert.equal(
+    readFileSync(calls, "utf8"),
+    "native= disabled= socket= args=app-server daemon version\n",
+  );
 } finally {
   await new Promise((resolve) => server.close(resolve));
   rmSync(temp, { recursive: true, force: true });
 }
 
-console.log("ok - macOS 版本不同時先提醒，但仍保留原生 Codex 參數與結束碼");
+console.log("ok - macOS launcher 使用原生 daemon；失敗或版本不同時只停用本次 auto-rename");

@@ -126,7 +126,7 @@ assert.doesNotThrow(() => parseCodexAuth(undefined));
 ok("Codex undefined 不拋錯");
 
 for (const [stdout, platform] of [
-  ["codex-cli 0.146.0", "darwin"],
+  ["codex-cli 0.148.0", "darwin"],
   ["codex-cli 0.146.0", "linux"],
   ["codex-cli 0.200.1", "darwin"],
 ]) {
@@ -137,7 +137,7 @@ for (const [stdout, platform] of [
     detail: stdout,
   });
 }
-ok("macOS／Linux 接受 Codex 0.146.0 與較新的穩定版");
+ok("macOS 接受 0.148.0；Linux 保留 0.146.0 門檻");
 
 for (const stdout of [
   "codex-cli 0.145.9",
@@ -148,9 +148,9 @@ for (const stdout of [
   assert.equal(checked.status, "missing");
   assert.equal(checked.installAction, "install-codex");
   assert.equal(checked.installLabel, "升級");
-  assert.match(checked.detail, /升級.*0\.146\.0/);
+  assert.match(checked.detail, /升級.*0\.148\.0/);
 }
-ok("舊版、pre-release 與不合法輸出會要求用官方 action 升級");
+ok("macOS 舊版、pre-release 與不合法輸出會要求升至 0.148.0");
 
 assert.deepEqual(codexVersionCheck("codex-cli 0.147.9", "win32"), {
   id: "codex",
@@ -210,9 +210,9 @@ const supportedLogin = await probeCodexRows([
   {
     type: "close",
     exitCode: 0,
-    stdout: "codex-cli 0.146.0\n",
+    stdout: "codex-cli 0.148.0\n",
     stderr: "",
-    output: "codex-cli 0.146.0\n",
+    output: "codex-cli 0.148.0\n",
   },
   {
     type: "close",
@@ -239,9 +239,9 @@ const loggedOut = await probeCodexRows([
   {
     type: "close",
     exitCode: 0,
-    stdout: "codex-cli 0.146.0\n",
+    stdout: "codex-cli 0.148.0\n",
     stderr: "",
-    output: "codex-cli 0.146.0\n",
+    output: "codex-cli 0.148.0\n",
   },
   {
     type: "close",
@@ -273,9 +273,9 @@ const authTimeout = await probeCodexRows([
   {
     type: "close",
     exitCode: 0,
-    stdout: "codex-cli 0.146.0\n",
+    stdout: "codex-cli 0.148.0\n",
     stderr: "",
-    output: "codex-cli 0.146.0\n",
+    output: "codex-cli 0.148.0\n",
   },
   { type: "timeout" },
 ]);
