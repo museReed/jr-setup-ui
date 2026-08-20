@@ -194,8 +194,12 @@ try {
   assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
   assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
   assert.doesNotMatch(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
-  // Windows 仍然走 watcher：沒有 /dev/ttysNNN 可寫，而且 codex 要 0.146+ 才有原生
-  // thread title。這裡守著「POSIX 拿掉不會順手把 Windows 也拿掉」。
+  // Windows 仍然走 watcher：那邊的 hook 是子行程，寫進去的標題一退出就被還原，只有
+  // 長壽的 watcher 留得住（見 docs/windows-tab-title-why-watcher.md）。這裡守著
+  // 「POSIX 拿掉不會順手把 Windows 也拿掉」。
+  //
+  // 這個區塊現在只包 claude——codex 改用 app-server 原生命名之後就搬出去了，所以直接
+  // 對整塊比對就是在驗 claude 那一段。
   assert.match(windowsTabSync.rcBlock, /AI_TAB_SYNC_FILE/);
   ok("POSIX 只剩 rc 區塊；Windows 只包 Claude，且仍走 watcher");
 
