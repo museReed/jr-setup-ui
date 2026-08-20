@@ -376,8 +376,11 @@ export function isInteractiveInvocation(args) {
 // 拿到，底下的背景 agent 就不再寫標題，看 agent 時分頁會停在本分頁的名字。那等於改動
 // 前的結果（只是不閃），不會更糟，所以沒有為它多做防護。
 //
-// Windows 仍然走 watcher：那邊沒有 /dev/ttysNNN 這種可寫的裝置，而且 codex 要 0.146+
-// 才有原生 thread title。見 powershellTabSyncFunction。
+// Windows 不能照做，而且理由是結構性的：那邊改標題靠 SetConsoleTitle，那是 console 的
+// 行程狀態，而 hook 是被 `powershell.exe -File` 叫起來的子行程——host 一退出標題就被
+// 還原，等於沒寫。標題要留得住，只能靠一個長壽的、待在同一個 console 裡的行程，那就是
+// watcher 本身。2026-08-20 在 Windows 上實測過三種情境，記在
+// docs/windows-tab-title-why-watcher.md，不要再推導一次。
 function posixTabSyncFunction(command) {
   return `${command}() {
   CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command ${command} "$@"
