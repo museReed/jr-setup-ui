@@ -20,6 +20,20 @@ for argument in "$@"; do
   esac
 done
 
+parse_daemon_json() {
+  python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin)
+    print(value.get("status", ""))
+    print(value.get("socketPath", ""))
+    print(value.get("cliVersion", ""))
+    print(value.get("appServerVersion", ""))
+except (json.JSONDecodeError, AttributeError):
+    raise SystemExit(1)
+'
+}
+
 daemon_output=$("$real_codex" app-server daemon start 2>&1)
 daemon_exit=$?
 
@@ -30,32 +44,38 @@ if [ "$daemon_exit" -ne 0 ]; then
   exit $?
 fi
 
-daemon_fields=$(printf '%s' "$daemon_output" | python3 -c '
-import json, sys
-try:
-    value = json.load(sys.stdin)
-    print(value.get("socketPath", ""))
-    print(value.get("cliVersion", ""))
-    print(value.get("appServerVersion", ""))
-except (json.JSONDecodeError, AttributeError):
-    raise SystemExit(1)
-' 2>/dev/null || true)
-socket_path=$(printf '%s\n' "$daemon_fields" | sed -n '1p')
-cli_version=$(printf '%s\n' "$daemon_fields" | sed -n '2p')
-server_version=$(printf '%s\n' "$daemon_fields" | sed -n '3p')
+start_fields=$(printf '%s' "$daemon_output" | parse_daemon_json 2>/dev/null || true)
+socket_path=$(printf '%s\n' "$start_fields" | sed -n '2p')
+cli_version=$(printf '%s\n' "$start_fields" | sed -n '3p')
+server_version=$(printf '%s\n' "$start_fields" | sed -n '4p')
 
-# A cold daemon start can return its JSON just before the Unix socket appears.
-# Wait briefly instead of opening a native TUI that cannot receive name updates.
+# A cold start can report that the daemon process was launched before its Unix
+# socket accepts control requests. Require both the socket and a successful
+# `daemon version` response, polling for about ten seconds at most.
+daemon_ready=false
 if [ -n "$socket_path" ]; then
   readiness_attempt=0
-  while [ ! -S "$socket_path" ] && [ "$readiness_attempt" -lt 50 ]; do
-    sleep 0.1
+  while [ "$readiness_attempt" -lt 50 ]; do
+    if [ -S "$socket_path" ]; then
+      version_output=$("$real_codex" app-server daemon version 2>/dev/null || true)
+      version_fields=$(printf '%s' "$version_output" | parse_daemon_json 2>/dev/null || true)
+      readiness_status=$(printf '%s\n' "$version_fields" | sed -n '1p')
+      readiness_socket=$(printf '%s\n' "$version_fields" | sed -n '2p')
+      if [ "$readiness_status" = 'running' ] && [ -n "$readiness_socket" ] && [ -S "$readiness_socket" ]; then
+        socket_path="$readiness_socket"
+        cli_version=$(printf '%s\n' "$version_fields" | sed -n '3p')
+        server_version=$(printf '%s\n' "$version_fields" | sed -n '4p')
+        daemon_ready=true
+        break
+      fi
+    fi
+    sleep 0.2
     readiness_attempt=$((readiness_attempt + 1))
   done
 fi
 
-if [ -z "$socket_path" ] || [ ! -S "$socket_path" ]; then
-  printf '%s\n' 'Codex core daemon 沒有提供可用 socket；本次仍會開啟 Codex，但不會自動改名。' >&2
+if [ "$daemon_ready" != true ]; then
+  printf '%s\n' 'Codex core daemon 在 10 秒內沒有提供可用連線；本次仍會開啟 Codex，但不會自動改名。' >&2
   JR_CODEX_AUTO_RENAME_DISABLED=1 "$real_codex" "$@"
   exit $?
 fi

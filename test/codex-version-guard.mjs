@@ -24,6 +24,9 @@ const source = readFileSync(guard, "utf8");
 const syntax = spawnSync("bash", ["-n", guard], { encoding: "utf8" });
 assert.equal(syntax.status, 0, syntax.stderr);
 assert.match(source, /app-server daemon start/);
+assert.match(source, /app-server daemon version/);
+assert.match(source, /readiness_attempt.*50/);
+assert.match(source, /sleep 0\.2/);
 assert.match(source, /--remote "unix:\/\/.*socket_path"/);
 assert.match(source, /JR_CODEX_NATIVE_DAEMON=1/);
 assert.match(source, /JR_CODEX_AUTO_RENAME_DISABLED=1/);
@@ -49,6 +52,10 @@ if [ "$*" = "app-server daemon start" ]; then
   printf '%s\\n' "$FAKE_DAEMON_JSON"
   exit 0
 fi
+if [ "$*" = "app-server daemon version" ]; then
+  printf '%s\\n' "$FAKE_DAEMON_VERSION_JSON"
+  exit 0
+fi
 printf 'native=%s disabled=%s socket=%s args=%s\\n' "\${JR_CODEX_NATIVE_DAEMON:-}" "\${JR_CODEX_AUTO_RENAME_DISABLED:-}" "\${CODEX_APP_SERVER_SOCKET:-}" "$*" >> "$FAKE_CODEX_CALLS"
 exit 7
 `,
@@ -65,6 +72,12 @@ const runGuard = (extraEnv = {}, args = ["--sandbox", "read-only"]) =>
       PATH: `${bin}:${process.env.PATH}`,
       FAKE_CODEX_CALLS: calls,
       FAKE_DAEMON_JSON: JSON.stringify({
+        status: "running",
+        socketPath: socket,
+        cliVersion: "0.149.0",
+        appServerVersion: "0.149.0",
+      }),
+      FAKE_DAEMON_VERSION_JSON: JSON.stringify({
         status: "running",
         socketPath: socket,
         cliVersion: "0.149.0",
@@ -97,6 +110,12 @@ try {
       cliVersion: "0.149.0",
       appServerVersion: "0.149.0",
     }),
+    FAKE_DAEMON_VERSION_JSON: JSON.stringify({
+      status: "running",
+      socketPath: delayedSocket,
+      cliVersion: "0.149.0",
+      appServerVersion: "0.149.0",
+    }),
   });
   assert.equal(delayed.status, 7, JSON.stringify(delayed));
   assert.equal(delayed.stderr, "");
@@ -108,6 +127,12 @@ try {
   writeFileSync(calls, "");
   const mismatch = runGuard({
     FAKE_DAEMON_JSON: JSON.stringify({
+      status: "running",
+      socketPath: socket,
+      cliVersion: "0.150.0",
+      appServerVersion: "0.149.0",
+    }),
+    FAKE_DAEMON_VERSION_JSON: JSON.stringify({
       status: "running",
       socketPath: socket,
       cliVersion: "0.150.0",
@@ -134,14 +159,12 @@ try {
 
   writeFileSync(calls, "");
   const bypass = runGuard({}, ["app-server", "daemon", "version"]);
-  assert.equal(bypass.status, 7, JSON.stringify(bypass));
-  assert.equal(
-    readFileSync(calls, "utf8"),
-    "native= disabled= socket= args=app-server daemon version\n",
-  );
+  assert.equal(bypass.status, 0, JSON.stringify(bypass));
+  assert.match(bypass.stdout, /\"status\":\"running\"/);
+  assert.equal(readFileSync(calls, "utf8"), "");
 } finally {
   await new Promise((resolve) => server.close(resolve));
   rmSync(temp, { recursive: true, force: true });
 }
 
-console.log("ok - macOS launcher 會等待冷啟動 socket；失敗或版本不同時只停用本次 auto-rename");
+console.log("ok - macOS launcher 最多等待 10 秒，並同時驗證 socket 與 daemon version");
