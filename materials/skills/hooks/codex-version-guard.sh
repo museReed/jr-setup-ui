@@ -44,6 +44,16 @@ socket_path=$(printf '%s\n' "$daemon_fields" | sed -n '1p')
 cli_version=$(printf '%s\n' "$daemon_fields" | sed -n '2p')
 server_version=$(printf '%s\n' "$daemon_fields" | sed -n '3p')
 
+# A cold daemon start can return its JSON just before the Unix socket appears.
+# Wait briefly instead of opening a native TUI that cannot receive name updates.
+if [ -n "$socket_path" ]; then
+  readiness_attempt=0
+  while [ ! -S "$socket_path" ] && [ "$readiness_attempt" -lt 50 ]; do
+    sleep 0.1
+    readiness_attempt=$((readiness_attempt + 1))
+  done
+fi
+
 if [ -z "$socket_path" ] || [ ! -S "$socket_path" ]; then
   printf '%s\n' 'Codex core daemon 沒有提供可用 socket；本次仍會開啟 Codex，但不會自動改名。' >&2
   JR_CODEX_AUTO_RENAME_DISABLED=1 "$real_codex" "$@"

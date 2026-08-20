@@ -35,6 +35,7 @@ const bin = path.join(temp, "bin");
 const control = path.join(home, ".codex", "app-server-control");
 const socket = path.join(control, "app-server-control.sock");
 const calls = path.join(temp, "calls.txt");
+const delayedSocket = path.join(control, "delayed.sock");
 mkdirSync(bin, { recursive: true });
 mkdirSync(control, { recursive: true });
 writeFileSync(
@@ -42,6 +43,9 @@ writeFileSync(
   `#!/bin/sh
 if [ "$*" = "app-server daemon start" ]; then
   if [ "\${FAKE_DAEMON_EXIT:-0}" -ne 0 ]; then echo "daemon failed"; exit "$FAKE_DAEMON_EXIT"; fi
+  if [ -n "\${FAKE_DELAY_SOCKET:-}" ]; then
+    python3 -c 'import socket,sys,time; time.sleep(0.2); sock=socket.socket(socket.AF_UNIX); sock.bind(sys.argv[1]); sock.close()' "$FAKE_DELAY_SOCKET" >/dev/null 2>&1 &
+  fi
   printf '%s\\n' "$FAKE_DAEMON_JSON"
   exit 0
 fi
@@ -85,6 +89,23 @@ try {
   );
 
   writeFileSync(calls, "");
+  const delayed = runGuard({
+    FAKE_DELAY_SOCKET: delayedSocket,
+    FAKE_DAEMON_JSON: JSON.stringify({
+      status: "started",
+      socketPath: delayedSocket,
+      cliVersion: "0.149.0",
+      appServerVersion: "0.149.0",
+    }),
+  });
+  assert.equal(delayed.status, 7, JSON.stringify(delayed));
+  assert.equal(delayed.stderr, "");
+  assert.equal(
+    readFileSync(calls, "utf8"),
+    `native=1 disabled= socket=${delayedSocket} args=--remote unix://${delayedSocket} --sandbox read-only\n`,
+  );
+
+  writeFileSync(calls, "");
   const mismatch = runGuard({
     FAKE_DAEMON_JSON: JSON.stringify({
       status: "running",
@@ -123,4 +144,4 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
-console.log("ok - macOS launcher 使用原生 daemon；失敗或版本不同時只停用本次 auto-rename");
+console.log("ok - macOS launcher 會等待冷啟動 socket；失敗或版本不同時只停用本次 auto-rename");
