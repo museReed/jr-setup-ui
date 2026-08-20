@@ -14,7 +14,7 @@ const ok = (message) => console.log("ok - " + message);
 try {
   const windows = read("codex-server-restart.ps1");
   assert.match(windows, /Get-NetTCPConnection[\s\S]*-State Established/);
-  assert.match(windows, /仍有 .*Codex 視窗連著背景 server/);
+  assert.match(windows, /仍有 Codex 視窗連著背景 server（偵測到 .*個連線）/);
   assert.match(windows, /exit 2/);
   assert.match(windows, /codex-server-restart/);
   assert.match(windows, /Get-CimInstance Win32_Process/);
@@ -26,7 +26,7 @@ try {
   const syntax = spawnSync("bash", ["-n"], { input: mac, encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
   assert.match(mac, /lsof -n -P -U/);
-  assert.match(mac, /仍有 \$CLIENT_COUNT 個 Codex 視窗連著背景 server/);
+  assert.match(mac, /仍有 Codex 視窗連著背景 server（偵測到 \$CLIENT_COUNT 個連線）/);
   assert.match(mac, /exit 2/);
   assert.match(mac, /codex\*app-server\*--listen/);
   assert.match(mac, /app-server --listen unix:\/\//);

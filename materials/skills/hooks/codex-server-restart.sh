@@ -44,7 +44,7 @@ if [ -S "$SOCKET" ]; then
   CLIENT_COUNT=$(printf '%s\n' "$CLIENT_PIDS" | awk 'NF { count++ } END { print count + 0 }')
 
   if [ "$CLIENT_COUNT" -gt 0 ]; then
-    echo "無法重啟：仍有 $CLIENT_COUNT 個 Codex 視窗連著背景 server。"
+    echo "無法重啟：仍有 Codex 視窗連著背景 server（偵測到 $CLIENT_COUNT 個連線）。"
     echo '請先關閉所有 Codex 視窗，再開新的 Terminal 視窗執行：'
     echo 'codex-server-restart'
     exit 2

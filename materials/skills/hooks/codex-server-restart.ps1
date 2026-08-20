@@ -70,7 +70,7 @@ if ($listener.Count -gt 0) {
     -State Established `
     -ErrorAction SilentlyContinue)
   if ($clients.Count -gt 0) {
-    Write-Host "無法重啟：仍有 $($clients.Count) 個 Codex 視窗連著背景 server。"
+    Write-Host "無法重啟：仍有 Codex 視窗連著背景 server（偵測到 $($clients.Count) 個連線）。"
     Write-Host '請先關閉所有 Codex 視窗，再開新的 PowerShell 視窗執行：'
     Write-Host 'codex-server-restart'
     exit 2
