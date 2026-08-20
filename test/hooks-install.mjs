@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { AGENT_HOOK_TIMEOUT_SECONDS } from "../src/config-install.js";
 import { namingAllowRule } from "../src/config-install.js";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -73,6 +81,12 @@ try {
       { cwd: repoRoot, env, encoding: "utf8" },
     );
 
+  // 回鍋學生的狀態：上一輪裝過的 watcher 還在。裝新版時要把它收走，否則只要有分頁
+  // 還開著，那些分頁裡的舊 wrapper 仍然會啟動它，標題照樣每秒被重寫。
+  const legacyWatcher = path.join(home, ".local", "bin", "ai-tab-sync.sh");
+  mkdirSync(path.dirname(legacyWatcher), { recursive: true });
+  writeFileSync(legacyWatcher, "#!/bin/bash\n# 上一輪裝的\n");
+
   install("tab-sync");
   install("tab-sync");
   const tabStep = describeStep("tab-sync", {
@@ -89,6 +103,17 @@ try {
     assert.equal(process.platform === "win32", false);
     assert.match(rc, /CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command claude/);
     ok("POSIX 的 tab sync 可重跑，只寫 shell function、不裝 watcher");
+
+    assert.equal(existsSync(legacyWatcher), false);
+    ok("舊版留下的 watcher 會被收走");
+
+    // 先備份再刪：這確實是我們裝的檔案，但學生機器上任何「消失了而且救不回來」
+    // 的東西都會變成一次求助。
+    const kept = readdirSync(path.dirname(legacyWatcher)).filter((name) =>
+      name.startsWith("ai-tab-sync.sh.bak."),
+    );
+    assert.equal(kept.length > 0, true);
+    ok("收走之前先留下 .bak，救得回來");
   } else {
     assert.equal(readFileSync(tabStep.target, "utf8").length > 0, true);
     ok("tab sync 實際安裝可重跑，watcher 與 shell function 都會落地");

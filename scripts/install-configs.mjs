@@ -3,7 +3,7 @@
 //   node scripts/install-configs.mjs --step=hook --lang=zh-TW
 //
 // 每做一件事就印一行，讓網頁那邊即時看得到。
-import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -182,8 +182,40 @@ async function allowlistStep(step) {
   );
 }
 
+// 舊版在 POSIX 上會裝一支 ~/.local/bin/ai-tab-sync.sh，由 .zshrc 的 wrapper 啟動它
+// 每秒重寫分頁標題。新版不再需要它——標題改由命名 hook 自己寫 OSC 到 tty。
+//
+// 留著不會自己作怪（沒有人再啟動它），但它咬過人兩次：
+//   1. 回鍋學生只要有分頁還開著，那些分頁裡的舊 wrapper 仍然會用它，標題照樣閃
+//   2. 標題驗證那一格曾經因為這個殘檔給出假的綠燈（見 scripts/verify-in-terminal.mjs）
+//
+// 所以裝新版時順手收掉。
+//
+// ⚠️ 先備份再刪，不要直接 unlink。這確實是我們裝的檔案，但學生機器上任何「消失了
+// 而且救不回來」的東西都會變成一次求助——留一份 .bak 的成本幾乎是零。
+//
+// ⚠️ 已經在跑的 watcher 不去殺它：那要動別人的程序，而它本來就會自己結束（腳本有
+// 孤兒偵測，舊 wrapper 也會在 claude 結束時 kill 它）。學生要看到新行為本來就得開
+// 新分頁，那一步會把舊的一起帶走。
+async function retireLegacyWatcher() {
+  const legacy = path.join(homedir(), ".local", "bin", "ai-tab-sync.sh");
+
+  if (!existsSync(legacy)) {
+    return;
+  }
+
+  await backup(legacy);
+  await rm(legacy, { force: true });
+  console.log("已收起舊版的分頁標題同步腳本——新版不需要它了");
+}
+
 async function tabSyncStep(step) {
-  // POSIX 沒有 watcher 檔要裝（step.target 是 undefined），只寫 rc 區塊。
+  // POSIX 沒有 watcher 檔要裝（step.target 是 undefined），只寫 rc 區塊，並把舊版
+  // 留下的 watcher 收走。
+  if (step.target === undefined) {
+    await retireLegacyWatcher();
+  }
+
   if (step.target !== undefined) {
     const source = sourcePath({ source: step.watcherSource });
     await mkdir(path.dirname(step.target), { recursive: true });
