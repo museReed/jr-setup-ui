@@ -10,7 +10,13 @@ set -euo pipefail
 # 版本寫死比動態解析可靠：開課前手動更新這一行就好。
 NODE_VERSION="v24.18.0"
 APP_DIR="$HOME/.jr-setup/app"
-# 學生那條 one-liner 抓的永遠是 main。驗 PR 時前面加 JR_BRANCH=... 就會改抓那個
+# 學生那條 one-liner 抓的永遠是 main。驗 PR 時用 JR_BRANCH 指定分支：
+#
+#   curl -fsSL .../setup.sh | JR_BRANCH=my-branch bash
+#
+# ⚠️ 變數要放在 bash 前面。寫成 `JR_BRANCH=x curl ... | bash` 是無效的——那個前綴只
+# 作用在 curl，管線右邊的 bash 拿不到，於是這裡讀到空值、預設回 main，而且不會有任何
+# 錯誤訊息（2026-08-20 驗收時整輪跑完才發現裝的是 main）。
 # 分支（Windows 的 setup.ps1 用 $JrBranch，同一個意思）。
 BRANCH="${JR_BRANCH:-main}"
 TARBALL="https://codeload.github.com/museReed/jr-setup-ui/tar.gz/refs/heads/${BRANCH}"

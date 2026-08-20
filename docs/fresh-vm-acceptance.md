@@ -37,10 +37,22 @@ irm https://raw.githubusercontent.com/museReed/jr-setup-ui/main/docs/setup.ps1 |
 上面兩行抓的都是 `main`——那是學生會打的那一行，不動它。要驗還沒合併的分支，在同
 一行前面指定分支就好，其餘完全一樣：
 
-macOS：
+macOS——⚠️ **變數要放在 `bash` 前面，不是 `curl` 前面**：
 
 ```bash
-JR_BRANCH=feature/ui-cards curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | bash
+curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh | JR_BRANCH=feature/ui-cards bash
+```
+
+`JR_BRANCH=... curl ... | bash` 這種寫法**沒有用**，而且不會報錯：`VAR=值 指令` 這個
+前綴只作用在緊接著的那一個指令（`curl`），管線右邊的 `bash` 是另一個程序、拿不到那個
+變數，`setup.sh` 於是走 `BRANCH="${JR_BRANCH:-main}"` 的預設值，安安靜靜地裝了 `main`。
+
+2026-08-20 實測踩到：整輪驗收跑完才發現裝的是 `main`，本來要驗的 PR 一行都沒驗到。
+
+不想記前後順序的話，這個寫法也對：
+
+```bash
+JR_BRANCH=feature/ui-cards bash -c "$(curl -fsSL https://musereed.github.io/jr-setup-ui/setup.sh)"
 ```
 
 Windows：
@@ -50,6 +62,13 @@ $JrBranch="feature/ui-cards"; irm https://raw.githubusercontent.com/museReed/jr-
 ```
 
 **要看到**：「下載嚮導」那行後面括號印的是你指定的分支，不是 `main`。
+
+印的是 `main` 就**立刻停下來**——後面每一格都會是在驗 `main`，而不是你的 PR。裝完之後
+也可以再確認一次：
+
+```bash
+cat ~/.jr-setup/app/.jr-source
+```
 
 ⚠️ bootstrap 腳本**自己**還是從 `main` 抓的。PR 若動到 `setup.ps1` / `setup.sh`
 本身，這條路徑驗不到那個改動——那種 PR 要合併進 `main` 之後再照本文件重跑一次。
