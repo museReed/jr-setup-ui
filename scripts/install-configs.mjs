@@ -21,6 +21,7 @@ import {
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   mergeOutputStyle,
+  removeLegacyCodexTabSyncBlock,
   transformStepSource,
   upsertBlock,
 } from "../src/config-install.js";
@@ -245,7 +246,27 @@ async function agentHooksStep(step) {
   }
 
   await writeSettings(step.settingsTarget, settings);
-  logProgress(`已註冊 3 筆 hook → ${step.settingsTarget}`);
+  logProgress(`已註冊 ${step.registrations.length} 筆 hook → ${step.settingsTarget}`);
+
+  if (step.windowsCodexProfile !== undefined) {
+    const profile = step.windowsCodexProfile;
+    const current = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    const withoutLegacyCodex = removeLegacyCodexTabSyncBlock(
+      current,
+      profile.legacyCodexTabSyncBlock,
+    );
+    const next = upsertBlock(
+      withoutLegacyCodex,
+      profile.marker,
+      profile.block,
+    );
+    await mkdir(path.dirname(profile.target), { recursive: true });
+    await backup(profile.target);
+    await writeFile(profile.target, `\ufeff${next.replace(/^\ufeff/, "")}`);
+    logProgress(`Codex 共用 app-server 入口 → ${profile.target}`);
+  }
 }
 
 async function skillStep(step) {

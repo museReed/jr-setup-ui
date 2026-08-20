@@ -15,6 +15,7 @@ import {
   readCodexModes,
   readDefaultMode,
   readRetiredCodexKeys,
+  removeLegacyCodexTabSyncBlock,
   mergeAgentHookRegistrations,
   mergeHookRegistration,
   stepsForTools,
@@ -104,7 +105,7 @@ try {
   assert.throws(() => stepsForTools(["vim"]));
   assert.equal(stepsForTools(["codex"], "darwin").includes("tab-sync"), false);
   assert.equal(stepsForTools(["codex"], "linux").includes("tab-sync"), false);
-  assert.equal(stepsForTools(["codex"], "win32").includes("tab-sync"), true);
+  assert.equal(stepsForTools(["codex"], "win32").includes("tab-sync"), false);
   assert.equal(stepsForTools(["claude"], "darwin").includes("tab-sync"), true);
   assert.equal(
     stepsForTools(["claude", "codex"], "linux").includes("tab-sync"),
@@ -114,7 +115,7 @@ try {
     stepsForTools(["claude"]),
     stepsForTools(["claude"], process.platform),
   );
-  ok("POSIX Codex-only 不裝 tab sync；Claude、Windows 與既有 caller 維持原行為");
+  ok("Codex-only 在所有平台都不裝 tab sync；只有 Claude 需要 watcher");
 
   assert.equal(hookFileName("context-monitor", "linux"), "context-monitor.sh");
   assert.equal(hookFileName("context-monitor", "darwin"), "context-monitor.sh");
@@ -149,7 +150,7 @@ try {
     "utf8",
   );
   assert.equal(posixCodexConfig.sourceTransform, undefined);
-  assert.equal(windowsCodexConfig.sourceTransform, "omit-codex-native-title");
+  assert.equal(windowsCodexConfig.sourceTransform, undefined);
   assert.equal(
     transformStepSource(codexTemplate, posixCodexConfig),
     codexTemplate,
@@ -158,11 +159,10 @@ try {
     codexTemplate,
     windowsCodexConfig,
   );
-  assert.doesNotMatch(windowsCodexTemplate, /"thread-title"/);
-  assert.doesNotMatch(windowsCodexTemplate, /^terminal_title\s*=/m);
-  assert.match(windowsCodexTemplate, /^status_line\s*=\s*\[/m);
-  assert.match(windowsCodexTemplate, /"context-used"/);
-  ok("Windows 用 step metadata 從共用 template 排除原生命名，POSIX 保留原內容");
+  assert.match(windowsCodexTemplate, /"thread-title"/);
+  assert.match(windowsCodexTemplate, /^terminal_title\s*=\s*\["thread"\]/m);
+  assert.equal(windowsCodexTemplate, codexTemplate);
+  ok("Windows 與 POSIX 都保留 Codex 原生 thread title 設定");
 
   const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
   assert.equal(tabSync.kind, "tab-sync");
@@ -179,8 +179,8 @@ try {
   assert.equal(windowsTabSync.watcherSource, "skills/bin/ai-tab-sync.ps1");
   assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
   assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
-  assert.match(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
-  ok("tab sync 會描述 watcher、rc 檔與跳過函式的真正指令");
+  assert.doesNotMatch(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
+  ok("tab sync 只包 Claude；Codex 不再啟動 watcher");
 
   for (const lang of ["zh-TW", "zh-CN", "en"]) {
     const template = readFileSync(
@@ -250,7 +250,22 @@ try {
 
   assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
   assert.equal(codexHooks.namingAllowRule, undefined);
+  assert.equal(codexHooks.hookFiles.length, 3);
   assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
+  assert.equal(
+    codexHooks.windowsCodexProfile.target,
+    `${HOME}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
+  );
+  assert.match(codexHooks.windowsCodexProfile.block, /function codex/);
+  assert.match(codexHooks.windowsCodexProfile.block, /codex-shared-app-server\.ps1/);
+  assert.match(codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock, /AI_TAB_SYNC_FILE/);
+  const legacyProfile = `${windowsTabSync.rcBlock}\n\n${codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock}`;
+  const migratedProfile = removeLegacyCodexTabSyncBlock(
+    legacyProfile,
+    codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock,
+  );
+  assert.match(migratedProfile, /Get-Command claude/);
+  assert.doesNotMatch(migratedProfile, /Get-Command codex/);
   assert.equal(codexMonitor.registrations.length, 1);
   ok("命名與監控各自帶自己的檔案與註冊，監控不需要白名單");
 

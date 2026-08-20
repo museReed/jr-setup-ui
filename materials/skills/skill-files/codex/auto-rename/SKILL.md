@@ -10,8 +10,8 @@ description: >-
 ## Quick Reference
 
 根據對話內容為 session 命名。名稱寫入 /tmp relay 檔，由 session-namer hook
-（不受 sandbox 限制）依平台套用名稱：POSIX（macOS / Linux）透過 Codex
-app-server 更新 thread；Windows 更新 SQLite sidebar 與 tab-sync 同步檔。
+（不受 sandbox 限制）呼叫共用 Codex app-server 的 `thread/name/set`；macOS、Linux
+與 Windows 都由 Codex 原生更新 sidebar、status line 與 terminal tab。
 
 1. 讀對話脈絡 → 決定 `{emoji} {中文敘述}`（≤ 40 字元，emoji 見 §Emoji Mapping）
 2. 一個 shell 指令寫 relay 檔（見 §Execution Flow Step 2）
@@ -21,8 +21,7 @@ Key rules:
 - 根據對話「主要目的」選 emoji，不是最新一句話
 - ⛔ emoji 只能從 §Emoji Mapping 的 8 個中選
 - 技術名詞保留英文，敘述用中文
-- ⛔ 不要直接 sqlite3 UPDATE `~/.codex/state_*.sqlite` — 非 trusted cwd 下
-  sandbox 會擋（silent failure）。一律走 relay 檔，hook 會代寫。
+- ⛔ 不要直接改 SQLite，也不要寫 tab-sync 檔；一律走 relay，讓 hook 呼叫 Codex 原生改名。
 
 ## Emoji Mapping
 
@@ -65,10 +64,10 @@ mkdir -p /tmp/codex-session-namer && echo '{emoji} {名稱}' > /tmp/codex-sessio
 這個寫入本身是一次 tool call → 觸發下一次 PostToolUse → hook 立即把名稱套用到
 Codex session：
 
-- **POSIX（macOS / Linux）**：app-server 更新 thread；sidebar 與原生
-  `terminal_title = ["thread"]` 一起更新
-- **Windows**：hook 更新 SQLite sidebar，並寫入 tab-sync 同步檔讓 PowerShell
-  wrapper 更新分頁標題
+- **macOS / Linux**：hook 連到本機 control socket
+- **Windows**：PowerShell wrapper 自動啟動或重用背景 app-server，hook 連到 localhost WebSocket
+
+兩邊最後都呼叫 `thread/name/set`，由 Codex 更新 sidebar、status line 與分頁標題。
 
 ### Step 3: 回報
 
@@ -78,7 +77,7 @@ Codex session：
 
 | Mistake | Why it fails | Fix |
 |---------|-------------|-----|
-| 直接 sqlite3 UPDATE | 非 trusted cwd 被 sandbox 擋，且是 silent failure | 走 relay 檔 |
+| 直接改 SQLite 或 tab-sync | 繞過 Codex 的命名事件，畫面可能不同步 | 走 relay 檔 |
 | 用最新一句話命名 | 不代表整個 session 的目的 | 回顧整個對話脈絡再決定 |
 | 名稱超過 40 字元 | sidebar 顯示被截斷 | 精簡敘述 |
 | 名稱含單引號 | shell quoting 壞掉 | 避免單引號，或用雙引號包 |

@@ -420,7 +420,7 @@ export const VERIFICATION = {
     behavior: "verify-behavior",
     options: { tools: "codex" },
     eye: "POSIX 的 Codex 視窗最下面有五段，分頁標題也用原生 session 名稱",
-    eyeWindows: "Windows 的 Codex sidebar 由 SQLite 顯示 session 名稱，分頁標題由 tab-sync 同步",
+    eyeWindows: "Windows 的 Codex status line 與分頁標題都顯示原生 session 名稱",
   },
   // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
   hook: { terminal: { case: "chained", agent: "claude" } },
@@ -490,7 +490,7 @@ export const VERIFICATION = {
   "codex-namer": {
     terminal: { case: "naming", agent: "codex" },
     eye: "POSIX 的 Codex sidebar 與原生分頁標題都透過 app-server 變成命名",
-    eyeWindows: "Windows 的 Codex sidebar 透過 SQLite、分頁標題透過 tab-sync 變成命名",
+    eyeWindows: "Windows 的 Codex sidebar、status line 與分頁標題都透過 app-server 變成命名",
   },
   // codex-monitor 的行為驗證加回來了（Reed 決定），跟 claude-monitor 對稱。
   //
@@ -916,12 +916,37 @@ export async function checkAgentHooks(step, materials) {
     !allowRuleNeeded ||
     (settings?.permissions?.allow ?? []).includes(step.namingAllowRule);
 
-  if (filesExist && registered && allowRuleInstalled) {
+  let windowsCodexProfileInstalled = true;
+  if (step.windowsCodexProfile !== undefined) {
+    const profile = step.windowsCodexProfile;
+    const content = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    windowsCodexProfileInstalled =
+      hasMarkedBlock(content, profile.marker) &&
+      content.includes(profile.block.trim());
+  }
+
+  if (
+    filesExist &&
+    registered &&
+    allowRuleInstalled &&
+    windowsCodexProfileInstalled
+  ) {
     return {
       id: step.id,
       label: step.label,
       status: "ok",
       detail: "hook 檔案與 3 筆註冊都已生效",
+    };
+  }
+
+  if (filesExist && registered && !windowsCodexProfileInstalled) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "hook 已註冊，但 PowerShell profile 還沒接上共用 app-server",
     };
   }
 

@@ -31,11 +31,18 @@ try {
     home: "C:/Users/student",
     platform: "win32",
   });
-  assert.equal(
-    windows.hookFiles.some(({ target }) => target.endsWith("codex-session-name-set.py")),
-    false,
+  assert(
+    windows.hookFiles.some(
+      ({ source }) => source === "skills/hooks/codex-session-name-set.ps1",
+    ),
   );
-  ok("installer 僅在 POSIX 把 app-server helper 跟 namer 一起安裝");
+  assert(
+    windows.hookFiles.some(
+      ({ source }) => source === "skills/hooks/codex-shared-app-server.ps1",
+    ),
+  );
+  assert.match(windows.windowsCodexProfile.block, /function codex/);
+  ok("installer 依平台安裝 app-server helper，Windows 另裝自動啟動 wrapper");
 
   for (const file of [
     ["materials", "skills", "skill-files", "codex", "auto-rename", "SKILL.md"],
@@ -45,21 +52,21 @@ try {
     const content = read(...file);
     assert.doesNotMatch(content, /mycodex/i, file.join("/"));
     assert.doesNotMatch(content, /直接.*OSC|OSC.*直接/i, file.join("/"));
-    assert.match(content, /POSIX|macOS|Linux/, file.join("/"));
+    assert.match(content, /macOS|Linux/, file.join("/"));
     assert.match(content, /app-server/, file.join("/"));
     assert.match(content, /Windows/, file.join("/"));
-    assert.match(content, /SQLite/, file.join("/"));
-    assert.match(content, /tab-sync|同步檔/i, file.join("/"));
+    assert.match(content, /thread\/name\/set/, file.join("/"));
   }
-  ok("Codex skills 清楚拆開 POSIX app-server 與 Windows SQLite + tab-sync");
+  ok("Codex skills 在三個平台都走 app-server 的 thread/name/set");
 
   const ui = read("public", "model.js");
   assert.doesNotMatch(ui, /claude \/ codex wrapper/);
   assert.match(ui, /terminal_title/);
   const codexGuidance = GUIDANCE["codex-namer"].checks.join("\n");
-  assert.match(codexGuidance, /macOS.*Linux.*terminal_title/);
-  assert.match(codexGuidance, /Windows.*tab-sync|Windows.*同步/);
-  ok("UI troubleshooting 分別說明 POSIX 原生標題與 Windows tab-sync");
+  assert.match(codexGuidance, /macOS.*Linux.*app-server/);
+  assert.match(codexGuidance, /Windows.*app-server/);
+  assert.doesNotMatch(codexGuidance, /Windows.*tab-sync|Windows.*SQLite/);
+  ok("UI troubleshooting 說明兩種 transport，但不再要求 Windows tab-sync");
 
   const wrapperGuidance = Object.values(GUIDANCE["shell-wrapper"])
     .flat()
@@ -69,12 +76,12 @@ try {
   ok("shell-wrapper UI copy 同時涵蓋 Claude 與 Codex");
 
   const acceptance = read("docs", "fresh-vm-acceptance.md");
-  assert.match(acceptance, /POSIX.*app-server.*原生/s);
-  assert.match(acceptance, /Windows.*SQLite.*tab-sync/s);
+  assert.match(acceptance, /macOS.*Linux.*app-server.*原生/s);
+  assert.match(acceptance, /Windows.*app-server.*thread\/name\/set/s);
   const verification = read("docs", "wizard-verification-design.md");
-  assert.match(verification, /POSIX.*app-server.*原生/s);
-  assert.match(verification, /Windows.*SQLite.*tab-sync/s);
-  ok("驗收與驗證文件沒有把任一平台的 Codex 命名路徑寫成全平台");
+  assert.match(verification, /macOS.*Linux.*app-server.*原生/s);
+  assert.match(verification, /Windows.*app-server.*thread\/name\/set/s);
+  ok("驗收與驗證文件記錄 Windows 與 POSIX 共用原生命名機制");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

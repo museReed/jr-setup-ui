@@ -4,7 +4,7 @@
 
 ## 前置條件
 
-- Codex CLI 0.146.0 或更新版本。
+- Codex CLI 0.148.0 或更新版本。
 - Node.js 22 或更新版本；測試腳本使用 Node 內建的 WebSocket client。
 - 三個 Windows Terminal 分頁；Windows PowerShell 5.1 即可。
 

@@ -37,10 +37,10 @@ for (const id of ["codex-config", "codex-namer"]) {
   const posix = withConfigActions({ id, status: "ok" }, "darwin");
   const windows = withConfigActions({ id, status: "ok" }, "win32");
   assert.match(posix.eyeCheck, /app-server|原生/);
-  assert.match(windows.eyeCheck, /SQLite/);
-  assert.match(windows.eyeCheck, /tab-sync/);
+  assert.match(windows.eyeCheck, /app-server|原生/);
+  assert.doesNotMatch(windows.eyeCheck, /SQLite|tab-sync/);
 }
-ok("Codex config 與 namer 的人眼驗證會依 POSIX／Windows 顯示真實同步路徑");
+ok("Codex config 與 namer 在 POSIX／Windows 都驗證原生 app-server 路徑");
 
 // 裝進去的內容必須跟 materials 逐字相同，否則會被判成舊版——所以測試也要照真的裝。
 function installFrom(source, target) {
@@ -197,8 +197,9 @@ process.stdin.on("end", () => {
   const windowsTemplate = transformStepSource(template, windowsCodexStep);
   writeFileSync(windowsCodexStep.target, windowsTemplate);
   assert.equal((await checkCopyStep(MATERIALS, windowsCodexStep)).status, "ok");
-  assert.doesNotMatch(windowsTemplate, /"thread-title"|^terminal_title\s*=/m);
-  ok("Windows config 不要求 thread-title 或 terminal_title 也能通過檢查");
+  assert.match(windowsTemplate, /"thread-title"/);
+  assert.match(windowsTemplate, /^terminal_title\s*=\s*\["thread"\]/m);
+  ok("Windows config 也要求原生 thread-title 與 terminal_title");
 
   // 「用 AI 合併」那條路最容易壞的地方：整段內容都併進去了（所以檔案層算完成），
   // 但被放在某個 [section] 後面——TOML 的最上層到第一個 [section] 為止，於是那三個
@@ -324,6 +325,43 @@ process.stdin.on("end", () => {
   );
   assert.equal((await checkAgentHooks(agentStep, MATERIALS)).status, "ok");
   ok("檔案、註冊、白名單三者都在才算生效");
+
+  const windowsAgentStep = describeStep("codex-namer", {
+    lang: "zh-TW",
+    home: path.join(dir, "windows-agent"),
+    platform: "win32",
+  });
+  for (const file of windowsAgentStep.hookFiles) {
+    installFrom(file.source, file.target);
+  }
+  const windowsSettings = mergeAgentHookRegistrations(
+    {},
+    {
+      registrations: windowsAgentStep.registrations,
+      hookMarkers: windowsAgentStep.hookFiles.map((file) => file.base),
+    },
+  );
+  mkdirSync(path.dirname(windowsAgentStep.settingsTarget), { recursive: true });
+  writeFileSync(windowsAgentStep.settingsTarget, JSON.stringify(windowsSettings));
+  const missingProfile = await checkAgentHooks(windowsAgentStep, MATERIALS);
+  assert.equal(missingProfile.status, "warn");
+  assert.match(missingProfile.detail, /PowerShell profile/);
+  mkdirSync(path.dirname(windowsAgentStep.windowsCodexProfile.target), {
+    recursive: true,
+  });
+  writeFileSync(
+    windowsAgentStep.windowsCodexProfile.target,
+    upsertBlock(
+      "",
+      windowsAgentStep.windowsCodexProfile.marker,
+      windowsAgentStep.windowsCodexProfile.block,
+    ),
+  );
+  assert.equal(
+    (await checkAgentHooks(windowsAgentStep, MATERIALS)).status,
+    "ok",
+  );
+  ok("Windows Codex 命名要有共用 app-server profile 才給綠燈");
 
   // 舊版 hook 檔案：三項全綠，但模型每次命名還是會被權限層擋下。
   writeFileSync(agentStep.hookFiles[0].target, "舊版內容");

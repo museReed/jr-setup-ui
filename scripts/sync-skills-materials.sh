@@ -24,7 +24,7 @@ for file in \
   hooks/set-session-name.sh hooks/set-session-name.ps1 \
   hooks/session-auto-namer.sh hooks/session-auto-namer.ps1 \
   hooks/context-monitor.sh hooks/context-monitor.ps1 \
-  hooks/codex-session-namer.sh hooks/codex-session-namer.ps1 \
+  hooks/codex-session-namer.sh \
   hooks/codex-session-name-set.py \
   hooks/codex-context-monitor.sh hooks/codex-context-monitor.ps1 \
   model-context-windows-cache.json \
@@ -46,13 +46,16 @@ if [ "$missing" = true ]; then
 fi
 
 if ! grep -Eq '^[[:space:]]*KEY="\$\{SESSION_ID:-\$PPID\}"[[:space:]]*$' "$SOURCE/installer/hooks/codex-session-namer.sh" 2>/dev/null || \
-   grep -Rqi 'mycodex' "$SOURCE/installer/skills/codex" 2>/dev/null; then
+   grep -Rqi 'mycodex' "$SOURCE/installer/skills/codex" 2>/dev/null || \
+   ! grep -Rqi 'Windows.*app-server' "$SOURCE/installer/skills/codex" 2>/dev/null; then
   echo "上游 Codex 素材尚未支援目前的跨平台命名流程；未修改 materials。" >&2
-  echo "需要 codex-session-name-set.py、session_id key，且文件不能再要求 mycodex。" >&2
+  echo "需要 codex-session-name-set.py、session_id key、Windows app-server 文件，且不能再要求 mycodex。" >&2
   exit 1
 fi
 
-# 先在同一個 parent 建完整副本：嚮導自己的 shim / extra files 會一起進 staging，
+# 先在同一個 parent 建完整副本：嚮導自己的 shim / extra files 會一起進 staging。
+# Windows Codex 的 namer、WebSocket helper 與 app-server wrapper 也是 wizard-owned：
+# 它們配合 jr-setup-ui 的 PowerShell profile，不再讓上游舊 SQLite 版本蓋回來。
 # 只有這支腳本負責的 skill-files 與 demo 會在副本裡重建。來源複製或驗證只要有一步
 # 失敗，真正的 TARGET 都還沒碰到。
 TARGET_PARENT=$(dirname "$TARGET")
@@ -85,7 +88,7 @@ for file in \
   set-session-name.sh set-session-name.ps1 \
   session-auto-namer.sh session-auto-namer.ps1 \
   context-monitor.sh context-monitor.ps1 \
-  codex-session-namer.sh codex-session-namer.ps1 \
+  codex-session-namer.sh \
   codex-context-monitor.sh codex-context-monitor.ps1; do
   cp "$SOURCE/installer/hooks/$file" "$STAGE/hooks/$file"
 done
@@ -119,7 +122,7 @@ for file in \
   set-session-name.sh set-session-name.ps1 \
   session-auto-namer.sh session-auto-namer.ps1 \
   context-monitor.sh context-monitor.ps1 \
-  codex-session-namer.sh codex-session-namer.ps1 \
+  codex-session-namer.sh \
   codex-context-monitor.sh codex-context-monitor.ps1 \
   codex-session-name-set.py; do
   cmp -s "$SOURCE/installer/hooks/$file" "$STAGE/hooks/$file"

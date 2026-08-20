@@ -256,15 +256,13 @@ export function codexVersionCheck(stdout, platform = process.platform) {
     typeof stdout === "string" ? stdout.trim().split("\n")[0].trim() : "";
   const base = { id: "codex", label: "Codex CLI" };
 
-  if (platform === "win32") {
-    return { ...base, status: "ok", detail };
-  }
-
   const match = detail.match(/(?:^|\s)(\d+)\.(\d+)\.(\d+)$/);
   const version = match?.slice(1).map(Number) ?? null;
+  const minimumMinor = platform === "win32" ? 148 : 146;
+  const minimum = `0.${minimumMinor}.0`;
   const supported =
     version !== null &&
-    (version[0] > 0 || (version[0] === 0 && version[1] >= 146));
+    (version[0] > 0 || (version[0] === 0 && version[1] >= minimumMinor));
 
   if (supported) {
     return { ...base, status: "ok", detail };
@@ -275,8 +273,8 @@ export function codexVersionCheck(stdout, platform = process.platform) {
     status: "missing",
     detail:
       version === null
-        ? "無法辨識版本，請升級至穩定版 0.146.0 以上"
-        : `版本 ${version.join(".")} 過舊，請升級至穩定版 0.146.0 以上`,
+        ? `無法辨識版本，請升級至穩定版 ${minimum} 以上`
+        : `版本 ${version.join(".")} 過舊，請升級至穩定版 ${minimum} 以上`,
     installLabel: "升級",
   };
 }

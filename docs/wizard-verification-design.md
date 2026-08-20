@@ -78,9 +78,9 @@ UI 要在**裝完當下**講，不是等學生撞到。
 | `hook`（block-chained-bash） | 檔案 + 註冊 | **跑註冊的那條指令**，餵串接指令看擋不擋 | — |
 | `allowlist` | 規則在不在 | — | — |
 | `claude-hooks` | 檔案 + 註冊 + 命名白名單 | 開一個 session 看名字有沒有寫進檔案 | — |
-| `codex-hooks`（POSIX） | hook + app-server helper + 註冊 | app-server 更新 thread | **原生標題有沒有變** |
-| `codex-hooks`（Windows） | hook + 註冊 | SQLite sidebar 有更新 | **tab-sync 標題有沒有變** |
-| `tab-sync` | watcher + rc 標記（Claude 全平台；Codex 僅 Windows） | — | **分頁標題有沒有變** |
+| `codex-hooks`（macOS / Linux） | hook + app-server helper + 註冊 | app-server 透過 control socket 更新 thread | **原生標題有沒有變** |
+| `codex-hooks`（Windows） | hook + WebSocket helper + PowerShell app-server wrapper + 註冊 | 共用 app-server 的 `thread/name/set` 更新 thread | **原生標題有沒有變** |
+| `tab-sync` | watcher + rc 標記（只服務 Claude） | — | **分頁標題有沒有變** |
 
 ## 五、未定案
 

@@ -253,6 +253,7 @@ const CLAUDE_STEPS = [
 ];
 const CODEX_STEPS = ["codex-config", "codex-agents"];
 export const TAB_SYNC_MARKER = "jr-setup-ui tab sync";
+export const CODEX_APP_SERVER_MARKER = "jr-setup-ui codex shared app-server";
 
 // 這一步是誰家的設定。合併要用同一家的 agent 去做——Codex 的 config.toml 交給
 // Claude 合併的話，動手的是沒在用那份設定的那一個（Reed 實測看到「Claude：思考中」
@@ -275,7 +276,7 @@ export function stepsForTools(tools, platform = process.platform) {
   return [
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
-    ...(selected.includes("claude") || platform === "win32" ? ["tab-sync"] : []),
+    ...(selected.includes("claude") ? ["tab-sync"] : []),
     // 命名與 context 監控拆開：兩者的檔案、註冊、驗證方式都不一樣，綁在一起的話
     // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
     ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
@@ -321,6 +322,10 @@ export function hasMarkedBlock(content, marker) {
   const startAt = content.indexOf(start);
   const endAt = content.indexOf(end);
   return startAt !== -1 && endAt > startAt;
+}
+
+export function removeLegacyCodexTabSyncBlock(content, legacyBlock) {
+  return content.replace(legacyBlock, "");
 }
 
 export function upsertBlock(content, marker, block) {
@@ -426,7 +431,16 @@ function tabSyncBlock(platform, watcherTarget) {
     return posixTabSyncFunction("claude", watcherTarget);
   }
 
-  return `${powershellTabSyncFunction("claude", watcherTarget)}\n\n${powershellTabSyncFunction("codex", watcherTarget)}`;
+  return powershellTabSyncFunction("claude", watcherTarget);
+}
+
+function windowsCodexAppServerBlock(launcherTarget) {
+  const quotedTarget = launcherTarget.replaceAll("'", "''");
+  return `function codex {
+  param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
+  & '${quotedTarget}' @InvocationArgs
+  $global:LASTEXITCODE = $LASTEXITCODE
+}`;
 }
 
 function hookCommand(target, platform, args = []) {
@@ -490,12 +504,27 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/hooks/${file}`,
     };
   });
-  if (id === "codex-namer" && platform !== "win32") {
-    hookFiles.push({
-      base: "codex-session-name-set",
-      source: "skills/hooks/codex-session-name-set.py",
-      target: `${agentDir}/hooks/codex-session-name-set.py`,
-    });
+  if (id === "codex-namer") {
+    if (platform === "win32") {
+      hookFiles.push(
+        {
+          base: "codex-session-name-set",
+          source: "skills/hooks/codex-session-name-set.ps1",
+          target: `${agentDir}/hooks/codex-session-name-set.ps1`,
+        },
+        {
+          base: "codex-shared-app-server",
+          source: "skills/hooks/codex-shared-app-server.ps1",
+          target: `${agentDir}/hooks/codex-shared-app-server.ps1`,
+        },
+      );
+    } else {
+      hookFiles.push({
+        base: "codex-session-name-set",
+        source: "skills/hooks/codex-session-name-set.py",
+        target: `${agentDir}/hooks/codex-session-name-set.py`,
+      });
+    }
   }
   // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
   // （原文：Command spawns a nested PowerShell process which cannot be validated），
@@ -513,6 +542,20 @@ function agentHooks(id, home, platform) {
   // 白名單放行的是模型真正會跑的那支：Windows 是薄殼，其他平台就是腳本本身。
   const namingTarget = (byBase["set-session-name-shim"] ?? byBase["set-session-name"])
     ?.target;
+  const windowsCodexProfile =
+    id === "codex-namer" && platform === "win32"
+      ? {
+          target: `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
+          marker: CODEX_APP_SERVER_MARKER,
+          block: windowsCodexAppServerBlock(
+            byBase["codex-shared-app-server"].target,
+          ),
+          legacyCodexTabSyncBlock: powershellTabSyncFunction(
+            "codex",
+            `${home}/.jr-setup/bin/ai-tab-sync.ps1`,
+          ),
+        }
+      : undefined;
   const registrations = spec.events.map((entry) => ({
     event: entry.event,
     command: hookCommand(byBase[entry.base].target, platform, entry.args),
@@ -535,6 +578,7 @@ function agentHooks(id, home, platform) {
       source,
       target: `${agentDir}/${source.split("/").pop()}`,
     })),
+    windowsCodexProfile,
   };
 }
 
@@ -810,9 +854,6 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         protectExisting: true,
         // 檔案已存在時也要把預設模式那兩個 key 補進去，不交給 AI 合併。
         mergeModes: true,
-        ...(platform === "win32"
-          ? { sourceTransform: "omit-codex-native-title" }
-          : {}),
       };
 
     case "codex-agents":
@@ -1052,8 +1093,8 @@ const CODEX_MODES = {
   approvals_reviewer: '"auto_review"',
 };
 
-// Windows 仍靠 SQLite + tab-sync 命名；0.146 的原生 thread title 只用在 POSIX。
-// 共用同一份 template，安裝與檢查都走這個 transform，避免兩邊各維護一份內容。
+// 舊版 Windows 會移除原生 thread title，因為當時靠 SQLite + tab-sync。保留 transform
+// 只為了讓舊的 merge report 還能讀；新的 Windows 安裝和 POSIX 一樣保留原生設定。
 export function transformStepSource(content, step) {
   if (step.sourceTransform !== "omit-codex-native-title") {
     return content;

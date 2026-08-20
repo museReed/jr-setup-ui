@@ -89,13 +89,12 @@ Commit 到當前 branch，不要切換 branch。
 改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`。唯一步驟＝寫 relay 檔：
 
 ```bash
-mkdir -p /tmp/codex-session-namer && echo '📦 {topic}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
+printf '%s\n' '📦 {topic}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
 ```
 
-hook 會在下一個事件依平台改名：POSIX（macOS / Linux）透過 Codex app-server
-更新 sidebar 與原生 terminal title；Windows 由 hook 更新 SQLite sidebar，再寫
-tab-sync 同步檔更新分頁標題。
-⚠️ 不要自行執行 `sqlite3 UPDATE threads`，正常路徑一律交給 hook。
+hook 會在下一個事件呼叫共用 app-server 的 `thread/name/set`；macOS、Linux 與
+Windows 都由 Codex 原生更新 sidebar、status line 與分頁標題。
+不要直接改 SQLite 或寫 tab-sync 檔。
 
 #### 5b: 回報
 

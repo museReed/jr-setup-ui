@@ -287,8 +287,8 @@ export const GUIDANCE = {
     checks: [
       "安裝後有沒有關掉舊分頁，再開一個新分頁",
       "第一次使用 Codex 時，有沒有接受 hook 信任提示",
-      "macOS / Linux：Codex 的 config.toml 裡有沒有設定 `terminal_title = [\"thread\"]`",
-      "Windows：有沒有先完成「分頁自己報上名字」，讓 Codex tab-sync wrapper 載入 PowerShell profile",
+      "macOS / Linux：Codex 的 config.toml 有沒有設定 `terminal_title = [\"thread\"]`，app-server control socket 是否可連",
+      "Windows：PowerShell profile 有沒有載入 Codex 共用 app-server wrapper，背景 app-server 是否在 127.0.0.1:4500",
     ],
     diagnose: null,
   },
@@ -316,7 +316,7 @@ export const GUIDANCE = {
     checks: [
       "有沒有在新終端分頁啟動 Codex",
       "第一次使用 Codex 時，有沒有接受 hook 信任提示",
-      "macOS / Linux 看原生 terminal title；Windows 看 tab-sync wrapper 更新的標題",
+      "macOS / Linux 與 Windows 都看 Codex 原生 terminal title；Windows 另確認背景 app-server 已啟動",
     ],
     diagnose: null,
   },

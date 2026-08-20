@@ -31,7 +31,6 @@ const REQUIRED_FILES = [
   "hooks/context-monitor.sh",
   "hooks/context-monitor.ps1",
   "hooks/codex-session-namer.sh",
-  "hooks/codex-session-namer.ps1",
   "hooks/codex-session-name-set.py",
   "hooks/codex-context-monitor.sh",
   "hooks/codex-context-monitor.ps1",
@@ -48,6 +47,9 @@ function fixture() {
   const sentinel = path.join(target, "skill-files", "keep.txt");
   const shim = path.join(target, "hooks", "set-session-name-shim.sh");
   const extra = path.join(target, "wizard-extra", "keep.txt");
+  const windowsCodex = path.join(target, "hooks", "codex-session-namer.ps1");
+  const windowsSetter = path.join(target, "hooks", "codex-session-name-set.ps1");
+  const windowsLauncher = path.join(target, "hooks", "codex-shared-app-server.ps1");
   mkdirSync(path.dirname(copiedScript), { recursive: true });
   mkdirSync(path.dirname(sentinel), { recursive: true });
   cpSync(SCRIPT, copiedScript);
@@ -76,14 +78,27 @@ function fixture() {
   );
   writeFileSync(
     path.join(source, "installer", "skills", "codex", "fixture.txt"),
-    "Codex native thread naming\n",
+    "Windows uses a shared app-server for native thread naming\n",
   );
   writeFileSync(sentinel, "must survive\n");
   mkdirSync(path.dirname(shim), { recursive: true });
   mkdirSync(path.dirname(extra), { recursive: true });
   writeFileSync(shim, "wizard-owned shim\n");
   writeFileSync(extra, "wizard-owned extra\n");
-  return { copiedScript, source, target, sentinel, shim, extra };
+  writeFileSync(windowsCodex, "wizard-owned Windows namer\n");
+  writeFileSync(windowsSetter, "wizard-owned Windows setter\n");
+  writeFileSync(windowsLauncher, "wizard-owned Windows launcher\n");
+  return {
+    copiedScript,
+    source,
+    target,
+    sentinel,
+    shim,
+    extra,
+    windowsCodex,
+    windowsSetter,
+    windowsLauncher,
+  };
 }
 
 function runSync({ copiedScript, source }, env = {}) {
@@ -183,6 +198,20 @@ try {
   expectPreDeleteFailure(oldDocs, /mycodex/);
   ok("上游文件仍要求 mycodex 時 compatibility gate 先停止");
 
+  const oldWindowsDocs = fixture();
+  writeFileSync(
+    path.join(
+      oldWindowsDocs.source,
+      "installer",
+      "skills",
+      "codex",
+      "fixture.txt",
+    ),
+    "Windows still uses SQLite and tab-sync.\n",
+  );
+  expectPreDeleteFailure(oldWindowsDocs, /Windows app-server/);
+  ok("上游文件仍把 Windows 寫成舊路徑時 compatibility gate 先停止");
+
   const stagingFailure = fixture();
   const beforeStagingFailure = snapshot(stagingFailure.target);
   const fakeCp = fakeCommand(
@@ -223,8 +252,20 @@ try {
   );
   assert.equal(readFileSync(compatible.shim, "utf8"), "wizard-owned shim\n");
   assert.equal(readFileSync(compatible.extra, "utf8"), "wizard-owned extra\n");
+  assert.equal(
+    readFileSync(compatible.windowsCodex, "utf8"),
+    "wizard-owned Windows namer\n",
+  );
+  assert.equal(
+    readFileSync(compatible.windowsSetter, "utf8"),
+    "wizard-owned Windows setter\n",
+  );
+  assert.equal(
+    readFileSync(compatible.windowsLauncher, "utf8"),
+    "wizard-owned Windows launcher\n",
+  );
   assert.equal(existsSync(compatible.sentinel), false);
-  ok("完整相容來源可同步，保留 wizard-owned 檔案並替換受管目錄");
+  ok("完整相容來源可同步，保留 Windows Codex 等 wizard-owned 檔案並替換受管目錄");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

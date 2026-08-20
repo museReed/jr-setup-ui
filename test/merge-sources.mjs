@@ -42,17 +42,22 @@ try {
   const windowsSources = stageMergeSources(MATERIALS, [windows], {
     temporaryRoot,
   });
-  const staged = windowsSources.sourceFor(windows);
-  assert.equal(staged.startsWith(windowsSources.stagingDir), true);
-  assert.doesNotMatch(readFileSync(staged, "utf8"), /"thread-title"/);
-  assert.doesNotMatch(readFileSync(staged, "utf8"), /^terminal_title\s*=/m);
+  assert.equal(
+    windowsSources.sourceFor(windows),
+    path.join(MATERIALS, windows.source),
+  );
+  assert.equal(windowsSources.stagingDir, null);
   assert.match(
     readFileSync(path.join(MATERIALS, windows.source), "utf8"),
     /"thread-title"/,
   );
   windowsSources.cleanup();
-  assert.equal(existsSync(windowsSources.stagingDir), false);
-  ok("Windows merge prompt 使用 transformed staging source，清理不動 raw template");
+  ok("Windows merge prompt 與 POSIX 共用含原生 thread title 的 raw template");
+
+  const legacyTransformed = {
+    ...windows,
+    sourceTransform: "omit-codex-native-title",
+  };
 
   const mergeScript = readFileSync(
     path.join(REPO_ROOT, "scripts", "merge-in-terminal.mjs"),
@@ -68,7 +73,7 @@ try {
     "function",
   );
 
-  const retainedSources = stageMergeSources(MATERIALS, [windows], {
+  const retainedSources = stageMergeSources(MATERIALS, [legacyTransformed], {
     temporaryRoot,
   });
   await mergeSourceHelpers.withMergeSourceFailureCleanup(
@@ -79,7 +84,7 @@ try {
   retainedSources.cleanup();
   ok("正常返回 timeout 時保留 staging，讓外部 terminal 繼續讀取");
 
-  const failedSources = stageMergeSources(MATERIALS, [windows], {
+  const failedSources = stageMergeSources(MATERIALS, [legacyTransformed], {
     temporaryRoot,
   });
   await assert.rejects(

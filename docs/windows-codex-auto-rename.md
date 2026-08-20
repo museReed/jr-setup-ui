@@ -1,0 +1,36 @@
+# Windows Codex auto-rename
+
+Windows 的正式流程要求 Codex CLI 0.148.0 以上，並使用一個背景 Codex app-server。使用者仍然只輸入 `codex`；PowerShell
+profile 裡的 wrapper 會在第一次使用時啟動 server，之後所有 TUI 都以 `--remote` 連到
+同一個 `ws://127.0.0.1:4500`。
+
+## 執行流程
+
+1. 新 PowerShell 載入 `~/.codex/hooks/codex-shared-app-server.ps1` 的 `codex` wrapper。
+2. 第一次互動式 `codex` 檢查 `/readyz`；沒有 server 才在背景啟動一個。
+3. wrapper 執行 `codex --remote ws://127.0.0.1:4500`，後續分頁重用同一個 server。
+4. auto-rename hook 取得名稱後，`codex-session-name-set.ps1` 呼叫 `thread/name/set`。
+5. app-server 發出原生命名事件，TUI 的 sidebar、status line 與 Windows Terminal 分頁一起更新。
+
+`codex exec`、`login`、`update`、`app-server` 等非互動指令直接交給真正的 Codex，不會經過
+remote TUI。server 採延遲啟動，不需要排程工作，也不需要常駐三個手動分頁。
+
+## 舊路徑處理
+
+| 舊元件 | Windows Codex 新流程 | 是否仍保留 |
+|---|---|---|
+| hook 直接更新 `state_*.sqlite` | 改用 `thread/name/set` | Codex 不再使用 |
+| `AI_TAB_SYNC_FILE` | Codex 原生 terminal title | Codex 不再使用 |
+| `ai-tab-sync.ps1` Watcher | 不啟動 | Claude Code 仍需要，所以共用安裝不能直接刪檔 |
+| PowerShell profile 的舊 `codex` tab-sync function | 安裝 Codex namer 時移除並換成 app-server wrapper | 不保留 |
+| `state_*.sqlite` 本身 | 仍由 Codex 自己管理 thread | 不能刪資料庫，只是不再由 jr-setup-ui 修改 |
+
+## 與 macOS / Linux 的差別
+
+| 項目 | macOS / Linux | Windows |
+|---|---|---|
+| 連線 | Unix control socket | localhost WebSocket |
+| server 啟動 | Codex 的本機 control socket 流程 | PowerShell wrapper 在第一次 `codex` 時背景啟動 |
+| helper | Python Unix WebSocket client | PowerShell `ClientWebSocket` |
+| 命名 API | `thread/name/set` | `thread/name/set` |
+| Watcher / SQLite / tab-sync | 原生成功後不使用；舊版 fallback 尚保留 | 正式路徑完全移除 |

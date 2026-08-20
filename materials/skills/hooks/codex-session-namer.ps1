@@ -7,20 +7,14 @@
 #     conversation so far; every 10 calls after that: retry if no AI name landed
 # Reads session_id from stdin JSON (Codex passes it to all hooks).
 #
-# Sandbox note: the Codex MODEL cannot write ~/.codex/state_*.sqlite or
-# ~/.ai-session-names/ outside a trusted cwd. Hooks run unsandboxed, so the model
-# only writes the chosen name to a temp relay file (always writable); this hook
-# applies it to SQLite (sidebar name) + the tab-sync file on the next hook event.
-#
-# Windows note: sqlite3.exe is not guaranteed to exist, so the SQLite write goes
-# through Python's stdlib (the project already requires Python).
+# The model writes the chosen name to a temp relay file. On the next hook event,
+# this script sends thread/name/set to the shared Codex app-server. Codex then
+# updates its own sidebar, status line, and terminal title from one native event.
 
 [CmdletBinding()]
 param([string]$EventName = 'tool')
 
 $ErrorActionPreference = 'Continue'
-$utf8 = New-Object System.Text.UTF8Encoding $false
-
 $stdinJson = ''
 if ([Console]::IsInputRedirected) { $stdinJson = [Console]::In.ReadToEnd() }
 
@@ -40,23 +34,6 @@ function Write-Counter([string]$Path, [int]$Value) {
   try { [System.IO.File]::WriteAllText($Path, "$Value") } catch {}
 }
 
-# Presence on PATH proves nothing: Windows ships stub python3.exe / python.exe
-# under WindowsApps that only print "Python was not found; run without arguments
-# to install from the Microsoft Store". A real Store install uses the same folder
-# and the same names, so path filtering can't tell them apart — the only reliable
-# test is running it. Cheap enough: this is reached only when a name is pending,
-# not on every hook event.
-function Get-PythonPath {
-  foreach ($candidate in 'py', 'python3', 'python') {
-    $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
-    if (-not $cmd) { continue }
-    $ver = ''
-    try { $ver = (& $cmd.Source '--version' 2>&1) -join ' ' } catch {}
-    if ($ver -match 'Python 3') { return $cmd.Source }
-  }
-  return $null
-}
-
 $sessionId = ''
 if ($stdinJson) {
   try { $sessionId = [string]($stdinJson | ConvertFrom-Json).session_id } catch {}
@@ -74,46 +51,15 @@ $counterFile = Join-Path $counterDir "$sessionKey.tools"
 $defaultMarker = Join-Path $counterDir "$sessionKey.default"
 $relayFile = Join-Path $counterDir "$sessionKey.pending"
 
-$sqlitePy = @'
-import os, sqlite3
-con = sqlite3.connect(os.environ["CODEX_DB"])
-try:
-    con.execute(
-        "UPDATE threads SET title=?, preview=? WHERE id=?",
-        (os.environ["CODEX_TITLE"], os.environ["CODEX_TITLE"], os.environ["CODEX_SID"]),
-    )
-    con.commit()
-finally:
-    con.close()
-'@
-
 function Set-SessionName([string]$Name) {
-  $db = Get-ChildItem -LiteralPath (Join-Path $HOME '.codex') -Filter 'state_*.sqlite' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  $py = Get-PythonPath
-  if ($sessionId -and $db -and -not $py) {
-    # Tab title still works (below); only the sidebar name is lost. Say so on
-    # stderr rather than failing silently — hook stdout is the JSON channel and
-    # must stay clean.
-    [Console]::Error.WriteLine('[codex-session-namer] 找不到可用的 Python，跳過 sidebar 改名（tab 標題不受影響）。')
-  }
-  if ($sessionId -and $db -and $py) {
-    # Name travels via env (Windows env is UTF-16, so emoji survive) and binds as
-    # a SQL parameter — no quote escaping needed.
-    $env:CODEX_DB = $db.FullName
-    $env:CODEX_SID = $sessionId
-    $env:CODEX_TITLE = $Name
-    try { $sqlitePy | & $py - 2>$null } catch {}
-  }
-  if ($env:AI_TAB_SYNC_FILE) {
-    # mycodex wrapper: the watcher owns the tab, just write the sync file
-    try { [System.IO.File]::WriteAllText($env:AI_TAB_SYNC_FILE, $Name, $utf8) } catch {}
-  } else {
-    # No wrapper. The bash version stops here, so plain `codex` never retitled
-    # the tab on Windows. SetConsoleTitle bypasses stdout (which is this hook's
-    # JSON channel), same as session-auto-namer.ps1 — deliberately no OSC
-    # fallback, since writing escapes to stdout would corrupt the payload.
-    try { [Console]::Title = $Name } catch {}
+  if (-not $sessionId) { return $false }
+  $helper = Join-Path $PSScriptRoot 'codex-session-name-set.ps1'
+  if (-not (Test-Path -LiteralPath $helper)) { return $false }
+  try {
+    & $helper -ThreadId $sessionId -Name $Name
+    return $true
+  } catch {
+    return $false
   }
 }
 
@@ -127,14 +73,13 @@ if (Test-Path -LiteralPath $relayFile) {
     $name = ($text -split "`r?`n")[0].Trim()
     if ($name.Length -gt 120) { $name = $name.Substring(0, 120) }
   } catch {}
-  Remove-Item -LiteralPath $relayFile -Force -ErrorAction SilentlyContinue
-  if ($name) {
-    Set-SessionName $name
+  if ($name -and (Set-SessionName $name)) {
+    Remove-Item -LiteralPath $relayFile -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $defaultMarker -Force -ErrorAction SilentlyContinue
   }
 }
 
-$relayCmd = "powershell -NoProfile -Command `"New-Item -ItemType Directory -Force -Path '$counterDir' | Out-Null; Set-Content -LiteralPath '$relayFile' -Value '{名稱}' -Encoding utf8`""
+$relayCmd = "Set-Content -LiteralPath '$relayFile' -Value '{名稱}' -Encoding utf8"
 
 $rules = @(
   '命名規則：'

@@ -156,14 +156,14 @@ try {
   // 挑出的路徑若只用在一條分支，互動式或非互動式其中一種仍會叫到錯的檔案。
   assert.equal(
     powershellBlock.match(/& \$realCommandPath @InvocationArgs/g)?.length,
-    4,
+    2,
   );
   // 所有候選都失效時若沒有可讀訊息，每開一個視窗仍只會看到難懂的 PowerShell 錯誤。
   assert.match(
     powershellBlock,
     /找不到可執行的 claude，請重新安裝後再試。/,
   );
-  ok("PowerShell wrapper 會列出全部候選並共用挑出的有效路徑");
+  ok("Claude PowerShell wrapper 會列出全部候選並共用挑出的有效路徑");
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

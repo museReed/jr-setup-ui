@@ -152,13 +152,15 @@ for (const stdout of [
 }
 ok("舊版、pre-release 與不合法輸出會要求用官方 action 升級");
 
-assert.deepEqual(codexVersionCheck("codex-cli 0.145.9-beta.1", "win32"), {
+assert.deepEqual(codexVersionCheck("codex-cli 0.147.9", "win32"), {
   id: "codex",
   label: "Codex CLI",
-  status: "ok",
-  detail: "codex-cli 0.145.9-beta.1",
+  status: "missing",
+  detail: "版本 0.147.9 過舊，請升級至穩定版 0.148.0 以上",
+  installLabel: "升級",
 });
-ok("Windows 只確認 Codex 指令可執行，不套 0.146.0 門檻");
+assert.equal(codexVersionCheck("codex-cli 0.148.0", "win32").status, "ok");
+ok("Windows 要 0.148.0 以上，確保共享 app-server 與 thread/name/set 可用");
 
 const codexProbeCalls = [];
 const [oldCodex, oldCodexAuth] = await checkCodexRows({
