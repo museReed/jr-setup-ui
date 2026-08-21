@@ -749,6 +749,91 @@ function buildPrompt(spec) {
   return text.includes(resultFile) ? `${text}${RESULT_DIR_NOTE}` : text;
 }
 
+// 開終端之前先問一句：那個指令在不在。
+//
+// 嚮導允許學生跳過卡片，所以「還沒裝 Codex CLI 就按了 Codex 那一列的驗證」是一條
+// 走得到的路。不先問的話會這樣收場（2026-08-21 Reed 在 macOS VM 上實測）：
+//
+//   終端開起來 → shell 噴一行 command not found: codex → 視窗停在「Process exited」
+//   → 嚮導這邊一無所知，等滿四分鐘才說「沒等到證據」
+//
+// 三個地方都不好，而學生要的答案只有一句：先回去把那張卡裝好。
+//
+// ⚠️ 用「跟 launcher 同一種 shell」問，不要用 node 自己的 PATH。
+//
+// 那兩者不保證一樣，而會咬人的正是不一樣的時候：POSIX 的 launcher 是 `zsh -i`
+// ——互動但**非登入**，只讀 .zshrc，不讀 .zprofile。Homebrew / nvm 那幾種安裝方式
+// 常把 PATH 寫進 .zprofile，於是「你平常的終端叫得動、驗證那個視窗叫不動」。
+// 用 node 的 PATH 問會答錯這一題，而且答成「有」——那正是最糟的方向。
+//
+// Windows 同理不加 -NoProfile：wrapper 是 profile 裡的一個 function，跳過 profile
+// 問到的是另一件事。
+const PROBE_TIMEOUT_MS = 10_000;
+
+function agentProbe() {
+  return process.platform === "win32"
+    ? {
+        cmd: "powershell.exe",
+        args: [
+          "-Command",
+          `if (Get-Command ${agent} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }`,
+        ],
+      }
+    : { cmd: "zsh", args: ["-ic", `command -v ${agent} >/dev/null 2>&1`] };
+}
+
+// 逾時、spawn 失敗一律當「有」放行。
+//
+// 這一支的價值是把一種**確定**的失敗提前講出來，不是多一道關卡。探測本身不穩就
+// 擋人的話，會用一個我們不確定的判斷去擋一件可能好好的事——那比晚四分鐘更糟。
+function agentMissing() {
+  // 這一格不叫 agent（只是把 Obsidian 開起來），沒有指令要問。
+  if (caseName === "open-vault") {
+    return Promise.resolve(false);
+  }
+
+  const { cmd, args } = agentProbe();
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (missing) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(missing);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(false);
+    }, PROBE_TIMEOUT_MS);
+
+    let child;
+
+    try {
+      child = spawn(cmd, args, { stdio: "ignore" });
+    } catch {
+      finish(false);
+      return;
+    }
+
+    child.on("error", () => finish(false));
+    child.on("exit", (code) => finish(code === 1));
+  });
+}
+
+if (await agentMissing()) {
+  const card = agent === "codex" ? "Codex CLI" : "Claude Code";
+  const message = `找不到 ${agent}——先回去把「${card}」那張卡裝好，再回來按這一列的驗證。`;
+
+  console.log("");
+  console.log(`FAIL  ${message}`);
+  emitJr({ kind: "result", ok: false, summary: message });
+  process.exit(1);
+}
+
 const launcher = writeLauncher(buildPrompt(testCase));
 const { cmd, args: openArgs } = openTerminal(launcher);
 const child = spawn(cmd, openArgs, { stdio: "ignore", detached: true });

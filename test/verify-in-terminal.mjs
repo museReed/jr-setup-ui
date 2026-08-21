@@ -268,6 +268,36 @@ for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
 }
 console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
 
+// 開終端之前要先問「那個指令在不在」，而且要用跟 launcher 同一種 shell 問。
+//
+// 學生可以跳過卡片，所以「還沒裝 Codex CLI 就按了 Codex 的驗證」走得到。不先問的
+// 話終端會開起來噴一行 command not found，嚮導這邊等滿四分鐘才說話（macOS VM 實測）。
+{
+  const probeAt = source.indexOf("function agentProbe()");
+  const launcherAt = source.indexOf("const launcher = writeLauncher(");
+  assert(probeAt >= 0, "找不到那支問指令在不在的探測");
+  assert(
+    source.indexOf("await agentMissing()") < launcherAt,
+    "要在開終端之前問，問完才有意義",
+  );
+
+  // ⚠️ 用 node 自己的 PATH 問會答錯，而且答成「有」。POSIX 的 launcher 是 zsh -i
+  // ——互動但非登入，只讀 .zshrc 不讀 .zprofile，而 Homebrew / nvm 常把 PATH 寫在
+  // 後者。要問的是「launcher 那個 shell 看不看得到」，不是「node 看不看得到」。
+  const probe = source.slice(probeAt, probeAt + 600);
+  assert(
+    probe.includes('"-ic"'),
+    "POSIX 要用 zsh -ic 問，跟 launcher 的 zsh -i 同一種 shell",
+  );
+  // Windows 的 wrapper 是 profile 裡的一個 function，跳過 profile 問到的是另一件事。
+  assert(
+    !probe.includes("-NoProfile"),
+    "Windows 的探測不能加 -NoProfile——wrapper 住在 profile 裡",
+  );
+
+  console.log("ok - 開終端之前先用同一種 shell 確認 agent 指令在不在");
+}
+
 // 標題要活得過這支 launcher 自己後面跑的東西。
 //
 // launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也跟著載入。
