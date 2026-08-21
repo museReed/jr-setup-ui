@@ -35,6 +35,9 @@ const elements = {
   reportSave: document.querySelector("#report-modal-save"),
   reportCancel: document.querySelector("#report-modal-cancel"),
   reportStatus: document.querySelector("#report-modal-status"),
+  reportMailDetails: document.querySelector("#report-mail-details"),
+  reportMailTo: document.querySelector("#report-mail-to"),
+  reportMailSubject: document.querySelector("#report-mail-subject"),
   copyRawOutput: document.querySelector("#copy-raw-output"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
@@ -2284,6 +2287,8 @@ export function showReportModal(preview) {
   elements.reportPreview.textContent = preview;
   elements.reportDescription.value = "";
   elements.reportStatus.hidden = true;
+  // 上一次按過寄信留下的收件人／主旨要收掉：這一次可能卡在別張卡，主旨不一樣。
+  elements.reportMailDetails.hidden = true;
   elements.reportSend.disabled = false;
   elements.reportModal.hidden = false;
   requestAnimationFrame(() => {
@@ -2325,6 +2330,33 @@ export function onReportModal(send, cancel, { manual, mail, save } = {}) {
 
   if (save !== undefined) {
     elements.reportSave.addEventListener("click", save);
+  }
+}
+
+// 寄信那條路的收件人與主旨。mailto 打不開時，這兩行是他唯一的線索——而主旨少了的話
+// 那封信會混在一般信件裡，助教的分類規則抓不到。
+export function showMailDetails({ to, subject }) {
+  elements.reportMailTo.textContent = to;
+  elements.reportMailSubject.textContent = subject;
+  elements.reportMailDetails.hidden = false;
+}
+
+// 兩顆複製鍵共用一個處理器：它把那一格的文字交出去，真正寫剪貼簿的動作在 app 那層
+// ——view 只碰 DOM。按完把字換成「已複製」兩秒，不然學生不知道到底有沒有按到。
+export function onMailCopy(copy) {
+  for (const button of elements.reportMailDetails.querySelectorAll("[data-copy]")) {
+    button.addEventListener("click", async () => {
+      const target = document.querySelector(`#${button.dataset.copy}`);
+      const done = await copy(target.textContent);
+
+      if (!done) return;
+
+      const original = button.textContent;
+      button.textContent = "已複製";
+      window.setTimeout(() => {
+        button.textContent = original;
+      }, 2000);
+    });
   }
 }
 

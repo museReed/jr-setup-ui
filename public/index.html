@@ -199,6 +199,21 @@
           <button type="button" id="report-modal-save" class="ds-btn ds-btn-ghost">存成檔案</button>
           <button type="button" id="report-modal-cancel" class="ds-btn ds-btn-ghost">取消</button>
         </div>
+        <!-- 信件程式沒設定好的話 mailto 什麼都不會發生，學生得自己開網頁版信箱手打。
+             那時他需要的是收件人**與主旨**兩樣——主旨是我們用來分類的，少了它那封信
+             會混在一般信件裡。兩個都給一鍵複製，不要他照著螢幕抄。 -->
+        <div id="report-mail-details" class="mail-details" hidden>
+          <div class="mail-row">
+            <span class="mail-key">收件人</span>
+            <code id="report-mail-to"></code>
+            <button type="button" class="mail-copy" data-copy="report-mail-to">複製</button>
+          </div>
+          <div class="mail-row">
+            <span class="mail-key">主旨</span>
+            <code id="report-mail-subject"></code>
+            <button type="button" class="mail-copy" data-copy="report-mail-subject">複製</button>
+          </div>
+        </div>
         <p id="report-modal-status" class="report-hint" hidden></p>
       </section>
     </div>

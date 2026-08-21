@@ -55,13 +55,24 @@ export function mailtoUrl(title) {
   return `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}`;
 }
 
-export function newIssueUrl(title) {
-  const query =
-    typeof title === "string" && title !== ""
-      ? `?title=${encodeURIComponent(title)}`
-      : "";
+// ⚠️ body 帶的是**一行提示，不是 log**。
+//
+// 「內容在剪貼簿裡，請貼上」這句話原本只寫在嚮導的框裡——而學生按下按鈕之後人就在
+// GitHub 那個分頁了，回頭看不到那句話。他看到的是一個標題填好、內文全空的表單，
+// 合理的結論是「按鈕壞了」（Reed 實測第一個反應就是這個）。
+//
+// 提示要跟著他走，所以放進表單本身。一行字編碼後仍然很短，跟檔頭那段講的「把 log
+// 塞進網址」是兩回事——那個坑是長度，這裡沒有長度問題（下面的測試釘住 500 字元）。
+const PASTE_HINT = "把剛才複製的內容貼在這裡（Ctrl+V／⌘V），再刪掉這一行。";
 
-  return `https://github.com/${FEEDBACK_REPO}/issues/new${query}`;
+export function newIssueUrl(title) {
+  const params = new URLSearchParams({ body: PASTE_HINT });
+
+  if (typeof title === "string" && title !== "") {
+    params.set("title", title);
+  }
+
+  return `https://github.com/${FEEDBACK_REPO}/issues/new?${params}`;
 }
 
 export function redact(text, home) {

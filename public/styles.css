@@ -1486,6 +1486,56 @@ body.wt-locked {
   resize: vertical;
 }
 
+/* 寄信那條路的收件人與主旨。mailto 打不開時，這兩行是他唯一的線索。 */
+.mail-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+}
+
+.mail-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mail-key {
+  flex: 0 0 auto;
+  width: 4em;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* 值可能很長（主旨帶著卡片名稱），讓它自己捲，不要把按鈕擠出畫面。 */
+.mail-row code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-sm);
+}
+
+.mail-copy {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.mail-copy:hover {
+  color: var(--color-text-strong);
+}
+
 /* 當日密碼那個框。窄一點——它只有一個四位數的欄位，撐到 640px 會空得像出錯頁。 */
 .passcode-panel {
   display: flex;

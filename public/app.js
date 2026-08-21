@@ -2428,10 +2428,11 @@ view.onReportModal(
         return;
       }
 
-      // 信件程式沒設定好的話 mailto 什麼都不會發生——所以信箱本身一定要寫在畫面上，
-      // 讓他自己開網頁版信箱也寄得出去。
+      // 信件程式沒設定好的話 mailto 什麼都不會發生——所以收件人與主旨要留在畫面上，
+      // 讓他自己開網頁版信箱也寄得出去。主旨不能少：少了它那封信會混在一般信件裡。
+      view.showMailDetails({ to: FEEDBACK_EMAIL, subject: title });
       view.setReportStatus(
-        `內容已經複製起來了。信件視窗會打開，貼上再送出。沒有跳出信件程式的話，直接寄到 ${FEEDBACK_EMAIL}。`,
+        "內容已經複製起來了。信件視窗會打開，貼上再送出。沒有跳出信件程式的話，用下面的收件人與主旨自己開一封。",
       );
       window.location.href = mailtoUrl(title);
     },
@@ -2447,6 +2448,16 @@ view.onReportModal(
     },
   },
 );
+// 收件人與主旨那兩顆複製鍵。寫得進剪貼簿才回 true——view 靠這個決定要不要把按鈕的
+// 字換成「已複製」。擋掉的話什麼都不做：那兩行本來就選得起來，不需要跳錯誤訊息嚇人。
+view.onMailCopy(async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+});
 // 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
 // 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。
 view.elements.copyRawOutput.addEventListener("click", async () => {
