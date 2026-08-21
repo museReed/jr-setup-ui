@@ -548,8 +548,9 @@ try {
     groupChecks([
       check("claude-md"),
       check("output-style"),
-      check("hook"),
+      // 退役那一列排在權限卡後面（見 config-install 的 CLAUDE_STEPS）。
       check("allowlist"),
+      check("hook"),
       check("codex-agents"),
       check("codex-config"),
     ]),
@@ -564,25 +565,28 @@ try {
     [
       // 主 check 是最後那個：驗證掛在它身上，而驗證要等兩份都裝好。
       ["output-style", "claude-md+output-style"],
-      // 擋串接與白名單寫的是同一個 settings.json，講的也是同一件事。
-      // 2026-08-12 改成白名單排前面（Reed 在 VM 上看著畫面指定）。
+      // 權限卡以前是「白名單 + 擋串接 hook」兩列合併。hook 退役之後只剩白名單一列
+      // ——合併的意義本來就是「兩份設定是同一件事」，只剩一份就沒有東西要合。
       //
-      // ⚠️ 主 check 是 checks.at(-1)，所以順序一換它就跟著換，而 MERGED_CARDS 的
-      // key 也要一起換——沒換的話標題與說明會靜靜退回單列的預設值，下面兩條 assert
-      // 就是在防這個。
-      ["hook", "allowlist+hook"],
+      // ⚠️ MERGED_CARDS 的 key 跟著搬到 allowlist 了。沒搬的話標題與說明會靜靜退回
+      // 單列的預設值（那個坑警告過兩次），下面兩條 assert 就是在防這個。
+      ["allowlist", "allowlist"],
+      // 退役那一列自己一張卡，不再跟白名單綁在一起：它做的事是移除，跟旁邊那張
+      // 「怎麼設定」不是同一件事。
+      ["hook", "hook"],
       ["codex-config", "codex-agents+codex-config"],
     ],
   );
   const permissionCard = mergedRules[1];
   assert.match(permissionCard.label, /什麼時候該停下來問你/);
-  assert.match(permissionCard.detail, /改檔案不再逐次問你/);
+  assert.match(permissionCard.detail, /auto/);
   assert.deepEqual(
     permissionCard.checks.map(({ id }) => id),
-    ["allowlist", "hook"],
-    "先講白名單再擋串接",
+    ["allowlist"],
+    "hook 退役之後這張卡只剩白名單一列",
   );
-  ok("擋串接與白名單合成一張權限卡，白名單排前面、主 check 是 hook");
+  assert.match(mergedRules[2].detail, /退役/);
+  ok("權限卡只剩白名單一列，標題與說明沒退回預設值；退役那列自己一張卡");
   assert.match(
     mergedRules[0].label,
     /規矩與回話風格/,

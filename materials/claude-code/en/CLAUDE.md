@@ -27,14 +27,6 @@
 
 When using external search, append a **Sources** list (Markdown links) at the end.
 
-## 4. Shell Commands
-
-- One Bash call does one thing — **never chain multiple commands with `&&` `||` `;`**. For multiple steps, split into separate calls.
-- Don't use `cd x && cmd`; use an absolute path, or the Bash tool's working directory.
-- A single pipe `|` (like `grep foo | head`) counts as one data flow — that's fine.
-- Why: the allowlist matches each sub-command individually, so chaining gets the whole string prompted; splitting also keeps every step visible.
-- Hard guard: paired with `hooks/block-chained-bash.js` (a PreToolUse hook), chained commands are blocked outright.
-
 ---
 
 ## Customization Ideas

@@ -612,10 +612,16 @@ process.stdin.on("end", () => {
         }),
       );
 
+    // auto 現在是我們自己寫進去的值，所以是正常的綠燈。
     writeSettings("auto");
+    const expected = await checkAllowlist(MATERIALS, allowStep);
+    assert.equal(expected.status, "ok", expected.detail);
+
+    // 學生自己挑了別的模式：仍然是綠燈，說明講清楚跟我們預期的不同。
+    writeSettings("plan");
     const studentChose = await checkAllowlist(MATERIALS, allowStep);
     assert.equal(studentChose.status, "ok", studentChose.detail);
-    assert.match(studentChose.detail, /你自己設的 auto/);
+    assert.match(studentChose.detail, /你自己設的 plan/);
 
     // 但「根本沒設」仍然是黃燈——那一種重跑安裝真的會補上，按鈕有用。
     writeSettings(null);
@@ -623,7 +629,15 @@ process.stdin.on("end", () => {
     assert.equal(notSet.status, "warn");
     assert.match(notSet.detail, /重跑安裝/);
     assert.ok(notSet.detail.length <= 40, notSet.detail);
-    ok("學生自己設過預設模式是綠燈，沒設才是黃燈（黃燈會讓驗證那格永遠打不了勾）");
+
+    // 上一輪嚮導寫進去的 acceptEdits 也是黃燈，同一個理由：重跑安裝會把它換掉。
+    // 判成綠燈的話已經裝過的人永遠停在舊模式，畫面上還沒有任何按鈕可按。
+    writeSettings("acceptEdits");
+    const superseded = await checkAllowlist(MATERIALS, allowStep);
+    assert.equal(superseded.status, "warn", superseded.detail);
+    assert.match(superseded.detail, /換成 auto/);
+    assert.ok(superseded.detail.length <= 40, superseded.detail);
+    ok("預設模式：auto 綠、學生自選綠、沒設與上一輪的 acceptEdits 都是黃燈");
   } finally {
     rmSync(path.join(MATERIALS, sourceRel), { force: true });
     rmSync(missDir, { recursive: true, force: true });

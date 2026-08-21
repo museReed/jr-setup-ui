@@ -27,14 +27,6 @@
 
 用到外部搜索时结尾附 **Sources** list（Markdown link）。
 
-## 4. Shell 指令
-
-- 一个 Bash 调用只做一件事，**禁止用 `&&` `||` `;` 串接**多个指令。多步就分成多次调用。
-- 不要用 `cd x && 指令`；改用绝对路径，或用 Bash tool 的工作目录。
-- 单一 pipe `|`（如 `grep foo | head`）算一条数据流，可以用。
-- 理由：白名单是逐个子指令比对，串接会整串被问；拆开也让每一步都看得清。
-- 硬性防护：搭配 `hooks/block-chained-bash.js`（PreToolUse hook），串接会直接被挡下。
-
 ---
 
 ## 定制化方向
