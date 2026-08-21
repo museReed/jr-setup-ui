@@ -258,7 +258,13 @@ async function tabSyncStep(step) {
       ? `\ufeff${next.replace(/^\ufeff/, "")}`
       : next;
   await writeFile(step.rcTarget, rcContent);
-  logProgress(`watcher → ${step.target}`);
+
+  // POSIX 沒有 watcher 檔，step.target 是 undefined——不要無條件印，畫面上會出現
+  // 一行「watcher → undefined」，而學生只會讀到「有東西壞了」。
+  if (step.target !== undefined) {
+    logProgress(`watcher → ${step.target}`);
+  }
+
   logProgress(`shell function → ${step.rcTarget}`);
 }
 
