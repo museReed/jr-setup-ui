@@ -259,3 +259,27 @@ for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
   );
 }
 console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
+
+// 標題那一格寫進去的字，要活得過這支 launcher 自己後面跑的東西。
+//
+// launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也跟著載入。
+// oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在裝了 powerlevel10k
+// 的機器上，學生看到的標題是 `echo`，也就是腳本最後一個指令。
+//
+// 兩道保險缺一不可，所以兩個都釘住。
+{
+  const disableAt = source.indexOf("DISABLE_AUTO_TITLE=true");
+  assert(disableAt >= 0, "標題 launcher 要關掉主題的自動標題");
+
+  const echoAt = source.indexOf("標題測試結束——這個視窗的分頁標題現在是");
+  const namerAt = source.indexOf('CLAUDE_PROJECT_DIR="$HOME" ${namer}');
+
+  assert(echoAt >= 0, "找不到標題那一格的提示字");
+  assert(namerAt >= 0, "找不到標題那一格呼叫命名腳本的那一行");
+  assert(
+    namerAt > echoAt,
+    "命名腳本要放在最後一行——先印字後改標題，才沒有下一個指令能蓋掉標題",
+  );
+
+  console.log("ok - 標題 launcher 關掉主題自動標題，而且把改標題排在最後");
+}
