@@ -1834,6 +1834,7 @@ try {
     envCheckInProgress: false,
     configCheckInProgress: false,
     envCheckQueued: null,
+    configCheckQueued: false,
     envChecks: [{ id: "node" }],
     configChecks: [{ id: "rules" }],
   };
@@ -1843,6 +1844,7 @@ try {
     { envCheckInProgress: true },
     { configCheckInProgress: true },
     { envCheckQueued: { manual: false } },
+    { configCheckQueued: true },
     { envChecks: [] },
     { configChecks: [] },
   ]) {

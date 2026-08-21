@@ -1426,6 +1426,7 @@ export function initialChecksReady({
   envCheckInProgress,
   configCheckInProgress,
   envCheckQueued,
+  configCheckQueued,
   envChecks,
   configChecks,
 }) {
@@ -1433,6 +1434,7 @@ export function initialChecksReady({
     !envCheckInProgress &&
     !configCheckInProgress &&
     envCheckQueued === null &&
+    configCheckQueued === false &&
     Array.isArray(envChecks) &&
     envChecks.length > 0 &&
     Array.isArray(configChecks) &&

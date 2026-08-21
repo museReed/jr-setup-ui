@@ -105,6 +105,8 @@ const state = {
   loaderPaused: false,
   envCheckInProgress: false,
   configCheckInProgress: false,
+  // 規則檢查進行中又切換選項時，收尾後要用最新選項再跑一輪。
+  configCheckQueued: false,
   loginWait: null,
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
@@ -1472,6 +1474,7 @@ function finishInitialChecks() {
       envCheckInProgress: state.envCheckInProgress,
       configCheckInProgress: state.configCheckInProgress,
       envCheckQueued: state.envCheckQueued,
+      configCheckQueued: state.configCheckQueued,
       envChecks: state.envChecks,
       configChecks: state.lastChecks,
     })
@@ -1490,6 +1493,16 @@ function finishInitialChecks() {
     state.initialChecksAnnounced = true;
     view.addLine("環境與規則檢查完成，狀態已更新。", "succeeded");
   }
+}
+
+function restartInitialChecks() {
+  state.setupCompleted = false;
+  state.initialChecksAnnounced = false;
+  renderWizard();
+  view.addLine(
+    "選項已變更，正在重新檢查目前環境與規則。",
+    "agent-status",
+  );
 }
 
 async function checkEnvironment(showLoading = true, { manual = false } = {}) {
@@ -1600,7 +1613,8 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
 
 async function checkConfigs() {
   if (state.configCheckInProgress) {
-    return;
+    state.configCheckQueued = true;
+    return null;
   }
 
   state.configCheckInProgress = true;
@@ -1629,6 +1643,11 @@ async function checkConfigs() {
     renderControls();
     renderCheckingLoader();
     finishInitialChecks();
+
+    if (state.configCheckQueued) {
+      state.configCheckQueued = false;
+      void checkConfigs();
+    }
   }
 }
 
@@ -2379,6 +2398,7 @@ view.onToolSelect((tool) => {
   state.selectedTools = toggleToolSelection(state.selectedTools, tool);
   saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  restartInitialChecks();
   // 只清掉「學生不在」的那些段落——它們的卡片清單跟著工具變了，舊的位置可能指到
   // 別張卡。學生正看著的這一段不能清：清了之後下一輪 render 會重新推導成「第一張
   // 沒完成的卡」，於是人明明停在選工具卡上，按一下工具就被丟回剛才那張（VM 實測）。
@@ -2399,6 +2419,7 @@ view.onLanguageSelect((language) => {
   state.selectedLanguage = language;
   saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  restartInitialChecks();
   checkConfigs();
 });
 view.onSectionSelect((sectionId) => {
