@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   buildIssue,
+  FEEDBACK_EMAIL,
   issueBody,
   issueTitle,
+  mailtoUrl,
+  newIssueUrl,
   redact,
 } from "../public/report.js";
 
@@ -62,6 +65,25 @@ try {
 
   assert.equal(heavy.title, issueTitle({ label: "Codex CLI 的規矩與回話風格" }));
   ok("buildIssue 同時給標題與內容，交給 gh 去開");
+
+  // ⚠️ 兩條退路的網址都**只帶標題，不帶內文**。
+  //
+  // 帶內文就會撞上檔頭那段講的同一個坑：網址有長度上限，而中文 percent-encoding
+  // 一個字變九個字元——學生最需要回報的時候正是 log 最長的時候，硬塞進去的那份
+  // 反而缺了關鍵段落。內文一律走剪貼簿，所以這裡釘住「網址裡不准有內文」。
+  const longTitle = issueTitle({ label: "換上課堂用的終端機" });
+
+  for (const url of [newIssueUrl(longTitle), mailtoUrl(longTitle)]) {
+    assert.ok(url.includes(encodeURIComponent(longTitle)), `${url} 少了標題`);
+    assert.ok(!/[?&]body=/.test(url), `${url} 把內文塞進網址了`);
+    // 標題是一行字，編碼後仍然遠低於任何一種上限。
+    assert.ok(url.length < 500, `${url.length} 字元，太長了`);
+  }
+
+  assert.ok(mailtoUrl(longTitle).startsWith(`mailto:${FEEDBACK_EMAIL}?`));
+  // 沒有標題時也要送得出去——空主旨的信很容易被當成垃圾信。
+  assert.match(mailtoUrl(""), /subject=jr-setup/);
+  ok("兩條退路的網址只帶標題，內文走剪貼簿");
 } catch (error) {
   console.error(error);
   process.exit(1);

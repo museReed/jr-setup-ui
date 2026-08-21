@@ -34,18 +34,25 @@ export function issueUrlFrom(stdout) {
 
 // gh 的錯誤訊息原樣帶回去，但前面加一句人話——「HTTP 401」對學生沒有意義，
 // 「還沒登入」才有。
+// ⚠️ 這幾句話都要指向**現在就按得動的那顆鍵**，不能只說「你少了什麼」。
+//
+// 學生最需要回報的時候，正是他還沒把 gh 裝好登入好的時候——而舊版的訊息是叫他回
+// 去做那張他正卡住的卡。那等於把求助的人推回問題本身。
+//
+// 框裡那顆「複製內容並開 GitHub」不需要 gh，也不需要 CLI 登入：內容進剪貼簿，
+// 他在本來就登入著的瀏覽器裡貼上就送得出去。
 export function explainFailure(stderr) {
   const text = String(stderr ?? "").trim();
 
   if (/auth|login|credential|401|403/i.test(text)) {
-    return "GitHub 還沒登入。請回「版本控制與 GitHub」那張卡按「開始登入」，完成之後再按一次。";
+    return "gh 還沒登入，這條路送不出去。請改按下面的「複製內容並開 GitHub」——在瀏覽器裡貼上就送得出去，不用先裝好 gh。";
   }
 
   if (/not found|404/i.test(text)) {
     return "找不到回報用的 repo。這是嚮導的問題，不是你的——請直接把畫面截圖給助教。";
   }
 
-  return "送不出去。下面是 gh 的原始訊息：";
+  return "送不出去，請改按「複製內容並開 GitHub」。下面是 gh 的原始訊息：";
 }
 
 export async function createFeedbackIssue({ title, body, repo = FEEDBACK_REPO }) {
@@ -66,7 +73,7 @@ export async function createFeedbackIssue({ title, body, repo = FEEDBACK_REPO })
       return {
         ok: false,
         message:
-          "叫不動 gh。請先完成「版本控制與 GitHub」那張卡，再回來按一次。",
+          "這台機器還沒有 gh。請改按「複製內容並開 GitHub」——在瀏覽器裡貼上就送得出去。",
         detail: result.message,
       };
     }

@@ -30,6 +30,9 @@ const elements = {
   reportDescription: document.querySelector("#report-description"),
   reportPreview: document.querySelector("#report-preview"),
   reportSend: document.querySelector("#report-modal-send"),
+  reportManual: document.querySelector("#report-modal-manual"),
+  reportMail: document.querySelector("#report-modal-mail"),
+  reportSave: document.querySelector("#report-modal-save"),
   reportCancel: document.querySelector("#report-modal-cancel"),
   reportStatus: document.querySelector("#report-modal-status"),
   copyRawOutput: document.querySelector("#copy-raw-output"),
@@ -2308,9 +2311,40 @@ export function setReportStatus(text, { sending = false } = {}) {
   elements.reportSend.disabled = sending;
 }
 
-export function onReportModal(send, cancel) {
+export function onReportModal(send, cancel, { manual, mail, save } = {}) {
   elements.reportSend.addEventListener("click", send);
   elements.reportCancel.addEventListener("click", cancel);
+
+  if (manual !== undefined) {
+    elements.reportManual.addEventListener("click", manual);
+  }
+
+  if (mail !== undefined) {
+    elements.reportMail.addEventListener("click", mail);
+  }
+
+  if (save !== undefined) {
+    elements.reportSave.addEventListener("click", save);
+  }
+}
+
+// 把這一份診斷資料存成檔案。給「連 GitHub 帳號都沒有」的人——他至少交得出東西，
+// 助教也不必請他一段一段截圖。
+//
+// 用 Blob 不用 data URI：這份內容可以長到幾萬字，而 data URI 在部分瀏覽器上有長度
+// 上限；那正好是「log 最長的時候反而送不出去」的同一種毛病。
+export function saveReportFile(text, filename) {
+  const url = URL.createObjectURL(
+    new Blob([text], { type: "text/markdown;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // 立刻 revoke 會讓部分瀏覽器來不及開始下載，隔一拍再收。
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 // 當日密碼那個框。每次打開都清空、收掉上一次的錯誤訊息，然後把游標放進輸入框——

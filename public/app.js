@@ -8,7 +8,7 @@ import {
   replayTour,
   tourDiagnostics,
 } from "./tour.js";
-import { buildIssue } from "./report.js";
+import { buildIssue, FEEDBACK_EMAIL, mailtoUrl, newIssueUrl } from "./report.js";
 import { openWalkthrough } from "./walkthrough.js";
 import {
   CONFIG_LANGUAGES,
@@ -2388,6 +2388,64 @@ view.onReportModal(
     }
   },
   () => view.hideReportModal(),
+  {
+    // gh 走不通時的退路：內容進剪貼簿，網址只帶標題，學生在他本來就登入著的
+    // 瀏覽器裡貼上送出。順序不能顛倒——先開分頁再複製的話，焦點已經離開這一頁，
+    // 剪貼簿寫入會被瀏覽器擋掉（同一個坑踩過）。
+    manual: async () => {
+      const { title, body } = buildIssue(
+        currentReportInput(view.reportDescription()),
+      );
+
+      try {
+        await navigator.clipboard.writeText(body);
+      } catch {
+        view.setReportStatus(
+          "這個瀏覽器不讓我們寫剪貼簿。請改按「存成檔案」，把那個檔案交給助教。",
+        );
+        return;
+      }
+
+      // 登入牆要先講。GitHub 開 issue 一定要登入，沒登入的人會被帶去登入頁——
+      // 不先說的話，他會以為按鈕壞了。內容在剪貼簿裡，中間跳去哪都不會掉。
+      view.setReportStatus(
+        "內容已經複製起來了。GitHub 的新 issue 頁面會打開——如果它先要你登入，登入完再回來貼。把游標點進大的那個輸入框，貼上（⌘V／Ctrl+V）再送出。",
+      );
+      window.open(newIssueUrl(title), "_blank", "noopener");
+    },
+    // 連 GitHub 帳號都還沒有的人走這條。
+    mail: async () => {
+      const { title, body } = buildIssue(
+        currentReportInput(view.reportDescription()),
+      );
+
+      try {
+        await navigator.clipboard.writeText(body);
+      } catch {
+        view.setReportStatus(
+          `這個瀏覽器不讓我們寫剪貼簿。請改按「存成檔案」，把那個檔案寄到 ${FEEDBACK_EMAIL}。`,
+        );
+        return;
+      }
+
+      // 信件程式沒設定好的話 mailto 什麼都不會發生——所以信箱本身一定要寫在畫面上，
+      // 讓他自己開網頁版信箱也寄得出去。
+      view.setReportStatus(
+        `內容已經複製起來了。信件視窗會打開，貼上再送出。沒有跳出信件程式的話，直接寄到 ${FEEDBACK_EMAIL}。`,
+      );
+      window.location.href = mailtoUrl(title);
+    },
+    // 連 GitHub 帳號都沒有的人走這條：至少交得出這份診斷資料。
+    save: () => {
+      const { body } = buildIssue(currentReportInput(view.reportDescription()));
+
+      view.saveReportFile(body, "jr-setup-卡住了.md");
+      // 存完要講「然後呢」。只說存好了的話，學生手上多一個檔案卻不知道要送去哪。
+      view.setReportStatus(
+        `已經存成檔案（在你的下載資料夾）。把它寄到 ${FEEDBACK_EMAIL}，或直接傳給助教。`,
+      );
+    },
+  },
 );
 // 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
 // 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。

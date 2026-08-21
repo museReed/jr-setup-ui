@@ -190,6 +190,13 @@
         <pre id="report-preview" class="report-preview"></pre>
         <div>
           <button type="button" id="report-modal-send" class="ds-btn ds-btn-primary">送出</button>
+          <!-- gh 還沒登入時的退路。瀏覽器的 GitHub 登入多數人早就有了，比 CLI 登入
+               早得多——而學生最可能卡住的時候，正是他還沒過 CLI 那一關的時候。 -->
+          <button type="button" id="report-modal-manual" class="ds-btn ds-btn-ghost">複製內容並開 GitHub</button>
+          <!-- 連 GitHub 帳號都還沒有的人走這條。開 issue 一定要帳號並且登入，沒有
+               匿名這回事——而那個學生正是最需要有人幫的那個。 -->
+          <button type="button" id="report-modal-mail" class="ds-btn ds-btn-ghost">複製內容並寄信給助教</button>
+          <button type="button" id="report-modal-save" class="ds-btn ds-btn-ghost">存成檔案</button>
           <button type="button" id="report-modal-cancel" class="ds-btn ds-btn-ghost">取消</button>
         </div>
         <p id="report-modal-status" class="report-hint" hidden></p>

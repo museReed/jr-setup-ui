@@ -25,6 +25,45 @@
 // 會被貼到一個公開的 issue 上。
 //
 // 換的是「看得到的那幾種寫法」：正斜線、反斜線、以及 JSON 逃脫過的雙反斜線。
+// gh 那條路走不通時的退路。
+//
+// ⚠️ 這個網址**只帶標題，不帶內容**——內容走剪貼簿。上面那段講的長度問題只發生在
+// 「把 log 塞進網址」，標題是一行字，編碼後仍然很短，沒有這個問題。
+//
+// 為什麼這條退路必要：`gh issue create` 要 CLI 登入，而那是整條安裝路上最難的一關
+// ——學生最可能卡住的時候，正是他還沒過那一關的時候。瀏覽器的 GitHub 登入多數人
+// 早就有了，所以「複製 + 貼上」到得了的地方，比 gh 早得多。
+//
+// repo 名字在這裡與 src/report-issue.js 各有一份。那支是真正去開 issue 的，權威在
+// 它；這裡只組一個給人點的網址，兩邊要一起改。
+const FEEDBACK_REPO = "museReed/jr-setup-feedback";
+
+// 最後一條退路：寄信給助教。
+//
+// GitHub 開 issue 一定要帳號並且登入——沒有匿名這回事。所以「還沒有 GitHub 帳號」
+// 或「登入牆卡住了」的學生，前面兩條路都走不到底，而他正是最需要有人幫的那個。
+//
+// ⚠️ mailto 只帶主旨，**不帶內文**——理由跟檔頭那段預填網址完全一樣：網址有長度
+// 上限，而中文 percent-encoding 一個字變九個字元。學生最需要回報的時候正是 log 最
+// 長的時候，硬塞進去的那份反而缺了關鍵段落。內文一律走剪貼簿。
+export const FEEDBACK_EMAIL = "devlab20230424@gmail.com";
+
+export function mailtoUrl(title) {
+  const subject =
+    typeof title === "string" && title !== "" ? title : "jr-setup 卡住了";
+
+  return `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}`;
+}
+
+export function newIssueUrl(title) {
+  const query =
+    typeof title === "string" && title !== ""
+      ? `?title=${encodeURIComponent(title)}`
+      : "";
+
+  return `https://github.com/${FEEDBACK_REPO}/issues/new${query}`;
+}
+
 export function redact(text, home) {
   if (typeof text !== "string") {
     return "";
