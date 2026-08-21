@@ -10,11 +10,13 @@ import {
   loadChangedSteps,
   loadManualChecked,
   loadSelection,
+  loadSkippedCards,
   loadVerifiedSteps,
   markBehaviorVerified,
   markStepVerified,
   saveManualChecked,
   saveSelection,
+  saveSkippedCards,
 } from "../src/progress-state.js";
 
 function ok(description) {
@@ -114,10 +116,23 @@ try {
   assert.deepEqual(await loadManualChecked(options), ["fullscreen-yes"]);
   ok("人工勾選整份覆蓋，取消勾選存得回去");
 
+  // 跳過清單：跟人工勾選同一套（整份覆蓋、不受指紋管轄）。存在伺服器而不是瀏覽器，
+  // 因為 port 每次啟動都變，localStorage 綁 origin 等於存不住——而學生最需要找回
+  // 那幾張卡的時機，正是他重開嚮導的時候。
+  assert.deepEqual(await loadSkippedCards(options), []);
+  await saveSkippedCards(["claude-md", "hook"], options);
+  assert.deepEqual(await loadSkippedCards(options), ["claude-md", "hook"]);
+  // 修好了要移得掉。逐筆新增做不到——那正是「驗證通過就自動移除」需要的動作。
+  await saveSkippedCards(["hook"], options);
+  assert.deepEqual(await loadSkippedCards(options), ["hook"]);
+  ok("跳過清單整份覆蓋，移除存得回去");
+
   // 不受指紋管轄：它是「學生說他看到了」，重裝檔案不該叫人重看一次畫面。
   await writeFile(target, "installed-v7\n");
   assert.deepEqual(await loadManualChecked(options), ["fullscreen-yes"]);
-  ok("檔案被動過時，人工勾選不受影響");
+  // 跳過的紀錄同理：重裝檔案不該讓他重新卡一次。
+  assert.deepEqual(await loadSkippedCards(options), ["hook"]);
+  ok("檔案被動過時，人工勾選與跳過清單都不受影響");
 
   // 重驗之前要能把上一輪的結論忘掉，而且要忘在檔案裡。只清瀏覽器記憶體的話，
   // 驗證失敗時畫面說沒過、重新整理之後上一輪的勾又回來了。

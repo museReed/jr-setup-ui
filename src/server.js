@@ -21,11 +21,13 @@ import {
   loadChangedSteps,
   loadManualChecked,
   loadSelection,
+  loadSkippedCards,
   loadVerifiedSteps,
   markBehaviorVerified,
   markStepVerified,
   saveManualChecked,
   saveSelection,
+  saveSkippedCards,
 } from "./progress-state.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
@@ -282,6 +284,8 @@ export async function startServer({
     // 驗過之後被動過的那幾步。不影響勾，只在卡片上多一句提醒。
     changed: await loadChangedSteps(),
     manual: await loadManualChecked(),
+    // 學生按過「先略過」的卡。重整之後清單要還在，不然那顆按鈕等於沒做。
+    skipped: await loadSkippedCards(),
     selection: await loadSelection(),
   });
   return;
@@ -369,6 +373,21 @@ export async function startServer({
     }
 
     await saveManualChecked(payload.manual);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  // 一樣整份覆蓋：卡片驗過之後要從跳過清單裡消失，逐筆新增做不到。
+  if (payload.skipped !== undefined) {
+    if (
+      !Array.isArray(payload.skipped) ||
+      payload.skipped.some((id) => typeof id !== "string")
+    ) {
+      sendText(response, 400, "skipped 需要字串陣列");
+      return;
+    }
+
+    await saveSkippedCards(payload.skipped);
     sendJson(response, 200, { ok: true });
     return;
   }

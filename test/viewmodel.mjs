@@ -38,6 +38,8 @@ import {
   loginWaitStep,
   manualStepGroups,
   milestoneModels,
+  prunedSkippedCards,
+  skippedListModel,
   nextCardUnlocked,
   rowRunOptions,
   runControlsState,
@@ -563,6 +565,78 @@ try {
 
   const seen = (...ids) => new Set(ids);
 
+  // 修好了就自己從跳過清單裡消失——「移除」不是另一個按鈕，是同一個 cardIsComplete。
+  const skipCards = [
+    {
+      kind: "config",
+      checkId: "fixed",
+      label: "修好了",
+      check: { id: "fixed", label: "修好了", status: "ok" },
+    },
+    {
+      kind: "config",
+      checkId: "still-broken",
+      label: "還沒好",
+      check: { id: "still-broken", label: "還沒好", status: "missing" },
+    },
+  ];
+  assert.deepEqual(
+    [
+      ...prunedSkippedCards(
+        skipCards,
+        new Set(["fixed", "still-broken"]),
+        new Set(),
+      ),
+    ],
+    ["still-broken"],
+  );
+  ok("驗證通過的卡自動移出跳過清單，沒過的留著");
+
+  // 學生把工具從「兩個都要」改回只有 Claude：另一半的卡整批消失。留在清單裡就會
+  // 變成點不開的死項目——點下去要落在一張根本不存在的卡上。
+  assert.deepEqual(
+    [
+      ...prunedSkippedCards(
+        skipCards,
+        new Set(["still-broken", "ghost"]),
+        new Set(),
+      ),
+    ],
+    ["still-broken"],
+  );
+  ok("卡片不見了就從跳過清單清掉，不留點不開的死項目");
+
+  // 底部那條清單跨段落列，而且帶著「哪一段的第幾張」——點下去畫面整個換掉，沒有
+  // 這兩個數字學生不知道自己被帶到哪裡了。
+  assert.deepEqual(
+    skippedListModel(
+      [
+        { sectionId: "env", cards: [{ checkId: "a" }, { checkId: "b", label: "乙", detail: "說明" }] },
+        { sectionId: "rules", cards: [{ checkId: "c", label: "丙", detail: "另一句" }] },
+      ],
+      new Set(["b", "c"]),
+    ),
+    [
+      {
+        checkId: "b",
+        label: "乙",
+        detail: "說明",
+        sectionId: "env",
+        sectionTitle: "讓 AI 能跑起來",
+        index: 1,
+      },
+      {
+        checkId: "c",
+        label: "丙",
+        detail: "另一句",
+        sectionId: "rules",
+        sectionTitle: "讓它照你的規矩回話",
+        index: 0,
+      },
+    ],
+  );
+  ok("跳過清單跨段落，每筆帶著段落標題與第幾張");
+
   const milestones = milestoneModels(
     cards,
     new Set(["one"]),
@@ -637,6 +711,50 @@ try {
     [true, false, false, true, true],
   );
   ok("中間插入新卡後，已完成的舊卡不會因為位移而變灰");
+
+  // 略過的卡「不擋路，但不算完成」——同一組資料要同時說出這兩句話。
+  //
+  // 第一張沒完成、學生按了略過：第二、三站要開得了（不然那顆按鈕等於沒做），
+  // 而第一顆圓點仍然是暗的（不然畫面會說一件沒發生的事）。
+  const skippedFirst = milestoneModels(
+    cards,
+    new Set(),
+    0,
+    seen("one", "two", "three"),
+    new Set(["one"]),
+  );
+  // 第三站仍然鎖著：擋它的是第二張（沒完成也沒被略過）。放行只跟著那顆按鈕走，
+  // 略過一張不會順手把整段都開了。
+  assert.deepEqual(
+    skippedFirst.map(({ unlocked }) => unlocked),
+    [true, true, false],
+  );
+  assert.deepEqual(
+    skippedFirst.map(({ reached }) => reached),
+    [false, false, false],
+  );
+  assert.deepEqual(
+    skippedFirst.map(({ skipped }) => skipped),
+    [true, false, false],
+  );
+  ok("按過略過的卡放行下一站，但圓點不亮，也沒有順手開掉整段");
+
+  // 沒按略過的話，第一張沒完成就照舊擋住後面——放行只跟著那顆按鈕走，不是普遍鬆綁。
+  assert.deepEqual(
+    milestoneModels(cards, new Set(), 0, seen("one", "two", "three")).map(
+      ({ unlocked }) => unlocked,
+    ),
+    [true, false, false],
+  );
+  ok("沒按略過就照舊擋著");
+
+  // 略過的卡後來自己過了：那時它同時在 completed 與 skipped 裡，標記要讓給完成
+  // ——畫成虛線的「已跳過」會蓋掉一個真的做完的綠點。
+  assert.equal(
+    milestoneModels(cards, allIds, 0, seen("one"), new Set(["one"]))[0].skipped,
+    false,
+  );
+  ok("已完成的卡不再標成已跳過");
 
   // 卡片往哪邊展開要看落在條上的哪半邊。用「第幾顆」判的話，只有一站時那顆
   // （percent 100、貼最右）會被判成往右開，直接溢出畫面。

@@ -141,6 +141,16 @@
       </div>
     </main>
 
+    <!-- 跳過清單常駐在畫面底部：學生按過略過的卡要隨時找得回來，而頁首那一列會
+         被捲走（往下捲就看不到，等於沒有提醒）。整條沒東西時整塊收掉。 -->
+    <div id="skipped-tray" class="skipped-tray" hidden>
+      <button type="button" id="skipped-tray-toggle" class="skipped-tray-toggle" aria-expanded="false" aria-controls="skipped-tray-list">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4l8 8-8 8M13 4l6 8-6 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="skipped-tray-count">已跳過 0 張</span>
+      </button>
+      <ul id="skipped-tray-list" class="skipped-tray-list" hidden></ul>
+    </div>
+
     <div id="verify-modal" class="ds-modal-overlay" hidden>
       <section class="ds-modal-panel" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title">
         <h2 id="verify-modal-title">要開一個新終端跑驗證嗎？</h2>
