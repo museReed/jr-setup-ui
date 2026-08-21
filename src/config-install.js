@@ -288,10 +288,7 @@ export function stepsForTools(tools, platform = process.platform) {
     ...(selected.includes("codex") ? CODEX_SKILL_STEPS : []),
     ...(selected.includes("claude") ? externalStepsFor("claude") : []),
     ...(selected.includes("codex") ? externalStepsFor("codex") : []),
-    // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
-    ...(selected.includes("claude") ? ["demo-claude"] : []),
-    ...(selected.includes("codex") ? ["demo-codex"] : []),
-    // 筆記那一段整段排在 demo 之後（選配）。段內的順序是：
+    // 筆記那一段整段排在 demo 前面（選配，但學生可以自己走完）。段內的順序是：
     //
     //   Obsidian      先有 app，vault 裡才寫得出 .obsidian/ 設定
     //   vault-sync    筆記庫那張的操作步驟第三步就要學生叫 AI 存一次——skill 排在
@@ -301,9 +298,14 @@ export function stepsForTools(tools, platform = process.platform) {
     ...(selected.includes("claude") ? [skillStepId("claude", "vault-sync")] : []),
     ...(selected.includes("codex") ? [skillStepId("codex", "vault-sync")] : []),
     "obsidian-vault",
-    // 整段的收尾：叫 AI 真的寫一篇進去，證明前面四張串起來是通的。
+    // 筆記段的收尾：叫 AI 真的寫一篇進去，證明前面四張串起來是通的。
     ...(selected.includes("claude") ? ["vault-agent-claude"] : []),
     ...(selected.includes("codex") ? ["vault-agent-codex"] : []),
+    // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑；而且它要
+    // 當日密碼才開（見 model.js 的 SECTION_PASSCODES），提早發嚮導時本來就不該
+    // 讓學生走到這裡。
+    ...(selected.includes("claude") ? ["demo-claude"] : []),
+    ...(selected.includes("codex") ? ["demo-codex"] : []),
   ];
 }
 

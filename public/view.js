@@ -52,6 +52,13 @@ const elements = {
   skippedTrayToggle: document.querySelector("#skipped-tray-toggle"),
   skippedTrayCount: document.querySelector("#skipped-tray-count"),
   skippedTrayList: document.querySelector("#skipped-tray-list"),
+  passcodeModal: document.querySelector("#passcode-modal"),
+  passcodeTitle: document.querySelector("#passcode-modal-title"),
+  passcodeHint: document.querySelector("#passcode-modal-hint"),
+  passcodeInput: document.querySelector("#passcode-input"),
+  passcodeConfirm: document.querySelector("#passcode-modal-confirm"),
+  passcodeCancel: document.querySelector("#passcode-modal-cancel"),
+  passcodeError: document.querySelector("#passcode-modal-error"),
   verifyModal: document.querySelector("#verify-modal"),
   verifyModalConfirm: document.querySelector("#verify-modal-confirm"),
   verifyModalLater: document.querySelector("#verify-modal-later"),
@@ -2304,6 +2311,54 @@ export function setReportStatus(text, { sending = false } = {}) {
 export function onReportModal(send, cancel) {
   elements.reportSend.addEventListener("click", send);
   elements.reportCancel.addEventListener("click", cancel);
+}
+
+// 當日密碼那個框。每次打開都清空、收掉上一次的錯誤訊息，然後把游標放進輸入框——
+// 學生點分頁的動作已經表達了「我要進去」，再叫他多點一下輸入框是多的一步。
+export function showPasscodeModal({ title, hint } = {}) {
+  elements.passcodeInput.value = "";
+  elements.passcodeError.hidden = true;
+  // 標題與說明每次打開都重寫：同一個框要講兩種情況——「只差當天的密碼」與「前面
+  // 還有沒做完的」。共用一句話的話，其中一種一定是錯的。
+  if (title !== undefined) elements.passcodeTitle.textContent = title;
+  if (hint !== undefined) elements.passcodeHint.textContent = hint;
+  elements.passcodeModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.passcodeModal.classList.add("open");
+    elements.passcodeInput.focus();
+  });
+}
+
+export function hidePasscodeModal() {
+  elements.passcodeModal.classList.remove("open");
+  window.setTimeout(() => {
+    elements.passcodeModal.hidden = true;
+  }, 200);
+}
+
+export function showPasscodeError(message) {
+  if (message !== undefined) elements.passcodeError.textContent = message;
+  elements.passcodeError.hidden = false;
+  elements.passcodeInput.select();
+}
+
+export function onPasscodeModal(submit, cancel) {
+  const send = () => submit(elements.passcodeInput.value);
+
+  elements.passcodeConfirm.addEventListener("click", send);
+  elements.passcodeCancel.addEventListener("click", cancel);
+  // Enter 就送出：這個框只有一個欄位，打完數字順手按 Enter 是本能。
+  elements.passcodeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") send();
+    if (event.key === "Escape") cancel();
+  });
+  // 打錯之後一開始改字就把紅字收掉，不然它會一直留著跟著新輸入的內容矛盾。
+  elements.passcodeInput.addEventListener("input", () => {
+    elements.passcodeError.hidden = true;
+  });
+  elements.passcodeModal.addEventListener("click", (event) => {
+    if (event.target === elements.passcodeModal) cancel();
+  });
 }
 
 export function showVerifyModal() {

@@ -4,12 +4,17 @@ import {
   FULLSCREEN_PROMPT,
   FULLSCREEN_PROOF,
   GUIDANCE,
+  MASTER_PASSCODE,
   SECTIONS,
+  SECTION_PASSCODES,
   flattenCheckCards,
   groupChecks,
   matchesFullscreenProof,
+  matchesMasterPasscode,
+  matchesSectionPasscode,
   mergeInvalidates,
   pendingMergeSibling,
+  sectionGateState,
 } from "../public/model.js";
 import {
   cardIsComplete,
@@ -36,11 +41,123 @@ function section(groups, sectionId) {
 }
 
 try {
-  // 筆記那一段排在主線之後：它是選配，跟前面四段沒有依賴關係。
+  // demo 排在最後：它要當日密碼才開（嚮導會提早發給學生先裝環境）。筆記那段是
+  // 選配，排在它前面，而且不會擋住 demo——見下面 sectionGateState 那幾條。
   assert.deepEqual(
     SECTIONS.map(({ id }) => id),
-    ["env", "rules", "skills", "demo", "notes"],
+    ["env", "rules", "skills", "notes", "demo"],
   );
+
+  // 當日密碼。這一段跟其他的鎖不同：它不是「做完前面就會開」，只有講師報的數字
+  // 打得開。前後空白要清掉——複製貼上很容易多黏一個空格。
+  assert.equal(SECTION_PASSCODES.demo, "0822");
+  assert.equal(matchesSectionPasscode("demo", "0822"), true);
+  assert.equal(matchesSectionPasscode("demo", " 0822\n"), true);
+  assert.equal(matchesSectionPasscode("demo", "0823"), false);
+  assert.equal(matchesSectionPasscode("demo", ""), false);
+  assert.equal(matchesSectionPasscode("demo", undefined), false);
+  // 沒有密碼的段永遠不該被密碼比對放行——回傳 true 的話那些段會多長出一道鎖。
+  assert.equal(matchesSectionPasscode("notes", "0822"), false);
+  ok("demo 的當日密碼是 0822，其他段沒有密碼");
+
+  const doneAll = {
+    env: true,
+    rules: true,
+    skills: true,
+    notes: true,
+    demo: true,
+  };
+
+  // 前面都做完了，密碼還沒打：擋著，而且只差這一件——彈密碼框的條件。
+  const beforePasscode = sectionGateState(
+    "demo",
+    new Set(),
+    "claude",
+    doneAll,
+    {},
+    new Set(),
+  );
+  assert.equal(beforePasscode.locked, true);
+  assert.equal(beforePasscode.needsPasscode, true);
+  assert.match(beforePasscode.reason, /密碼/);
+
+  // 打過密碼就開。
+  assert.equal(
+    sectionGateState("demo", new Set(), "claude", doneAll, {}, new Set(["demo"]))
+      .locked,
+    false,
+  );
+
+  // 前面沒做完的時候不彈密碼框：學生打對了數字仍然進不去，那個框等於在騙他。
+  const stillPending = sectionGateState(
+    "demo",
+    new Set(),
+    "claude",
+    { ...doneAll, rules: false },
+    {},
+    new Set(),
+  );
+  assert.equal(stillPending.locked, true);
+  assert.equal(stillPending.needsPasscode, false);
+  ok("demo 只差密碼時才彈框，前面沒做完先講前面");
+
+  // 選配的筆記段沒做完，不可以把排在它後面的 demo 鎖住——那一段本來就可做可不做。
+  assert.equal(
+    sectionGateState(
+      "demo",
+      new Set(),
+      "claude",
+      { env: true, rules: true, skills: true, notes: false },
+      {},
+      new Set(["demo"]),
+    ).locked,
+    false,
+  );
+  ok("沒做選配的筆記段不會擋住 demo");
+
+  // 講師的萬用密碼。跟當日密碼是兩件事，所以分開存也分開比對——混在一起的話，
+  // 學生用當日密碼開了 demo 就等於連「前面要做完」也一起免了。
+  assert.equal(MASTER_PASSCODE, "admin");
+  assert.equal(matchesMasterPasscode("admin"), true);
+  assert.equal(matchesMasterPasscode(" admin\n"), true);
+  assert.equal(matchesMasterPasscode("0822"), false);
+  assert.equal(matchesMasterPasscode(undefined), false);
+  // 當日密碼不可以被當成萬用密碼，反過來也不行。
+  assert.equal(matchesSectionPasscode("demo", "admin"), false);
+  ok("萬用密碼是 admin，跟當日密碼互不相通");
+
+  // 萬用密碼開過的段：前面一段都沒做完也開，連沒有當日密碼的段也開。
+  const nothingDone = { env: false, rules: false, skills: false };
+
+  for (const sectionId of ["rules", "skills", "notes", "demo"]) {
+    const overridden = sectionGateState(
+      sectionId,
+      new Set(),
+      "claude",
+      nothingDone,
+      {},
+      new Set(),
+      new Set([sectionId]),
+    );
+    assert.equal(overridden.locked, false, `${sectionId} 應該被萬用密碼打開`);
+    assert.equal(overridden.reason, "");
+    assert.equal(overridden.needsPasscode, false);
+  }
+
+  // 只開被指名的那一段，不是全部——講師跳去看 demo，不該順手把技能包那段也開了。
+  assert.equal(
+    sectionGateState(
+      "skills",
+      new Set(),
+      "claude",
+      nothingDone,
+      {},
+      new Set(),
+      new Set(["demo"]),
+    ).locked,
+    true,
+  );
+  ok("萬用密碼只開被指名的那一段，前面沒做完照樣開");
 
   const mergedEnv = section(
     flattenCheckCards(groupChecks([]), [

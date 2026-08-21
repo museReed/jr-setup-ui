@@ -183,18 +183,19 @@ console.log("ok - 第三方 skill 認落點，MCP 認 ~/.claude.json 的註冊")
 
 // --- 一條龍 demo 那一列 ---
 
-// demo 排在主線最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
-// 後面還有筆記那一段（選配），所以 demo 不再是整串的最後一個。
-assert.equal(claudeOnly.at(-5), "demo-claude");
-assert.equal(codexOnly.at(-5), "demo-codex");
+// demo 排在整串最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑；而且它
+// 要當日密碼才開（見 model.js 的 SECTION_PASSCODES），嚮導提早發出去時本來就不
+// 該讓學生走到這裡。筆記那一段（選配）現在排在它前面。
+assert.equal(claudeOnly.at(-1), "demo-claude");
+assert.equal(codexOnly.at(-1), "demo-codex");
 // vault-sync 排在筆記庫那張之前：那張的操作步驟第三步就要學生叫 AI 存一次。
-assert.equal(claudeOnly.at(-3), "skill-claude-vault-sync");
-assert.equal(codexOnly.at(-3), "skill-codex-vault-sync");
-assert.equal(claudeOnly.at(-2), "obsidian-vault");
-assert.equal(codexOnly.at(-2), "obsidian-vault");
-// 整段的收尾：叫 AI 真的寫一篇進去，證據在 GitHub 上。
-assert.equal(claudeOnly.at(-1), "vault-agent-claude");
-assert.equal(codexOnly.at(-1), "vault-agent-codex");
+assert.equal(claudeOnly.at(-4), "skill-claude-vault-sync");
+assert.equal(codexOnly.at(-4), "skill-codex-vault-sync");
+assert.equal(claudeOnly.at(-3), "obsidian-vault");
+assert.equal(codexOnly.at(-3), "obsidian-vault");
+// 筆記段的收尾：叫 AI 真的寫一篇進去，證據在 GitHub 上。
+assert.equal(claudeOnly.at(-2), "vault-agent-claude");
+assert.equal(codexOnly.at(-2), "vault-agent-codex");
 
 const demo = describeStep("demo-claude", { lang: "zh-TW", home: HOME });
 assert.equal(demo.kind, "demo");

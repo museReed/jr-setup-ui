@@ -1486,6 +1486,34 @@ body.wt-locked {
   resize: vertical;
 }
 
+/* 當日密碼那個框。窄一點——它只有一個四位數的欄位，撐到 640px 會空得像出錯頁。 */
+.passcode-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(420px, 92vw);
+  text-align: left;
+}
+
+/* 等寬字體＋放大字距：學生對著講師報的數字一個一個核對，這樣看得清楚。 */
+.passcode-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+  color: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-lg);
+  letter-spacing: 0.3em;
+}
+
+.passcode-error {
+  margin: 0;
+  color: var(--color-danger, #d13438);
+  font-size: var(--fs-sm);
+}
+
 /* 送出去的就是這一塊的內容。等寬字體：路徑與 log 對齊了才看得出哪一行是哪一行。 */
 .report-preview {
   max-height: 40vh;

@@ -19,14 +19,48 @@ export const SECTIONS = [
   { id: "env", title: "讓 AI 能跑起來", subtitle: "環境與登入" },
   { id: "rules", title: "讓它照你的規矩回話", subtitle: "規則檔與 hooks" },
   { id: "skills", title: "給它技能包", subtitle: "Skills" },
-  { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
-  // 選配的一段，排在主線之後：它跟前面四段沒有依賴關係，學生跑完主線再做。
+  // 選配的一段。它跟前面幾段沒有依賴關係，學生想先做就先做。
   {
     id: "notes",
     title: "使用 Obsidian 管理你的知識庫",
     subtitle: "Obsidian 與 GitHub",
   },
+  // demo 排最後：它要當日密碼才開（見 SECTION_PASSCODES）。網頁嚮導會提早發出去
+  // 讓學生先裝環境，這一段擺在最後，學生走完前面才會撞到那道鎖。
+  { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
 ];
+
+// 要當天才開的那幾段，以及打得開它們的數字。
+//
+// 這跟其他的鎖不是同一種：其他的鎖是「做完前面就會開」，學生自己解得開；這一道
+// 只有講師在課堂上報出來的數字打得開。理由是嚮導會提早幾天發給學生先裝環境，而
+// demo 那段是當天要一起跑的。
+export const SECTION_PASSCODES = { demo: "0822" };
+
+// 前後常黏到空白（複製貼上、或手機鍵盤自動補一個空格），比對前先清乾淨。
+export function matchesSectionPasscode(sectionId, entered) {
+  const expected = SECTION_PASSCODES[sectionId];
+
+  return (
+    expected !== undefined &&
+    typeof entered === "string" &&
+    entered.trim() === expected
+  );
+}
+
+// 講師的萬用密碼。跟上面那個當日密碼不是同一件事：
+//
+//   當日密碼  只解「今天才開」那一道，前面幾段沒做完照樣進不去
+//   萬用密碼  把整段的鎖直接跳過，前面沒做完也開
+//
+// 給課堂上要跳著示範的人用（「先看最後那段長什麼樣」），以及助教在學生機器上排查
+// 問題時不必真的把前面全跑一遍。學生用不到，但也沒有藏——它擋的是順手做過頭，
+// 不是防作弊。
+export const MASTER_PASSCODE = "admin";
+
+export function matchesMasterPasscode(entered) {
+  return typeof entered === "string" && entered.trim() === MASTER_PASSCODE;
+}
 
 // 選配的段不看前面做完沒。筆記那段跟主線沒有相依性——Obsidian 與筆記庫不需要
 // 任何一段裝好的東西（只有建 repo 那步要 GitHub 登入，而那步自己的錯誤訊息會把
@@ -367,7 +401,21 @@ export function sectionGateState(
   tools = "claude",
   sectionDone = {},
   sectionBlockers = {},
+  unlockedSections = new Set(),
+  overriddenSections = new Set(),
 ) {
+  // 講師用萬用密碼開過的段：整段的鎖直接跳過，連算都不用算。放在最前面，因為它
+  // 蓋掉的是「所有理由」——放在後面的話還要一條一條去減，減漏一條就等於沒開。
+  if (overriddenSections.has(sectionId)) {
+    return {
+      locked: false,
+      missing: [],
+      previousPending: null,
+      needsPasscode: false,
+      reason: "",
+    };
+  }
+
   const codexSelected = tools.split(",").includes("codex");
   const required = (SECTION_GATES[sectionId] ?? []).filter(
     (gate) => gate.codexOnly !== true || codexSelected,
@@ -390,11 +438,14 @@ export function sectionGateState(
   // 沒做完鎖住第二段，第二段做完了卻把第三段開了（Reed 實測看到一三開、二鎖）。
   //
   // 點名最早那一段：中間幾段擋人的理由都源自它，那才是學生該回去的地方。
+  //
+  // 選配的段自己不擋人，也不會擋住排在它後面的段——筆記那段排在 demo 前面之後，
+  // 不濾掉的話「沒做選配的筆記」就會把 demo 鎖住，而那一段本來就可做可不做。
   const previousPending = OPTIONAL_SECTIONS.has(sectionId)
     ? null
-    : SECTIONS.slice(0, index).find(
-        (section) => sectionDone[section.id] !== true,
-      ) ?? null;
+    : SECTIONS.slice(0, index)
+        .filter((section) => !OPTIONAL_SECTIONS.has(section.id))
+        .find((section) => sectionDone[section.id] !== true) ?? null;
   const previousDone =
     previousPending === null ? true : sectionDone[previousPending.id];
   // 分開記「還不知道」與「確定沒做完」：兩者都擋，但話要講得不一樣——資料還沒
@@ -431,10 +482,24 @@ export function sectionGateState(
     ...missing.map((gate) => `完成「${gate.title}」`),
   ];
 
+  // 當日密碼是最後一道，而且跟前面那幾道並存（Reed 拍板）：前面沒做完照樣要做完，
+  // 密碼只是再加一層「今天才開」。
+  //
+  // needsPasscode 只在「其他理由都清掉了、只差密碼」時才是 true。前面還沒做完就先
+  // 彈密碼框的話，學生打對了數字還是進不去，那個彈窗等於在騙他。
+  const needsPasscode =
+    SECTION_PASSCODES[sectionId] !== undefined &&
+    !unlockedSections.has(sectionId);
+
+  if (needsPasscode) {
+    reasons.push("輸入講師當天報的密碼");
+  }
+
   return {
     locked: reasons.length > 0,
     missing,
     previousPending,
+    needsPasscode: needsPasscode && reasons.length === 1,
     reason: reasons.length === 0 ? "" : `${reasons.join("，再")}。`,
   };
 }

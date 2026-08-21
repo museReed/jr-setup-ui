@@ -21,6 +21,8 @@ import {
   mergeInvalidates,
   pendingMergeSibling,
   matchesFullscreenProof,
+  matchesMasterPasscode,
+  matchesSectionPasscode,
   SECTIONS,
   sectionGateState,
 } from "./model.js";
@@ -133,6 +135,13 @@ const state = {
   // 進度條走的仍然是 cardIsComplete，跳過的卡在那裡照樣是失敗。
   skippedCards: new Set(),
   manualCheckedIds: new Set(),
+  // 用當日密碼打開過的段（見 model.js 的 SECTION_PASSCODES）。伺服器記著，重開
+  // 嚮導不用再問一次講師。
+  unlockedSections: new Set(),
+  // 講師用萬用密碼開過的段：那一段的鎖整個跳過，不管前面做完沒。
+  overriddenSections: new Set(),
+  // 密碼框正在替哪一段問。關掉就清空——沒清的話下一次打對密碼會跳去上一次那段。
+  pendingPasscodeSection: null,
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
   verifyShotVersion: 0,
@@ -274,6 +283,8 @@ async function loadVerifiedSteps() {
     state.changedSteps = new Set(result.changed ?? []);
     state.manualCheckedIds = new Set(result.manual ?? []);
     state.skippedCards = new Set(result.skipped ?? []);
+    state.unlockedSections = new Set(result.unlocked ?? []);
+    state.overriddenSections = new Set(result.overridden ?? []);
 
     for (const id of state.manualCheckedIds) {
       state.completedGateIds.add(id);
@@ -293,6 +304,8 @@ async function loadVerifiedSteps() {
     state.changedSteps = new Set();
     state.manualCheckedIds = new Set();
     state.skippedCards = new Set();
+    state.unlockedSections = new Set();
+    state.overriddenSections = new Set();
   }
 }
 
@@ -1161,8 +1174,12 @@ function renderWizardNav({
   const previousSection = SECTIONS[sectionIndex - 1];
   const nextSection = SECTIONS[sectionIndex + 1];
   const atLast = currentIndex >= cards.length - 1;
-  const nextSectionOpen =
-    nextSection !== undefined && lockStates[nextSection.id]?.locked !== true;
+  const nextGate =
+    nextSection === undefined ? undefined : lockStates[nextSection.id];
+  const nextSectionOpen = nextSection !== undefined && nextGate?.locked !== true;
+  // 下一段只差當日密碼時，按鈕照樣要出現——藏起來的話學生做完這一段就沒有任何
+  // 可按的東西，看起來像嚮導走完了，而他其實還差最後一段（那顆按鈕會彈密碼框）。
+  const nextNeedsPasscode = nextGate?.needsPasscode === true;
 
   view.renderWizardNav({
     prev: {
@@ -1184,9 +1201,16 @@ function renderWizardNav({
     // 的「能不能往前」，不再一顆按鈕講兩件事。
     next: atLast
       ? {
-          show: nextSectionOpen,
+          show: nextSectionOpen || nextNeedsPasscode,
           label: `下一段：${nextSection?.title ?? ""}`,
-          onClick: () => goToSection(nextSection.id, "first"),
+          onClick: () => {
+            if (nextNeedsPasscode) {
+              askPasscode(nextSection.id, nextGate);
+              return;
+            }
+
+            goToSection(nextSection.id, "first");
+          },
         }
       : { show: nextUnlocked, label: "下一張", onClick: onNext },
   });
@@ -1353,6 +1377,8 @@ function renderNavigation() {
         tools,
         passable,
         blockers,
+        state.unlockedSections,
+        state.overriddenSections,
       ),
     ]),
   );
@@ -2369,18 +2395,88 @@ view.onLanguageSelect((language) => {
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
   checkConfigs();
 });
+function openSection(sectionId) {
+  view.hideSectionLockMessage();
+  state.activeSectionId = sectionId;
+  renderWizard();
+}
+
+// 鎖著的分頁點下去彈的那個框。兩種情況共用同一個框，但講的話不一樣：
+//
+//   只差當日密碼    「這一段要當天才開」，打 0822 就進得去
+//   前面還沒做完    直接把擋著的那張卡講出來，只有講師的萬用密碼打得開
+//
+// 說明每次打開都重寫。共用一句話的話，其中一種一定是錯的——而學生看到一句對不上
+// 自己處境的話，只會更不知道要做什麼。
+function askPasscode(sectionId, gate) {
+  state.pendingPasscodeSection = sectionId;
+  view.showPasscodeModal(
+    gate.needsPasscode
+      ? {
+          title: "這一段要當天才開",
+          hint: "輸入講師在課堂上報出來的四位數字，就會解鎖。",
+        }
+      : { title: "這一段還沒輪到", hint: gate.reason },
+  );
+}
+
 view.onSectionSelect((sectionId) => {
   const gate = renderNavigation()[sectionId];
 
   if (gate.locked) {
+    // 鎖著的理由照樣寫在分頁底下那一行：框關掉之後學生還看得到自己差什麼。
     view.showSectionLockMessage(gate.reason);
+    askPasscode(sectionId, gate);
     return;
   }
 
-  view.hideSectionLockMessage();
-  state.activeSectionId = sectionId;
-  renderWizard();
+  openSection(sectionId);
 });
+view.onPasscodeModal(
+  (entered) => {
+    const sectionId = state.pendingPasscodeSection;
+
+    if (sectionId === null) return;
+
+    // 萬用密碼先比：它連「前面沒做完」都跳過，所以不能被下面那道擋掉。
+    const master = matchesMasterPasscode(entered);
+    const gate = renderNavigation()[sectionId];
+
+    if (master) {
+      state.overriddenSections.add(sectionId);
+    } else if (gate.needsPasscode && matchesSectionPasscode(sectionId, entered)) {
+      state.unlockedSections.add(sectionId);
+    } else {
+      // 前面沒做完的時候，當日密碼打對了也不算——講清楚是哪一種不對，不然學生會
+      // 一直重打那組他明明沒記錯的數字。
+      view.showPasscodeError(
+        gate.needsPasscode
+          ? "密碼不對，再確認一次講師報的數字。"
+          : "這組密碼打不開還沒輪到的段落。先做完上面那句講的，或請講師來開。",
+      );
+      return;
+    }
+
+    state.pendingPasscodeSection = null;
+    view.hidePasscodeModal();
+    // 存不進去只講一句話、不擋人：學生現在就要進去上課，為了一次寫入失敗把他關
+    // 在外面沒有意義——最壞的情況是重開嚮導要再打一次密碼。
+    const persist = master
+      ? api.saveOverriddenSections([...state.overriddenSections])
+      : api.saveUnlockedSections([...state.unlockedSections]);
+
+    persist.catch((error) =>
+      view.addLine(`無法保存解鎖狀態：${error.message}`, "failed"),
+    );
+    // 先重畫導覽列讓那個鎖頭開起來，再進去——不然分頁還掛著鎖，看起來像沒解開。
+    renderNavigation();
+    openSection(sectionId);
+  },
+  () => {
+    state.pendingPasscodeSection = null;
+    view.hidePasscodeModal();
+  },
+);
 view.onVerifyModal(
   () => {
     const check = state.pendingModalCheck;

@@ -244,6 +244,55 @@ export async function saveSkippedCards(ids, options = {}) {
   return state.skipped;
 }
 
+// 用當日密碼打開過的段。跟 manual／skipped 同一類：它記的是「學生打對過那組數字」，
+// 不是「裝過而且還有效」，所以不受指紋管轄。
+//
+// 存在伺服器而不是瀏覽器，理由跟 selection 同一條：port 每次啟動都變，localStorage
+// 綁 origin 等於存不住——而這一段的解鎖偏偏最需要撐過重開（學生當天重開一次嚮導
+// 就要再跟講師問一次密碼）。
+export async function loadUnlockedSections(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.unlocked)
+    ? state.unlocked.filter((id) => typeof id === "string")
+    : [];
+}
+
+export async function saveUnlockedSections(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.unlocked = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.unlocked;
+}
+
+// 講師用萬用密碼開過的段。跟 unlocked 分開記，因為兩者解掉的東西不一樣：unlocked
+// 只解「當日密碼」那一道，overridden 是整段的鎖都跳過。混在同一本的話，學生用當日
+// 密碼開了 demo 就等於連「前面要做完」也一起免了。
+export async function loadOverriddenSections(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.overridden)
+    ? state.overridden.filter((id) => typeof id === "string")
+    : [];
+}
+
+export async function saveOverriddenSections(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.overridden = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.overridden;
+}
+
 export async function saveSelection(selection, options = {}) {
   const resolved = locations(options);
   const state = await readStoredState(resolved.stateFile);

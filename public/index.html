@@ -35,11 +35,11 @@
         <button type="button" class="section-tab" data-section-target="skills">
           <span>給它技能包</span>
         </button>
-        <button type="button" class="section-tab" data-section-target="demo">
-          <span>跑一次給你看</span>
-        </button>
         <button type="button" class="section-tab" data-section-target="notes">
           <span>使用 Obsidian 管理你的知識庫</span>
+        </button>
+        <button type="button" class="section-tab" data-section-target="demo">
+          <span>跑一次給你看</span>
         </button>
       </nav>
       <p id="section-lock-message" class="section-lock-message" hidden></p>
@@ -158,6 +158,22 @@
           <button type="button" id="verify-modal-confirm" class="ds-btn ds-btn-primary">開終端驗證</button>
           <button type="button" id="verify-modal-later" class="ds-btn ds-btn-ghost">稍後</button>
         </div>
+      </section>
+    </div>
+
+    <!-- 當日密碼。網頁嚮導會提早發給學生先把環境裝好，這一段要到工作坊當天才開，
+         所以它不是「做完前面就會開」的那種鎖——只有講師報出來的那組數字打得開。 -->
+    <div id="passcode-modal" class="ds-modal-overlay" hidden>
+      <section class="ds-modal-panel passcode-panel" role="dialog" aria-modal="true" aria-labelledby="passcode-modal-title">
+        <h2 id="passcode-modal-title">這一段要當天才開</h2>
+        <p class="report-hint" id="passcode-modal-hint">輸入講師在課堂上報出來的四位數字，就會解鎖。</p>
+        <label class="report-label" for="passcode-input">當日密碼</label>
+        <input type="text" id="passcode-input" class="passcode-input" inputmode="numeric" autocomplete="off" maxlength="8" />
+        <div>
+          <button type="button" id="passcode-modal-confirm" class="ds-btn ds-btn-primary">解鎖</button>
+          <button type="button" id="passcode-modal-cancel" class="ds-btn ds-btn-ghost">先不要</button>
+        </div>
+        <p id="passcode-modal-error" class="passcode-error" hidden>密碼不對，再確認一次講師報的數字。</p>
       </section>
     </div>
 
