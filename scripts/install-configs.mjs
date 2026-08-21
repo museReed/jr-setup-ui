@@ -19,8 +19,9 @@ import {
   mergeAllowRules,
   mergeCodexModes,
   mergeAgentHookRegistrations,
-  mergeHookRegistration,
   mergeOutputStyle,
+  hasHookRegistrations,
+  removeHookRegistrations,
   removeLegacyCodexTabSyncBlock,
   transformStepSource,
   upsertBlock,
@@ -148,20 +149,37 @@ async function outputStyleStep(step) {
   logProgress(`已在 settings.json 啟用「${step.styleName}」`);
 }
 
-async function hookStep(step) {
-  const source = sourcePath(step);
-  await mkdir(path.dirname(step.target), { recursive: true });
-  await copyFile(source, step.target);
-  await chmod(step.target, 0o755);
-  logProgress(`hook 檔案 → ${step.target}`);
+// 退役：把以前裝過的東西移除。跟安裝相反的方向，但走同一顆按鈕、同一條動作路徑
+// ——學生的體感是「這一列有一顆鍵，按下去這一列就處理完了」，不該因為方向相反就
+// 變成另一種操作。
+//
+// 檔案不在就跳過，不當成失敗：學生可能自己刪過，或只裝了一半。要的是「跑完之後
+// 它不在了」，不是「跑之前它一定在」。
+async function retireStep(step) {
+  for (const file of step.files) {
+    if (!existsSync(file)) {
+      logProgress(`已經不在：${file}`);
+      continue;
+    }
 
-  // 只複製檔案不算裝好：沒註冊進 settings.json 的話 hook 不會擋，
-  // 而且不會有任何錯誤訊息。兩件事要一起做完才算數。
-  const settings = mergeHookRegistration(await readSettings(step.settingsTarget), {
-    hookPath: step.target,
-  });
-  await writeSettings(step.settingsTarget, settings);
-  logProgress("已註冊到 settings.json 的 PreToolUse");
+    await rm(file, { force: true });
+    logProgress(`已移除：${file}`);
+  }
+
+  // 註冊要跟著拿掉。只刪檔案的話 settings 裡會留一條指向不存在檔案的 hook——
+  // 每次 PostToolUse 都失敗一次，而畫面上完全看不出來。
+  const before = await readSettings(step.settingsTarget);
+
+  if (!hasHookRegistrations(before, step.markers)) {
+    logProgress("設定檔裡沒有它的註冊，不用動");
+    return;
+  }
+
+  await writeSettings(
+    step.settingsTarget,
+    removeHookRegistrations(before, step.markers),
+  );
+  logProgress(`已從 ${step.settingsTarget} 移除註冊`);
 }
 
 async function allowlistStep(step) {
@@ -177,7 +195,7 @@ async function allowlistStep(step) {
   // 講出來：這一步除了白名單還動了預設模式，學生按下去該知道自己同意了什麼。
   logProgress(
     modeAdded
-      ? "預設模式設成 acceptEdits：工作區內改檔案不再逐次詢問"
+      ? "預設模式設成 auto：每一條指令改由審查模型逐一判斷，安全的不再問你"
       : `預設模式維持你原本設定的 ${settings.permissions.defaultMode}`,
   );
 }
@@ -974,8 +992,8 @@ try {
     await copyStep(step);
   } else if (step.kind === "output-style") {
     await outputStyleStep(step);
-  } else if (step.kind === "hook") {
-    await hookStep(step);
+  } else if (step.kind === "retire") {
+    await retireStep(step);
   } else if (step.kind === "allowlist") {
     await allowlistStep(step);
   } else if (step.kind === "tab-sync") {

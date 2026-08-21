@@ -245,8 +245,13 @@ export const STEP_IDS = [
 const CLAUDE_STEPS = [
   "claude-md",
   "output-style",
-  "hook",
   "allowlist",
+  // 退役那一列排在權限卡後面：先讓學生看到「現在是怎麼設定的」，再處理「以前那個
+  // 東西要移掉」。反過來的話，他第一眼看到的是一張講一個他早就忘了的功能的卡。
+  //
+  // 沒裝過的人這一列根本不會出現（checkRetired 回 null），所以對新學生來說這個
+  // 順序不存在。
+  "hook",
   // 排在 Claude 那組最後：它改的是同一個 settings.json，而且要等前面幾張都寫完
   // 再動那個檔，備份才有意義。
   "claude-hud",
@@ -767,14 +772,25 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         styleName: OUTPUT_STYLE_NAME,
       };
 
+    // 已退役。這一步以前裝一支 PreToolUse hook，把 `a && b` 這種串接指令擋下來，
+    // 理由是白名單逐個子指令比對，串接會整串比對不到、於是每一次都跳出來問。
+    //
+    // auto mode 底下那個理由整個消失：指令改由 classifier 逐一審查，串不串接都一樣
+    // 會過。留著只剩壞處——學生打一條再正常不過的 `cd x && ls` 被自己的機器擋下來，
+    // 而畫面上沒有任何東西解釋為什麼。
+    //
+    // 這一步現在只對「以前裝過的人」出現，做的事是把它移除（見 checkRetired）。
     case "hook":
       return {
         id,
-        label: "一次只跑一個指令",
-        kind: "hook",
-        source: "claude-code/hooks/block-chained-bash.js",
-        target: `${claudeDir}/hooks/block-chained-bash.js`,
+        label: "移除已退役的「一次只跑一個指令」",
+        kind: "retire",
+        files: [`${claudeDir}/hooks/block-chained-bash.js`],
         settingsTarget: `${claudeDir}/settings.json`,
+        markers: [HOOK_MARKER],
+        detail:
+          "auto mode 底下每一條指令都會被逐一審查，不再需要把串接的指令拆開——" +
+          "這支 hook 留著只會擋掉正常的指令，按一下把它移除",
       };
 
     case "allowlist":
@@ -947,8 +963,31 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "claude-namer":
     case "claude-monitor":
     case "codex-namer":
-    case "codex-monitor":
       return agentHooks(id, home, platform);
+
+    // 已退役。這支 hook 的前提沒有了：它假設「context 快滿＝這次對話要收尾了」，
+    // 所以提早叫學生去開新的一輪。
+    //
+    // Codex 官方的做法不是那樣——它把可用的 context 容量收小，快滿的時候在**同一個
+    // session 裡壓縮**（compress）再繼續，對話不用中斷。於是這支 hook 的提醒變成
+    // 在錯的時間叫人做錯的事：學生看到警告就去開新對話，把本來壓縮一下就能接著做
+    // 的脈絡整段丟掉。
+    //
+    // 只對「以前裝過的人」出現，做的事是把它移除（見 checkRetired）。
+    case "codex-monitor": {
+      const file = hookFileName("codex-context-monitor", platform);
+      return {
+        id,
+        label: "移除已退役的「Codex 快記不住前面時提醒你」",
+        kind: "retire",
+        files: [`${home}/.codex/hooks/${file}`],
+        settingsTarget: `${home}/.codex/hooks.json`,
+        markers: ["codex-context-monitor"],
+        detail:
+          "Codex 現在會把 context 容量收小，快滿的時候在同一個對話裡壓縮就能接著做" +
+          "——不用開新的一輪。這支還在的話會叫你去開新對話，按一下把它移除",
+      };
+    }
 
     case "demo-claude":
     case "demo-codex": {
@@ -1017,57 +1056,55 @@ export function mergeOutputStyle(settings, { styleName }) {
   return { ...structuredClone(settings ?? {}), outputStyle: styleName };
 }
 
-// PreToolUse 的指令是丟給 bash 跑的，Windows 路徑不處理就會被吃掉：
-// C:\Users\Reed 裡的 \U \R 是 bash 的跳脫序列，路徑變成 C:UsersReed，node 找不到
-// 檔案而以 exit 1 結束——而 PreToolUse 只認 exit 2 是「擋下」，exit 1 是「hook 出
-// 錯，放行」。於是 hook 看起來裝好了、實際上什麼都沒擋（VM 實測 echo a && echo b
-// 直接通過）。反斜線換成正斜線 + 補引號，兩件都做：Windows 吃正斜線，引號則讓路
-// 徑帶空白時也不會斷成兩段。
-export function bashHookCommand(hookPath) {
-  return `node "${hookPath.replaceAll("\\", "/")}"`;
+// ⚠️ 這裡以前住著 bashHookCommand 與 mergeHookRegistration——擋串接那支 hook 的
+// 註冊器。整支退役了（見 describeStep 的 "hook"），所以一起拿掉。
+//
+// findHookRegistration 留著：退役那一列還要靠它認出「這台機器裝過」。
+//
+// 把命令列裡提到這幾個字的 hook 註冊全部拿掉，空掉的群組一起收乾淨。
+//
+// 重裝與退役共用同一段：重裝是「先拿掉舊的再寫新的」，退役是「只拿掉」。兩邊各寫
+// 一份的話，其中一份遲早會漏掉「群組空了要刪掉」——留一個空群組，Claude Code 讀
+// 得到卻什麼都不做，而畫面上看不出差別。
+//
+// Claude 的 settings.json 與 Codex 的 hooks.json 是同一個形狀
+// （hooks[事件][].hooks[].command），所以兩邊共用這一支。
+export function removeHookRegistrations(settings, markers) {
+  const next = structuredClone(settings ?? {});
+  const hooks = { ...(next.hooks ?? {}) };
+
+  for (const [event, groups] of Object.entries(hooks)) {
+    hooks[event] = (groups ?? [])
+      .map((group) => ({
+        ...group,
+        hooks: (group.hooks ?? []).filter((hook) =>
+          markers.every((marker) => !(hook.command ?? "").includes(marker)),
+        ),
+      }))
+      .filter((group) => group.hooks.length > 0);
+  }
+
+  next.hooks = hooks;
+  return next;
 }
 
-// 註冊 hook：先把舊的同名 hook 清掉再加，重跑安裝不會疊出兩份。
-export function mergeHookRegistration(settings, { hookPath }) {
-  const next = structuredClone(settings ?? {});
-  const hooks = next.hooks ?? {};
-  const preToolUse = (hooks.PreToolUse ?? [])
-    .map((group) => ({
-      ...group,
-      hooks: (group.hooks ?? []).filter(
-        (hook) => !(hook.command ?? "").includes(HOOK_MARKER),
+// 這幾個字還在不在任何一條註冊裡。退役那一列靠它決定「這個學生裝過沒有」。
+export function hasHookRegistrations(settings, markers) {
+  return Object.values(settings?.hooks ?? {}).some((groups) =>
+    (groups ?? []).some((group) =>
+      (group.hooks ?? []).some((hook) =>
+        markers.some((marker) => (hook.command ?? "").includes(marker)),
       ),
-    }))
-    .filter((group) => group.hooks.length > 0);
-
-  preToolUse.push({
-    matcher: "Bash",
-    hooks: [{ type: "command", command: bashHookCommand(hookPath), timeout: 5 }],
-  });
-
-  next.hooks = { ...hooks, PreToolUse: preToolUse };
-  return next;
+    ),
+  );
 }
 
 export function mergeAgentHookRegistrations(
   settings,
   { registrations, hookMarkers },
 ) {
-  const next = structuredClone(settings ?? {});
+  const next = removeHookRegistrations(settings, hookMarkers);
   const hooks = { ...(next.hooks ?? {}) };
-
-  for (const [event, groups] of Object.entries(hooks)) {
-    hooks[event] = groups
-      .map((group) => ({
-        ...group,
-        hooks: (group.hooks ?? []).filter((hook) =>
-          hookMarkers.every(
-            (marker) => !(hook.command ?? "").includes(marker),
-          ),
-        ),
-      }))
-      .filter((group) => group.hooks.length > 0);
-  }
 
   for (const registration of registrations) {
     const groups = [...(hooks[registration.event] ?? [])];
@@ -1105,7 +1142,15 @@ export function hasAgentHookRegistrations(settings, registrations) {
 //
 // 不用 bypassPermissions / dontAsk：那是連工作區外、網路操作都不問，放進學生的
 // 設定檔風險太大，也不是這門課要教的習慣。
-export const CLAUDE_DEFAULT_MODE = "acceptEdits";
+export const CLAUDE_DEFAULT_MODE = "auto";
+
+// 我們上一輪寫進去的值。退役時只改這一個值——學生自己設成 plan / default /
+// bypassPermissions 的都不動，那是他的選擇。
+//
+// ⚠️ 這條規則靠「這個值一定是我們寫的」成立。學生刻意設成 acceptEdits 的話會被
+// 一起換掉，而我們分辨不出來——那是這個做法的代價，不是漏洞。換掉的方向是官方
+// 在 Pro/Max/Team 上的預設，所以就算猜錯，結果也是他原本沒裝嚮導時的樣子。
+export const SUPERSEDED_CLAUDE_MODE = "acceptEdits";
 
 // 驗證用：settings.json 現在的 defaultMode 是什麼。沒設回 null——「沒寫進去」與
 // 「學生自己設成別的」要分開講。
@@ -1313,11 +1358,18 @@ export function mergeAllowRules(settings, { allowRules }) {
   const allow = [...(permissions.allow ?? [])];
   const added = allowRules.filter((rule) => !allow.includes(rule));
   // 學生自己調過就尊重他的選擇，只在沒設過的時候補上預設。
-  const modeAdded = permissions.defaultMode === undefined;
+  //
+  // 例外是上一輪嚮導寫進去的那個值（acceptEdits）：那不是學生的選擇，是我們的。
+  // 換成 auto 是這一步退役的另一半——白名單本身不用搬家（官方文件：auto mode 底下
+  // 窄的 Bash allow 規則照常生效，只有 Bash(*) 那種寬規則會被暫停）。
+  const superseded = permissions.defaultMode === SUPERSEDED_CLAUDE_MODE;
+  const modeAdded = permissions.defaultMode === undefined || superseded;
   next.permissions = {
     ...permissions,
     allow: [...allow, ...added],
-    defaultMode: permissions.defaultMode ?? CLAUDE_DEFAULT_MODE,
+    defaultMode: superseded
+      ? CLAUDE_DEFAULT_MODE
+      : (permissions.defaultMode ?? CLAUDE_DEFAULT_MODE),
   };
   return { settings: next, addedRules: added.length, modeAdded };
 }

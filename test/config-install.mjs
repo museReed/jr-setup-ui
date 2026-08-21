@@ -17,7 +17,8 @@ import {
   readRetiredCodexKeys,
   removeLegacyCodexTabSyncBlock,
   mergeAgentHookRegistrations,
-  mergeHookRegistration,
+  hasHookRegistrations,
+  removeHookRegistrations,
   stepsForTools,
   transformStepSource,
 } from "../src/config-install.js";
@@ -34,8 +35,9 @@ try {
   assert.deepEqual(stepsForTools(["claude"]), [
     "claude-md",
     "output-style",
-    "hook",
     "allowlist",
+    // 退役那一列排在權限卡後面：先講「現在是怎麼設定的」，再處理「以前那個要移掉」。
+    "hook",
     "claude-hud",
     "tab-sync",
     "claude-namer",
@@ -71,8 +73,9 @@ try {
   assert.deepEqual(stepsForTools(["claude", "codex"]), [
     "claude-md",
     "output-style",
-    "hook",
     "allowlist",
+    // 退役那一列排在權限卡後面：先講「現在是怎麼設定的」，再處理「以前那個要移掉」。
+    "hook",
     "claude-hud",
     "codex-config",
     "codex-agents",
@@ -289,8 +292,19 @@ try {
   );
   assert.match(migratedProfile, /Get-Command claude/);
   assert.doesNotMatch(migratedProfile, /Get-Command codex/);
-  assert.equal(codexMonitor.registrations.length, 1);
-  ok("命名與監控各自帶自己的檔案與註冊，監控不需要白名單");
+  // codex 的監控 hook 退役了：這一步現在描述的是「怎麼把它移除」，不是怎麼裝。
+  assert.equal(codexMonitor.kind, "retire");
+  assert.deepEqual(codexMonitor.files, [
+    `${HOME}/.codex/hooks/codex-context-monitor.ps1`,
+  ]);
+  assert.equal(codexMonitor.settingsTarget, `${HOME}/.codex/hooks.json`);
+  assert.deepEqual(codexMonitor.markers, ["codex-context-monitor"]);
+  // POSIX 上要刪的是 .sh，不是 .ps1——寫死副檔名的話 mac 學生按了移除，檔案還在。
+  assert.deepEqual(
+    describeStep("codex-monitor", { ...AT, platform: "darwin" }).files,
+    [`${HOME}/.codex/hooks/codex-context-monitor.sh`],
+  );
+  ok("命名帶自己的檔案與註冊；監控已退役，兩個平台各刪各的副檔名");
 
   // 兩列共用同一個 settings 檔，靠檔名分辨。重裝其中一列不能掃掉另一列的註冊——
   // 綁在一起時這件事不存在，拆開之後它是最容易靜默壞掉的地方。
@@ -317,58 +331,73 @@ try {
   );
   ok("只展開 Bash() 規則裡的 ~，其他規則原樣保留");
 
+  // ⚠️ 這裡以前有五條 mergeHookRegistration 的測試（空檔會長出註冊、Windows 路徑轉
+  // 正斜線、重跑冪等、不動別人的 hook）。那支 hook 整個退役了，註冊器也跟著拿掉。
+  //
+  // 接手的是下面的 removeHookRegistrations：退役那一列要做的正好是反過來——把註冊
+  // 拿掉，而且不能誤傷別人的。
   const hookPath = `${HOME}/.claude/hooks/block-chained-bash.js`;
-  const registered = mergeHookRegistration({}, { hookPath });
-  assert.deepEqual(registered.hooks.PreToolUse, [
+  const legacySettings = {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Bash",
+          hooks: [
+            { type: "command", command: `node "${hookPath}"`, timeout: 5 },
+          ],
+        },
+        {
+          matcher: "Bash",
+          hooks: [{ type: "command", command: "node /別人的.js" }],
+        },
+      ],
+      Stop: [{ hooks: [{ type: "command", command: "echo bye" }] }],
+    },
+    model: "opus",
+  };
+
+  assert.equal(
+    hasHookRegistrations(legacySettings, ["block-chained-bash"]),
+    true,
+  );
+  assert.equal(hasHookRegistrations({}, ["block-chained-bash"]), false);
+  assert.equal(
+    hasHookRegistrations(legacySettings, ["codex-context-monitor"]),
+    false,
+  );
+  ok("認得出這台機器裝過已退役的 hook，沒裝過的不誤報");
+
+  const cleaned = removeHookRegistrations(legacySettings, [
+    "block-chained-bash",
+  ]);
+  assert.deepEqual(cleaned.hooks.PreToolUse, [
     {
       matcher: "Bash",
-      hooks: [{ type: "command", command: `node "${hookPath}"`, timeout: 5 }],
+      hooks: [{ type: "command", command: "node /別人的.js" }],
     },
   ]);
-  ok("空的 settings.json 會長出 hook 註冊，指令是 node 不是 python3");
+  assert.equal(cleaned.hooks.Stop.length, 1);
+  assert.equal(cleaned.model, "opus");
+  assert.equal(hasHookRegistrations(cleaned, ["block-chained-bash"]), false);
+  ok("移除只拿掉自己那一條，別人的 hook 與其餘設定原樣留著");
 
-  // Windows 路徑不處理的話，bash 會把 C:\Users\Reed 的 \U \R 當跳脫序列吃掉，
-  // 路徑變成 C:UsersReed → node 找不到檔案 → exit 1 → PreToolUse 當成「hook
-  // 出錯，放行」，串接指令一路暢通。這條在 macOS 上就會紅，不用等 VM。
-  const windowsHook = mergeHookRegistration(
-    {},
-    { hookPath: "C:\\Users\\Reed/.claude/hooks/block-chained-bash.js" },
-  );
-  const windowsCommand = windowsHook.hooks.PreToolUse[0].hooks[0].command;
-  assert(
-    !windowsCommand.includes("\\"),
-    `註冊指令不能留反斜線，實際是：${windowsCommand}`,
-  );
-  assert.equal(
-    windowsCommand,
-    'node "C:/Users/Reed/.claude/hooks/block-chained-bash.js"',
-  );
-  ok("Windows 路徑轉正斜線並加引號，bash 不會把它吃掉");
-
-  // 重跑安裝不能疊出兩份，也不能把別人的 hook 掃掉。
-  const rerun = mergeHookRegistration(registered, { hookPath });
-  assert.equal(rerun.hooks.PreToolUse.length, 1);
-  ok("重跑安裝是冪等的：hook 不會疊出兩份");
-
-  const withOthers = mergeHookRegistration(
+  // 群組空掉要一起收乾淨。留一個 hooks: [] 的群組，Claude Code 讀得到卻什麼都不做
+  // ——而畫面上看不出差別，下一次檢查還會說「已註冊」。
+  const onlyOurs = removeHookRegistrations(
     {
       hooks: {
         PreToolUse: [
           {
             matcher: "Bash",
-            hooks: [{ type: "command", command: "node /別人的.js" }],
+            hooks: [{ type: "command", command: `node "${hookPath}"` }],
           },
         ],
-        Stop: [{ hooks: [{ type: "command", command: "echo bye" }] }],
       },
-      model: "opus",
     },
-    { hookPath },
+    ["block-chained-bash"],
   );
-  assert.equal(withOthers.hooks.PreToolUse.length, 2);
-  assert.equal(withOthers.hooks.Stop.length, 1);
-  assert.equal(withOthers.model, "opus");
-  ok("不動使用者原本的其他 hook 與設定");
+  assert.deepEqual(onlyOurs.hooks.PreToolUse, []);
+  ok("整個群組只剩我們那一條時，群組本身也收掉");
 
   const agentRegistered = mergeAgentHookRegistrations(
     {
@@ -428,22 +457,46 @@ try {
 
   // 白名單只免掉「這條指令能不能跑」，改檔案在 default 模式下仍然每次都問——
   // 課堂上學生大半的按鍵花在那裡。兩件事湊齊才是學生預期的「不會一直被打斷」。
-  assert.equal(allow.settings.permissions.defaultMode, "acceptEdits");
+  //
+  // 白名單本身不用為了 auto mode 搬家：官方文件明說 auto mode 底下窄的 Bash allow
+  // 規則照常生效，只有 Bash(*) 那種寬規則會被暫停。starter-allowlist 全是窄規則。
+  assert.equal(allow.settings.permissions.defaultMode, "auto");
   assert.equal(allow.modeAdded, true);
-  ok("裝白名單時一併把預設模式設成 acceptEdits");
+  ok("裝白名單時一併把預設模式設成 auto");
+
+  // 上一輪嚮導寫進去的 acceptEdits 要換成 auto。那不是學生的選擇，是我們的——
+  // 不換的話已經裝過的人永遠停在舊模式，而這一列會一直說「還沒設好」。
+  const modeUpgraded = mergeAllowRules(
+    { permissions: { defaultMode: "acceptEdits" } },
+    { allowRules: ["Bash(ls)"] },
+  );
+  assert.equal(modeUpgraded.settings.permissions.defaultMode, "auto");
+  assert.equal(modeUpgraded.modeAdded, true);
+  ok("上一輪寫進去的 acceptEdits 會被換成 auto");
 
   // 學生自己調過就尊重他的選擇，重跑安裝不該把它蓋回去。
+  //
+  // ⚠️ 只有 acceptEdits 例外（上面那條）。plan / default / bypassPermissions 都不動
+  // ——沒有這條界線的話，「升級」就變成「把每個人的設定改成我們要的」。
   const kept = mergeAllowRules(
     { permissions: { defaultMode: "plan" } },
     { allowRules: ["Bash(ls)"] },
   );
   assert.equal(kept.settings.permissions.defaultMode, "plan");
   assert.equal(kept.modeAdded, false);
+  const bypass = mergeAllowRules(
+    { permissions: { defaultMode: "bypassPermissions" } },
+    { allowRules: ["Bash(ls)"] },
+  );
+  assert.equal(
+    bypass.settings.permissions.defaultMode,
+    "bypassPermissions",
+  );
   ok("使用者自己設過的預設模式不會被覆蓋");
 
   // 驗證那半：沒設回 null，設了就回實際的值。checkAllowlist 靠這個分辨「安裝沒
   // 生效」與「學生自己調過」——兩者要做的事不一樣，不能都講成「沒裝」。
-  assert.equal(readDefaultMode(allow.settings), "acceptEdits");
+  assert.equal(readDefaultMode(allow.settings), "auto");
   assert.equal(readDefaultMode(kept.settings), "plan");
   assert.equal(readDefaultMode({}), null);
   assert.equal(readDefaultMode({ permissions: {} }), null);
@@ -569,8 +622,9 @@ try {
   assert.equal(read.approvals_reviewer, null);
   ok("readCodexModes 讀得出最上層的實際值，section 底下的不算");
 
-  // 驗證的關鍵：檔案複製成功但沒註冊進 settings.json，hook 一樣不會擋，
-  // 而且不會有任何錯誤訊息——所以驗證必須看註冊，不能只看檔案在不在。
+  // findHookRegistration 留著給退役用：verify-configs 靠它認出「這台機器還留著
+  // 已退役的擋串接 hook」。只刪檔案不夠——settings 裡那條註冊留著的話，Claude Code
+  // 每次都會去跑一個不存在的檔案，而畫面上看不出來。
   assert.equal(findHookRegistration({}), null);
   assert.equal(
     findHookRegistration({
@@ -578,11 +632,11 @@ try {
     }),
     null,
   );
-  assert.deepEqual(findHookRegistration(registered), {
+  assert.deepEqual(findHookRegistration(legacySettings), {
     matcher: "Bash",
     command: `node "${hookPath}"`,
   });
-  ok("找得出 settings.json 裡的 hook 註冊，別人的 hook 不會誤判成有裝");
+  ok("找得出還留著的舊 hook 註冊，別人的 hook 不會誤判成有裝");
 
   assert.equal(
     countInstalledRules({ permissions: { allow: ["a", "b"] } }, ["a", "b", "c"]),

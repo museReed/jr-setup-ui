@@ -27,7 +27,12 @@ try {
   assert(existsSync(materials), "materialsDir 指到的目錄要真的存在");
   ok("素材目錄是可用的絕對路徑");
 
-  assert(existsSync(path.join(materials, "claude-code", "hooks")), "素材不完整");
+  // 原本看的是 claude-code/hooks/——那個目錄裡只有擋串接那支 hook，退役之後整個
+  // 目錄就沒了。改成看白名單那份：它是這個目錄裡一定要在的東西。
+  assert(
+    existsSync(path.join(materials, "claude-code", "starter-allowlist.json")),
+    "素材不完整",
+  );
   ok("素材目錄裡有預期的內容");
 
   // action 的 buildArgs 產出的第一個參數是腳本路徑，那是實際被 spawn 的東西。

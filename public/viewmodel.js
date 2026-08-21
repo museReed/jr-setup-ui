@@ -548,7 +548,7 @@ export function configRowModel(
       buttons.push({
         action: installAction,
         dataName: "installAction",
-        text: "重裝",
+        text: check.installLabel ?? "重裝",
         step: check.id,
         secondary: true,
         rowId: rowIds.install,
@@ -557,7 +557,9 @@ export function configRowModel(
       buttons.push({
         action: installAction,
         dataName: "installAction",
-        text: "安裝",
+        // 退役那幾列走同一顆按鈕，但做的事是相反的——文字不能是「安裝」。
+        // 那一列自己帶 installLabel（見 config-check 的 checkRetired）。
+        text: check.installLabel ?? "安裝",
         step: check.id,
         rowId: rowIds.install,
       });

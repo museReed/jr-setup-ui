@@ -297,12 +297,24 @@ export const GUIDANCE = {
     ],
     diagnose: null,
   },
+  // 這一列是退役，做的事是移除，所以自救說明講的是「按了還在怎麼辦」。
   hook: {
-    symptom: "跑 `echo a && echo b` 時，兩個指令都照常執行了",
-    expected: "畫面出現「一次只跑一個指令」，第二個指令不會執行",
+    symptom: "按了移除，這一列還在",
+    expected: "這一列整個消失（沒裝過的人本來就看不到它）",
     checks: [
-      "關掉舊的終端分頁，再開一個新分頁",
-      "確認 Claude Code 是從新分頁裡啟動",
+      "重按一次這一列的「重新檢查」——移除是即時的，但畫面要重查才會更新",
+      "還在的話，手動刪掉 ~/.claude/hooks/block-chained-bash.js",
+      "再打開 ~/.claude/settings.json，把 hooks 裡提到 block-chained-bash 的那幾行刪掉",
+    ],
+    diagnose: null,
+  },
+  "codex-monitor": {
+    symptom: "按了移除，這一列還在",
+    expected: "這一列整個消失（沒裝過的人本來就看不到它）",
+    checks: [
+      "重按一次這一列的「重新檢查」",
+      "還在的話，手動刪掉 ~/.codex/hooks/codex-context-monitor.sh（Windows 是 .ps1）",
+      "再打開 ~/.codex/hooks.json，把提到 codex-context-monitor 的那幾行刪掉",
     ],
     diagnose: null,
   },
@@ -877,7 +889,11 @@ export const CARD_DESCRIPTIONS = {
   // hook 與 allowlist 合併成一張卡之後，這一行由 MERGED_CARDS.allowlist 提供，這裡不再
   // 是它的來源。留著是因為 checkCard 的 fallback 仍會查這張表——合併若哪天拆回去，
   // 沒有這兩行就會退回那句「設定 X，讓這項功能能在接下來的課程中正常使用」。
-  hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
+  // 已退役。auto mode 底下每一條指令都會被逐一審查，串接不再是問題——這支留著只會
+  // 擋掉正常的指令。這張卡只有「以前裝過的人」看得到。
+  hook:
+    "這支已經退役了：以前它擋下把好幾個指令串成一串跑，是因為白名單逐個子指令比對、" +
+    "串起來就對不上。現在改成 auto mode 逐一審查，留著只會擋掉正常的指令。按一下把它移除",
   allowlist: "安全的指令與工作區內的改檔案不再逐次問你",
   "claude-hud":
     "輸入框下面多一行，隨時看得到現在用哪個模型、對話塞多滿、額度還剩多少",
@@ -890,8 +906,11 @@ export const CARD_DESCRIPTIONS = {
   "claude-monitor":
     "對話太長它快忘記前面講過什麼時會提早叫你收尾，這張的驗證要跑一分多鐘",
   "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
+  // 已退役。這張卡只有「以前裝過的人」看得到，做的事是移除。
   "codex-monitor":
-    "Codex 快忘記前面講過什麼時也會提早叫你收尾，這張的驗證一樣要跑一分多鐘",
+    "這支已經退役了：它會在對話快滿時叫你收尾、去開新的一輪。但 Codex 現在把可用的" +
+    "容量收小，快滿時在同一個對話裡壓縮一下就能接著做——照它說的去開新對話，反而是" +
+    "把還用得到的脈絡丟掉。按一下把它移除",
   // skill 的描述要回答「這支是拿來做什麼的」——標題已經是它的名字了。
   "skill-claude-auto-rename":
     "幫這次對話重新取名，前面那張是它自己取，這一支是你不滿意時可以叫它重取",
@@ -1018,11 +1037,13 @@ const MERGED_CARDS = {
   // ⚠️ key 跟著 MERGE_ORDER 的**最後一個**走，沒跟著換的話整張卡的標題與說明會
   // 靜靜退回單列的預設值（改過兩次，兩次都差點漏掉這件事）。
   // 這張卡現在是 ["allowlist", "hook"]，所以 key 是 hook。
-  hook: {
+  // 這張卡以前是「白名單 + 擋串接 hook」兩列合併。hook 退役之後只剩白名單一列，
+  // 但標題留著——學生要的答案還是同一個問題：它什麼時候該停下來問你。
+  allowlist: {
     label: "它什麼時候該停下來問你",
     detail:
-      "兩件事一起設：危險的指令一定擋下來，安全的指令與工作區內的改檔案不再" +
-      "逐次問你，裝好之後會開一個真的終端，當場試兩題給你看",
+      "把預設模式設成 auto：每一條指令都會先被一個審查模型看過，危險的擋下來、" +
+      "安全的直接跑，工作區內改檔案也不再逐次問你，裝好之後會開一個真的終端試給你看",
   },
   "output-style": {
     label: "Claude Code CLI 做事的規矩與回話風格",
@@ -1057,7 +1078,10 @@ const MERGE_ORDER = {
   //
   // ⚠️ 換順序**一定要連 MERGED_CARDS 的 key 一起換**——它跟著最後那一個走，忘了換
   // 整張卡的標題與說明會靜靜退回單列的預設值。
-  hook: ["allowlist", "hook"],
+  //
+  // ⚠️ 2026-08-21：這一組解散了。擋串接那支 hook 退役之後，這張卡只剩白名單一列，
+  // 而合併的意義本來就是「兩份設定是同一件事」——只剩一份就沒有東西要合。
+  // MERGED_CARDS 的 key 跟著搬到 allowlist（那個註解警告過兩次的坑，這次記得了）。
 };
 
 export function mergeCardChecks(checks) {

@@ -9,14 +9,15 @@ import path from "node:path";
 import {
   applySubstitutions,
   CLAUDE_DEFAULT_MODE,
+  SUPERSEDED_CLAUDE_MODE,
   CLAUDE_HUD,
   OBSIDIAN_GIT,
   CODEX_MODE_EXPECTATIONS,
   countInstalledRules,
   describeStep,
   expandAllowRules,
-  findHookRegistration,
   hasAgentHookRegistrations,
+  hasHookRegistrations,
   hasMarkedBlock,
   readCodexModes,
   readDefaultMode,
@@ -422,8 +423,8 @@ export const VERIFICATION = {
     eye: "POSIX 的 Codex 視窗最下面有五段，分頁標題也用原生 session 名稱",
     eyeWindows: "Windows 的 Codex status line 與分頁標題都顯示原生 session 名稱",
   },
-  // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
-  hook: { terminal: { case: "chained", agent: "claude" } },
+  // ⚠️ 2026-08-21：擋串接那支 hook 退役了，這裡的驗證跟著拿掉——退役那一列要做的
+  // 是移除，「驗證它會擋」正好是相反的期望。
   // 同一張卡的另一半。這兩格方向相反但驗的是同一套規矩：危險的指令一定擋下來，
   // 安全的指令一定不再問。
   //
@@ -510,7 +511,10 @@ export const VERIFICATION = {
   // Claude 那張要驗、Codex 這張不用，然後懷疑是不是壞了（Reed 實測就是這樣問的）。
   //
   // 如果它又開始誤判，先查上面那兩個對不上，不要直接再拿掉一次。
-  "codex-monitor": { terminal: { case: "context", agent: "codex" } },
+  //
+  // ⚠️ 2026-08-21：這支 hook 整個退役了，所以驗證也一起拿掉——退役那一列要做的是
+  // 移除，沒有東西可以「驗證它有效」。上面整段留著是因為它記的是「為什麼加回來」，
+  // 而如果哪天 Codex 那邊又需要一支監控 hook，這些踩過的坑仍然有效。
   //
   // 沒有 behavior 也沒有 terminal 的列不寫進這張表（白名單也是），結構對了就直接
   // 綠燈——留一個空物件會讓它仍被當成「要按 verify-in-terminal」，參數卻是空的。
@@ -693,92 +697,31 @@ async function checkOutputStyle(materials, step) {
   };
 }
 
-async function checkHook(step, materials) {
-  const fileExists = existsSync(step.target);
+// 退役的那幾步。回 null 代表「這台機器上沒有這個東西」——整列不出現，而不是出現
+// 一列綠燈說「已移除」。
+//
+// 為什麼是消失而不是打勾：從沒裝過的新學生根本不知道那是什麼，一列「✅ 已移除
+// 你沒裝過的東西」只會讓他停下來想自己是不是漏了什麼。這跟隔離區那幾列相反——
+// 那些是「我們剛才動過你的機器」，所以要留著給他看。
+export async function checkRetired(step) {
+  const leftoverFiles = step.files.filter((file) => existsSync(file));
   const settings = await readJsonOrNull(step.settingsTarget);
-  const registration = findHookRegistration(settings ?? {});
+  const registered = hasHookRegistrations(settings ?? {}, step.markers);
 
-  if (fileExists && (await staleTargets(materials, [step])).length > 0) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "裝的是舊版——重跑安裝",
-    };
+  if (leftoverFiles.length === 0 && !registered) {
+    return null;
   }
 
-  if (fileExists && registration !== null) {
-    // 跑註冊的那條指令，不是自己拼路徑去跑腳本。腳本幾乎永遠是好的，壞的是它被
-    // 怎麼叫——Windows 上就是註冊路徑沒加引號，這一格卻一直給綠燈。
-    const probe = await probeRegisteredHook(
-      registration.command,
-      "echo a && echo b",
-      await spawnEnv(),
-    );
-
-    // 逾時要跟「找不到 bash」分開處理：兩者的 exitCode 都是 null，但逾時再退回去
-    // 跑腳本只會再等一輪，而且會給出「這台沒有 bash」這種假原因。
-    if (probe.timedOut === true) {
-      return {
-        id: step.id,
-        label: step.label,
-        status: "warn",
-        detail: "已註冊，但實測探測逾時——這台機器上 hook 跑不完",
-      };
-    }
-
-    // 真的一台 bash 都找不到時，退回直接跑腳本本身。那比不上「跑註冊的那條指令」
-    // ——路徑寫壞就抓不到了——但總比把一句學生修不了的錯誤丟在畫面上好。
-    if (probe.exitCode === null) {
-      const fallback = await probeHook(step.target, "echo a && echo b");
-
-      return fallback.exitCode === 2
-        ? {
-            id: step.id,
-            label: step.label,
-            status: "ok",
-            detail: "已註冊，實測會擋（這台機器沒有 bash，改驗腳本本身）",
-          }
-        : {
-            id: step.id,
-            label: step.label,
-            status: "warn",
-            detail: `已註冊，但實測沒擋下來（exit ${fallback.exitCode}）`,
-          };
-    }
-
-    if (probe.exitCode !== 2) {
-      return {
-        id: step.id,
-        label: step.label,
-        status: "warn",
-        detail: `已註冊，但實測沒擋下來（exit ${probe.exitCode}）`,
-      };
-    }
-
-    return {
-      id: step.id,
-      label: step.label,
-      status: "ok",
-      detail: "已註冊，實測會擋",
-    };
-  }
-
-  // 複製成功但沒註冊是最危險的狀態：hook 不會擋，也不會報錯。
-  if (fileExists) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "檔案在，但 settings.json 沒註冊——不會擋",
-    };
-  }
-
+  // 黃燈不是綠燈：不移除的話它還在跑。但它也不是「壞掉」——所以說明裡直接寫做這件
+  // 事的理由，而不是一句「檢查失敗」。
   return {
     id: step.id,
     label: step.label,
-    status: "missing",
-    detail: registration === null ? "尚未安裝" : "已註冊但檔案不見了",
+    status: "warn",
+    detail: step.detail,
+    retired: true,
+    // 這一列沒有「驗證」可言，按鈕的字也不能是「安裝」——它做的事正好相反。
+    installLabel: "移除",
   };
 }
 
@@ -821,6 +764,18 @@ export async function checkAllowlist(materials, step) {
         label: step.label,
         status: "warn",
         detail: `${installed} 條規則，但預設模式沒設，重跑安裝會補上`,
+      };
+    }
+
+    // 上一輪嚮導寫進去的舊模式。這也是黃燈＋按鈕，理由跟「沒設」同一條：重跑安裝
+    // 真的會把它換成 auto（見 mergeAllowRules）。判成綠燈的話已經裝過的人永遠停在
+    // 舊模式，而畫面上完全看不出來有東西可以做。
+    if (mode === SUPERSEDED_CLAUDE_MODE) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: `${installed} 條規則，預設模式還是舊的，重跑安裝會換成 auto`,
       };
     }
 
@@ -1312,8 +1267,8 @@ export async function runConfigCheck({ tools, lang }) {
 
       if (step.kind === "output-style") {
         return await checkOutputStyle(materials, step);
-      } else if (step.kind === "hook") {
-        return await checkHook(step, materials);
+      } else if (step.kind === "retire") {
+        return await checkRetired(step);
       } else if (step.kind === "allowlist") {
         return await checkAllowlist(materials, step);
       } else if (step.kind === "tab-sync") {
@@ -1343,7 +1298,11 @@ export async function runConfigCheck({ tools, lang }) {
   return {
     lang,
     tools,
-    checks: checks.map((check) => withActions(check, process.platform)),
+    // null 是退役那幾列在說「這台機器上沒有這個東西」——整列不出現。ids 與 checks
+    // 的對齊在這一步之前就結束了（上面用的是 ids.map），所以濾掉不會打亂順序。
+    checks: checks
+      .filter((check) => check !== null)
+      .map((check) => withActions(check, process.platform)),
   };
 }
 
