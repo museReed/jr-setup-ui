@@ -23,19 +23,20 @@ except (json.JSONDecodeError, AttributeError):
 [ -n "$SOCKET" ] || SOCKET="$DEFAULT_SOCKET"
 
 if [ -S "$SOCKET" ]; then
-  SOCKET_ROWS=$(lsof -n -P -U "$SOCKET" 2>/dev/null || true)
-  SERVER_PID=$(printf '%s\n' "$SOCKET_ROWS" | awk 'NR > 1 { print $2; exit }')
+  SOCKET_ROWS=$(lsof -n -P "$SOCKET" 2>/dev/null || true)
+  SERVER_PID=$(printf '%s\n' "$SOCKET_ROWS" | awk 'NR > 1 && $5 == "unix" { print $2; exit }')
+  SERVER_ADDRESSES=$(printf '%s\n' "$SOCKET_ROWS" | awk -v server="$SERVER_PID" \
+    'NR > 1 && $5 == "unix" && $2 == server { print $6 }')
 
-  if [ -z "$SERVER_PID" ]; then
+  if [ -z "$SERVER_PID" ] || [ -z "$SERVER_ADDRESSES" ]; then
     echo "找到 daemon socket，但找不到它的 Codex 程序；不會重啟：$SOCKET" >&2
     exit 1
   fi
 
-  SOCKET_NODES=$(printf '%s\n' "$SOCKET_ROWS" | awk 'NR > 1 { print $8 }')
   ALL_UNIX=$(lsof -n -P -U 2>/dev/null || true)
   CLIENT_PIDS=''
-  for node in $SOCKET_NODES; do
-    found=$(printf '%s\n' "$ALL_UNIX" | awk -v target="->$node" -v server="$SERVER_PID" \
+  for address in $SERVER_ADDRESSES; do
+    found=$(printf '%s\n' "$ALL_UNIX" | awk -v target="->$address" -v server="$SERVER_PID" \
       'index($0, target) > 0 && $2 != server { print $2 }')
     CLIENT_PIDS=$(printf '%s\n%s\n' "$CLIENT_PIDS" "$found")
   done

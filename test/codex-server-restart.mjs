@@ -34,7 +34,12 @@ try {
   const mac = read("codex-server-restart.sh");
   const syntax = spawnSync("bash", ["-n"], { input: mac, encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
+  assert.match(mac, /lsof -n -P "\$SOCKET"/);
   assert.match(mac, /lsof -n -P -U/);
+  assert.match(mac, /SERVER_ADDRESSES=/);
+  assert.match(mac, /print \$6/);
+  assert.match(mac, /for address in \$SERVER_ADDRESSES/);
+  assert.match(mac, /target="->\$address"/);
   assert.match(mac, /仍有 Codex 視窗連著 core daemon（偵測到 \$CLIENT_COUNT 個連線）/);
   assert.match(mac, /exit 2/);
   assert.match(mac, /app-server daemon restart/);
@@ -62,8 +67,15 @@ exit 8
     path.join(bin, "lsof"),
     `#!/bin/sh
 printf '%s\\n' 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME'
-printf '%s\\n' 'codex 4242 user 9u unix 0x0 0t0 123 app-server-control.sock'
-if [ "\${FAKE_CLIENT:-}" = "1" ]; then printf '%s\\n' 'codex 5252 user 8u unix 0x0 0t0 124 ->123'; fi
+if [ "\${3:-}" = "-U" ]; then
+  printf '%s\\n' 'loginwindow 111 user 9u unix 0xunrelated 0t0 /tmp/unrelated.sock'
+  printf '%s\\n' 'codex 4242 user 30u unix 0xserver1 0t0 app-server-control.sock'
+  printf '%s\\n' 'codex 4242 user 31u unix 0xserver2 0t0 app-server-control.sock'
+  if [ "\${FAKE_CLIENT:-}" = "1" ]; then printf '%s\\n' 'codex 5252 user 8u unix 0xclient 0t0 ->0xserver2'; fi
+else
+  printf '%s\\n' "codex 4242 user 30u unix 0xserver1 0t0 \$FAKE_SOCKET"
+  printf '%s\\n' "codex 4242 user 31u unix 0xserver2 0t0 \$FAKE_SOCKET"
+fi
 `,
   );
   chmodSync(path.join(bin, "codex"), 0o755);
@@ -87,6 +99,7 @@ if [ "\${FAKE_CLIENT:-}" = "1" ]; then printf '%s\\n' 'codex 5252 user 8u unix 0
       PATH: `${bin}:${process.env.PATH}`,
       FAKE_DAEMON_JSON: daemonJson,
       FAKE_CALLS: calls,
+      FAKE_SOCKET: socket,
     };
     const restarted = spawnSync("bash", [path.join(root, "materials", "skills", "hooks", "codex-server-restart.sh")], {
       encoding: "utf8",
