@@ -31,6 +31,7 @@ import {
   mergeGroupFor,
   mergeLeaderFor,
 } from "./merge-backup.js";
+import { loadRetiredSteps } from "./progress-state.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -699,19 +700,39 @@ async function checkOutputStyle(materials, step) {
   };
 }
 
-// 退役的那幾步。回 null 代表「這台機器上沒有這個東西」——整列不出現，而不是出現
-// 一列綠燈說「已移除」。
+// 退役的那幾步，三態：
 //
-// 為什麼是消失而不是打勾：從沒裝過的新學生根本不知道那是什麼，一列「✅ 已移除
-// 你沒裝過的東西」只會讓他停下來想自己是不是漏了什麼。這跟隔離區那幾列相反——
-// 那些是「我們剛才動過你的機器」，所以要留著給他看。
-export async function checkRetired(step) {
+//   沒裝過        回 null，整列不出現
+//   還有殘留      黃燈 ＋ 一顆「移除」
+//   移除完了      綠燈打勾，留在畫面上
+//
+// 第一態要消失：從沒裝過的新學生根本不知道那是什麼，一列「✅ 已移除你沒裝過的
+// 東西」只會讓他停下來想自己是不是漏了什麼。
+//
+// ⚠️ 第三態要留著，這是 Reed 實測指出的：判準本來只有「還有沒有殘留」，於是移除
+// 成功的當下這一列就沒有理由出現——學生按下按鈕、整張卡當場不見。他不會覺得做完
+// 了，他會覺得自己剛剛弄壞了什麼。leftovers.js 的隔離區那一列早就寫過同一條
+//（「按完整張卡消失的話，學生會以為自己做錯了什麼」），這輪沒照著走。
+//
+// 分得開兩態靠的是 state.json 記的那一筆（markStepRetired）：沒有那一筆就是從來
+// 沒裝過，有那一筆就是他自己按掉的。
+export async function checkRetired(step, retiredSteps = []) {
   const leftoverFiles = step.files.filter((file) => existsSync(file));
   const settings = await readJsonOrNull(step.settingsTarget);
   const registered = hasHookRegistrations(settings ?? {}, step.markers);
 
   if (leftoverFiles.length === 0 && !registered) {
-    return null;
+    return retiredSteps.includes(step.id)
+      ? {
+          id: step.id,
+          label: step.label,
+          status: "ok",
+          detail: "已經移除了，這一列不用再做什麼",
+          retired: true,
+          // 沒有東西可以再裝，也沒有東西可以驗——按鈕整顆收掉。
+          noInstall: true,
+        }
+      : null;
   }
 
   // 黃燈不是綠燈：不移除的話它還在跑。但它也不是「壞掉」——所以說明裡直接寫做這件
@@ -1261,6 +1282,9 @@ export function checkDemo(step) {
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
   const ids = stepsForTools(tools, process.platform);
+  // 哪幾步已經被按過「移除」。讀一次就好，下面每一列共用——退役那幾列靠它分辨
+  // 「從來沒裝過」與「他自己按掉的」。
+  const retiredSteps = await loadRetiredSteps();
 
   // 併行，跟 runEnvCheck 的 Promise.all 一致。序列跑的話 31 項裡那幾個會 spawn
   // 子行程的（hook 探測是 bash 一支、node 一支、還有 spawnEnv）成本是相加的，
@@ -1274,7 +1298,7 @@ export async function runConfigCheck({ tools, lang }) {
       if (step.kind === "output-style") {
         return await checkOutputStyle(materials, step);
       } else if (step.kind === "retire") {
-        return await checkRetired(step);
+        return await checkRetired(step, retiredSteps);
       } else if (step.kind === "allowlist") {
         return await checkAllowlist(materials, step);
       } else if (step.kind === "tab-sync") {

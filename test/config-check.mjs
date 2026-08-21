@@ -15,6 +15,7 @@ import {
   checkAgentHooks,
   checkAllowlist,
   checkCopyStep,
+  checkRetired,
   checkTabSync,
   missingSourceLines,
   probeHook,
@@ -641,6 +642,64 @@ process.stdin.on("end", () => {
   } finally {
     rmSync(path.join(MATERIALS, sourceRel), { force: true });
     rmSync(missDir, { recursive: true, force: true });
+  }
+
+  // 退役那一列的三態。
+  //
+  // ⚠️ 第三態（移除完了還留著打勾）是 Reed 實測指出的：判準本來只有「還有沒有
+  // 殘留」，於是學生按下移除的當下整張卡就消失了。他不會覺得做完了，他會覺得自己
+  // 剛剛弄壞了什麼。leftovers.js 的隔離區那一列早就寫過同一條。
+  const retireDir = path.join(tmpdir(), `jr-retire-${process.pid}`);
+
+  try {
+    const retireStep = describeStep("hook", {
+      lang: "zh-TW",
+      home: retireDir,
+      platform: "darwin",
+    });
+
+    // ① 沒裝過：整列不出現。新學生不該看到一列「已移除你沒裝過的東西」。
+    assert.equal(await checkRetired(retireStep, []), null);
+
+    // ② 有殘留：黃燈，按鈕的字是「移除」不是「安裝」——它做的事正好相反。
+    mkdirSync(path.dirname(retireStep.files[0]), { recursive: true });
+    writeFileSync(retireStep.files[0], "// 舊的\n");
+    const leftover = await checkRetired(retireStep, []);
+    assert.equal(leftover.status, "warn");
+    assert.equal(leftover.installLabel, "移除");
+    assert.equal(leftover.retired, true);
+
+    // 只剩註冊、檔案已經被學生自己刪掉，也要算殘留：那條註冊指向一個不存在的
+    // 檔案，每次事件失敗一次，而畫面上看不出來。
+    rmSync(retireStep.files[0], { force: true });
+    mkdirSync(path.dirname(retireStep.settingsTarget), { recursive: true });
+    writeFileSync(
+      retireStep.settingsTarget,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "node /x/block-chained-bash.js" }],
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal((await checkRetired(retireStep, [])).status, "warn");
+
+    // ③ 移除完了：綠燈、留在畫面上、沒有按鈕。
+    rmSync(retireStep.settingsTarget, { force: true });
+    const done = await checkRetired(retireStep, ["hook"]);
+    assert.notEqual(done, null, "按過移除之後這一列不可以消失");
+    assert.equal(done.status, "ok");
+    assert.equal(done.noInstall, true, "沒有東西可裝也沒有東西可驗，按鈕要收掉");
+
+    // 記錄只認自己那一步：別人被移除過不會讓這一列冒出來。
+    assert.equal(await checkRetired(retireStep, ["codex-monitor"]), null);
+    ok("退役三態：沒裝過不出現、有殘留給移除鍵、移除完留著打勾不消失");
+  } finally {
+    rmSync(retireDir, { recursive: true, force: true });
   }
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);

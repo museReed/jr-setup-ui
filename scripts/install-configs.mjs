@@ -27,6 +27,7 @@ import {
   upsertBlock,
 } from "../src/config-install.js";
 import { checkExternalSkill, findObsidianApp } from "../src/config-check.js";
+import { markStepRetired } from "../src/progress-state.js";
 import { materialsDir } from "../src/paths.js";
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
@@ -170,16 +171,21 @@ async function retireStep(step) {
   // 每次 PostToolUse 都失敗一次，而畫面上完全看不出來。
   const before = await readSettings(step.settingsTarget);
 
-  if (!hasHookRegistrations(before, step.markers)) {
+  if (hasHookRegistrations(before, step.markers)) {
+    await writeSettings(
+      step.settingsTarget,
+      removeHookRegistrations(before, step.markers),
+    );
+    logProgress(`已從 ${step.settingsTarget} 移除註冊`);
+  } else {
     logProgress("設定檔裡沒有它的註冊，不用動");
-    return;
   }
 
-  await writeSettings(
-    step.settingsTarget,
-    removeHookRegistrations(before, step.markers),
-  );
-  logProgress(`已從 ${step.settingsTarget} 移除註冊`);
+  // 記一筆「這台機器按過移除」。不記的話這一列會在按完的當下整個消失——判準本來
+  // 就是「還有沒有殘留」，殘留沒了它就沒有理由出現。學生按下按鈕、卡片不見，他
+  // 不會覺得做完了，他會覺得自己剛剛弄壞了什麼（見 progress-state 的 markStepRetired）。
+  await markStepRetired(step.id);
+  logProgress("這一列會留著打勾，不會消失");
 }
 
 async function allowlistStep(step) {

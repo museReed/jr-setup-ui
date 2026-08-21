@@ -216,6 +216,48 @@ export async function saveManualChecked(ids, options = {}) {
   return state.manual;
 }
 
+// 已經按過「移除」的退役步驟。
+//
+// ⚠️ 這一筆存在的唯一理由是「按完之後那一列不可以直接消失」。
+//
+// 退役那一列的判準本來是「機器上還有沒有殘留」，所以移除成功之後它就沒有理由出現
+// 了——結果是學生按下按鈕、整張卡當場不見。他不會覺得「做完了」，他會覺得自己剛
+// 剛弄壞了什麼（leftovers.js 的隔離區那一列早就寫過同一條，我這輪沒照著走）。
+//
+// 記下來之後這一列就有三態：沒裝過（不出現）、還有殘留（黃燈＋移除鍵）、移除完了
+// （綠燈打勾）。第三態只有真的按過的人看得到。
+//
+// 不受指紋管轄，理由跟 manual 同一條：它記的是「這台機器上發生過這件事」，不是
+// 「裝過而且還有效」。
+export async function loadRetiredSteps(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.retired)
+    ? state.retired.filter((id) => typeof id === "string")
+    : [];
+}
+
+// 逐筆新增，不整份覆蓋——跟 manual／skipped 相反。那兩本要能取消（取消勾選、卡片
+// 驗過就從清單消失），這一本不會：移除過就是移除過，沒有「取消移除」這回事。
+export async function markStepRetired(id, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+  const retired = Array.isArray(state.retired)
+    ? state.retired.filter((entry) => typeof entry === "string")
+    : [];
+
+  if (!retired.includes(id)) {
+    retired.push(id);
+  }
+
+  state.version = VERSION;
+  state.retired = retired;
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return retired;
+}
+
 // 學生按「先略過這張」的卡。跟 manual 一樣不受指紋管轄：它記的是「我現在過不了，
 // 先往下走」，不是「裝過而且還有效」——重裝檔案不該讓他重新卡一次。
 //
