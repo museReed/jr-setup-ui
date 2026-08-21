@@ -35,11 +35,11 @@
         <button type="button" class="section-tab" data-section-target="skills">
           <span>給它技能包</span>
         </button>
-        <button type="button" class="section-tab" data-section-target="demo">
-          <span>跑一次給你看</span>
-        </button>
         <button type="button" class="section-tab" data-section-target="notes">
           <span>使用 Obsidian 管理你的知識庫</span>
+        </button>
+        <button type="button" class="section-tab" data-section-target="demo">
+          <span>跑一次給你看</span>
         </button>
       </nav>
       <p id="section-lock-message" class="section-lock-message" hidden></p>
@@ -84,8 +84,11 @@
                 <strong>規則檔用哪個語言？</strong>
                 <div id="config-lang" aria-label="選擇語言"></div>
               </div>
+              <!-- 這裡以前有一行「N 項中 M 項就緒」。拿掉了（Reed 指定）：同一件事
+                   上面那條里程碑進度條已經在講，而且講得更清楚——它看得出還剩幾張、
+                   走到哪。一個數字對數字的比例只是把同一份資訊換成學生要自己換算的
+                   形式，而且它的分母會隨著退役那幾列出現與否而變，看起來像壞掉。 -->
               <div class="config-toolbar-status">
-                <span id="config-summary">尚未檢查</span>
                 <button type="button" id="recheck-configs" class="ds-btn-fill is-sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>重新檢查</span></button>
               </div>
             </div>
@@ -141,6 +144,16 @@
       </div>
     </main>
 
+    <!-- 跳過清單常駐在畫面底部：學生按過略過的卡要隨時找得回來，而頁首那一列會
+         被捲走（往下捲就看不到，等於沒有提醒）。整條沒東西時整塊收掉。 -->
+    <div id="skipped-tray" class="skipped-tray" hidden>
+      <button type="button" id="skipped-tray-toggle" class="skipped-tray-toggle" aria-expanded="false" aria-controls="skipped-tray-list">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4l8 8-8 8M13 4l6 8-6 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="skipped-tray-count">已跳過 0 張</span>
+      </button>
+      <ul id="skipped-tray-list" class="skipped-tray-list" hidden></ul>
+    </div>
+
     <div id="verify-modal" class="ds-modal-overlay" hidden>
       <section class="ds-modal-panel" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title">
         <h2 id="verify-modal-title">要開一個新終端跑驗證嗎？</h2>
@@ -151,6 +164,22 @@
       </section>
     </div>
 
+    <!-- 當日密碼。網頁嚮導會提早發給學生先把環境裝好，這一段要到工作坊當天才開，
+         所以它不是「做完前面就會開」的那種鎖——只有講師報出來的那組數字打得開。 -->
+    <div id="passcode-modal" class="ds-modal-overlay" hidden>
+      <section class="ds-modal-panel passcode-panel" role="dialog" aria-modal="true" aria-labelledby="passcode-modal-title">
+        <h2 id="passcode-modal-title">這一段要當天才開</h2>
+        <p class="report-hint" id="passcode-modal-hint">輸入講師在課堂上報出來的四位數字，就會解鎖。</p>
+        <label class="report-label" for="passcode-input">當日密碼</label>
+        <input type="text" id="passcode-input" class="passcode-input" inputmode="numeric" autocomplete="off" maxlength="8" />
+        <div>
+          <button type="button" id="passcode-modal-confirm" class="ds-btn ds-btn-primary">解鎖</button>
+          <button type="button" id="passcode-modal-cancel" class="ds-btn ds-btn-ghost">先不要</button>
+        </div>
+        <p id="passcode-modal-error" class="passcode-error" hidden>密碼不對，再確認一次講師報的數字。</p>
+      </section>
+    </div>
+
     <div id="report-modal" class="ds-modal-overlay" hidden>
       <section class="ds-modal-panel report-panel" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
         <h2 id="report-modal-title">把這一頁卡住的狀況送給助教</h2>
@@ -158,10 +187,37 @@
         <label class="report-label" for="report-description">發生什麼事？（選填，但寫一句話會快很多）</label>
         <textarea id="report-description" class="report-description" rows="3" placeholder="例如：按了安裝之後就一直轉圈，等了五分鐘"></textarea>
         <p class="report-hint">下面是會一起送出的內容——家目錄已經換成 ~。送出之後那則 issue 會自動打開，要附截圖就直接拖進去。</p>
-        <pre id="report-preview" class="report-preview"></pre>
+        <!-- 這一塊很長而且會捲，用滑鼠圈選很難圈得完整（圈到一半就捲走了）。
+             一顆複製鍵比什麼都實在——四條退路的第一步全都是「把這份內容複製起來」。 -->
+        <div class="report-preview-wrap">
+          <button type="button" id="report-preview-copy" class="mail-copy">複製</button>
+          <pre id="report-preview" class="report-preview"></pre>
+        </div>
         <div>
           <button type="button" id="report-modal-send" class="ds-btn ds-btn-primary">送出</button>
+          <!-- gh 還沒登入時的退路。瀏覽器的 GitHub 登入多數人早就有了，比 CLI 登入
+               早得多——而學生最可能卡住的時候，正是他還沒過 CLI 那一關的時候。 -->
+          <button type="button" id="report-modal-manual" class="ds-btn ds-btn-ghost">複製內容並開 GitHub</button>
+          <!-- 連 GitHub 帳號都還沒有的人走這條。開 issue 一定要帳號並且登入，沒有
+               匿名這回事——而那個學生正是最需要有人幫的那個。 -->
+          <button type="button" id="report-modal-mail" class="ds-btn ds-btn-ghost">複製內容並寄信給助教</button>
+          <button type="button" id="report-modal-save" class="ds-btn ds-btn-ghost">存成檔案</button>
           <button type="button" id="report-modal-cancel" class="ds-btn ds-btn-ghost">取消</button>
+        </div>
+        <!-- 信件程式沒設定好的話 mailto 什麼都不會發生，學生得自己開網頁版信箱手打。
+             那時他需要的是收件人**與主旨**兩樣——主旨是我們用來分類的，少了它那封信
+             會混在一般信件裡。兩個都給一鍵複製，不要他照著螢幕抄。 -->
+        <div id="report-mail-details" class="mail-details" hidden>
+          <div class="mail-row">
+            <span class="mail-key">收件人</span>
+            <code id="report-mail-to"></code>
+            <button type="button" class="mail-copy" data-copy="report-mail-to">複製</button>
+          </div>
+          <div class="mail-row">
+            <span class="mail-key">主旨</span>
+            <code id="report-mail-subject"></code>
+            <button type="button" class="mail-copy" data-copy="report-mail-subject">複製</button>
+          </div>
         </div>
         <p id="report-modal-status" class="report-hint" hidden></p>
       </section>

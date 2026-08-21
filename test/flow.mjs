@@ -104,20 +104,28 @@ try {
       .locked,
     false,
   );
+  // demo 多一道當日密碼（見 model.js 的 SECTION_PASSCODES），所以要連 unlocked
+  // 一起餵才開得了。段落閘門本身仍然只看前面幾段做完沒。
   assert.equal(
-    sectionGateState("demo", new Set(), "claude", {
-      env: true,
-      rules: true,
-      skills: true,
-    }).locked,
+    sectionGateState(
+      "demo",
+      new Set(),
+      "claude",
+      { env: true, rules: true, skills: true },
+      {},
+      new Set(["demo"]),
+    ).locked,
     false,
   );
   assert.equal(
-    sectionGateState("demo", new Set(), "claude", {
-      env: true,
-      rules: true,
-      skills: false,
-    }).locked,
+    sectionGateState(
+      "demo",
+      new Set(),
+      "claude",
+      { env: true, rules: true, skills: false },
+      {},
+      new Set(["demo"]),
+    ).locked,
     true,
   );
   ok("段落只由前面幾段是否完成決定，沒有人工關卡");
@@ -204,10 +212,12 @@ try {
       new Set(["skills-new-terminal"]),
       "claude",
       { env: true, rules: true, skills: true },
+      {},
+      new Set(["demo"]),
     ).locked,
     false,
   );
-  ok("Demo 段的人工關卡勾完就解鎖");
+  ok("Demo 段的人工關卡勾完、密碼也打過就解鎖");
 
   // 解鎖還要看前一段是不是真的做完，不能只看勾選框——勾選框是學生自己宣告，
   // 擋不住「前面根本沒做完」。規則段沒裝好就跳去裝技能包，skill 裝了也叫不動。

@@ -84,6 +84,25 @@ export async function saveManualChecked(ids) {
   return response.json();
 }
 
+// 跳過清單整份覆蓋：卡片驗過之後要從清單裡消失，逐筆新增做不到（跟 manual 同理）。
+export async function saveSkippedCards(ids) {
+  const response = await postJson("/state", { skipped: ids });
+  return response.json();
+}
+
+// 用當日密碼打開過的段。存伺服器不是瀏覽器：port 每次啟動都變，localStorage 綁
+// origin 存不住——當天重開一次嚮導就要再跟講師問一次密碼。
+export async function saveUnlockedSections(ids) {
+  const response = await postJson("/state", { unlocked: ids });
+  return response.json();
+}
+
+// 講師用萬用密碼開過的段。跟 unlocked 分兩本：那個只解當日密碼，這個整段跳過。
+export async function saveOverriddenSections(ids) {
+  const response = await postJson("/state", { overridden: ids });
+  return response.json();
+}
+
 // 程式那半驗過了。有眼睛勾選框的列也送這一筆——整列綠不綠是 saveVerifiedStep 的事。
 export async function saveBehaviorVerified(step) {
   const response = await postJson("/state", { step, kind: "behavior" });

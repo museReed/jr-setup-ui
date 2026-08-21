@@ -20,12 +20,18 @@ import {
   loadBehaviorVerifiedSteps,
   loadChangedSteps,
   loadManualChecked,
+  loadOverriddenSections,
   loadSelection,
+  loadSkippedCards,
+  loadUnlockedSections,
   loadVerifiedSteps,
   markBehaviorVerified,
   markStepVerified,
   saveManualChecked,
+  saveOverriddenSections,
   saveSelection,
+  saveSkippedCards,
+  saveUnlockedSections,
 } from "./progress-state.js";
 
 const indexPath = new URL("../public/index.html", import.meta.url);
@@ -282,6 +288,12 @@ export async function startServer({
     // 驗過之後被動過的那幾步。不影響勾，只在卡片上多一句提醒。
     changed: await loadChangedSteps(),
     manual: await loadManualChecked(),
+    // 學生按過「先略過」的卡。重整之後清單要還在，不然那顆按鈕等於沒做。
+    skipped: await loadSkippedCards(),
+    // 用當日密碼打開過的段。重開嚮導不該叫學生再跟講師問一次密碼。
+    unlocked: await loadUnlockedSections(),
+    // 講師用萬用密碼開過的段。跟 unlocked 分開：那個只解當日密碼，這個整段跳過。
+    overridden: await loadOverriddenSections(),
     selection: await loadSelection(),
   });
   return;
@@ -369,6 +381,52 @@ export async function startServer({
     }
 
     await saveManualChecked(payload.manual);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  // 一樣整份覆蓋：卡片驗過之後要從跳過清單裡消失，逐筆新增做不到。
+  if (payload.skipped !== undefined) {
+    if (
+      !Array.isArray(payload.skipped) ||
+      payload.skipped.some((id) => typeof id !== "string")
+    ) {
+      sendText(response, 400, "skipped 需要字串陣列");
+      return;
+    }
+
+    await saveSkippedCards(payload.skipped);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  // 密碼比對在前端做（那組數字本來就是講師當眾報出來的，不是機密），這裡只負責
+  // 把「打開過了」記下來，讓重開嚮導之後還記得。
+  if (payload.unlocked !== undefined) {
+    if (
+      !Array.isArray(payload.unlocked) ||
+      payload.unlocked.some((id) => typeof id !== "string")
+    ) {
+      sendText(response, 400, "unlocked 需要字串陣列");
+      return;
+    }
+
+    await saveUnlockedSections(payload.unlocked);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  // 講師用萬用密碼開過的段。比對一樣在前端做，這裡只負責記住。
+  if (payload.overridden !== undefined) {
+    if (
+      !Array.isArray(payload.overridden) ||
+      payload.overridden.some((id) => typeof id !== "string")
+    ) {
+      sendText(response, 400, "overridden 需要字串陣列");
+      return;
+    }
+
+    await saveOverriddenSections(payload.overridden);
     sendJson(response, 200, { ok: true });
     return;
   }

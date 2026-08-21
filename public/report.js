@@ -25,6 +25,64 @@
 // 會被貼到一個公開的 issue 上。
 //
 // 換的是「看得到的那幾種寫法」：正斜線、反斜線、以及 JSON 逃脫過的雙反斜線。
+// gh 那條路走不通時的退路。
+//
+// ⚠️ 這個網址**只帶標題，不帶內容**——內容走剪貼簿。上面那段講的長度問題只發生在
+// 「把 log 塞進網址」，標題是一行字，編碼後仍然很短，沒有這個問題。
+//
+// 為什麼這條退路必要：`gh issue create` 要 CLI 登入，而那是整條安裝路上最難的一關
+// ——學生最可能卡住的時候，正是他還沒過那一關的時候。瀏覽器的 GitHub 登入多數人
+// 早就有了，所以「複製 + 貼上」到得了的地方，比 gh 早得多。
+//
+// repo 名字在這裡與 src/report-issue.js 各有一份。那支是真正去開 issue 的，權威在
+// 它；這裡只組一個給人點的網址，兩邊要一起改。
+const FEEDBACK_REPO = "museReed/jr-setup-feedback";
+
+// 最後一條退路：寄信給助教。
+//
+// GitHub 開 issue 一定要帳號並且登入——沒有匿名這回事。所以「還沒有 GitHub 帳號」
+// 或「登入牆卡住了」的學生，前面兩條路都走不到底，而他正是最需要有人幫的那個。
+//
+// ⚠️ mailto 只帶主旨，**不帶內文**——理由跟檔頭那段預填網址完全一樣：網址有長度
+// 上限，而中文 percent-encoding 一個字變九個字元。學生最需要回報的時候正是 log 最
+// 長的時候，硬塞進去的那份反而缺了關鍵段落。內文一律走剪貼簿。
+export const FEEDBACK_EMAIL = "devlab20230424@gmail.com";
+
+export function mailtoUrl(title) {
+  const subject =
+    typeof title === "string" && title !== "" ? title : "jr-setup 卡住了";
+
+  return `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}`;
+}
+
+// ⚠️ body 帶的是**一行提示，不是 log**。
+//
+// 「內容在剪貼簿裡，請貼上」這句話原本只寫在嚮導的框裡——而學生按下按鈕之後人就在
+// GitHub 那個分頁了，回頭看不到那句話。他看到的是一個標題填好、內文全空的表單，
+// 合理的結論是「按鈕壞了」（Reed 實測第一個反應就是這個）。
+//
+// 提示要跟著他走，所以放進表單本身。一行字編碼後仍然很短，跟檔頭那段講的「把 log
+// 塞進網址」是兩回事——那個坑是長度，這裡沒有長度問題（下面的測試釘住 500 字元）。
+//
+// 寫成 Markdown 的 HTML 註解：在編輯框裡看得到，送出之後**渲染不出來**。所以不必
+// 叫學生「再刪掉這一行」——那是多的一步，而且忘了刪的話 issue 開頭就掛著一句對助教
+// 沒有意義的話。它的行為就是一個 placeholder，只是 GitHub 的 placeholder 沒辦法從
+// 網址設定，只能用這個方式做到同一件事。
+//
+// 尾巴留兩個換行：學生點進框通常是點到最後，游標就已經在下一行，貼上去不會跟提示
+// 黏成一行。
+const PASTE_HINT = "<!-- 把剛才複製的內容貼在這裡（Ctrl+V／⌘V） -->\n\n";
+
+export function newIssueUrl(title) {
+  const params = new URLSearchParams({ body: PASTE_HINT });
+
+  if (typeof title === "string" && title !== "") {
+    params.set("title", title);
+  }
+
+  return `https://github.com/${FEEDBACK_REPO}/issues/new?${params}`;
+}
+
 export function redact(text, home) {
   if (typeof text !== "string") {
     return "";

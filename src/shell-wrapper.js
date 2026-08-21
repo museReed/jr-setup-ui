@@ -1,8 +1,10 @@
-// 學生的 shell 設定檔裡，有沒有一個「叫得動但指到空路徑」的 claude / codex。
+// 學生的 shell 設定檔裡，有沒有舊 claude / codex wrapper 擋在新版前面。
 //
 // 這是回訪學生最難自己看出來的一種壞法：打 `codex` 說找不到、打 `codex.exe` 卻正常，
 // `where.exe codex` 也看不到任何異常——因為壞的東西不在 PATH 上，是 shell 設定檔裡
 // 一個同名函式，而它指向的檔案早就被 npm 移除了。函式排在執行檔前面，所以永遠是它接手。
+// POSIX 還要清掉舊版寫入的 codex wrapper / mycodex alias，否則它們會把
+// Codex 0.146+ 的原生 terminal title 蓋掉。
 //
 // ⚠️ 這裡只負責「看」與「算出要刪哪幾行」，真正動檔案的是 scripts/fix-shell-wrapper.mjs。
 // 拆開是為了測得到：判準全部是純函式，不需要真的弄髒一台機器才驗得了。
@@ -10,6 +12,8 @@
 import { TAB_SYNC_MARKER } from "./config-install.js";
 
 const WRAPPED_COMMANDS = ["claude", "codex"];
+const TAB_SYNC_START = `# >>> ${TAB_SYNC_MARKER} >>>`;
+const TAB_SYNC_END = `# <<< ${TAB_SYNC_MARKER} <<<`;
 
 // 兩個平台都要掃「不只一份」：
 // Windows 的 PowerShell 5.1 與 7 各讀各的 profile，而學生用哪一個我們不知道
@@ -61,28 +65,119 @@ function opensWrapper(line, platform) {
   return null;
 }
 
+function aliasesMycodex(line) {
+  const match = line
+    .trim()
+    .match(/^alias\s+codex\s*=\s*(?:(['"])(.*?)\1|(\S+))\s*(?:#.*)?$/);
+
+  if (match === null) {
+    return false;
+  }
+
+  const value = match[2] ?? match[3];
+  return /(?:^|[\\/])mycodex$/.test(value);
+}
+
+function markedBlock(lines) {
+  const starts = [];
+  const ends = [];
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+
+    if (trimmed === TAB_SYNC_START) starts.push(index);
+    if (trimmed === TAB_SYNC_END) ends.push(index);
+  }
+
+  if (starts.length > 1 || ends.length > 1) {
+    throw new Error(`${TAB_SYNC_MARKER} 標記重複，未修改設定檔`);
+  }
+
+  if (starts.length !== ends.length || (starts[0] ?? 0) > (ends[0] ?? 0)) {
+    throw new Error(`${TAB_SYNC_MARKER} 標記不成對，未修改設定檔`);
+  }
+
+  return starts.length === 0
+    ? null
+    : { firstLine: starts[0], lastLine: ends[0] };
+}
+
+function wrapperLastLine(lines, firstLine, limit) {
+  const first = lines[firstLine];
+
+  if (first.indexOf("}", first.indexOf("{") + 1) !== -1) {
+    return firstLine;
+  }
+
+  for (let index = firstLine + 1; index < limit; index += 1) {
+    if (lines[index].trim() === "}") {
+      return index;
+    }
+  }
+
+  throw new Error("舊 Codex wrapper 不完整，未修改設定檔");
+}
+
 // 找出「函式主體裡寫死一條路徑，而那條路徑不存在」的區塊。
 //
-// ⚠️ 一定要跳過我們自己寫進去的 tab-sync 區塊。它裡面也有一條寫死的路徑
-// （watcher 腳本），只是那條是活的——但學生若還沒裝 watcher、或裝到一半失敗，
-// 那條路徑就會暫時不存在，接著這裡會建議他把我們自己剛裝的東西刪掉。
+// ⚠️ 新版 Claude-only 與 Windows 的 tab-sync 區塊要跳過；POSIX 舊區塊仍開
+// codex() 時只移除那支函式，保留 Claude wrapper。watcher 腳本路徑暫時不存在
+// 不等於區塊壞掉。
 export function findDeadWrappers(content, { platform = process.platform, exists }) {
   const lines = content.split(/\r?\n/);
   const found = [];
-  let insideOurBlock = false;
+  const ourBlock = markedBlock(lines);
   let open = null;
 
   for (const [index, line] of lines.entries()) {
-    if (line.includes(TAB_SYNC_MARKER)) {
-      insideOurBlock = !insideOurBlock;
+    if (ourBlock !== null && index === ourBlock.firstLine) {
+      if (platform !== "win32") {
+        for (
+          let blockLine = ourBlock.firstLine + 1;
+          blockLine < ourBlock.lastLine;
+          blockLine += 1
+        ) {
+          if (opensWrapper(lines[blockLine], platform) === "codex") {
+            const lastLine = wrapperLastLine(
+              lines,
+              blockLine,
+              ourBlock.lastLine,
+            );
+            found.push({
+              command: "codex",
+              reason: "native-title",
+              firstLine: blockLine,
+              lastLine,
+              removeLeadingComments: false,
+            });
+            blockLine = lastLine;
+          }
+        }
+      }
+
       continue;
     }
 
-    if (insideOurBlock) {
+    if (
+      ourBlock !== null &&
+      index > ourBlock.firstLine &&
+      index <= ourBlock.lastLine
+    ) {
       continue;
     }
 
     if (open === null) {
+      if (platform !== "win32" && aliasesMycodex(line)) {
+        found.push({
+          command: "codex",
+          reason: "native-title",
+          firstLine: index,
+          lastLine: index,
+          removeLeadingComments: false,
+        });
+        continue;
+      }
+
       const command = opensWrapper(line, platform);
 
       if (command !== null) {
@@ -124,6 +219,37 @@ export function shellWrapperStatus(dead) {
   }
 
   const names = [...new Set(dead.map((block) => block.command))].join("、");
+  const overridesNativeTitle = dead.some(
+    (block) => block.reason === "native-title",
+  );
+
+  if (overridesNativeTitle) {
+    const deadNames = [
+      ...new Set(
+        dead
+          .filter((block) => block.reason !== "native-title")
+          .map((block) => block.command),
+      ),
+    ].join("、");
+
+    if (deadNames.length > 0) {
+      return {
+        status: "warn",
+        installable: false,
+        fixLabel: `清除舊 Codex wrapper 與廢棄的 ${deadNames} 引用`,
+        detail: `舊 Codex wrapper 覆蓋標題，${deadNames} 也指到失效檔案`,
+        deadPath: dead.find((block) => block.deadPath)?.deadPath,
+      };
+    }
+
+    return {
+      status: "warn",
+      installable: false,
+      fixLabel: "清除舊 Codex wrapper",
+      detail: "舊 Codex wrapper 會覆蓋原生分頁標題",
+      deadPath: dead.find((block) => block.deadPath)?.deadPath,
+    };
+  }
 
   return {
     status: "warn",
@@ -154,13 +280,15 @@ export function removeWrapperBlocks(content, blocks) {
       doomed.add(line);
     }
 
-    for (let line = block.firstLine - 1; line >= 0; line -= 1) {
-      if (lines[line].trim().startsWith("#")) {
-        doomed.add(line);
-        continue;
-      }
+    if (block.removeLeadingComments !== false) {
+      for (let line = block.firstLine - 1; line >= 0; line -= 1) {
+        if (lines[line].trim().startsWith("#")) {
+          doomed.add(line);
+          continue;
+        }
 
-      break;
+        break;
+      }
     }
   }
 

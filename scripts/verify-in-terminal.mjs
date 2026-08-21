@@ -503,15 +503,43 @@ function titleScript() {
     ].join("\n");
   }
 
+  // POSIX 這一格改成直接叫命名腳本，因為 watcher 已經不再安裝了（見
+  // docs/windows-tab-title-why-watcher.md）。標題現在是 set-session-name.sh 自己把
+  // OSC 寫進 /dev/ttysNNN——那才是學生真正會走的路徑，這一格就該驗它。
+  //
+  // ⚠️ 不要退回「在背景啟動 ai-tab-sync.sh」的舊寫法。那支腳本 POSIX 上已經不裝了，
+  // 但上一輪安裝留下的殘檔會讓它照樣跑起來、標題照樣變——這一格於是給出假的綠燈
+  // （2026-08-20 在 macOS VM 上實測踩到：機器先裝過 main，再裝分支，驗證仍然過）。
+  //
+  // CLAUDE_PROJECT_DIR 指到家目錄：命名腳本會依工作目錄加上 [專案] 前綴，指到家目錄
+  // 就不加，學生看到的字才跟卡片上寫的那句話一模一樣。
+  //
+  // 第二個參數要傳這個 shell 自己的 pid：腳本是用它去查 tty 的。
+  const namer = '"$HOME/.claude/hooks/set-session-name.sh"';
+
+  // ⚠️ 兩件事都是為了「寫進去的標題活得過這支腳本」，缺一不可：
+  //
+  // 1. DISABLE_AUTO_TITLE=true
+  //    這支 launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也
+  //    跟著載入。oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在
+  //    裝了 powerlevel10k 的機器上，學生看到的標題是 `echo`（腳本最後一個指令）。
+  //    omz 是在 runtime 檢查這個變數的，所以在這裡關掉就能讓後面的寫入活下來。
+  //    這是拋棄式的 launcher，關掉不影響使用者自己的 shell。
+  //
+  // 2. 命名腳本放在最後一行
+  //    就算遇到我們沒認出來的主題，只要標題是最後一件事，就沒有下一個指令能蓋掉它。
+  //    所以先印字、後改標題——順序不能對調。
+  //
+  // 這個坑只打得到有裝主題的開發機。學生的 .zshrc 只有嚮導寫的那一段，沒有人來搶。
   return [
-    'sync="$(mktemp)"',
-    `printf '%s\\n' '${name}' > "$sync"`,
-    '"$HOME/.local/bin/ai-tab-sync.sh" "$sync" "$(tty)" &',
-    "watcher=$!",
-    "sleep 5",
-    'kill "$watcher" 2>/dev/null',
-    'rm -f "$sync"',
-    'echo "標題測試結束——剛才那五秒分頁標題有變嗎？"',
+    "DISABLE_AUTO_TITLE=true",
+    `if [ ! -x ${namer} ]; then`,
+    '  echo "找不到命名腳本——請先把「對話自己取名字」那張卡裝好再回來。"',
+    "  exit 0",
+    "fi",
+    "unset AI_TAB_SYNC_FILE",
+    `echo "標題測試結束——這個視窗的分頁標題現在是「${name}」嗎？"`,
+    `CLAUDE_PROJECT_DIR="$HOME" ${namer} '${name}' "$$"`,
   ].join("\n");
 }
 

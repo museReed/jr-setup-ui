@@ -140,6 +140,11 @@ export const INSTALLERS = {
       // 學生看不到的地方靜默移除他的東西。
       env: { CODEX_NON_INTERACTIVE: "1" },
     },
+    linux: {
+      cmd: "bash",
+      args: ["-c", CODEX_DARWIN_SCRIPT],
+      env: { CODEX_NON_INTERACTIVE: "1" },
+    },
   },
   // Demo 那段的 self_play.py 要 python3。macOS 內建、Windows 沒有——實測 VM 上
   // 只有 Windows Store 的殼（打 python 會跳商店，py 也不存在），agent 只好當場把

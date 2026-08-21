@@ -1,76 +1,61 @@
 # Codex Session Rename — 共用參考文件
 
-> 任何需要手動改 Codex session 名稱的 skill，引用此文件取得方法。
-> 不要各自重寫 — 改版時只改這一份。
-
----
+> 任何需要手動改 Codex session 名稱的 skill，都從這裡取得方法。
 
 ## 原理
 
-改名有兩個顯示面，由 session-namer hook（`~/.codex/hooks/codex-session-namer.sh`，
-jr_ai_agent_skills installer 安裝）統一同步：
+模型只把名稱寫進暫存 relay 檔。下一次 hook 事件會對共用 Codex app-server 呼叫
+`thread/name/set`；Codex 自己把同一個名稱送到 sidebar、status line 與 terminal tab。
 
-1. **Sidebar**：Codex 把 session 存在 SQLite（`~/.codex/state_*.sqlite` 的 `threads` 表）
-2. **Terminal tab**：`mycodex` wrapper 建立 `$AI_TAB_SYNC_FILE`，背景 watcher 輪詢它並寫 OSC 到 tty
+| 平台 | 共用 app-server | 命名通道 |
+|---|---|---|
+| **macOS** | `codex app-server daemon start` 管理的 core daemon | Unix socket + `thread/name/set` |
+| **Linux** | Codex 的本機 control socket | Unix socket + `thread/name/set` |
+| **Windows** | 第一個 `codex` 在 `4500–4599` 找空 port 啟動，後續 TUI 讀狀態檔共用 | localhost WebSocket + `thread/name/set` |
 
-模型在 sandbox 裡**不能**直接寫 SQLite 或 `~/.ai-session-names/`（readonly database / 路徑限制），
-所以唯一要做的是寫一個 **relay 檔**（`/tmp` 永遠可寫）；hook 在下一次 hook 事件
-（tool call 或用戶訊息）時把名稱套用到 SQLite + tab sync file。
+macOS 與 Windows 不直接改 SQLite，也不使用 Codex Watcher 或 tab-sync；Linux 暫時保留舊版 fallback。
 
-## 改名指令（唯一步驟）
+## 改名指令
 
-```bash
-# $PPID 在 Codex tool shell 裡 = Codex process PID（hook 用同一個 key 讀）
-mkdir -p /tmp/codex-session-namer && echo '📦 新名稱' > /tmp/codex-session-namer/${PPID}.pending
-```
+Hook 注入的訊息已經包含這個 session 的精確 relay 路徑；直接執行那一行即可。
+手動觸發時依目前 shell 選一個：
 
-寫完即可回報。這個寫入本身是一次 tool call → 觸發 PostToolUse → hook 立即套用。
+| Shell | 指令 |
+|---|---|
+| Bash / zsh | `printf '%s\n' '📦 新名稱' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending` |
+| PowerShell | `Set-Content -LiteralPath (Join-Path $env:TEMP "codex-session-namer\$env:CODEX_THREAD_ID.pending") -Value '📦 新名稱' -Encoding utf8` |
 
-### 驗證（需要時才做）
+這次寫入會觸發 PostToolUse，hook 通常會立刻套用名稱。若 app-server 暫時連不上，relay
+檔會保留，下一次 hook 事件自動重試。
 
-```bash
-CODEX_DB=$(ls -t ~/.codex/state_*.sqlite 2>/dev/null | head -1)
-sqlite3 -header -column "$CODEX_DB" \
-  "SELECT id, title, preview FROM threads WHERE id='${CODEX_THREAD_ID}';"
-```
-
-## 備援：直接 UPDATE SQLite（僅 hook 未安裝時）
-
-⚠️ 只改 sidebar、**不會**同步 terminal tab；正常情況一律走 relay 檔。
-
-```bash
-CODEX_DB=$(ls -t ~/.codex/state_*.sqlite 2>/dev/null | head -1)
-sqlite3 "$CODEX_DB" "UPDATE threads SET title='📦 新名稱', preview='📦 新名稱' WHERE id='${CODEX_THREAD_ID}';"
-```
-
-## 注意事項
+## 前提
 
 | 項目 | 說明 |
 |---|---|
-| **Relay 檔 key** | 檔名用 `${PPID}.pending`（Codex process PID）。hook 注入的訊息若已給精確路徑，直接用那個路徑 |
-| **生效時機** | hook 在「下一次 hook 事件」套用 — relay 寫入本身就是一次 tool call，所以通常立即生效 |
-| **Session 定位（驗證/備援用）** | 用 `$CODEX_THREAD_ID` 定位 thread。不要用 `ORDER BY updated_at_ms DESC LIMIT 1` — 多 session 同時開會改錯 |
-| **版號變更** | DB 檔名是 `state_5.sqlite`，升級後可能變 `state_6`。用 `ls -t state_*.sqlite \| head -1` 自動適配 |
-| **單引號轉義** | 名稱含 `'` 會壞 shell quoting；避免單引號 |
-| **Terminal tab 前提** | 需用 `mycodex` 啟動（watcher + `$AI_TAB_SYNC_FILE`）。VS Code 系（Cursor / Antigravity）另需 `"terminal.integrated.tabs.title": "${sequence}"` 設定 |
-| **Claude Code 環境** | 偵測 `$HOME/.claude/session-names` 存在 → 走 Claude Code 路徑（直接寫 `$AI_TAB_SYNC_FILE` + session-names 檔），不走 relay |
-
-## Schema 參考（threads 表關鍵欄位）
-
-```
-id              TEXT    — UUID，session 唯一識別
-title           TEXT    — session 顯示名稱
-preview         TEXT    — sidebar 預覽文字（必須跟 title 一起改，否則 sidebar 顯示舊文字）
-cwd             TEXT    — 啟動時的工作目錄
-updated_at_ms   INTEGER — 最後更新時間（毫秒），用來辨識當前 session
-```
+| **Codex 版本** | macOS 使用支援 `app-server daemon` 的版本；Windows 使用支援 `app-server --listen`、`--remote` 與 `thread/name/set` 的版本 |
+| **Codex 設定** | `status_line` 包含 `"thread-title"`，`terminal_title = ["thread"]` |
+| **macOS 啟動方式** | 從已載入 zsh profile 的終端執行 `codex`；launcher 會啟動或重用 Codex core daemon，再把 TUI 接上 daemon |
+| **Windows 啟動方式** | 從已載入 PowerShell profile 的終端執行 `codex`；wrapper 會自動啟動或重用背景 app-server。啟動失敗時改走原生 Codex，只有 auto-rename 暫停 |
+| **Session 定位** | 一律使用 hook 給的 `session_id`／`CODEX_THREAD_ID`，不猜「最近更新」的 thread |
 
 ## 使用方式
 
 在 skill 的 SKILL.md 裡寫：
 
-```
+```text
 改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`
 ```
 
-不要把指令複製到每個 skill 裡 — 改版時只要更新這一份。
+## 更新背景 server
+
+安裝 auto-rename 時也會安裝全域 `codex-server-restart`，在哪個資料夾都能直接執行。
+Windows 與 macOS 的 `codex` 啟動入口會比較 CLI 與背景 server 版本；不同時只提醒，不會關閉既有視窗。先關閉所有 Codex 視窗，再開新的
+PowerShell／Terminal 視窗執行：
+
+```text
+codex-server-restart
+```
+
+Windows 會檢查 localhost WebSocket 連線；macOS 會檢查 Unix socket client。只要仍有
+Codex 視窗連線就拒絕停止，避免中斷進行中的工作。確認沒有人使用後，script 才會驗證
+server 是否仍被使用。macOS 交給 `codex app-server daemon restart` 更新；Windows 才由 jr-setup-ui 的 wrapper 停止舊程序並建立新版 server。

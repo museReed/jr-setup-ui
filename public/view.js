@@ -19,7 +19,6 @@ const elements = {
   configLang: document.querySelector("#config-lang"),
   configChoicePanel: document.querySelector("#config-choice-panel"),
   recheckConfigs: document.querySelector("#recheck-configs"),
-  configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
   sectionNav: document.querySelector("#section-nav"),
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
@@ -31,8 +30,15 @@ const elements = {
   reportDescription: document.querySelector("#report-description"),
   reportPreview: document.querySelector("#report-preview"),
   reportSend: document.querySelector("#report-modal-send"),
+  reportManual: document.querySelector("#report-modal-manual"),
+  reportMail: document.querySelector("#report-modal-mail"),
+  reportSave: document.querySelector("#report-modal-save"),
   reportCancel: document.querySelector("#report-modal-cancel"),
   reportStatus: document.querySelector("#report-modal-status"),
+  reportPreviewCopy: document.querySelector("#report-preview-copy"),
+  reportMailDetails: document.querySelector("#report-mail-details"),
+  reportMailTo: document.querySelector("#report-mail-to"),
+  reportMailSubject: document.querySelector("#report-mail-subject"),
   copyRawOutput: document.querySelector("#copy-raw-output"),
   currentCard: document.querySelector("#current-card"),
   milestoneBar: document.querySelector("#milestone-bar"),
@@ -48,6 +54,17 @@ const elements = {
   behaviorChecklist: document.querySelector("#behavior-checklist"),
   copyBehaviorQuestion: document.querySelector("#copy-behavior-question"),
   terminalMascot: document.querySelector("#terminal-mascot"),
+  skippedTray: document.querySelector("#skipped-tray"),
+  skippedTrayToggle: document.querySelector("#skipped-tray-toggle"),
+  skippedTrayCount: document.querySelector("#skipped-tray-count"),
+  skippedTrayList: document.querySelector("#skipped-tray-list"),
+  passcodeModal: document.querySelector("#passcode-modal"),
+  passcodeTitle: document.querySelector("#passcode-modal-title"),
+  passcodeHint: document.querySelector("#passcode-modal-hint"),
+  passcodeInput: document.querySelector("#passcode-input"),
+  passcodeConfirm: document.querySelector("#passcode-modal-confirm"),
+  passcodeCancel: document.querySelector("#passcode-modal-cancel"),
+  passcodeError: document.querySelector("#passcode-modal-error"),
   verifyModal: document.querySelector("#verify-modal"),
   verifyModalConfirm: document.querySelector("#verify-modal-confirm"),
   verifyModalLater: document.querySelector("#verify-modal-later"),
@@ -373,6 +390,8 @@ function renderMilestones(sectionId, milestones, onSelect) {
     point.dataset.cardIndex = String(station.index);
     point.classList.toggle("is-reached", station.reached);
     point.classList.toggle("is-locked", !station.unlocked);
+    // 跳過的站點自己一種樣子：不是綠的（沒做完），也不是鎖著的（走得過去）。
+    point.classList.toggle("is-skipped", station.skipped === true);
     point.setAttribute("aria-hidden", "true");
 
     point.classList.add(station.edgeClass);
@@ -916,7 +935,25 @@ function renderCard(model) {
   pill.textContent = model.status.text;
   pill.dataset.cardStatus = model.status.status;
   header.append(copy, pill);
+
+  // 略過鍵常駐在標題列右邊，跟徽章同一列。畫成一顆安靜的次要按鈕：它是退路，不是
+  // 這張卡上該按的動作，長得跟「安裝」「驗證」一樣顯眼的話學生會以為那是正常流程。
+  if (model.skip?.show === true) {
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "card-skip";
+    skip.dataset.skipped = String(model.skip.skipped === true);
+    skip.textContent = model.skip.skipped === true ? "已跳過，點此還原" : "先略過這張";
+    skip.title =
+      model.skip.skipped === true
+        ? "把這張卡從跳過清單移除"
+        : "現在過不了就先往下走，這張卡會記在畫面底下的跳過清單裡";
+    skip.addEventListener("click", model.skip.onToggle);
+    header.append(skip);
+  }
+
   article.append(header);
+  article.dataset.skipped = String(model.skip?.skipped === true);
 
   if (model.card.kind === "setup") {
     const body = document.createElement("div");
@@ -1083,17 +1120,11 @@ function renderNavButton(button, spec, key) {
   }
 
   button.hidden = !show;
-  // 「先跳過這張」跟「下一張」共用同一顆按鈕，但它不是成就——畫成次要的，讓學生
-  // 看得出這是退路不是進度。
-  button.classList.toggle("is-skip", show && spec.secondary === true);
 
   // 解鎖那一刻放一段施法特效。回頭的那顆不用——它出現不是成就，只是「你可以往回看」。
-  // 逃生那顆也不用：慶祝一件沒做成的事只會讓學生以為自己過了。
-  if (spec.celebrate === false) {
-    shownNav[key] = show;
-    return;
-  }
-
+  //
+  // 逃生口以前也走這顆按鈕，所以這裡曾經有一條「不慶祝」的分支。略過鍵搬到
+  // 卡片標題列之後那條路沒有人走了，留著只會讓下一個人以為這顆按鈕還有第二種身分。
   if (show && !shownNav[key] && key === "next" && !reducedMotion.matches) {
     playUnlockSpell(button);
   }
@@ -1179,6 +1210,61 @@ function playUnlockSpell(button) {
 
     wizardAnimation.play();
   });
+}
+
+// 展開狀態記在模組裡：renderWizard 跑得很勤，每次重畫都收合的話，學生點開清單、
+// 背景某個檢查回來，它就自己關上了。
+let skippedTrayOpen = false;
+
+export function renderSkippedTray({ items, onSelect }) {
+  const tray = elements.skippedTray;
+
+  if (tray === null) return;
+
+  // 一張都沒跳過就整塊收掉，不留一條寫著「已跳過 0 張」的空列。
+  if (items.length === 0) {
+    tray.hidden = true;
+    skippedTrayOpen = false;
+    elements.skippedTrayList.hidden = true;
+    elements.skippedTrayToggle.setAttribute("aria-expanded", "false");
+    return;
+  }
+
+  tray.hidden = false;
+  elements.skippedTrayCount.textContent = `已跳過 ${items.length} 張`;
+  elements.skippedTrayToggle.onclick = () => {
+    skippedTrayOpen = !skippedTrayOpen;
+    elements.skippedTrayList.hidden = !skippedTrayOpen;
+    elements.skippedTrayToggle.setAttribute(
+      "aria-expanded",
+      String(skippedTrayOpen),
+    );
+  };
+  elements.skippedTrayToggle.setAttribute(
+    "aria-expanded",
+    String(skippedTrayOpen),
+  );
+  elements.skippedTrayList.hidden = !skippedTrayOpen;
+
+  elements.skippedTrayList.replaceChildren(
+    ...items.map((entry) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "skipped-tray-item";
+      const name = document.createElement("strong");
+      name.textContent = entry.label;
+      const where = document.createElement("span");
+      // 跨段落列，所以要講清楚那張卡在哪一段的第幾張——不然點下去畫面整個換掉，
+      // 學生不知道自己被帶到哪裡了。
+      where.className = "skipped-tray-where";
+      where.textContent = `${entry.sectionTitle}．第 ${entry.index + 1} 張`;
+      button.append(name, where);
+      button.addEventListener("click", () => onSelect(entry));
+      item.append(button);
+      return item;
+    }),
+  );
 }
 
 export function renderWizardNav({ prev, next }) {
@@ -1517,7 +1603,7 @@ export function renderConfigChoices(toolChoices, languages) {
       button.type = "button";
       button.className = "ds-pill";
       button.dataset.tool = choice.value;
-      button.textContent = `#${choice.label}`;
+      button.textContent = choice.label;
       button.setAttribute("aria-pressed", "false");
       return button;
     });
@@ -1526,7 +1612,7 @@ export function renderConfigChoices(toolChoices, languages) {
     button.type = "button";
     button.className = "ds-pill";
     button.dataset.lang = language;
-    button.textContent = `#${language}`;
+    button.textContent = language;
     button.setAttribute("aria-pressed", "false");
     return button;
   });
@@ -2028,9 +2114,10 @@ export function renderFailureGuidance({ guidance, explanation = null }) {
   if (explanation !== null) addLine(`白話說明：${explanation}`, "agent-status");
 }
 
-export function renderConfigSummary(summary) {
-  elements.configSummary.textContent = summary.text;
-}
+// 「N 項中 M 項就緒」那一行拿掉了（見 index.html 的註解）。函式留成空殼而不是刪掉
+// ——app.js 那邊的呼叫點是「檢查跑完了」這件事的落點，之後要往那裡掛別的東西時
+// 還找得到位置。elements.configSummary 現在是 null，所以這裡不能再去碰它。
+export function renderConfigSummary() {}
 
 export function renderConfigLoading() {
   elements.currentCard.setAttribute("aria-busy", "true");
@@ -2201,6 +2288,8 @@ export function showReportModal(preview) {
   elements.reportPreview.textContent = preview;
   elements.reportDescription.value = "";
   elements.reportStatus.hidden = true;
+  // 上一次按過寄信留下的收件人／主旨要收掉：這一次可能卡在別張卡，主旨不一樣。
+  elements.reportMailDetails.hidden = true;
   elements.reportSend.disabled = false;
   elements.reportModal.hidden = false;
   requestAnimationFrame(() => {
@@ -2228,9 +2317,127 @@ export function setReportStatus(text, { sending = false } = {}) {
   elements.reportSend.disabled = sending;
 }
 
-export function onReportModal(send, cancel) {
+export function onReportModal(send, cancel, { manual, mail, save } = {}) {
   elements.reportSend.addEventListener("click", send);
   elements.reportCancel.addEventListener("click", cancel);
+
+  if (manual !== undefined) {
+    elements.reportManual.addEventListener("click", manual);
+  }
+
+  if (mail !== undefined) {
+    elements.reportMail.addEventListener("click", mail);
+  }
+
+  if (save !== undefined) {
+    elements.reportSave.addEventListener("click", save);
+  }
+}
+
+// 寄信那條路的收件人與主旨。mailto 打不開時，這兩行是他唯一的線索——而主旨少了的話
+// 那封信會混在一般信件裡，助教的分類規則抓不到。
+export function showMailDetails({ to, subject }) {
+  elements.reportMailTo.textContent = to;
+  elements.reportMailSubject.textContent = subject;
+  elements.reportMailDetails.hidden = false;
+}
+
+// 按完把字換成「已複製」兩秒，不然學生不知道到底有沒有按到。寫剪貼簿失敗（瀏覽器
+// 擋掉）就什麼都不做：那幾格本來就選得起來，不需要為此跳一個錯誤訊息嚇人。
+function flashCopied(button, done) {
+  if (!done) return;
+
+  const original = button.textContent;
+  button.textContent = "已複製";
+  window.setTimeout(() => {
+    button.textContent = original;
+  }, 2000);
+}
+
+// 收件人與主旨那兩顆。它把那一格的文字交出去，真正寫剪貼簿的動作在 app 那層——
+// view 只碰 DOM。
+export function onMailCopy(copy) {
+  for (const button of elements.reportMailDetails.querySelectorAll("[data-copy]")) {
+    button.addEventListener("click", async () => {
+      const target = document.querySelector(`#${button.dataset.copy}`);
+      flashCopied(button, await copy(target.textContent));
+    });
+  }
+}
+
+// 預覽區那顆。⚠️ 它不複製畫面上那份，而是叫 app 重新組一次——預覽是開框當下產生的，
+// 學生之後才打的那段描述不在裡面。複製到一份少了他自己的話的內容，正是最沒用的那種。
+export function onPreviewCopy(copy) {
+  elements.reportPreviewCopy.addEventListener("click", async () => {
+    flashCopied(elements.reportPreviewCopy, await copy());
+  });
+}
+
+// 把這一份診斷資料存成檔案。給「連 GitHub 帳號都沒有」的人——他至少交得出東西，
+// 助教也不必請他一段一段截圖。
+//
+// 用 Blob 不用 data URI：這份內容可以長到幾萬字，而 data URI 在部分瀏覽器上有長度
+// 上限；那正好是「log 最長的時候反而送不出去」的同一種毛病。
+export function saveReportFile(text, filename) {
+  const url = URL.createObjectURL(
+    new Blob([text], { type: "text/markdown;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // 立刻 revoke 會讓部分瀏覽器來不及開始下載，隔一拍再收。
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// 當日密碼那個框。每次打開都清空、收掉上一次的錯誤訊息，然後把游標放進輸入框——
+// 學生點分頁的動作已經表達了「我要進去」，再叫他多點一下輸入框是多的一步。
+export function showPasscodeModal({ title, hint } = {}) {
+  elements.passcodeInput.value = "";
+  elements.passcodeError.hidden = true;
+  // 標題與說明每次打開都重寫：同一個框要講兩種情況——「只差當天的密碼」與「前面
+  // 還有沒做完的」。共用一句話的話，其中一種一定是錯的。
+  if (title !== undefined) elements.passcodeTitle.textContent = title;
+  if (hint !== undefined) elements.passcodeHint.textContent = hint;
+  elements.passcodeModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.passcodeModal.classList.add("open");
+    elements.passcodeInput.focus();
+  });
+}
+
+export function hidePasscodeModal() {
+  elements.passcodeModal.classList.remove("open");
+  window.setTimeout(() => {
+    elements.passcodeModal.hidden = true;
+  }, 200);
+}
+
+export function showPasscodeError(message) {
+  if (message !== undefined) elements.passcodeError.textContent = message;
+  elements.passcodeError.hidden = false;
+  elements.passcodeInput.select();
+}
+
+export function onPasscodeModal(submit, cancel) {
+  const send = () => submit(elements.passcodeInput.value);
+
+  elements.passcodeConfirm.addEventListener("click", send);
+  elements.passcodeCancel.addEventListener("click", cancel);
+  // Enter 就送出：這個框只有一個欄位，打完數字順手按 Enter 是本能。
+  elements.passcodeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") send();
+    if (event.key === "Escape") cancel();
+  });
+  // 打錯之後一開始改字就把紅字收掉，不然它會一直留著跟著新輸入的內容矛盾。
+  elements.passcodeInput.addEventListener("input", () => {
+    elements.passcodeError.hidden = true;
+  });
+  elements.passcodeModal.addEventListener("click", (event) => {
+    if (event.target === elements.passcodeModal) cancel();
+  });
 }
 
 export function showVerifyModal() {

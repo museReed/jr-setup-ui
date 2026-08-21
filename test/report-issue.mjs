@@ -20,11 +20,28 @@ try {
   assert.equal(issueUrlFrom(null), "");
   ok("沒有網址時回空字串，不會炸");
 
-  // ⚠️ 「HTTP 401」對學生沒有意義，「還沒登入」才有。而且要指名去哪一張卡處理。
+  // ⚠️ 「HTTP 401」對學生沒有意義，「還沒登入」才有。
+  //
+  // 而且要指向**現在就按得動的那顆鍵**。這一條原本指名「版本控制與 GitHub」那張卡
+  // ——但學生最需要回報的時候，正是他還沒把 gh 裝好登入好的時候，那等於把求助的人
+  // 推回問題本身。現在指向框裡那顆退路鍵：它不需要 gh，也不需要 CLI 登入。
   const auth = explainFailure("HTTP 401: Bad credentials");
   assert.match(auth, /登入/);
-  assert.match(auth, /版本控制與 GitHub/);
-  ok("認證失敗時講人話，而且指名去哪一張卡");
+  assert.match(auth, /複製內容並開 GitHub/);
+  ok("認證失敗時講人話，而且指向不需要 gh 的那條退路");
+
+  // 每一種失敗都要給得出一條現在走得通的路，不能只說「你少了什麼」。
+  for (const stderr of [
+    "HTTP 401: Bad credentials",
+    "something exploded",
+  ]) {
+    assert.match(
+      explainFailure(stderr),
+      /複製內容並開 GitHub/,
+      `這種失敗沒有指向退路：${stderr}`,
+    );
+  }
+  ok("認證失敗與未知失敗都指向那條退路");
 
   assert.match(explainFailure("gh: Not Found (HTTP 404)"), /嚮導的問題/);
   ok("找不到 repo 時明講那是我們的問題，不是學生的");

@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { AGENT_HOOK_TIMEOUT_SECONDS } from "../src/config-install.js";
 import { namingAllowRule } from "../src/config-install.js";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -73,6 +81,12 @@ try {
       { cwd: repoRoot, env, encoding: "utf8" },
     );
 
+  // 回鍋學生的狀態：上一輪裝過的 watcher 還在。裝新版時要把它收走，否則只要有分頁
+  // 還開著，那些分頁裡的舊 wrapper 仍然會啟動它，標題照樣每秒被重寫。
+  const legacyWatcher = path.join(home, ".local", "bin", "ai-tab-sync.sh");
+  mkdirSync(path.dirname(legacyWatcher), { recursive: true });
+  writeFileSync(legacyWatcher, "#!/bin/bash\n# 上一輪裝的\n");
+
   install("tab-sync");
   install("tab-sync");
   const tabStep = describeStep("tab-sync", {
@@ -82,8 +96,28 @@ try {
   });
   const rc = readFileSync(tabStep.rcTarget, "utf8");
   assert.equal(rc.match(/# >>> jr-setup-ui tab sync >>>/g).length, 1);
-  assert.equal(readFileSync(tabStep.target, "utf8").length > 0, true);
-  ok("tab sync 實際安裝可重跑，watcher 與 shell function 都會落地");
+
+  // POSIX 沒有 watcher 檔要裝（step.target 是 undefined），只寫 rc 區塊；Windows
+  // 仍然要落地那支 .ps1。兩邊都要能重跑而不重複追加。
+  if (tabStep.target === undefined) {
+    assert.equal(process.platform === "win32", false);
+    assert.match(rc, /CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command claude/);
+    ok("POSIX 的 tab sync 可重跑，只寫 shell function、不裝 watcher");
+
+    assert.equal(existsSync(legacyWatcher), false);
+    ok("舊版留下的 watcher 會被收走");
+
+    // 先備份再刪：這確實是我們裝的檔案，但學生機器上任何「消失了而且救不回來」
+    // 的東西都會變成一次求助。
+    const kept = readdirSync(path.dirname(legacyWatcher)).filter((name) =>
+      name.startsWith("ai-tab-sync.sh.bak."),
+    );
+    assert.equal(kept.length > 0, true);
+    ok("收走之前先留下 .bak，救得回來");
+  } else {
+    assert.equal(readFileSync(tabStep.target, "utf8").length > 0, true);
+    ok("tab sync 實際安裝可重跑，watcher 與 shell function 都會落地");
+  }
 
   install("claude-namer");
   install("claude-namer");
@@ -157,7 +191,30 @@ try {
   );
   assert.equal(codexSettings.hooks.PostToolUse.length, 1);
   assert.equal(codexSettings.hooks.UserPromptSubmit.length, 1);
-  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 保留單份註冊");
+  const codexHelper = codexStep.hookFiles.find(
+    (file) => file.base === "codex-session-name-set",
+  );
+  assert(codexHelper, "POSIX Codex namer 必須連 helper 一起安裝");
+  assert.equal(readFileSync(codexHelper.target, "utf8").length > 0, true);
+  const codexRestart = codexStep.hookFiles.find(
+    (file) => file.base === "codex-server-restart",
+  );
+  assert(codexRestart, "Codex namer 必須連全域 restart 指令一起安裝");
+  assert.equal(readFileSync(codexRestart.target, "utf8").length > 0, true);
+  assert.equal(statSync(codexRestart.target).mode & 0o111, 0o111);
+  if (codexStep.posixCodexProfile !== undefined) {
+    const profile = readFileSync(codexStep.posixCodexProfile.target, "utf8");
+    assert.equal(
+      profile.split(codexStep.posixCodexProfile.marker).length - 1,
+      2,
+    );
+    const versionGuard = codexStep.hookFiles.find(
+      (file) => file.base === "codex-version-guard",
+    );
+    assert(versionGuard, "macOS Codex namer 必須連 core daemon launcher 一起安裝");
+    assert.equal(statSync(versionGuard.target).mode & 0o111, 0o111);
+  }
+  ok("Codex 命名 hook 實際安裝可重跑，hooks.json 與啟動入口都保持單份");
 
   // 迴歸：規則不能是「powershell -File …」那種形狀。Claude Code 拒絕用白名單
   // 放行會生出巢狀直譯器的指令（原文 Command spawns a nested PowerShell process

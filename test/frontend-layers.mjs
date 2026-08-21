@@ -322,6 +322,39 @@ try {
   assert(files.app.includes("環境檢查完成，狀態已更新。"));
   ok("學生按的環境重掃會在終端說開始與結束");
 
+  // 開頁時環境與規則檔會平行檢查。兩邊都回來後，第一張卡與右側終端要一起收尾；
+  // 兩個 finally 都要接 finalizer，因為無法預先知道哪一邊最後完成。
+  assert.equal(
+    (files.app.match(/finishInitialChecks\(\);/g) ?? []).length,
+    2,
+  );
+  assert(
+    files.app.includes("環境與規則檢查完成，狀態已更新。"),
+  );
+  assert(files.app.includes("state.setupCompleted = true"));
+  ok("首次環境與規則檢查完成後，第一張卡與終端一起收尾");
+
+  assert.equal(
+    (files.app.match(/restartInitialChecks\(\);/g) ?? []).length,
+    2,
+  );
+  assert(files.app.includes("state.setupCompleted = false"));
+  assert(
+    files.app.includes("選項已變更，正在重新檢查目前環境與規則。"),
+  );
+  assert(files.app.includes("state.configCheckQueued = true"));
+  assert(files.app.includes("void checkConfigs()"));
+  ok("切換工具或語言會退回待驗證，且忙碌中的規則檢查會用最新選項補跑");
+
+  assert(files.view.includes("button.textContent = choice.label"));
+  assert(files.view.includes("button.textContent = language"));
+  assert(
+    !files.view.includes(
+      "button.textContent = " + String.fromCharCode(96) + "#",
+    ),
+  );
+  ok("工具與語言選項不再顯示井字號");
+
   // 終端是「現在正在做什麼」，學生的每個動作都要在裡面留下一句話。勾一格卻什麼都
   // 沒發生的話，學生不知道那一勾有沒有被記住。
   for (const [snippet, what] of [
@@ -692,18 +725,88 @@ try {
     /state\.verificationAttempted\.has\(check\.id\) &&\s*\n?\s*!state\.failedVerificationSteps\.has\(check\.id\)/,
     "驗證失敗不算跑過，不放行下一張",
   );
-  // 鎖住不等於關死：失敗時給一顆寫明白的「先跳過這張」。它不慶祝、不算完成，
-  // 只登記在 skippedCards 裡讓學生走得掉。
-  assert.match(files.app, /state\.skippedCards\.add\(cardId\)/, "跳過要登記");
+  // 鎖住不等於關死，而出口要常駐：略過鍵搬到卡片標題列，除了第一張 setup 卡以外
+  // 每張都有。舊版只在「config 卡 + 驗證失敗 + 被鎖住」時才出現，把卡在裝不起來、
+  // 卡在看不懂該勾什麼的人全擋在外面。
   assert.match(
     files.app,
-    /const canSkip =\s*\n?\s*card\.kind === "config" && !nextUnlocked && verificationFailedHere;/,
-    "只有「被鎖住而且原因是驗證失敗」才給逃生口",
+    /const skipAvailable = card\.kind !== "setup";/,
+    "略過鍵常駐，只有選工具那張不給",
+  );
+  assert(
+    !/const canSkip =/.test(files.app),
+    "「只有驗證失敗才給逃生口」的舊條件要拿掉",
+  );
+  assert(
+    !/celebrate: false/.test(files.view),
+    "逃生口已離開翻頁鍵，那條不慶祝的分支不該留著當第二種身分",
   );
   assert.match(
     files.app,
-    /celebrate: false/,
-    "逃生那顆不放解鎖特效——慶祝一件沒做成的事會讓學生以為自己過了",
+    /state\.skippedCards\.add\(card\.checkId\)/,
+    "跳過要登記",
+  );
+  // 已經做完的卡不給那顆按鈕：按下去只會被 pruneSkippedCards 立刻移除，變成一顆
+  // 按了什麼都沒發生的東西（環境段有幾張 optional 的卡天生就是完成狀態，本機實測）。
+  assert.match(
+    files.app,
+    /show: skipAvailable && !cardDone,/,
+    "做完的卡不長略過鍵",
+  );
+  // 記憶體改了就要落地。只存瀏覽器的話重整一次清單全空——而學生最需要找回那幾張
+  // 卡的時機，正是他重開嚮導的時候。
+  assert.match(
+    files.app,
+    /function persistSkippedCards\(\)/,
+    "跳過清單要存回伺服器",
+  );
+  assert.match(
+    files.app,
+    /state\.skippedCards = new Set\(result\.skipped \?\? \[\]\);/,
+    "開頁要把伺服器記的跳過清單讀回來",
+  );
+  // 按了略過就往下走。留在原地的話那顆按鈕看起來像沒有作用。
+  assert.match(
+    files.app,
+    /advancePastCard\(cardSection, currentIndex\)/,
+    "略過之後自動前進",
+  );
+  // 「不擋路」跟「算完成」是兩件事，兩邊各走各的資料來源。合成一個就得二選一，
+  // 而兩種都是錯的（假綠燈 ／ 按了略過還是被關在同一道門前）。
+  assert.match(
+    files.app,
+    /function blockingCards\(cards, verified\)/,
+    "擋路的卡自己一支，扣掉學生按過略過的",
+  );
+  assert.match(
+    files.app,
+    /sectionGateState\(\s*\n?\s*section\.id,\s*\n?\s*state\.completedGateIds,\s*\n?\s*tools,\s*\n?\s*passable,/,
+    "段落的鎖看 passable（放行略過），不是 done",
+  );
+  assert.match(
+    files.app,
+    /view\.renderSectionLocks\(lockStates, done\);/,
+    "綠色打勾仍然只認真的做完了",
+  );
+  // 修好了就自己消失。手動的「取消跳過」不另外做——cardIsComplete 對四種卡都判得出
+  // 完成，多一顆手動鍵只會多一條跟它打架的路。
+  assert.match(
+    files.app,
+    /function pruneSkippedCards\(\)/,
+    "驗證通過要把卡片移出跳過清單",
+  );
+  assert.match(
+    files.app,
+    /renderWizard\(\) \{\s*\n\s*pruneSkippedCards\(\);/,
+    "每次重畫都算一次——「修好了」可能發生在任何一條路上",
+  );
+  // 迴歸（本機實測）：開頁有一段空窗，跳過清單已經讀回來了、檢查還在跑，於是
+  // 卡片列表只生得出第一張 setup 卡。這時候跑「卡片不見了就清掉」，整份清單會被
+  // 當成死項目刪光還寫回伺服器——學生重整一次，跳過的紀錄全沒了。
+  assert.match(
+    files.app,
+    /if \(state\.lastChecks\.length === 0 \|\| state\.envChecks\.length === 0\) \{\s*\n\s*return;/,
+    "檢查結果還沒回來就不要動跳過清單",
   );
   // 重驗＝上一輪的結論作廢，那顆通行證也跟著失效。
   assert.match(
@@ -711,7 +814,31 @@ try {
     /state\.skippedCards\.delete\(stepId\)/,
     "重驗會把跳過的紀錄一起清掉",
   );
-  ok("驗證失敗鎖住下一張，只留一顆不慶祝的「先跳過這張」");
+  ok("略過鍵常駐、存得回伺服器、放行但不算完成，修好了自己移除");
+
+  // 跳過清單常駐在畫面底部，跨段落列。放頁首會被捲走，而它要提醒的正是「你還有
+  // 幾張沒回去修」——看不到的提醒等於沒有。
+  assert.match(
+    files.view,
+    /export function renderSkippedTray\(\{ items, onSelect \}\)/,
+    "底部那條跳過清單由 view 畫",
+  );
+  assert.match(
+    files.view,
+    /let skippedTrayOpen = false;/,
+    "展開狀態記在模組裡，背景重畫不該把學生點開的清單關上",
+  );
+  assert.match(
+    files.app,
+    /skippedListModel\(allCardSections\(\), state\.skippedCards\)/,
+    "清單跨段落，不是只列當前這一段",
+  );
+  assert.match(
+    files.app,
+    /state\.viewingCardIndex\[entry\.sectionId\] = entry\.index;/,
+    "點清單要落在那一張卡上",
+  );
+  ok("跳過清單常駐底部、跨段落，點下去回到那張卡");
 
   // 格內那顆「重跑驗證」跟底下那顆（onRetest）要做同一件事：先把上一輪的結論忘掉，
   // 那一格退回未勾，再照這一次的結果打勾。

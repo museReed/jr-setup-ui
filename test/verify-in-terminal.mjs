@@ -209,14 +209,20 @@ console.log("ok - 會寫結果檔的題目都被告知資料夾已經存在");
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」
 //（Reed 實測就是這樣問的）。當初誤判的兩個原因（測試開關名字、比對關鍵字）都由上面
 // 那兩條測試釘住了，所以加回來。
-for (const step of ["claude-monitor", "codex-monitor"]) {
-  assert.deepEqual(
-    VERIFICATION[step]?.terminal,
-    { case: "context", agent: step.startsWith("claude") ? "claude" : "codex" },
-    `${step} 少了行為驗證——兩邊的記憶體提醒要對稱`,
-  );
-}
-console.log("ok - Claude 與 Codex 的記憶體提醒都要真的跑一次");
+// ⚠️ 2026-08-21：對稱不再成立，而且是刻意的。Codex 那支整個退役了——它假設「快滿
+// ＝這次對話要收尾」，但 Codex 現在是把容量收小、在同一個對話裡壓縮再繼續，那支
+// hook 於是變成在錯的時間叫人開新對話。Claude 那支還在，所以只剩它要驗。
+assert.deepEqual(
+  VERIFICATION["claude-monitor"]?.terminal,
+  { case: "context", agent: "claude" },
+  "claude-monitor 少了行為驗證",
+);
+assert.equal(
+  VERIFICATION["codex-monitor"],
+  undefined,
+  "codex-monitor 退役了，不該再有驗證——那一列要做的是移除",
+);
+console.log("ok - Claude 的記憶體提醒要真的跑一次；Codex 那支已退役");
 
 // handoff 那格靠「必讀檔案」判定：那四個字是 SKILL.md 規定的章節名，模型沒讀到
 // skill 不會自己想到。SKILL.md 改了章節名而這裡沒跟著改，判定就永遠不會中。
@@ -253,3 +259,27 @@ for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
   );
 }
 console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
+
+// 標題那一格寫進去的字，要活得過這支 launcher 自己後面跑的東西。
+//
+// launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也跟著載入。
+// oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在裝了 powerlevel10k
+// 的機器上，學生看到的標題是 `echo`，也就是腳本最後一個指令。
+//
+// 兩道保險缺一不可，所以兩個都釘住。
+{
+  const disableAt = source.indexOf("DISABLE_AUTO_TITLE=true");
+  assert(disableAt >= 0, "標題 launcher 要關掉主題的自動標題");
+
+  const echoAt = source.indexOf("標題測試結束——這個視窗的分頁標題現在是");
+  const namerAt = source.indexOf('CLAUDE_PROJECT_DIR="$HOME" ${namer}');
+
+  assert(echoAt >= 0, "找不到標題那一格的提示字");
+  assert(namerAt >= 0, "找不到標題那一格呼叫命名腳本的那一行");
+  assert(
+    namerAt > echoAt,
+    "命名腳本要放在最後一行——先印字後改標題，才沒有下一個指令能蓋掉標題",
+  );
+
+  console.log("ok - 標題 launcher 關掉主題自動標題，而且把改標題排在最後");
+}

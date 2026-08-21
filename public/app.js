@@ -8,7 +8,7 @@ import {
   replayTour,
   tourDiagnostics,
 } from "./tour.js";
-import { buildIssue } from "./report.js";
+import { buildIssue, FEEDBACK_EMAIL, mailtoUrl, newIssueUrl } from "./report.js";
 import { openWalkthrough } from "./walkthrough.js";
 import {
   CONFIG_LANGUAGES,
@@ -21,6 +21,8 @@ import {
   mergeInvalidates,
   pendingMergeSibling,
   matchesFullscreenProof,
+  matchesMasterPasscode,
+  matchesSectionPasscode,
   SECTIONS,
   sectionGateState,
 } from "./model.js";
@@ -41,7 +43,6 @@ import {
   checklistGroups,
   checklistRowIds,
   configRowModel,
-  configSummary,
   currentCardIndex,
   envButtonState,
   envCardRowModel,
@@ -50,6 +51,7 @@ import {
   failureReason,
   guidanceModel,
   impliedVerifiedSteps,
+  initialChecksReady,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
@@ -67,6 +69,8 @@ import {
   sectionStatus,
   systemRowChecked,
   milestoneModels,
+  prunedSkippedCards,
+  skippedListModel,
   nextCardUnlocked,
   terminalOutcomeLines,
   toggleToolSelection,
@@ -102,6 +106,8 @@ const state = {
   loaderPaused: false,
   envCheckInProgress: false,
   configCheckInProgress: false,
+  // 規則檢查進行中又切換選項時，收尾後要用最新選項再跑一輪。
+  configCheckQueued: false,
   loginWait: null,
   // 後端只會載入內容指紋仍相同的紀錄；素材重裝或檔案被改過，這裡就不會拿到。
   verifiedSteps: new Set(),
@@ -121,6 +127,8 @@ const state = {
   // 索引會位移，已完成的卡會被推到高水位之後而重新變灰。
   seenCardIds: new Set(),
   setupCompleted: false,
+  // 第一張卡的兩份初始檢查都收完後，只在終端報一次完成。
+  initialChecksAnnounced: false,
   installedSteps: new Set(),
   verificationAttempted: new Set(),
   failedVerificationSteps: new Set(),
@@ -131,6 +139,13 @@ const state = {
   // 進度條走的仍然是 cardIsComplete，跳過的卡在那裡照樣是失敗。
   skippedCards: new Set(),
   manualCheckedIds: new Set(),
+  // 用當日密碼打開過的段（見 model.js 的 SECTION_PASSCODES）。伺服器記著，重開
+  // 嚮導不用再問一次講師。
+  unlockedSections: new Set(),
+  // 講師用萬用密碼開過的段：那一段的鎖整個跳過，不管前面做完沒。
+  overriddenSections: new Set(),
+  // 密碼框正在替哪一段問。關掉就清空——沒清的話下一次打對密碼會跳去上一次那段。
+  pendingPasscodeSection: null,
   pasteProofValue: "",
   // 每跑完一次驗證就 +1，讓截圖的網址跟著變——不然瀏覽器會拿快取裡的舊圖。
   verifyShotVersion: 0,
@@ -206,7 +221,9 @@ function forgetVerification(stepId, manualIds = []) {
   state.verificationAttempted.delete(stepId);
   state.deferredVerificationSteps.delete(stepId);
   // 重驗＝他回來把這張卡做完了，那顆「先跳過」的通行證跟著上一輪的結論一起作廢。
-  state.skippedCards.delete(stepId);
+  if (state.skippedCards.delete(stepId)) {
+    persistSkippedCards();
+  }
 
   forgetManualChecked([`eye-${stepId}`, ...manualIds]);
 
@@ -269,6 +286,9 @@ async function loadVerifiedSteps() {
     state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
     state.changedSteps = new Set(result.changed ?? []);
     state.manualCheckedIds = new Set(result.manual ?? []);
+    state.skippedCards = new Set(result.skipped ?? []);
+    state.unlockedSections = new Set(result.unlocked ?? []);
+    state.overriddenSections = new Set(result.overridden ?? []);
 
     for (const id of state.manualCheckedIds) {
       state.completedGateIds.add(id);
@@ -287,7 +307,22 @@ async function loadVerifiedSteps() {
     state.behaviorVerifiedSteps = new Set();
     state.changedSteps = new Set();
     state.manualCheckedIds = new Set();
+    state.skippedCards = new Set();
+    state.unlockedSections = new Set();
+    state.overriddenSections = new Set();
   }
+}
+
+// 「先略過這張」按下去／自動移除都走這裡，記憶體與伺服器一起改。
+//
+// 存不進去只講一句話、不回滾：學生現在就在等這張卡放行，為了一次寫入失敗把他關
+// 回去沒有意義——最壞的情況是重整之後要再按一次。
+function persistSkippedCards() {
+  api
+    .saveSkippedCards([...state.skippedCards])
+    .catch((error) =>
+      view.addLine(`無法保存跳過清單：${error.message}`, "failed"),
+    );
 }
 
 function effectiveVerifiedSteps() {
@@ -395,7 +430,52 @@ function stopAutoVerifyChain() {
   state.autoVerifyTotal = 0;
 }
 
+// 修好了就自己從跳過清單裡消失。每次重畫都算一次，因為「修好了」可能發生在任何
+// 地方：驗證跑完、環境重掃、人工項勾完——挨個去記得清除的話，總有一條路會漏掉。
+function pruneSkippedCards() {
+  if (state.skippedCards.size === 0) {
+    return;
+  }
+
+  // ⚠️ 檢查結果還沒回來的時候什麼都不要動。
+  //
+  // 開頁有一段空窗：跳過清單已經從 /state 讀回來了，環境與規則的檢查還在跑，於是
+  // allCardSections() 只生得出第一張 setup 卡。這時候跑下面那條「卡片不見了就清掉」，
+  // 會把整份清單當成死項目刪光，還順手寫回伺服器——學生重整一次，跳過的紀錄全沒了
+  // （實測：重整後清單歸零，state.json 的 skipped 變成空陣列）。
+  if (state.lastChecks.length === 0 || state.envChecks.length === 0) {
+    return;
+  }
+
+  const verified = effectiveVerifiedSteps();
+  const cards = allCardSections().flatMap((section) => section.cards);
+  const remaining = prunedSkippedCards(
+    cards,
+    state.skippedCards,
+    verified,
+    state.manualCheckedIds,
+  );
+
+  if (remaining.size === state.skippedCards.size) {
+    return;
+  }
+
+  for (const id of state.skippedCards) {
+    if (remaining.has(id)) continue;
+    const card = cards.find((candidate) => candidate.checkId === id);
+    // 只在卡片還在時報喜。整批消失的那種（換工具選項）不是「修好了」，講出來會
+    // 讓學生以為自己剛完成了一張根本看不到的卡。
+    if (card !== undefined) {
+      view.addLine(`「${card.label}」已經過了，從跳過清單移除。`, "succeeded");
+    }
+  }
+
+  state.skippedCards = remaining;
+  persistSkippedCards();
+}
+
 function renderWizard() {
+  pruneSkippedCards();
   const section = SECTIONS.find(({ id }) => id === state.activeSectionId);
   const cardSection = allCardSections().find(
     ({ sectionId }) => sectionId === state.activeSectionId,
@@ -546,28 +626,32 @@ function renderWizard() {
         (state.verificationAttempted.has(check.id) &&
           !state.failedVerificationSteps.has(check.id)),
     );
-  // 驗證失敗鎖住往前的路，但不能把人關死：環境真的過不了的學生要有一條出口。
-  // 那條出口是一顆寫明白的「先跳過這張」，不是把箭頭留在那裡假裝一切正常。
-  const verificationFailedHere = verifyRequiredChecks.some((check) =>
-    state.failedVerificationSteps.has(check.id),
-  );
+  // 略過是常駐的（見 skipAvailable），所以每一種卡都要認它，不只規則卡。原本只有
+  // config 那條 OR 吃 skippedCards——環境卡按了略過，箭頭照樣是暗的，按鈕變成一顆
+  // 按了沒反應的東西。
+  const cardSkipped = state.skippedCards.has(card.checkId);
   const nextUnlocked =
     card.kind === "setup"
       ? true
-      : card.kind === "env"
-        ? cardIsComplete(card, verified, state.manualCheckedIds) &&
-          groups.manual.every((item) => item.checked)
-        : state.skippedCards.has(card.checkId) ||
-          nextCardUnlocked({
-            installed,
-            verificationRequired,
-            verificationAttempted,
-            manualItems: groups.manual,
-          });
-  // 只在「真的被鎖住、而且鎖住的原因是驗證失敗」時給出口。人工項沒勾、還沒安裝
-  // 那種不給——那些他自己按得動，給了只是繞過去。
-  const canSkip =
-    card.kind === "config" && !nextUnlocked && verificationFailedHere;
+      : cardSkipped ||
+        (card.kind === "env"
+          ? cardIsComplete(card, verified, state.manualCheckedIds) &&
+            groups.manual.every((item) => item.checked)
+          : nextCardUnlocked({
+              installed,
+              verificationRequired,
+              verificationAttempted,
+              manualItems: groups.manual,
+            }));
+  // 略過鍵常駐，不再只在「驗證失敗而且被鎖住」時才出現。
+  //
+  // 原本那個條件（config 卡 + 驗證失敗）看起來很嚴謹，實際上把最需要它的人擋在
+  // 外面：卡在環境段裝不起來 gh、卡在一個按下去沒反應的安裝鍵、卡在人工項看不懂
+  // 該勾什麼——這些都不是「驗證失敗」，於是畫面上連一條出路都沒有。
+  //
+  // 只有第一張 setup 卡不給：那張選的是工具與語言，跳過它後面每一張卡都不知道要
+  // 長什麼樣，等於跳過整個嚮導。
+  const skipAvailable = card.kind !== "setup";
   // 「這張卡完成了嗎」全站只有一個答案：cardIsComplete。
   //
   // 這裡原本另外收三條路：
@@ -590,6 +674,7 @@ function renderWizard() {
     completedIds,
     currentIndex,
     state.seenCardIds,
+    state.skippedCards,
   );
   // 合併的卡有兩份設定。按鈕要對著「還沒好的那一份」——兩份都好了才回到主 check，
   // 因為驗證掛在它身上。
@@ -974,6 +1059,36 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
       renderWizard();
     },
+    // 卡片標題列上那顆常駐的「先略過這張」。它不是「下一張」的替身——按了之後這張
+    // 卡照樣是沒完成的，只是不再擋路，而且會被記進底下那條跳過清單。
+    //
+    // 再按一次就是取消：學生自己回來看了一眼發現沒問題，總得有辦法把它撤掉，而不用
+    // 去跑一次驗證。
+    skip: {
+      // 已經做完的卡不給——按下去只會被 pruneSkippedCards 立刻移除，變成一顆
+      // 「按了什麼都沒發生」的按鈕（環境段有幾張 optional 的卡天生就是完成狀態）。
+      show: skipAvailable && !cardDone,
+      skipped: cardSkipped,
+      onToggle: () => {
+        if (cardSkipped) {
+          state.skippedCards.delete(card.checkId);
+          persistSkippedCards();
+          view.addLine(`把「${card.label}」從跳過清單移除。`, "agent-status");
+          renderWizard();
+          return;
+        }
+
+        state.skippedCards.add(card.checkId);
+        persistSkippedCards();
+        view.addLine(
+          `先略過「${card.label}」，之後可以從底下的清單回來。`,
+          "agent-status",
+        );
+        // 按下去就往下走：卡住的人要的是繼續，不是站在原地看它變灰。最後一張就
+        // 換段——留在原地的話「略過」看起來像沒有作用。
+        advancePastCard(cardSection, currentIndex);
+      },
+    },
   };
   view.renderWizard({
     section,
@@ -990,6 +1105,7 @@ function renderWizard() {
       renderWizard();
     },
   });
+  renderSkippedTray();
   renderControls();
   // 分頁的鎖跟著一起更新。原本只有勾選、換工具、點分頁才會重算，於是「最後一張
   // 卡驗過了」的當下沒有人去看鎖狀態——下一段其實已經開了，畫面上還鎖著，等學生
@@ -999,8 +1115,6 @@ function renderWizard() {
     cardSection,
     currentIndex,
     nextUnlocked,
-    canSkip,
-    cardId: card.checkId,
     lockStates,
     onNext: cardModel.onNext,
   });
@@ -1048,34 +1162,12 @@ function maybeRecheckAtSectionEnd(sectionId, currentIndex, cardCount) {
 }
 
 // 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
-//
-// 驗證失敗時那一顆逃生按鈕。跟「下一張」共用同一個位置，但講的是別件事，所以字要
-// 不一樣、不放解鎖特效（慶祝一件沒做成的事很怪），也不畫成主要動作。
-//
-// 按下去先把這張卡登記成「跳過」——下次回到這張，那顆按鈕就是正常的「下一張」，
-// 不用再按一次逃生。完成與否仍然由 cardIsComplete 說了算，跳過的卡照樣是失敗。
-function skipNavSpec(cardId, label, onSkip) {
-  return {
-    show: true,
-    label,
-    secondary: true,
-    celebrate: false,
-    onClick: () => {
-      if (cardId !== null) state.skippedCards.add(cardId);
-      view.addLine(`先跳過這一張，之後可以回來再驗一次。`, "agent-status");
-      onSkip();
-    },
-  };
-}
-
 // 走到一段的最後一張時，「下一張」換成「下一段：⋯」——那一段做完了，下一步是換段，
 // 不是回頭去點上面的分頁。點下去落在新那段的第一張。
 function renderWizardNav({
   cardSection,
   currentIndex,
   nextUnlocked,
-  canSkip = false,
-  cardId = null,
   lockStates,
   onNext,
 }) {
@@ -1086,8 +1178,12 @@ function renderWizardNav({
   const previousSection = SECTIONS[sectionIndex - 1];
   const nextSection = SECTIONS[sectionIndex + 1];
   const atLast = currentIndex >= cards.length - 1;
-  const nextSectionOpen =
-    nextSection !== undefined && lockStates[nextSection.id]?.locked !== true;
+  const nextGate =
+    nextSection === undefined ? undefined : lockStates[nextSection.id];
+  const nextSectionOpen = nextSection !== undefined && nextGate?.locked !== true;
+  // 下一段只差當日密碼時，按鈕照樣要出現——藏起來的話學生做完這一段就沒有任何
+  // 可按的東西，看起來像嚮導走完了，而他其實還差最後一段（那顆按鈕會彈密碼框）。
+  const nextNeedsPasscode = nextGate?.needsPasscode === true;
 
   view.renderWizardNav({
     prev: {
@@ -1103,23 +1199,73 @@ function renderWizardNav({
         goToSection(previousSection.id, "last");
       },
     },
-    // 驗證失敗被鎖住時，那個位置換成一顆說實話的「先跳過這張」：它不慶祝、也不
-    // 把卡片記成完成，只是承認學生現在過不了、讓他先往下走。原本這裡是「失敗也
-    // 照樣顯示下一張」，箭頭跟旁邊那顆紅色的「失敗」徽章互相打架（Reed 截圖）。
+    // 逃生口不再借用這顆按鈕。它以前在驗證失敗時會變成「先跳過這張」——那顆只在
+    // 「config 卡 + 驗證失敗 + 被鎖住」三個條件同時成立時才出現，而學生卡住的樣子
+    // 遠不只那一種。現在略過鍵常駐在卡片標題列上（見 skipAvailable），這裡回到單純
+    // 的「能不能往前」，不再一顆按鈕講兩件事。
     next: atLast
-      ? canSkip && !nextSectionOpen
-        ? skipNavSpec(cardId, `先跳過，${nextSection === undefined ? "留在這一段" : `往下一段：${nextSection.title}`}`, () => {
-            if (nextSection !== undefined) goToSection(nextSection.id, "first");
-          })
-        : {
-            show: nextSectionOpen,
-            label: `下一段：${nextSection?.title ?? ""}`,
-            onClick: () => goToSection(nextSection.id, "first"),
-          }
-      : canSkip
-        ? skipNavSpec(cardId, "先跳過這張", onNext)
-        : { show: nextUnlocked, label: "下一張", onClick: onNext },
+      ? {
+          show: nextSectionOpen || nextNeedsPasscode,
+          label: `下一段：${nextSection?.title ?? ""}`,
+          onClick: () => {
+            if (nextNeedsPasscode) {
+              askPasscode(nextSection.id, nextGate);
+              return;
+            }
+
+            goToSection(nextSection.id, "first");
+          },
+        }
+      : { show: nextUnlocked, label: "下一張", onClick: onNext },
   });
+}
+
+// 底部那條「已跳過 N 張」。跨段落列，因為卡住的那幾張不會剛好都在同一段——只列
+// 當前這一段的話，翻到下一段清單就空了，看起來像紀錄不見了。
+function renderSkippedTray() {
+  view.renderSkippedTray({
+    items: skippedListModel(allCardSections(), state.skippedCards),
+    onSelect: (entry) => {
+      // 直接落在那張卡上。段落的鎖不擋這一條路：那是他自己按過略過的卡，已經看過
+      // 一次了，回頭修的時候再要求他「先把前面做完」等於把出口也鎖上。
+      state.activeSectionId = entry.sectionId;
+      state.viewingCardIndex[entry.sectionId] = entry.index;
+      view.hideSectionLockMessage();
+      view.addLine(`回到「${entry.label}」。`, "agent-status");
+      renderWizard();
+    },
+  });
+}
+
+// 略過之後往哪走：同一段還有下一張就翻頁，已經是最後一張就換段。下一段還鎖著
+// （前面另有沒做完的卡）就留在原地重畫——那張卡這時已經變成「已跳過」的樣子，
+// 學生看得出按鈕生效了。
+function advancePastCard(cardSection, currentIndex) {
+  if (currentIndex < cardSection.cards.length - 1) {
+    state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
+    renderWizard();
+    return;
+  }
+
+  const sectionIndex = SECTIONS.findIndex(
+    (section) => section.id === state.activeSectionId,
+  );
+  const nextSection = SECTIONS[sectionIndex + 1];
+
+  if (nextSection === undefined) {
+    renderWizard();
+    return;
+  }
+
+  // 鎖狀態要用剛剛加進 skippedCards 之後的結果算，所以在這裡重新問一次。
+  const lockStates = renderNavigation();
+
+  if (lockStates[nextSection.id]?.locked === true) {
+    renderWizard();
+    return;
+  }
+
+  goToSection(nextSection.id, "first");
 }
 
 function goToSection(sectionId, landing) {
@@ -1171,6 +1317,21 @@ function incompleteCards(cards, verified) {
     .map(({ card, index }) => ({ label: card.label, index }));
 }
 
+// 「還擋著人的卡」＝沒完成、而且學生也沒按過略過。
+//
+// 跟 incompleteCards 分成兩支，是因為它們回答兩個不同的問題，而合成一支就得二選一：
+//
+//   incompleteCards  這一段真的做完了嗎 —— 進度、綠色打勾、「這一段已完成。」
+//   blockingCards    還可以往下走嗎     —— 段落的鎖、擋人時要點名哪幾張
+//
+// 略過的卡在前者裡照樣是沒做完（不假裝），在後者裡放行（不把人關死）。這正是
+// milestoneModels 裡 done / passable 那一組的段落版本。
+function blockingCards(cards, verified) {
+  return incompleteCards(cards, verified).filter(
+    ({ index }) => !state.skippedCards.has(cards[index].checkId),
+  );
+}
+
 // 每一段是不是真的做完了——不是問學生，是看每張卡的實際狀態。
 // 資料還沒回來時回 undefined，讓閘門知道「還不確定」而不是「沒做完」，
 // 免得載入中把人鎖在外面。
@@ -1199,7 +1360,16 @@ function renderNavigation() {
   const blockers = Object.fromEntries(
     sections.map(({ sectionId, cards }) => [
       sectionId,
-      incompleteCards(cards, verified),
+      blockingCards(cards, verified),
+    ]),
+  );
+  // 鎖看的是「還擋著人的卡」，綠色打勾看的仍然是「真的做完了」。同一個 done 餵給
+  // 兩邊的話，略過一張就會讓那一段打上完成的勾——畫面說做完了，而學生手上還有一張
+  // 卡是灰的。
+  const passable = Object.fromEntries(
+    Object.entries(blockers).map(([sectionId, cards]) => [
+      sectionId,
+      done[sectionId] === undefined ? undefined : cards.length === 0,
     ]),
   );
   const lockStates = Object.fromEntries(
@@ -1209,8 +1379,10 @@ function renderNavigation() {
         section.id,
         state.completedGateIds,
         tools,
-        done,
+        passable,
         blockers,
+        state.unlockedSections,
+        state.overriddenSections,
       ),
     ]),
   );
@@ -1321,6 +1493,43 @@ function finishLoginWait(step) {
   view.finishLoginWaiting(step.text, step.failed);
 }
 
+function finishInitialChecks() {
+  if (
+    !initialChecksReady({
+      envCheckInProgress: state.envCheckInProgress,
+      configCheckInProgress: state.configCheckInProgress,
+      envCheckQueued: state.envCheckQueued,
+      configCheckQueued: state.configCheckQueued,
+      envChecks: state.envChecks,
+      configChecks: state.lastChecks,
+    })
+  ) {
+    return;
+  }
+
+  const cardChanged = !state.setupCompleted;
+  state.setupCompleted = true;
+
+  if (cardChanged) {
+    renderWizard();
+  }
+
+  if (!state.initialChecksAnnounced) {
+    state.initialChecksAnnounced = true;
+    view.addLine("環境與規則檢查完成，狀態已更新。", "succeeded");
+  }
+}
+
+function restartInitialChecks() {
+  state.setupCompleted = false;
+  state.initialChecksAnnounced = false;
+  renderWizard();
+  view.addLine(
+    "選項已變更，正在重新檢查目前環境與規則。",
+    "agent-status",
+  );
+}
+
 async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   if (state.envCheckInProgress) {
     // 這一次不能直接丟掉。安裝完成後的重查若撞上還在跑的那次，畫面就永遠停在
@@ -1415,6 +1624,8 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     view.elements.recheckEnv.disabled = state.runInProgress;
     renderCheckingLoader();
 
+    finishInitialChecks();
+
     // 排在後面那次補跑。一次只留一筆，所以不會無限接力。
     const queued = state.envCheckQueued;
 
@@ -1427,7 +1638,8 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
 
 async function checkConfigs() {
   if (state.configCheckInProgress) {
-    return;
+    state.configCheckQueued = true;
+    return null;
   }
 
   state.configCheckInProgress = true;
@@ -1446,15 +1658,18 @@ async function checkConfigs() {
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
     ]);
     renderWizard();
-    view.renderConfigSummary(
-      configSummary(result.checks, state.verifiedSteps),
-    );
   } catch (error) {
     view.renderConfigFailure(error.message);
   } finally {
     state.configCheckInProgress = false;
     renderControls();
     renderCheckingLoader();
+    finishInitialChecks();
+
+    if (state.configCheckQueued) {
+      state.configCheckQueued = false;
+      void checkConfigs();
+    }
   }
 }
 
@@ -2173,6 +2388,82 @@ view.onReportModal(
     }
   },
   () => view.hideReportModal(),
+  {
+    // gh 走不通時的退路：內容進剪貼簿，網址只帶標題，學生在他本來就登入著的
+    // 瀏覽器裡貼上送出。順序不能顛倒——先開分頁再複製的話，焦點已經離開這一頁，
+    // 剪貼簿寫入會被瀏覽器擋掉（同一個坑踩過）。
+    manual: async () => {
+      const { title, body } = buildIssue(
+        currentReportInput(view.reportDescription()),
+      );
+
+      try {
+        await navigator.clipboard.writeText(body);
+      } catch {
+        view.setReportStatus(
+          "這個瀏覽器不讓我們寫剪貼簿。請改按「存成檔案」，把那個檔案交給助教。",
+        );
+        return;
+      }
+
+      // 登入牆要先講。GitHub 開 issue 一定要登入，沒登入的人會被帶去登入頁——
+      // 不先說的話，他會以為按鈕壞了。內容在剪貼簿裡，中間跳去哪都不會掉。
+      view.setReportStatus(
+        "內容已經複製起來了。GitHub 的新 issue 頁面會打開——如果它先要你登入，登入完再回來貼。把游標點進大的那個輸入框，貼上（⌘V／Ctrl+V）再送出。",
+      );
+      window.open(newIssueUrl(title), "_blank", "noopener");
+    },
+    // 連 GitHub 帳號都還沒有的人走這條。
+    mail: async () => {
+      const { title, body } = buildIssue(
+        currentReportInput(view.reportDescription()),
+      );
+
+      try {
+        await navigator.clipboard.writeText(body);
+      } catch {
+        view.setReportStatus(
+          `這個瀏覽器不讓我們寫剪貼簿。請改按「存成檔案」，把那個檔案寄到 ${FEEDBACK_EMAIL}。`,
+        );
+        return;
+      }
+
+      // 信件程式沒設定好的話 mailto 什麼都不會發生——所以收件人與主旨要留在畫面上，
+      // 讓他自己開網頁版信箱也寄得出去。主旨不能少：少了它那封信會混在一般信件裡。
+      view.showMailDetails({ to: FEEDBACK_EMAIL, subject: title });
+      view.setReportStatus(
+        "內容已經複製起來了。信件視窗會打開，貼上再送出。沒有跳出信件程式的話，用下面的收件人與主旨自己開一封。",
+      );
+      window.location.href = mailtoUrl(title);
+    },
+    // 連 GitHub 帳號都沒有的人走這條：至少交得出這份診斷資料。
+    save: () => {
+      const { body } = buildIssue(currentReportInput(view.reportDescription()));
+
+      view.saveReportFile(body, "jr-setup-卡住了.md");
+      // 存完要講「然後呢」。只說存好了的話，學生手上多一個檔案卻不知道要送去哪。
+      view.setReportStatus(
+        `已經存成檔案（在你的下載資料夾）。把它寄到 ${FEEDBACK_EMAIL}，或直接傳給助教。`,
+      );
+    },
+  },
+);
+// 收件人與主旨那兩顆複製鍵。寫得進剪貼簿才回 true——view 靠這個決定要不要把按鈕的
+// 字換成「已複製」。擋掉的話什麼都不做：那兩行本來就選得起來，不需要跳錯誤訊息嚇人。
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+view.onMailCopy(copyToClipboard);
+// 預覽區那顆複製鍵。重新組一次內容，不複製畫面上那份——預覽是開框當下產生的，
+// 學生之後才打的那段描述不在裡面。
+view.onPreviewCopy(() =>
+  copyToClipboard(buildIssue(currentReportInput(view.reportDescription())).body),
 );
 // 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
 // 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。
@@ -2205,6 +2496,7 @@ view.onToolSelect((tool) => {
   state.selectedTools = toggleToolSelection(state.selectedTools, tool);
   saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  restartInitialChecks();
   // 只清掉「學生不在」的那些段落——它們的卡片清單跟著工具變了，舊的位置可能指到
   // 別張卡。學生正看著的這一段不能清：清了之後下一輪 render 會重新推導成「第一張
   // 沒完成的卡」，於是人明明停在選工具卡上，按一下工具就被丟回剛才那張（VM 實測）。
@@ -2225,20 +2517,91 @@ view.onLanguageSelect((language) => {
   state.selectedLanguage = language;
   saveSelection();
   view.setConfigSelection(state.selectedTools, state.selectedLanguage);
+  restartInitialChecks();
   checkConfigs();
 });
+function openSection(sectionId) {
+  view.hideSectionLockMessage();
+  state.activeSectionId = sectionId;
+  renderWizard();
+}
+
+// 鎖著的分頁點下去彈的那個框。兩種情況共用同一個框，但講的話不一樣：
+//
+//   只差當日密碼    「這一段要當天才開」，打 0822 就進得去
+//   前面還沒做完    直接把擋著的那張卡講出來，只有講師的萬用密碼打得開
+//
+// 說明每次打開都重寫。共用一句話的話，其中一種一定是錯的——而學生看到一句對不上
+// 自己處境的話，只會更不知道要做什麼。
+function askPasscode(sectionId, gate) {
+  state.pendingPasscodeSection = sectionId;
+  view.showPasscodeModal(
+    gate.needsPasscode
+      ? {
+          title: "這一段要當天才開",
+          hint: "輸入講師在課堂上報出來的四位數字，就會解鎖。",
+        }
+      : { title: "這一段還沒輪到", hint: gate.reason },
+  );
+}
+
 view.onSectionSelect((sectionId) => {
   const gate = renderNavigation()[sectionId];
 
   if (gate.locked) {
+    // 鎖著的理由照樣寫在分頁底下那一行：框關掉之後學生還看得到自己差什麼。
     view.showSectionLockMessage(gate.reason);
+    askPasscode(sectionId, gate);
     return;
   }
 
-  view.hideSectionLockMessage();
-  state.activeSectionId = sectionId;
-  renderWizard();
+  openSection(sectionId);
 });
+view.onPasscodeModal(
+  (entered) => {
+    const sectionId = state.pendingPasscodeSection;
+
+    if (sectionId === null) return;
+
+    // 萬用密碼先比：它連「前面沒做完」都跳過，所以不能被下面那道擋掉。
+    const master = matchesMasterPasscode(entered);
+    const gate = renderNavigation()[sectionId];
+
+    if (master) {
+      state.overriddenSections.add(sectionId);
+    } else if (gate.needsPasscode && matchesSectionPasscode(sectionId, entered)) {
+      state.unlockedSections.add(sectionId);
+    } else {
+      // 前面沒做完的時候，當日密碼打對了也不算——講清楚是哪一種不對，不然學生會
+      // 一直重打那組他明明沒記錯的數字。
+      view.showPasscodeError(
+        gate.needsPasscode
+          ? "密碼不對，再確認一次講師報的數字。"
+          : "這組密碼打不開還沒輪到的段落。先做完上面那句講的，或請講師來開。",
+      );
+      return;
+    }
+
+    state.pendingPasscodeSection = null;
+    view.hidePasscodeModal();
+    // 存不進去只講一句話、不擋人：學生現在就要進去上課，為了一次寫入失敗把他關
+    // 在外面沒有意義——最壞的情況是重開嚮導要再打一次密碼。
+    const persist = master
+      ? api.saveOverriddenSections([...state.overriddenSections])
+      : api.saveUnlockedSections([...state.unlockedSections]);
+
+    persist.catch((error) =>
+      view.addLine(`無法保存解鎖狀態：${error.message}`, "failed"),
+    );
+    // 先重畫導覽列讓那個鎖頭開起來，再進去——不然分頁還掛著鎖，看起來像沒解開。
+    renderNavigation();
+    openSection(sectionId);
+  },
+  () => {
+    state.pendingPasscodeSection = null;
+    view.hidePasscodeModal();
+  },
+);
 view.onVerifyModal(
   () => {
     const check = state.pendingModalCheck;

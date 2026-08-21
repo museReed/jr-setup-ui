@@ -10,7 +10,7 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-import { probeRegisteredHook, runConfigCheck } from "../src/config-check.js";
+import { runConfigCheck } from "../src/config-check.js";
 import { findHookRegistration, hookFileName } from "../src/config-install.js";
 
 const HOME = homedir();
@@ -114,29 +114,18 @@ for (const check of checks) {
 
 if (tools.includes("claude")) {
   console.log("");
-  console.log("── 實際觸發 hook ──");
+  console.log("── 已退役的擋串接 hook ──");
 
+  // 這裡以前是三題行為測試（串接會擋、單一放行、引號內不誤擋）。那支 hook 退役了
+  // （auto mode 底下 classifier 逐一審查指令，串接不再是問題），所以現在反過來
+  // ——還在的話才是要處理的事。
   const hookCommand = await registeredHookCommand();
-
-  if (!existsSync(HOOK_PATH)) {
-    report(false, "hook 檔案存在", "找不到，跳過行為測試");
-  } else if (!hookCommand) {
-    report(false, "hook 已註冊", "settings.json 裡沒有這個 hook，跳過行為測試");
-  } else {
-    const runHook = (command) => probeRegisteredHook(hookCommand, command);
-    const blocked = await runHook("echo a && echo b");
-    report(
-      blocked.exitCode === 2 && blocked.stderr.includes("一次只跑一個指令"),
-      "串接指令會被擋",
-      `exit ${blocked.exitCode}`,
-    );
-
-    const allowed = await runHook("echo hi");
-    report(allowed.exitCode === 0, "單一指令會放行", `exit ${allowed.exitCode}`);
-
-    const quoted = await runHook('echo "a && b"');
-    report(quoted.exitCode === 0, "引號內的 && 不會誤擋", `exit ${quoted.exitCode}`);
-  }
+  const leftover = existsSync(HOOK_PATH) || hookCommand !== null;
+  report(
+    !leftover,
+    "已退役的擋串接 hook 不在了",
+    leftover ? "還留著——回嚮導按那一列的「移除」" : "沒有殘留",
+  );
 
   console.log("");
   console.log("── 實際觸發命名 ──");

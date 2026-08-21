@@ -3,7 +3,7 @@
 //   node scripts/install-configs.mjs --step=hook --lang=zh-TW
 //
 // 每做一件事就印一行，讓網頁那邊即時看得到。
-import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -19,11 +19,15 @@ import {
   mergeAllowRules,
   mergeCodexModes,
   mergeAgentHookRegistrations,
-  mergeHookRegistration,
   mergeOutputStyle,
+  hasHookRegistrations,
+  removeHookRegistrations,
+  removeLegacyCodexTabSyncBlock,
+  transformStepSource,
   upsertBlock,
 } from "../src/config-install.js";
 import { checkExternalSkill, findObsidianApp } from "../src/config-check.js";
+import { markStepRetired } from "../src/progress-state.js";
 import { materialsDir } from "../src/paths.js";
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
@@ -150,7 +154,8 @@ async function copyStep(step) {
   const source = sourcePath(step);
   await mkdir(path.dirname(step.target), { recursive: true });
   await backup(step.target);
-  await copyFile(source, step.target);
+  const content = transformStepSource(await readFile(source, "utf8"), step);
+  await writeFile(step.target, content);
   logProgress(`${step.label} → ${step.target}`);
 }
 
@@ -163,20 +168,42 @@ async function outputStyleStep(step) {
   logProgress(`已在 settings.json 啟用「${step.styleName}」`);
 }
 
-async function hookStep(step) {
-  const source = sourcePath(step);
-  await mkdir(path.dirname(step.target), { recursive: true });
-  await copyFile(source, step.target);
-  await chmod(step.target, 0o755);
-  logProgress(`hook 檔案 → ${step.target}`);
+// 退役：把以前裝過的東西移除。跟安裝相反的方向，但走同一顆按鈕、同一條動作路徑
+// ——學生的體感是「這一列有一顆鍵，按下去這一列就處理完了」，不該因為方向相反就
+// 變成另一種操作。
+//
+// 檔案不在就跳過，不當成失敗：學生可能自己刪過，或只裝了一半。要的是「跑完之後
+// 它不在了」，不是「跑之前它一定在」。
+async function retireStep(step) {
+  for (const file of step.files) {
+    if (!existsSync(file)) {
+      logProgress(`已經不在：${file}`);
+      continue;
+    }
 
-  // 只複製檔案不算裝好：沒註冊進 settings.json 的話 hook 不會擋，
-  // 而且不會有任何錯誤訊息。兩件事要一起做完才算數。
-  const settings = mergeHookRegistration(await readSettings(step.settingsTarget), {
-    hookPath: step.target,
-  });
-  await writeSettings(step.settingsTarget, settings);
-  logProgress("已註冊到 settings.json 的 PreToolUse");
+    await rm(file, { force: true });
+    logProgress(`已移除：${file}`);
+  }
+
+  // 註冊要跟著拿掉。只刪檔案的話 settings 裡會留一條指向不存在檔案的 hook——
+  // 每次 PostToolUse 都失敗一次，而畫面上完全看不出來。
+  const before = await readSettings(step.settingsTarget);
+
+  if (hasHookRegistrations(before, step.markers)) {
+    await writeSettings(
+      step.settingsTarget,
+      removeHookRegistrations(before, step.markers),
+    );
+    logProgress(`已從 ${step.settingsTarget} 移除註冊`);
+  } else {
+    logProgress("設定檔裡沒有它的註冊，不用動");
+  }
+
+  // 記一筆「這台機器按過移除」。不記的話這一列會在按完的當下整個消失——判準本來
+  // 就是「還有沒有殘留」，殘留沒了它就沒有理由出現。學生按下按鈕、卡片不見，他
+  // 不會覺得做完了，他會覺得自己剛剛弄壞了什麼（見 progress-state 的 markStepRetired）。
+  await markStepRetired(step.id);
+  logProgress("這一列會留著打勾，不會消失");
 }
 
 async function allowlistStep(step) {
@@ -192,20 +219,55 @@ async function allowlistStep(step) {
   // 講出來：這一步除了白名單還動了預設模式，學生按下去該知道自己同意了什麼。
   logProgress(
     modeAdded
-      ? "預設模式設成 acceptEdits：工作區內改檔案不再逐次詢問"
+      ? "預設模式設成 auto：每一條指令改由審查模型逐一判斷，安全的不再問你"
       : `預設模式維持你原本設定的 ${settings.permissions.defaultMode}`,
   );
 }
 
-async function tabSyncStep(step) {
-  const source = sourcePath({ source: step.watcherSource });
-  await mkdir(path.dirname(step.target), { recursive: true });
-  await backup(step.target);
-  // PowerShell 5.1 靠 BOM 判讀中文字；二進位複製才不會在安裝時弄丟。
-  await copyFile(source, step.target);
+// 舊版在 POSIX 上會裝一支 ~/.local/bin/ai-tab-sync.sh，由 .zshrc 的 wrapper 啟動它
+// 每秒重寫分頁標題。新版不再需要它——標題改由命名 hook 自己寫 OSC 到 tty。
+//
+// 留著不會自己作怪（沒有人再啟動它），但它咬過人兩次：
+//   1. 回鍋學生只要有分頁還開著，那些分頁裡的舊 wrapper 仍然會用它，標題照樣閃
+//   2. 標題驗證那一格曾經因為這個殘檔給出假的綠燈（見 scripts/verify-in-terminal.mjs）
+//
+// 所以裝新版時順手收掉。
+//
+// ⚠️ 先備份再刪，不要直接 unlink。這確實是我們裝的檔案，但學生機器上任何「消失了
+// 而且救不回來」的東西都會變成一次求助——留一份 .bak 的成本幾乎是零。
+//
+// ⚠️ 已經在跑的 watcher 不去殺它：那要動別人的程序，而它本來就會自己結束（腳本有
+// 孤兒偵測，舊 wrapper 也會在 claude 結束時 kill 它）。學生要看到新行為本來就得開
+// 新分頁，那一步會把舊的一起帶走。
+async function retireLegacyWatcher() {
+  const legacy = path.join(homedir(), ".local", "bin", "ai-tab-sync.sh");
 
-  if (process.platform !== "win32") {
-    await chmod(step.target, 0o755);
+  if (!existsSync(legacy)) {
+    return;
+  }
+
+  await backup(legacy);
+  await rm(legacy, { force: true });
+  console.log("已收起舊版的分頁標題同步腳本——新版不需要它了");
+}
+
+async function tabSyncStep(step) {
+  // POSIX 沒有 watcher 檔要裝（step.target 是 undefined），只寫 rc 區塊，並把舊版
+  // 留下的 watcher 收走。
+  if (step.target === undefined) {
+    await retireLegacyWatcher();
+  }
+
+  if (step.target !== undefined) {
+    const source = sourcePath({ source: step.watcherSource });
+    await mkdir(path.dirname(step.target), { recursive: true });
+    await backup(step.target);
+    // PowerShell 5.1 靠 BOM 判讀中文字；二進位複製才不會在安裝時弄丟。
+    await copyFile(source, step.target);
+
+    if (process.platform !== "win32") {
+      await chmod(step.target, 0o755);
+    }
   }
 
   const current = existsSync(step.rcTarget)
@@ -220,7 +282,13 @@ async function tabSyncStep(step) {
       ? `\ufeff${next.replace(/^\ufeff/, "")}`
       : next;
   await writeFile(step.rcTarget, rcContent);
-  logProgress(`watcher → ${step.target}`);
+
+  // POSIX 沒有 watcher 檔，step.target 是 undefined——不要無條件印，畫面上會出現
+  // 一行「watcher → undefined」，而學生只會讀到「有東西壞了」。
+  if (step.target !== undefined) {
+    logProgress(`watcher → ${step.target}`);
+  }
+
   logProgress(`shell function → ${step.rcTarget}`);
 }
 
@@ -261,7 +329,39 @@ async function agentHooksStep(step) {
   }
 
   await writeSettings(step.settingsTarget, settings);
-  logProgress(`已註冊 3 筆 hook → ${step.settingsTarget}`);
+  logProgress(`已註冊 ${step.registrations.length} 筆 hook → ${step.settingsTarget}`);
+
+  if (step.windowsCodexProfile !== undefined) {
+    const profile = step.windowsCodexProfile;
+    const current = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    const withoutLegacyCodex = removeLegacyCodexTabSyncBlock(
+      current,
+      profile.legacyCodexTabSyncBlock,
+    );
+    const next = upsertBlock(
+      withoutLegacyCodex,
+      profile.marker,
+      profile.block,
+    );
+    await mkdir(path.dirname(profile.target), { recursive: true });
+    await backup(profile.target);
+    await writeFile(profile.target, `\ufeff${next.replace(/^\ufeff/, "")}`);
+    logProgress(`Codex 共用 app-server 入口 → ${profile.target}`);
+  }
+
+  if (step.posixCodexProfile !== undefined) {
+    const profile = step.posixCodexProfile;
+    const current = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    const next = upsertBlock(current, profile.marker, profile.block);
+    await mkdir(path.dirname(profile.target), { recursive: true });
+    await backup(profile.target);
+    await writeFile(profile.target, next);
+    logProgress(`Codex 版本檢查入口 → ${profile.target}`);
+  }
 }
 
 async function skillStep(step) {
@@ -922,8 +1022,8 @@ try {
     await copyStep(step);
   } else if (step.kind === "output-style") {
     await outputStyleStep(step);
-  } else if (step.kind === "hook") {
-    await hookStep(step);
+  } else if (step.kind === "retire") {
+    await retireStep(step);
   } else if (step.kind === "allowlist") {
     await allowlistStep(step);
   } else if (step.kind === "tab-sync") {

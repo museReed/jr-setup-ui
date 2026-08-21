@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 
 import {
+  checkCodexRows,
+  codexVersionCheck,
   checksForTools,
   normalizeNotFound,
   parseClaudeAuth,
   parseCodexAuth,
   runEnvCheck,
   runProbe,
+  withActions as withEnvActions,
 } from "../src/env-check.js";
 import {
   installActionId,
@@ -122,6 +125,166 @@ ok("Codex 未登入輸出可解析");
 assert.doesNotThrow(() => parseCodexAuth(undefined));
 ok("Codex undefined 不拋錯");
 
+for (const [stdout, platform] of [
+  ["codex-cli 0.148.0", "darwin"],
+  ["codex-cli 0.146.0", "linux"],
+  ["codex-cli 0.200.1", "darwin"],
+]) {
+  assert.deepEqual(codexVersionCheck(stdout, platform), {
+    id: "codex",
+    label: "Codex CLI",
+    status: "ok",
+    detail: stdout,
+  });
+}
+ok("macOS 接受 0.148.0；Linux 保留 0.146.0 門檻");
+
+for (const stdout of [
+  "codex-cli 0.145.9",
+  "codex-cli 0.146.0-beta.1",
+  "不是版本",
+]) {
+  const checked = withEnvActions(codexVersionCheck(stdout, "darwin"));
+  assert.equal(checked.status, "missing");
+  assert.equal(checked.installAction, "install-codex");
+  assert.equal(checked.installLabel, "升級");
+  assert.match(checked.detail, /升級.*0\.148\.0/);
+}
+ok("macOS 舊版、pre-release 與不合法輸出會要求升至 0.148.0");
+
+assert.deepEqual(codexVersionCheck("codex-cli 0.147.9", "win32"), {
+  id: "codex",
+  label: "Codex CLI",
+  status: "missing",
+  detail: "版本 0.147.9 過舊，請升級至穩定版 0.148.0 以上",
+  installLabel: "升級",
+});
+assert.equal(codexVersionCheck("codex-cli 0.148.0", "win32").status, "ok");
+ok("Windows 要 0.148.0 以上，確保共享 app-server 與 thread/name/set 可用");
+
+const codexProbeCalls = [];
+const [oldCodex, oldCodexAuth] = await checkCodexRows({
+  platform: "darwin",
+  probe: async (_cmd, args) => {
+    codexProbeCalls.push(args);
+    return {
+      type: "close",
+      exitCode: 0,
+      stdout: "codex-cli 0.145.9\n",
+      stderr: "",
+      output: "codex-cli 0.145.9\n",
+    };
+  },
+});
+assert.equal(oldCodex.status, "missing");
+assert.equal(oldCodex.installLabel, "升級");
+assert.deepEqual(oldCodexAuth, {
+  id: "codex-auth",
+  label: "Codex 登入狀態",
+  status: "missing",
+  detail: "請先升級 Codex",
+});
+assert.deepEqual(codexProbeCalls, [["--version"]]);
+ok("舊版 Codex 的 auth row 要求先升級，且不執行 login probe");
+
+async function probeCodexRows(results, platform = "darwin") {
+  const calls = [];
+  const rows = await checkCodexRows({
+    platform,
+    probe: async (cmd, args, options) => {
+      calls.push([cmd, args, options]);
+      return results[calls.length - 1];
+    },
+  });
+  return { calls, rows };
+}
+
+const codexVersionCall = [
+  "codex",
+  ["--version"],
+  { emptyFailureMeansMissing: true },
+];
+const codexLoginCall = ["codex", ["login", "status"], undefined];
+
+const supportedLogin = await probeCodexRows([
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "codex-cli 0.148.0\n",
+    stderr: "",
+    output: "codex-cli 0.148.0\n",
+  },
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "",
+    stderr: "Logged in using ChatGPT\n",
+    output: "Logged in using ChatGPT\n",
+  },
+]);
+assert.deepEqual(supportedLogin.calls, [
+  codexVersionCall,
+  codexLoginCall,
+]);
+assert.equal(supportedLogin.rows[0].status, "ok");
+assert.deepEqual(supportedLogin.rows[1], {
+  id: "codex-auth",
+  label: "Codex 登入狀態",
+  status: "ok",
+  detail: "已登入",
+});
+ok("支援版本且已登入時依序執行 version、login probe");
+
+const loggedOut = await probeCodexRows([
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "codex-cli 0.148.0\n",
+    stderr: "",
+    output: "codex-cli 0.148.0\n",
+  },
+  {
+    type: "close",
+    exitCode: 1,
+    stdout: "",
+    stderr: "Not logged in\n",
+    output: "Not logged in\n",
+  },
+]);
+assert.deepEqual(loggedOut.calls, [codexVersionCall, codexLoginCall]);
+assert.equal(loggedOut.rows[1].status, "warn");
+assert.equal(loggedOut.rows[1].detail, "未登入");
+ok("未登入不會被誤判成 Codex 缺少");
+
+const missingCodex = await probeCodexRows([
+  { type: "error", error: { code: "ENOENT" } },
+]);
+assert.deepEqual(missingCodex.calls, [codexVersionCall]);
+assert.equal(missingCodex.rows[0].status, "missing");
+assert.deepEqual(missingCodex.rows[1], {
+  id: "codex-auth",
+  label: "Codex 登入狀態",
+  status: "missing",
+  detail: "需要先安裝",
+});
+ok("Codex 缺少時只執行 version probe，不再執行 login probe");
+
+const authTimeout = await probeCodexRows([
+  {
+    type: "close",
+    exitCode: 0,
+    stdout: "codex-cli 0.148.0\n",
+    stderr: "",
+    output: "codex-cli 0.148.0\n",
+  },
+  { type: "timeout" },
+]);
+assert.deepEqual(authTimeout.calls, [codexVersionCall, codexLoginCall]);
+assert.equal(authTimeout.rows[0].status, "ok");
+assert.equal(authTimeout.rows[1].status, "warn");
+assert.match(authTimeout.rows[1].detail, /逾時/);
+ok("登入 probe 逾時會保留 CLI 綠燈並回報 auth 逾時");
+
 let timeout;
 const startedAt = Date.now();
 const result = await Promise.race([
@@ -178,11 +341,18 @@ if (process.platform === "darwin") {
 // 兩個平台都有的選用列，排在平台專屬那幾列之後（跟 checksForPlatform 一致）。
 expectedIds.push("typeless");
 
-assert.equal(result.checks.length, expectedIds.length);
-assert.deepEqual(
-  result.checks.map(({ id }) => id),
-  expectedIds,
-);
+// runEnvCheck 最後會補上兩列「看完別人的結果才決定要不要出現」的條件列
+// （npm-leftover / brew-leftover / quarantine，見 env-check.js）。它們不在 CHECKS 清單裡，出不出現
+// 取決於這台機器有沒有隔離區殘留——回鍋學生一定有，開發機跑過一輪清理也會有。
+// 所以比對前要濾掉，否則在有殘留的機器上跑測試會多兩列而無故變紅，看起來像 env
+// 檢查壞了（實測查了一輪才發現是 ~/.jr-setup/quarantine 留著）。
+const CONDITIONAL_CHECK_IDS = new Set(["quarantine", "npm-leftover", "brew-leftover"]);
+const actualIds = result.checks
+  .map(({ id }) => id)
+  .filter((id) => !CONDITIONAL_CHECK_IDS.has(id));
+
+assert.equal(actualIds.length, expectedIds.length);
+assert.deepEqual(actualIds, expectedIds);
 
 for (const check of result.checks) {
   assert.equal(typeof check.id, "string");

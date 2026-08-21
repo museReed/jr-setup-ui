@@ -245,14 +245,21 @@ export const STEP_IDS = [
 const CLAUDE_STEPS = [
   "claude-md",
   "output-style",
-  "hook",
   "allowlist",
+  // 退役那一列排在權限卡後面：先讓學生看到「現在是怎麼設定的」，再處理「以前那個
+  // 東西要移掉」。反過來的話，他第一眼看到的是一張講一個他早就忘了的功能的卡。
+  //
+  // 沒裝過的人這一列根本不會出現（checkRetired 回 null），所以對新學生來說這個
+  // 順序不存在。
+  "hook",
   // 排在 Claude 那組最後：它改的是同一個 settings.json，而且要等前面幾張都寫完
   // 再動那個檔，備份才有意義。
   "claude-hud",
 ];
 const CODEX_STEPS = ["codex-config", "codex-agents"];
 export const TAB_SYNC_MARKER = "jr-setup-ui tab sync";
+export const CODEX_APP_SERVER_MARKER = "jr-setup-ui codex shared app-server";
+export const CODEX_VERSION_GUARD_MARKER = "jr-setup-ui codex version guard";
 
 // 這一步是誰家的設定。合併要用同一家的 agent 去做——Codex 的 config.toml 交給
 // Claude 合併的話，動手的是沒在用那份設定的那一個（Reed 實測看到「Claude：思考中」
@@ -265,7 +272,7 @@ export function agentForStep(id) {
   return CODEX_STEPS.includes(id) ? "codex" : null;
 }
 
-export function stepsForTools(tools) {
+export function stepsForTools(tools, platform = process.platform) {
   const selected = tools.filter((tool) => TOOLS.includes(tool));
 
   if (selected.length === 0) {
@@ -275,7 +282,7 @@ export function stepsForTools(tools) {
   return [
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
-    "tab-sync",
+    ...(selected.includes("claude") ? ["tab-sync"] : []),
     // 命名與 context 監控拆開：兩者的檔案、註冊、驗證方式都不一樣，綁在一起的話
     // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
     ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
@@ -286,10 +293,7 @@ export function stepsForTools(tools) {
     ...(selected.includes("codex") ? CODEX_SKILL_STEPS : []),
     ...(selected.includes("claude") ? externalStepsFor("claude") : []),
     ...(selected.includes("codex") ? externalStepsFor("codex") : []),
-    // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑。
-    ...(selected.includes("claude") ? ["demo-claude"] : []),
-    ...(selected.includes("codex") ? ["demo-codex"] : []),
-    // 筆記那一段整段排在 demo 之後（選配）。段內的順序是：
+    // 筆記那一段整段排在 demo 前面（選配，但學生可以自己走完）。段內的順序是：
     //
     //   Obsidian      先有 app，vault 裡才寫得出 .obsidian/ 設定
     //   vault-sync    筆記庫那張的操作步驟第三步就要學生叫 AI 存一次——skill 排在
@@ -299,9 +303,14 @@ export function stepsForTools(tools) {
     ...(selected.includes("claude") ? [skillStepId("claude", "vault-sync")] : []),
     ...(selected.includes("codex") ? [skillStepId("codex", "vault-sync")] : []),
     "obsidian-vault",
-    // 整段的收尾：叫 AI 真的寫一篇進去，證明前面四張串起來是通的。
+    // 筆記段的收尾：叫 AI 真的寫一篇進去，證明前面四張串起來是通的。
     ...(selected.includes("claude") ? ["vault-agent-claude"] : []),
     ...(selected.includes("codex") ? ["vault-agent-codex"] : []),
+    // demo 排最後：它把前面裝的東西串起來跑一次，前面沒綠就沒必要跑；而且它要
+    // 當日密碼才開（見 model.js 的 SECTION_PASSCODES），提早發嚮導時本來就不該
+    // 讓學生走到這裡。
+    ...(selected.includes("claude") ? ["demo-claude"] : []),
+    ...(selected.includes("codex") ? ["demo-codex"] : []),
   ];
 }
 
@@ -321,6 +330,10 @@ export function hasMarkedBlock(content, marker) {
   const startAt = content.indexOf(start);
   const endAt = content.indexOf(end);
   return startAt !== -1 && endAt > startAt;
+}
+
+export function removeLegacyCodexTabSyncBlock(content, legacyBlock) {
+  return content.replace(legacyBlock, "");
 }
 
 export function upsertBlock(content, marker, block) {
@@ -351,34 +364,33 @@ export function isInteractiveInvocation(args) {
   return !args.some((arg) => NON_INTERACTIVE_ARGS.has(arg));
 }
 
-function posixTabSyncFunction(command, watcherTarget) {
-  // POSIX 每次都用 command 動態查 PATH，且沒有 Windows shim 副檔名，不必預先挑路徑。
+// POSIX 不再需要 watcher。分頁標題由命名 hook 自己寫 OSC 進 /dev/ttysNNN——
+// set-session-name.sh 在命名的當下寫一次，session-auto-namer.sh 每個 hook 事件再
+// 寫一次，跟 watcher 用的是同一招。
+//
+// 差別在頻率，而那正是重點：watcher 每秒無條件重寫，所以在這個分頁裡看背景 agent
+// 時，Claude Code 剛寫進去的 agent 名字會在一秒內被蓋回本分頁的名字（畫面上就是
+// 「閃一下正確名字又跳回去」）。改成事件驅動之後，看 agent 期間本 session 沒有 hook
+// 事件，也就沒人去蓋，agent 的名字留得住——而那個名字本來就是 auto-rename 寫進
+// job state 的名字。
+//
+// CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 是必要條件，不是可選的：少了它，Claude Code
+// 自己寫的標題會蓋掉 hook 寫的名字，而事件驅動的頻率搶不回來（macOS 實測 2026-08-19，
+// 有設才穩定）。
+//
+// ⚠️ 用指令前綴而不是 export：export 會讓這個 shell 之後開的每個程序都拿到。前綴仍
+// 會被 claude 的子程序繼承（包含它可能生出來的 daemon），這一點擋不掉——萬一 daemon
+// 拿到，底下的背景 agent 就不再寫標題，看 agent 時分頁會停在本分頁的名字。那等於改動
+// 前的結果（只是不閃），不會更糟，所以沒有為它多做防護。
+//
+// Windows 不能照做，而且理由是結構性的：那邊改標題靠 SetConsoleTitle，那是 console 的
+// 行程狀態，而 hook 是被 `powershell.exe -File` 叫起來的子行程——host 一退出標題就被
+// 還原，等於沒寫。標題要留得住，只能靠一個長壽的、待在同一個 console 裡的行程，那就是
+// watcher 本身。2026-08-20 在 Windows 上實測過三種情境，記在
+// docs/windows-tab-title-why-watcher.md，不要再推導一次。
+function posixTabSyncFunction(command) {
   return `${command}() {
-  local arg sync_file tty_path watcher_pid exit_code
-  for arg in "$@"; do
-    case "$arg" in
-      -p|exec|--version|--help) command ${command} "$@"; return $? ;;
-    esac
-  done
-
-  sync_file="\${TMPDIR:-/tmp}/jr-tab-sync-${command}-$$-\${RANDOM}.txt"
-  printf '%s\\n' '(等待命名)' > "$sync_file"
-  tty_path="$(tty 2>/dev/null)"
-  AI_TAB_SYNC_FILE="$sync_file"
-  export AI_TAB_SYNC_FILE
-
-  watcher_pid=""
-  if [ -n "$tty_path" ] && [ "$tty_path" != "not a tty" ]; then
-    "${watcherTarget}" "$sync_file" "$tty_path" &
-    watcher_pid=$!
-  fi
-
-  command ${command} "$@"
-  exit_code=$?
-  [ -n "$watcher_pid" ] && kill "$watcher_pid" 2>/dev/null
-  rm -f "$sync_file"
-  unset AI_TAB_SYNC_FILE
-  return "$exit_code"
+  CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command ${command} "$@"
 }`;
 }
 
@@ -422,9 +434,33 @@ function powershellTabSyncFunction(command, watcherTarget) {
 }
 
 function tabSyncBlock(platform, watcherTarget) {
-  const build =
-    platform === "win32" ? powershellTabSyncFunction : posixTabSyncFunction;
-  return `${build("claude", watcherTarget)}\n\n${build("codex", watcherTarget)}`;
+  if (platform !== "win32") {
+    return posixTabSyncFunction("claude");
+  }
+
+  return powershellTabSyncFunction("claude", watcherTarget);
+}
+
+function windowsCodexAppServerBlock(launcherTarget, restartTarget) {
+  const quotedTarget = launcherTarget.replaceAll("'", "''");
+  const quotedRestart = restartTarget.replaceAll("'", "''");
+  return `function codex {
+  param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
+  & '${quotedTarget}' @InvocationArgs
+  $global:LASTEXITCODE = $LASTEXITCODE
+}
+
+function codex-server-restart {
+  & '${quotedRestart}'
+  $global:LASTEXITCODE = $LASTEXITCODE
+}`;
+}
+
+function posixCodexVersionGuardBlock(guardTarget) {
+  const quotedTarget = guardTarget.replaceAll("'", "'\"'\"'");
+  return `codex() {
+  '${quotedTarget}' "$@"
+}`;
 }
 
 function hookCommand(target, platform, args = []) {
@@ -488,6 +524,54 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/hooks/${file}`,
     };
   });
+  if (id === "codex-namer") {
+    if (platform === "win32") {
+      hookFiles.push(
+        {
+          base: "codex-session-name-set",
+          source: "skills/hooks/codex-session-name-set.ps1",
+          target: `${agentDir}/hooks/codex-session-name-set.ps1`,
+        },
+        {
+          base: "codex-app-server-common",
+          source: "skills/hooks/codex-app-server-common.ps1",
+          target: `${agentDir}/hooks/codex-app-server-common.ps1`,
+        },
+        {
+          base: "codex-shared-app-server",
+          source: "skills/hooks/codex-shared-app-server.ps1",
+          target: `${agentDir}/hooks/codex-shared-app-server.ps1`,
+        },
+        {
+          base: "codex-server-restart",
+          source: "skills/hooks/codex-server-restart.ps1",
+          target: `${agentDir}/hooks/codex-server-restart.ps1`,
+        },
+      );
+    } else {
+      hookFiles.push(
+        {
+          base: "codex-session-name-set",
+          source: "skills/hooks/codex-session-name-set.py",
+          target: `${agentDir}/hooks/codex-session-name-set.py`,
+        },
+        {
+          base: "codex-server-restart",
+          source: "skills/hooks/codex-server-restart.sh",
+          target: `${home}/.local/bin/codex-server-restart`,
+        },
+        ...(platform === "darwin"
+          ? [
+              {
+                base: "codex-version-guard",
+                source: "skills/hooks/codex-version-guard.sh",
+                target: `${agentDir}/hooks/codex-version-guard.sh`,
+              },
+            ]
+          : []),
+      );
+    }
+  }
   // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
   // （原文：Command spawns a nested PowerShell process which cannot be validated），
   // 而「以後不要再問」寫下的規則含 session id，下次必失效。多裝一支 bash 薄殼把
@@ -504,6 +588,31 @@ function agentHooks(id, home, platform) {
   // 白名單放行的是模型真正會跑的那支：Windows 是薄殼，其他平台就是腳本本身。
   const namingTarget = (byBase["set-session-name-shim"] ?? byBase["set-session-name"])
     ?.target;
+  const windowsCodexProfile =
+    id === "codex-namer" && platform === "win32"
+      ? {
+          target: `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
+          marker: CODEX_APP_SERVER_MARKER,
+          block: windowsCodexAppServerBlock(
+            byBase["codex-shared-app-server"].target,
+            byBase["codex-server-restart"].target,
+          ),
+          legacyCodexTabSyncBlock: powershellTabSyncFunction(
+            "codex",
+            `${home}/.jr-setup/bin/ai-tab-sync.ps1`,
+          ),
+        }
+      : undefined;
+  const posixCodexProfile =
+    id === "codex-namer" && platform === "darwin"
+      ? {
+          target: `${home}/.zshrc`,
+          marker: CODEX_VERSION_GUARD_MARKER,
+          block: posixCodexVersionGuardBlock(
+            byBase["codex-version-guard"].target,
+          ),
+        }
+      : undefined;
   const registrations = spec.events.map((entry) => ({
     event: entry.event,
     command: hookCommand(byBase[entry.base].target, platform, entry.args),
@@ -526,6 +635,8 @@ function agentHooks(id, home, platform) {
       source,
       target: `${agentDir}/${source.split("/").pop()}`,
     })),
+    windowsCodexProfile,
+    posixCodexProfile,
   };
 }
 
@@ -661,20 +772,34 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         styleName: OUTPUT_STYLE_NAME,
       };
 
+    // 已退役。這一步以前裝一支 PreToolUse hook，把 `a && b` 這種串接指令擋下來，
+    // 理由是白名單逐個子指令比對，串接會整串比對不到、於是每一次都跳出來問。
+    //
+    // auto mode 底下那個理由整個消失：指令改由 classifier 逐一審查，串不串接都一樣
+    // 會過。留著只剩壞處——學生打一條再正常不過的 `cd x && ls` 被自己的機器擋下來，
+    // 而畫面上沒有任何東西解釋為什麼。
+    //
+    // 這一步現在只對「以前裝過的人」出現，做的事是把它移除（見 checkRetired）。
     case "hook":
       return {
         id,
-        label: "一次只跑一個指令",
-        kind: "hook",
-        source: "claude-code/hooks/block-chained-bash.js",
-        target: `${claudeDir}/hooks/block-chained-bash.js`,
+        label: "移除已退役的「一次只跑一個指令」",
+        kind: "retire",
+        files: [`${claudeDir}/hooks/block-chained-bash.js`],
         settingsTarget: `${claudeDir}/settings.json`,
+        markers: [HOOK_MARKER],
+        detail:
+          "auto mode 底下每一條指令都會被逐一審查，不再需要把串接的指令拆開——" +
+          "這支 hook 留著只會擋掉正常的指令，按一下把它移除",
       };
 
     case "allowlist":
       return {
         id,
-        label: "常用指令不用每次問你",
+        // 標題講兩件事的主角：讓 Claude 自己判斷，加上一份「不用等判斷」的清單。
+        // 只寫「常用指令不用每次問你」的話，學生會以為這一步的全部就是那份清單，
+        // 而真正改變他體感的是模式——那才是「危險的會擋、安全的直接跑」的來源。
+        label: "讓它自己判斷安全的操作",
         kind: "allowlist",
         source: "claude-code/starter-allowlist.json",
         settingsTarget: `${claudeDir}/settings.json`,
@@ -816,17 +941,19 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
       };
 
     case "tab-sync": {
+      // POSIX 只剩 rc 區塊，沒有要安裝的檔案——watcher 拿掉之後 watcherSource /
+      // target 就都是 undefined。下游要能吃這個：安裝時不複製檔案、檢查時不比對
+      // 版本、進度只看 rc 檔。Windows 維持原樣。
       const file = hookFileName("ai-tab-sync", platform);
       const target =
-        platform === "win32"
-          ? `${home}/.jr-setup/bin/${file}`
-          : `${home}/.local/bin/${file}`;
+        platform === "win32" ? `${home}/.jr-setup/bin/${file}` : undefined;
       return {
         id,
         label: "分頁自己報上名字",
         kind: "tab-sync",
-        watcherSource: `skills/bin/${file}`,
-        target,
+        ...(platform === "win32"
+          ? { watcherSource: `skills/bin/${file}`, target }
+          : {}),
         rcTarget:
           platform === "win32"
             ? `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`
@@ -839,8 +966,31 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "claude-namer":
     case "claude-monitor":
     case "codex-namer":
-    case "codex-monitor":
       return agentHooks(id, home, platform);
+
+    // 已退役。這支 hook 的前提沒有了：它假設「context 快滿＝這次對話要收尾了」，
+    // 所以提早叫學生去開新的一輪。
+    //
+    // Codex 官方的做法不是那樣——它把可用的 context 容量收小，快滿的時候在**同一個
+    // session 裡壓縮**（compress）再繼續，對話不用中斷。於是這支 hook 的提醒變成
+    // 在錯的時間叫人做錯的事：學生看到警告就去開新對話，把本來壓縮一下就能接著做
+    // 的脈絡整段丟掉。
+    //
+    // 只對「以前裝過的人」出現，做的事是把它移除（見 checkRetired）。
+    case "codex-monitor": {
+      const file = hookFileName("codex-context-monitor", platform);
+      return {
+        id,
+        label: "移除已退役的「Codex 快記不住前面時提醒你」",
+        kind: "retire",
+        files: [`${home}/.codex/hooks/${file}`],
+        settingsTarget: `${home}/.codex/hooks.json`,
+        markers: ["codex-context-monitor"],
+        detail:
+          "Codex 現在會把 context 容量收小，快滿的時候在同一個對話裡壓縮就能接著做" +
+          "——不用開新的一輪。這支還在的話會叫你去開新對話，按一下把它移除",
+      };
+    }
 
     case "demo-claude":
     case "demo-codex": {
@@ -909,57 +1059,55 @@ export function mergeOutputStyle(settings, { styleName }) {
   return { ...structuredClone(settings ?? {}), outputStyle: styleName };
 }
 
-// PreToolUse 的指令是丟給 bash 跑的，Windows 路徑不處理就會被吃掉：
-// C:\Users\Reed 裡的 \U \R 是 bash 的跳脫序列，路徑變成 C:UsersReed，node 找不到
-// 檔案而以 exit 1 結束——而 PreToolUse 只認 exit 2 是「擋下」，exit 1 是「hook 出
-// 錯，放行」。於是 hook 看起來裝好了、實際上什麼都沒擋（VM 實測 echo a && echo b
-// 直接通過）。反斜線換成正斜線 + 補引號，兩件都做：Windows 吃正斜線，引號則讓路
-// 徑帶空白時也不會斷成兩段。
-export function bashHookCommand(hookPath) {
-  return `node "${hookPath.replaceAll("\\", "/")}"`;
+// ⚠️ 這裡以前住著 bashHookCommand 與 mergeHookRegistration——擋串接那支 hook 的
+// 註冊器。整支退役了（見 describeStep 的 "hook"），所以一起拿掉。
+//
+// findHookRegistration 留著：退役那一列還要靠它認出「這台機器裝過」。
+//
+// 把命令列裡提到這幾個字的 hook 註冊全部拿掉，空掉的群組一起收乾淨。
+//
+// 重裝與退役共用同一段：重裝是「先拿掉舊的再寫新的」，退役是「只拿掉」。兩邊各寫
+// 一份的話，其中一份遲早會漏掉「群組空了要刪掉」——留一個空群組，Claude Code 讀
+// 得到卻什麼都不做，而畫面上看不出差別。
+//
+// Claude 的 settings.json 與 Codex 的 hooks.json 是同一個形狀
+// （hooks[事件][].hooks[].command），所以兩邊共用這一支。
+export function removeHookRegistrations(settings, markers) {
+  const next = structuredClone(settings ?? {});
+  const hooks = { ...(next.hooks ?? {}) };
+
+  for (const [event, groups] of Object.entries(hooks)) {
+    hooks[event] = (groups ?? [])
+      .map((group) => ({
+        ...group,
+        hooks: (group.hooks ?? []).filter((hook) =>
+          markers.every((marker) => !(hook.command ?? "").includes(marker)),
+        ),
+      }))
+      .filter((group) => group.hooks.length > 0);
+  }
+
+  next.hooks = hooks;
+  return next;
 }
 
-// 註冊 hook：先把舊的同名 hook 清掉再加，重跑安裝不會疊出兩份。
-export function mergeHookRegistration(settings, { hookPath }) {
-  const next = structuredClone(settings ?? {});
-  const hooks = next.hooks ?? {};
-  const preToolUse = (hooks.PreToolUse ?? [])
-    .map((group) => ({
-      ...group,
-      hooks: (group.hooks ?? []).filter(
-        (hook) => !(hook.command ?? "").includes(HOOK_MARKER),
+// 這幾個字還在不在任何一條註冊裡。退役那一列靠它決定「這個學生裝過沒有」。
+export function hasHookRegistrations(settings, markers) {
+  return Object.values(settings?.hooks ?? {}).some((groups) =>
+    (groups ?? []).some((group) =>
+      (group.hooks ?? []).some((hook) =>
+        markers.some((marker) => (hook.command ?? "").includes(marker)),
       ),
-    }))
-    .filter((group) => group.hooks.length > 0);
-
-  preToolUse.push({
-    matcher: "Bash",
-    hooks: [{ type: "command", command: bashHookCommand(hookPath), timeout: 5 }],
-  });
-
-  next.hooks = { ...hooks, PreToolUse: preToolUse };
-  return next;
+    ),
+  );
 }
 
 export function mergeAgentHookRegistrations(
   settings,
   { registrations, hookMarkers },
 ) {
-  const next = structuredClone(settings ?? {});
+  const next = removeHookRegistrations(settings, hookMarkers);
   const hooks = { ...(next.hooks ?? {}) };
-
-  for (const [event, groups] of Object.entries(hooks)) {
-    hooks[event] = groups
-      .map((group) => ({
-        ...group,
-        hooks: (group.hooks ?? []).filter((hook) =>
-          hookMarkers.every(
-            (marker) => !(hook.command ?? "").includes(marker),
-          ),
-        ),
-      }))
-      .filter((group) => group.hooks.length > 0);
-  }
 
   for (const registration of registrations) {
     const groups = [...(hooks[registration.event] ?? [])];
@@ -997,7 +1145,15 @@ export function hasAgentHookRegistrations(settings, registrations) {
 //
 // 不用 bypassPermissions / dontAsk：那是連工作區外、網路操作都不問，放進學生的
 // 設定檔風險太大，也不是這門課要教的習慣。
-export const CLAUDE_DEFAULT_MODE = "acceptEdits";
+export const CLAUDE_DEFAULT_MODE = "auto";
+
+// 我們上一輪寫進去的值。退役時只改這一個值——學生自己設成 plan / default /
+// bypassPermissions 的都不動，那是他的選擇。
+//
+// ⚠️ 這條規則靠「這個值一定是我們寫的」成立。學生刻意設成 acceptEdits 的話會被
+// 一起換掉，而我們分辨不出來——那是這個做法的代價，不是漏洞。換掉的方向是官方
+// 在 Pro/Max/Team 上的預設，所以就算猜錯，結果也是他原本沒裝嚮導時的樣子。
+export const SUPERSEDED_CLAUDE_MODE = "acceptEdits";
 
 // 驗證用：settings.json 現在的 defaultMode 是什麼。沒設回 null——「沒寫進去」與
 // 「學生自己設成別的」要分開講。
@@ -1039,6 +1195,23 @@ const CODEX_MODES = {
   approval_policy: '"on-request"',
   approvals_reviewer: '"auto_review"',
 };
+
+// 舊版 Windows 會移除原生 thread title，因為當時靠 SQLite + tab-sync。保留 transform
+// 只為了讓舊的 merge report 還能讀；新的 Windows 安裝和 POSIX 一樣保留原生設定。
+export function transformStepSource(content, step) {
+  if (step.sourceTransform !== "omit-codex-native-title") {
+    return content;
+  }
+
+  return content
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\s*terminal_title\s*=/.test(line) &&
+        !/^\s*["']thread-title["']\s*,?\s*(?:#.*)?$/.test(line),
+    )
+    .join("\n");
+}
 
 // Codex 有新舊兩套設定沙盒的方式，官方文件明說不能並存：
 // 「Don't combine with sandbox_mode or [sandbox_workspace_write]」。
@@ -1188,11 +1361,18 @@ export function mergeAllowRules(settings, { allowRules }) {
   const allow = [...(permissions.allow ?? [])];
   const added = allowRules.filter((rule) => !allow.includes(rule));
   // 學生自己調過就尊重他的選擇，只在沒設過的時候補上預設。
-  const modeAdded = permissions.defaultMode === undefined;
+  //
+  // 例外是上一輪嚮導寫進去的那個值（acceptEdits）：那不是學生的選擇，是我們的。
+  // 換成 auto 是這一步退役的另一半——白名單本身不用搬家（官方文件：auto mode 底下
+  // 窄的 Bash allow 規則照常生效，只有 Bash(*) 那種寬規則會被暫停）。
+  const superseded = permissions.defaultMode === SUPERSEDED_CLAUDE_MODE;
+  const modeAdded = permissions.defaultMode === undefined || superseded;
   next.permissions = {
     ...permissions,
     allow: [...allow, ...added],
-    defaultMode: permissions.defaultMode ?? CLAUDE_DEFAULT_MODE,
+    defaultMode: superseded
+      ? CLAUDE_DEFAULT_MODE
+      : (permissions.defaultMode ?? CLAUDE_DEFAULT_MODE),
   };
   return { settings: next, addedRules: added.length, modeAdded };
 }

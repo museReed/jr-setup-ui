@@ -35,7 +35,9 @@ function installedTargets(step) {
   }
 
   if (step.kind === "tab-sync") {
-    return [step.target, step.rcTarget];
+    // POSIX 沒有 watcher 檔可以看，只剩 rc 區塊。filter 掉 undefined，否則進度會
+    // 去 stat 一個 "undefined" 路徑，永遠算成沒裝好。
+    return [step.target, step.rcTarget].filter(Boolean);
   }
 
   if (step.kind === "agent-hooks") {
@@ -212,6 +214,125 @@ export async function saveManualChecked(ids, options = {}) {
   await mkdir(path.dirname(resolved.stateFile), { recursive: true });
   await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
   return state.manual;
+}
+
+// 已經按過「移除」的退役步驟。
+//
+// ⚠️ 這一筆存在的唯一理由是「按完之後那一列不可以直接消失」。
+//
+// 退役那一列的判準本來是「機器上還有沒有殘留」，所以移除成功之後它就沒有理由出現
+// 了——結果是學生按下按鈕、整張卡當場不見。他不會覺得「做完了」，他會覺得自己剛
+// 剛弄壞了什麼（leftovers.js 的隔離區那一列早就寫過同一條，我這輪沒照著走）。
+//
+// 記下來之後這一列就有三態：沒裝過（不出現）、還有殘留（黃燈＋移除鍵）、移除完了
+// （綠燈打勾）。第三態只有真的按過的人看得到。
+//
+// 不受指紋管轄，理由跟 manual 同一條：它記的是「這台機器上發生過這件事」，不是
+// 「裝過而且還有效」。
+export async function loadRetiredSteps(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.retired)
+    ? state.retired.filter((id) => typeof id === "string")
+    : [];
+}
+
+// 逐筆新增，不整份覆蓋——跟 manual／skipped 相反。那兩本要能取消（取消勾選、卡片
+// 驗過就從清單消失），這一本不會：移除過就是移除過，沒有「取消移除」這回事。
+export async function markStepRetired(id, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+  const retired = Array.isArray(state.retired)
+    ? state.retired.filter((entry) => typeof entry === "string")
+    : [];
+
+  if (!retired.includes(id)) {
+    retired.push(id);
+  }
+
+  state.version = VERSION;
+  state.retired = retired;
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return retired;
+}
+
+// 學生按「先略過這張」的卡。跟 manual 一樣不受指紋管轄：它記的是「我現在過不了，
+// 先往下走」，不是「裝過而且還有效」——重裝檔案不該讓他重新卡一次。
+//
+// 存在伺服器而不是瀏覽器，理由跟 selection 同一條：port 每次啟動都變，localStorage
+// 綁 origin 等於存不住。跳過清單重整就消失的話，這顆按鈕等於沒做——學生卡住的那幾
+// 張正是他最需要之後找得回來的。
+export async function loadSkippedCards(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.skipped)
+    ? state.skipped.filter((id) => typeof id === "string")
+    : [];
+}
+
+// 整份覆蓋，跟 saveManualChecked 同一個理由：卡片驗過之後要從清單裡消失，逐筆
+// 新增做不到。
+export async function saveSkippedCards(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.skipped = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.skipped;
+}
+
+// 用當日密碼打開過的段。跟 manual／skipped 同一類：它記的是「學生打對過那組數字」，
+// 不是「裝過而且還有效」，所以不受指紋管轄。
+//
+// 存在伺服器而不是瀏覽器，理由跟 selection 同一條：port 每次啟動都變，localStorage
+// 綁 origin 等於存不住——而這一段的解鎖偏偏最需要撐過重開（學生當天重開一次嚮導
+// 就要再跟講師問一次密碼）。
+export async function loadUnlockedSections(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.unlocked)
+    ? state.unlocked.filter((id) => typeof id === "string")
+    : [];
+}
+
+export async function saveUnlockedSections(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.unlocked = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.unlocked;
+}
+
+// 講師用萬用密碼開過的段。跟 unlocked 分開記，因為兩者解掉的東西不一樣：unlocked
+// 只解「當日密碼」那一道，overridden 是整段的鎖都跳過。混在同一本的話，學生用當日
+// 密碼開了 demo 就等於連「前面要做完」也一起免了。
+export async function loadOverriddenSections(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.overridden)
+    ? state.overridden.filter((id) => typeof id === "string")
+    : [];
+}
+
+export async function saveOverriddenSections(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.overridden = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.overridden;
 }
 
 export async function saveSelection(selection, options = {}) {

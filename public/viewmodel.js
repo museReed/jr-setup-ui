@@ -276,7 +276,7 @@ export function envRowModel(check, installed = false) {
     buttons.push({
       action: check.installAction,
       dataName: "installAction",
-      text: "安裝",
+      text: check.installLabel ?? "安裝",
       checkId: check.id,
     });
   }
@@ -363,7 +363,7 @@ export function envCardRowModel(card, installedSteps = new Set()) {
       buttons.push({
         action: "",
         dataName: "installAction",
-        text: "安裝",
+        text: check.installLabel ?? "安裝",
         checkId: check.id,
         disabled: true,
       });
@@ -552,7 +552,7 @@ export function configRowModel(
       buttons.push({
         action: installAction,
         dataName: "installAction",
-        text: "重裝",
+        text: check.installLabel ?? "重裝",
         step: check.id,
         secondary: true,
         rowId: rowIds.install,
@@ -561,7 +561,9 @@ export function configRowModel(
       buttons.push({
         action: installAction,
         dataName: "installAction",
-        text: "安裝",
+        // 退役那幾列走同一顆按鈕，但做的事是相反的——文字不能是「安裝」。
+        // 那一列自己帶 installLabel（見 config-check 的 checkRetired）。
+        text: check.installLabel ?? "安裝",
         step: check.id,
         rowId: rowIds.install,
       });
@@ -785,6 +787,56 @@ export function cardIsComplete(
   );
 }
 
+// 修好了就從跳過清單裡消失——「移除」不是另一個按鈕，是同一個 cardIsComplete。
+//
+// 為什麼不給一顆手動的「取消跳過」：四種卡（setup / manual / env / config）在
+// cardIsComplete 裡都有可判定的完成條件，沒有一種是「只能靠學生自己說做完了」。
+// 多一顆手動鍵只會多一條會跟它打架的路——清單說已修好、徽章說還沒過。
+//
+// 也順手清掉已經不存在的 id：學生把工具從「兩個都要」改回只有 Claude 時，另一半
+// 的卡整批消失，留在清單裡就會變成點不開的死項目。
+export function prunedSkippedCards(
+  cards,
+  skippedCardIds,
+  verifiedSteps = new Set(),
+  checkedManualIds = new Set(),
+) {
+  const alive = new Map(cards.map((card) => [card.checkId, card]));
+
+  return new Set(
+    [...skippedCardIds].filter((id) => {
+      const card = alive.get(id);
+      return (
+        card !== undefined &&
+        !cardIsComplete(card, verifiedSteps, checkedManualIds)
+      );
+    }),
+  );
+}
+
+// 底部那條「已跳過 N 張」展開之後的清單。跨段落，因為學生卡住的那幾張不會剛好
+// 都在同一段——只列當前這一段的話，翻到下一段清單就空了，看起來像紀錄不見了。
+//
+// 帶著 sectionId 與 index：點下去要落在那一張卡上，而那需要「哪一段的第幾張」。
+export function skippedListModel(sections, skippedCardIds) {
+  return sections.flatMap((section) =>
+    section.cards
+      .map((card, index) => ({ card, index }))
+      .filter(({ card }) => skippedCardIds.has(card.checkId))
+      .map(({ card, index }) => ({
+        checkId: card.checkId,
+        label: card.label,
+        detail: card.detail,
+        sectionId: section.sectionId,
+        // 段落標題住在 SECTIONS，不在扁平化的結果裡（那邊只有 sectionId）。
+        sectionTitle:
+          SECTIONS.find((entry) => entry.id === section.sectionId)?.title ??
+          section.sectionId,
+        index,
+      })),
+  );
+}
+
 // 一段裡「已完成」的卡有哪些。全站只有這一個答案，五個顯示位置（徽章、清單、
 // 里程碑、段落狀態、tab 解鎖）都從這裡或 cardIsComplete 出發。
 //
@@ -889,17 +941,34 @@ function cardsDone(cards, completedCardIds, seenCardIds) {
   );
 }
 
+// 跳過的卡「不擋路，但不算完成」。這兩件事在這裡分成兩個陣列：
+//
+//   done      圓點亮不亮、進度條寬不寬 —— 只認真的做完了
+//   passable  後面那幾站開不開          —— 做完了或按過略過都算
+//
+// 合成一個的話就得二選一，而兩種都是錯的：算完成，畫面會說「全部做完」而學生
+// 手上還有三張沒做（這個 repo 一路在修的假綠燈）；算沒完成，按了略過的人依舊
+// 被關在同一道門前，那顆按鈕等於沒做。
+function cardsPassable(cards, done, skippedCardIds) {
+  return cards.map(
+    (card, index) => done[index] || skippedCardIds.has(card.checkId),
+  );
+}
+
 export function milestoneModels(
   cards,
   completedCardIds,
   currentIndex,
   seenCardIds = new Set(),
+  skippedCardIds = new Set(),
 ) {
   const done = cardsDone(cards, completedCardIds, seenCardIds);
+  const passable = cardsPassable(cards, done, skippedCardIds);
 
   return cards.map((card, index) => {
     const completed = done[index];
-    const unlocked = completed || done.slice(0, index).every(Boolean);
+    const skipped = skippedCardIds.has(card.checkId) && !completed;
+    const unlocked = completed || passable.slice(0, index).every(Boolean);
     const percent = Math.round(((index + 1) / cards.length) * 100);
 
     return {
@@ -908,6 +977,7 @@ export function milestoneModels(
       percent,
       completed,
       unlocked,
+      skipped,
       reached: completed,
       current: index === currentIndex,
       // 卡片往哪邊展開看這一站落在條上的哪半邊，不是它排第幾顆。
@@ -1332,30 +1402,24 @@ export function terminalOutcomeLines({
   ];
 }
 
-export function configSummary(checks, verifiedSteps = new Set()) {
-  const total = checks.length;
-
-  if (total === 0) {
-    return {
-      done: 0,
-      total: 0,
-      allOk: false,
-      text: "尚未檢查",
-    };
-  }
-
-  // 「就緒」的門檻跟列上的綠燈同一條：結構齊全，而且該驗的行為也驗過了。
-  const done = checks.filter(
-    (check) =>
-      configRowModel(check, verifiedSteps.has(check.id)).status === "ok",
-  ).length;
-
-  return {
-    done,
-    total,
-    allOk: done === total,
-    text: `${total} 項中 ${done} 項就緒`,
-  };
+export function initialChecksReady({
+  envCheckInProgress,
+  configCheckInProgress,
+  envCheckQueued,
+  configCheckQueued,
+  envChecks,
+  configChecks,
+}) {
+  return (
+    !envCheckInProgress &&
+    !configCheckInProgress &&
+    envCheckQueued === null &&
+    configCheckQueued === false &&
+    Array.isArray(envChecks) &&
+    envChecks.length > 0 &&
+    Array.isArray(configChecks) &&
+    configChecks.length > 0
+  );
 }
 
 export function progressSummary(
@@ -1639,7 +1703,7 @@ export function installStatusMessage(action, result) {
   // ——設定檔是開視窗時讀的。不講的話他會以為修好了，回去打指令還是失敗。
   if (action === "fix-shell-wrapper") {
     return {
-      text: "已清除廢棄的引用。要開一個新的終端視窗，改動才會生效。",
+      text: "已清除舊 wrapper。要開一個新的終端視窗，改動才會生效。",
       failed: false,
     };
   }

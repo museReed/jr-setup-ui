@@ -49,6 +49,11 @@ assert(codexDarwin.args[1].includes("https://chatgpt.com/codex/install.sh"));
 assert(!codexDarwin.args[1].includes("npm install -g"));
 ok("macOS 兩項都改走官方原生安裝器，不經過 npm 全域目錄");
 
+const codexLinux = resolveInstaller("codex", "linux");
+assert.equal(codexLinux.cmd, "bash");
+assert.deepEqual(codexLinux, codexDarwin);
+ok("Linux 的升級 action 使用同一支官方 Codex 原生安裝器");
+
 // curl 失敗時右邊的直譯器讀到空輸入會正常結束，整條管線變 exit 0——
 // 沒裝成功卻回報成功。pipefail 是唯一擋得住的東西。
 for (const installer of [claudeDarwin, codexDarwin]) {

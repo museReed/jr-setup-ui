@@ -406,27 +406,6 @@ body {
    而是一顆寫著字的中性膠囊。
    圓形箭頭那顆的字是給讀螢幕的（.wizard-nav-label 被藏起來了），只換字沒有用
    ——畫面上兩顆會一模一樣，學生分不出自己按的是「我過了」還是「我先跳過」。 */
-.wizard-nav.is-skip {
-  width: auto;
-  height: auto;
-  padding: var(--space-3) var(--space-4);
-  gap: var(--space-2);
-  background: var(--color-bg-inset);
-  border-color: var(--color-border);
-  color: var(--color-text-muted);
-  box-shadow: none;
-  font-size: var(--fs-sm);
-}
-
-.wizard-nav.is-skip .wizard-nav-label {
-  position: static;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip-path: none;
-  white-space: nowrap;
-}
-
 /* 剛解鎖：晃一下 + 頭上一朵煙火（跟分頁解鎖用同一種慶祝）。 */
 .wizard-nav.is-unlocking {
   animation: tab-unlock-shake 0.5s ease;
@@ -690,6 +669,13 @@ body {
   cursor: not-allowed;
 }
 
+/* 跳過的站點自己一種樣子：虛線圈。不能是綠的（那張卡沒做完），也不能是鎖著的
+   灰（走得過去），所以借「畫了但沒填滿」這個意思——旁邊的實心圓點一眼就分得出。 */
+.ds-milestone.is-skipped {
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 2px var(--color-border-strong, var(--color-border));
+}
+
 .config-choice-panel {
   display: grid;
   gap: var(--space-4);
@@ -731,6 +717,40 @@ body {
 .config-card-header > div {
   min-width: 0;
   flex: 1;
+}
+
+/* 略過鍵：常駐在標題列，但畫成一顆安靜的按鈕。它是退路不是進度，長得跟「安裝」
+   「驗證」一樣顯眼的話學生會以為那是正常流程的下一步。 */
+.card-skip {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.card-skip:hover {
+  border-color: var(--color-border-strong, var(--color-border));
+  color: var(--color-text-strong);
+}
+
+/* 已跳過的狀態要看得出來，但仍然是次要的——它講的是「這張你先放下了」，
+   不是一個成就。 */
+.card-skip[data-skipped="true"] {
+  border-style: dashed;
+  background: var(--color-bg-inset);
+  color: var(--color-text-strong);
+}
+
+/* 整張卡淡一階，跟站點上那顆虛線圈講同一件事。內容不收合：卡住的通常就是最長的
+   那張，收起來等於學生回來修的時候還要先展開一次。 */
+.current-task-card[data-skipped="true"] .current-task-body {
+  opacity: 0.72;
 }
 
 .config-card-header .ds-toollogo-mark {
@@ -1466,6 +1486,96 @@ body.wt-locked {
   resize: vertical;
 }
 
+/* 預覽區的複製鍵。浮在右上角，不佔內容的寬度。 */
+.report-preview-wrap {
+  position: relative;
+}
+
+.report-preview-wrap .mail-copy {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+}
+
+/* 寄信那條路的收件人與主旨。mailto 打不開時，這兩行是他唯一的線索。 */
+.mail-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+}
+
+.mail-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mail-key {
+  flex: 0 0 auto;
+  width: 4em;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* 值可能很長（主旨帶著卡片名稱），讓它自己捲，不要把按鈕擠出畫面。 */
+.mail-row code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-sm);
+}
+
+.mail-copy {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.mail-copy:hover {
+  color: var(--color-text-strong);
+}
+
+/* 當日密碼那個框。窄一點——它只有一個四位數的欄位，撐到 640px 會空得像出錯頁。 */
+.passcode-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(420px, 92vw);
+  text-align: left;
+}
+
+/* 等寬字體＋放大字距：學生對著講師報的數字一個一個核對，這樣看得清楚。 */
+.passcode-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-bg-inset);
+  color: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-lg);
+  letter-spacing: 0.3em;
+}
+
+.passcode-error {
+  margin: 0;
+  color: var(--color-danger, #d13438);
+  font-size: var(--fs-sm);
+}
+
 /* 送出去的就是這一塊的內容。等寬字體：路徑與 log 對齊了才看得出哪一行是哪一行。 */
 .report-preview {
   max-height: 40vh;
@@ -1610,4 +1720,78 @@ body.wt-locked {
   .term-shake {
     animation: none;
   }
+}
+
+/* 跳過清單：常駐在畫面底部中央。放頁首的話往下捲就看不到，而它要提醒的正是
+   「你還有幾張沒回去修」——看不到的提醒等於沒有。 */
+.skipped-tray {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: min(420px, calc(100vw - var(--space-6)));
+  transform: translateX(-50%);
+}
+
+.skipped-tray-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-bg-raised, var(--color-bg-inset));
+  color: var(--color-text-strong);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-2, 0 6px 20px rgb(0 0 0 / 12%));
+  cursor: pointer;
+}
+
+.skipped-tray-toggle svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+/* 清單往上長，不往下——底下沒有空間了。最多一屏的一半，超過就自己捲。 */
+.skipped-tray-list {
+  order: -1;
+  max-height: 40vh;
+  margin: 0;
+  padding: var(--space-2);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3, 12px);
+  background: var(--color-bg-raised, var(--color-bg-inset));
+  box-shadow: var(--shadow-2, 0 6px 20px rgb(0 0 0 / 12%));
+}
+
+.skipped-tray-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-2, 8px);
+  background: transparent;
+  color: var(--color-text-strong);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.skipped-tray-item:hover {
+  background: var(--color-bg-inset);
+}
+
+.skipped-tray-where {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs, 12px);
 }

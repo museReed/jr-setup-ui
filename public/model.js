@@ -19,14 +19,48 @@ export const SECTIONS = [
   { id: "env", title: "讓 AI 能跑起來", subtitle: "環境與登入" },
   { id: "rules", title: "讓它照你的規矩回話", subtitle: "規則檔與 hooks" },
   { id: "skills", title: "給它技能包", subtitle: "Skills" },
-  { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
-  // 選配的一段，排在主線之後：它跟前面四段沒有依賴關係，學生跑完主線再做。
+  // 選配的一段。它跟前面幾段沒有依賴關係，學生想先做就先做。
   {
     id: "notes",
     title: "使用 Obsidian 管理你的知識庫",
     subtitle: "Obsidian 與 GitHub",
   },
+  // demo 排最後：它要當日密碼才開（見 SECTION_PASSCODES）。網頁嚮導會提早發出去
+  // 讓學生先裝環境，這一段擺在最後，學生走完前面才會撞到那道鎖。
+  { id: "demo", title: "跑一次給你看", subtitle: "Demo" },
 ];
+
+// 要當天才開的那幾段，以及打得開它們的數字。
+//
+// 這跟其他的鎖不是同一種：其他的鎖是「做完前面就會開」，學生自己解得開；這一道
+// 只有講師在課堂上報出來的數字打得開。理由是嚮導會提早幾天發給學生先裝環境，而
+// demo 那段是當天要一起跑的。
+export const SECTION_PASSCODES = { demo: "0822" };
+
+// 前後常黏到空白（複製貼上、或手機鍵盤自動補一個空格），比對前先清乾淨。
+export function matchesSectionPasscode(sectionId, entered) {
+  const expected = SECTION_PASSCODES[sectionId];
+
+  return (
+    expected !== undefined &&
+    typeof entered === "string" &&
+    entered.trim() === expected
+  );
+}
+
+// 講師的萬用密碼。跟上面那個當日密碼不是同一件事：
+//
+//   當日密碼  只解「今天才開」那一道，前面幾段沒做完照樣進不去
+//   萬用密碼  把整段的鎖直接跳過，前面沒做完也開
+//
+// 給課堂上要跳著示範的人用（「先看最後那段長什麼樣」），以及助教在學生機器上排查
+// 問題時不必真的把前面全跑一遍。學生用不到，但也沒有藏——它擋的是順手做過頭，
+// 不是防作弊。
+export const MASTER_PASSCODE = "admin";
+
+export function matchesMasterPasscode(entered) {
+  return typeof entered === "string" && entered.trim() === MASTER_PASSCODE;
+}
 
 // 選配的段不看前面做完沒。筆記那段跟主線沒有相依性——Obsidian 與筆記庫不需要
 // 任何一段裝好的東西（只有建 repo 那步要 GitHub 登入，而那步自己的錯誤訊息會把
@@ -177,12 +211,12 @@ export const GUIDANCE = {
   // 這一列的說明只有一行（放長了會把修復鍵擠出畫面），完整的說法寫在這裡。
   // 它是整段唯一「東西都裝好了、但還是叫不動」的狀況，不講清楚學生會以為是誤報。
   "shell-wrapper": {
-    symptom: "終端機打 codex 說找不到指令，但這裡明明顯示已安裝",
-    expected: "打 codex 會回版本號",
+    symptom: "終端機打 Claude 或 Codex 叫不動，或分頁標題沒有跟著 session 名稱更新",
+    expected: "Claude 與 Codex 都叫得動，分頁標題也會走目前平台的命名路徑",
     checks: [
-      "你的 shell 設定檔裡有一個同名的舊捷徑，指向上一輪課程留下、後來被移除的檔案",
-      "它排在真正的程式前面，所以每次都是它接手——不清掉的話，重裝幾次都一樣",
-      "按那一列的「清除廢棄的引用」，清完要開一個新的終端視窗才會生效",
+      "shell 設定檔可能同時留著失效的 Claude 捷徑，以及會接手 Codex 標題的舊 wrapper",
+      "它們排在真正的程式前面，所以會讓 CLI 叫不動，或把 Codex 的平台命名路徑蓋掉",
+      "按那一列的清除按鈕，清完要開一個新的終端視窗才會生效",
     ],
     diagnose: null,
   },
@@ -263,12 +297,24 @@ export const GUIDANCE = {
     ],
     diagnose: null,
   },
+  // 這一列是退役，做的事是移除，所以自救說明講的是「按了還在怎麼辦」。
   hook: {
-    symptom: "跑 `echo a && echo b` 時，兩個指令都照常執行了",
-    expected: "畫面出現「一次只跑一個指令」，第二個指令不會執行",
+    symptom: "按了移除，這一列還在",
+    expected: "這一列整個消失（沒裝過的人本來就看不到它）",
     checks: [
-      "關掉舊的終端分頁，再開一個新分頁",
-      "確認 Claude Code 是從新分頁裡啟動",
+      "重按一次這一列的「重新檢查」——移除是即時的，但畫面要重查才會更新",
+      "還在的話，手動刪掉 ~/.claude/hooks/block-chained-bash.js",
+      "再打開 ~/.claude/settings.json，把 hooks 裡提到 block-chained-bash 的那幾行刪掉",
+    ],
+    diagnose: null,
+  },
+  "codex-monitor": {
+    symptom: "按了移除，這一列還在",
+    expected: "這一列整個消失（沒裝過的人本來就看不到它）",
+    checks: [
+      "重按一次這一列的「重新檢查」",
+      "還在的話，手動刪掉 ~/.codex/hooks/codex-context-monitor.sh（Windows 是 .ps1）",
+      "再打開 ~/.codex/hooks.json，把提到 codex-context-monitor 的那幾行刪掉",
     ],
     diagnose: null,
   },
@@ -287,6 +333,8 @@ export const GUIDANCE = {
     checks: [
       "安裝後有沒有關掉舊分頁，再開一個新分頁",
       "第一次使用 Codex 時，有沒有接受 hook 信任提示",
+      "macOS / Linux：Codex 的 config.toml 有沒有設定 `terminal_title = [\"thread\"]`，app-server control socket 是否可連",
+      "Windows：PowerShell profile 有沒有載入 Codex 共用 app-server wrapper，背景 app-server 是否在 127.0.0.1:4500",
     ],
     diagnose: null,
   },
@@ -294,7 +342,7 @@ export const GUIDANCE = {
     symptom: "名字已經寫進同步檔，但終端分頁標題沒有動",
     expected: "同步檔一出現新名字，分頁標題就跟著更新",
     checks: [
-      "shell profile 裡有沒有載入 claude / codex wrapper",
+      "shell profile 裡有沒有載入 claude wrapper",
       "安裝 wrapper 後有沒有關掉舊分頁，再開一個新分頁",
     ],
     diagnose: "diagnose-title-path",
@@ -314,6 +362,7 @@ export const GUIDANCE = {
     checks: [
       "有沒有在新終端分頁啟動 Codex",
       "第一次使用 Codex 時，有沒有接受 hook 信任提示",
+      "macOS / Linux 與 Windows 都看 Codex 原生 terminal title；Windows 另確認背景 app-server 已啟動",
     ],
     diagnose: null,
   },
@@ -364,7 +413,21 @@ export function sectionGateState(
   tools = "claude",
   sectionDone = {},
   sectionBlockers = {},
+  unlockedSections = new Set(),
+  overriddenSections = new Set(),
 ) {
+  // 講師用萬用密碼開過的段：整段的鎖直接跳過，連算都不用算。放在最前面，因為它
+  // 蓋掉的是「所有理由」——放在後面的話還要一條一條去減，減漏一條就等於沒開。
+  if (overriddenSections.has(sectionId)) {
+    return {
+      locked: false,
+      missing: [],
+      previousPending: null,
+      needsPasscode: false,
+      reason: "",
+    };
+  }
+
   const codexSelected = tools.split(",").includes("codex");
   const required = (SECTION_GATES[sectionId] ?? []).filter(
     (gate) => gate.codexOnly !== true || codexSelected,
@@ -387,11 +450,14 @@ export function sectionGateState(
   // 沒做完鎖住第二段，第二段做完了卻把第三段開了（Reed 實測看到一三開、二鎖）。
   //
   // 點名最早那一段：中間幾段擋人的理由都源自它，那才是學生該回去的地方。
+  //
+  // 選配的段自己不擋人，也不會擋住排在它後面的段——筆記那段排在 demo 前面之後，
+  // 不濾掉的話「沒做選配的筆記」就會把 demo 鎖住，而那一段本來就可做可不做。
   const previousPending = OPTIONAL_SECTIONS.has(sectionId)
     ? null
-    : SECTIONS.slice(0, index).find(
-        (section) => sectionDone[section.id] !== true,
-      ) ?? null;
+    : SECTIONS.slice(0, index)
+        .filter((section) => !OPTIONAL_SECTIONS.has(section.id))
+        .find((section) => sectionDone[section.id] !== true) ?? null;
   const previousDone =
     previousPending === null ? true : sectionDone[previousPending.id];
   // 分開記「還不知道」與「確定沒做完」：兩者都擋，但話要講得不一樣——資料還沒
@@ -428,10 +494,24 @@ export function sectionGateState(
     ...missing.map((gate) => `完成「${gate.title}」`),
   ];
 
+  // 當日密碼是最後一道，而且跟前面那幾道並存（Reed 拍板）：前面沒做完照樣要做完，
+  // 密碼只是再加一層「今天才開」。
+  //
+  // needsPasscode 只在「其他理由都清掉了、只差密碼」時才是 true。前面還沒做完就先
+  // 彈密碼框的話，學生打對了數字還是進不去，那個彈窗等於在騙他。
+  const needsPasscode =
+    SECTION_PASSCODES[sectionId] !== undefined &&
+    !unlockedSections.has(sectionId);
+
+  if (needsPasscode) {
+    reasons.push("輸入講師當天報的密碼");
+  }
+
   return {
     locked: reasons.length > 0,
     missing,
     previousPending,
+    needsPasscode: needsPasscode && reasons.length === 1,
     reason: reasons.length === 0 ? "" : `${reasons.join("，再")}。`,
   };
 }
@@ -628,7 +708,7 @@ const ENV_CARD_META = {
     label: "清掉上一輪留下的舊捷徑",
     logo: "logo-terminal",
     description:
-      "上過課的機器常留著指向已刪程式的舊捷徑，會讓後面裝好的東西全都叫不動。這張把它清掉",
+      "上過課的機器可能同時留著 Claude 與 Codex 的舊捷徑，會讓 CLI 叫不動或蓋掉分頁標題。這張把它清掉",
   },
   // 跟上面那張同一個性質、同一段時機：都是「上一輪留下的東西擋著這一輪」。
   // 兩張都排在 CLI 之前（見 ENV_FIRST），不然學生會先裝完再發現裝的那支叫不到。
@@ -819,7 +899,11 @@ export const CARD_DESCRIPTIONS = {
   // hook 與 allowlist 合併成一張卡之後，這一行由 MERGED_CARDS.allowlist 提供，這裡不再
   // 是它的來源。留著是因為 checkCard 的 fallback 仍會查這張表——合併若哪天拆回去，
   // 沒有這兩行就會退回那句「設定 X，讓這項功能能在接下來的課程中正常使用」。
-  hook: "擋下把好幾個指令串成一串跑，出錯時看得出是卡在哪一步",
+  // 已退役。auto mode 底下每一條指令都會被逐一審查，串接不再是問題——這支留著只會
+  // 擋掉正常的指令。這張卡只有「以前裝過的人」看得到。
+  hook:
+    "這支已經退役了：以前它擋下把好幾個指令串成一串跑，是因為白名單逐個子指令比對、" +
+    "串起來就對不上。現在改成 auto mode 逐一審查，留著只會擋掉正常的指令。按一下把它移除",
   allowlist: "安全的指令與工作區內的改檔案不再逐次問你",
   "claude-hud":
     "輸入框下面多一行，隨時看得到現在用哪個模型、對話塞多滿、額度還剩多少",
@@ -832,8 +916,11 @@ export const CARD_DESCRIPTIONS = {
   "claude-monitor":
     "對話太長它快忘記前面講過什麼時會提早叫你收尾，這張的驗證要跑一分多鐘",
   "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
+  // 已退役。這張卡只有「以前裝過的人」看得到，做的事是移除。
   "codex-monitor":
-    "Codex 快忘記前面講過什麼時也會提早叫你收尾，這張的驗證一樣要跑一分多鐘",
+    "這支已經退役了：它會在對話快滿時叫你收尾、去開新的一輪。但 Codex 現在把可用的" +
+    "容量收小，快滿時在同一個對話裡壓縮一下就能接著做——照它說的去開新對話，反而是" +
+    "把還用得到的脈絡丟掉。按一下把它移除",
   // skill 的描述要回答「這支是拿來做什麼的」——標題已經是它的名字了。
   "skill-claude-auto-rename":
     "幫這次對話重新取名，前面那張是它自己取，這一支是你不滿意時可以叫它重取",
@@ -964,11 +1051,22 @@ const MERGED_CARDS = {
   // ⚠️ key 跟著 MERGE_ORDER 的**最後一個**走，沒跟著換的話整張卡的標題與說明會
   // 靜靜退回單列的預設值（改過兩次，兩次都差點漏掉這件事）。
   // 這張卡現在是 ["allowlist", "hook"]，所以 key 是 hook。
-  hook: {
+  // 這張卡以前是「白名單 + 擋串接 hook」兩列合併。hook 退役之後只剩白名單一列，
+  // 但標題留著——學生要的答案還是同一個問題：它什麼時候該停下來問你。
+  allowlist: {
     label: "它什麼時候該停下來問你",
+    // 分兩層講，因為它們解決的是兩件不同的事：
+    //
+    //   auto mode  誰來判斷「這條指令安不安全」——從你變成一個審查模型
+    //   白名單     哪些指令連判斷都不用等——最高頻的那幾條直接放行
+    //
+    // 合成一句「常用指令不用每次問你」的話，學生會以為這一步就是那份清單，而真正
+    // 改變他體感的是模式。反過來只講模式也不對：他會納悶為什麼 ls 是瞬間的、
+    // 別的指令要停半秒。
     detail:
-      "兩件事一起設：危險的指令一定擋下來，安全的指令與工作區內的改檔案不再" +
-      "逐次問你，裝好之後會開一個真的終端，當場試兩題給你看",
+      "兩層一起設：預設模式改成 auto，由 Claude 自己判斷每一條指令安不安全，" +
+      "危險的擋下來、安全的直接跑；另外加一份 39 條的常用指令清單，" +
+      "這幾條連判斷都不用等。裝好之後會開一個真的終端試給你看",
   },
   "output-style": {
     label: "Claude Code CLI 做事的規矩與回話風格",
@@ -1003,7 +1101,10 @@ const MERGE_ORDER = {
   //
   // ⚠️ 換順序**一定要連 MERGED_CARDS 的 key 一起換**——它跟著最後那一個走，忘了換
   // 整張卡的標題與說明會靜靜退回單列的預設值。
-  hook: ["allowlist", "hook"],
+  //
+  // ⚠️ 2026-08-21：這一組解散了。擋串接那支 hook 退役之後，這張卡只剩白名單一列，
+  // 而合併的意義本來就是「兩份設定是同一件事」——只剩一份就沒有東西要合。
+  // MERGED_CARDS 的 key 跟著搬到 allowlist（那個註解警告過兩次的坑，這次記得了）。
 };
 
 export function mergeCardChecks(checks) {

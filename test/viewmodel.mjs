@@ -21,7 +21,6 @@ import {
   checklistGroups,
   currentCardIndex,
   configRowModel,
-  configSummary,
   envButtonState,
   envCardRowModel,
   envRowModel,
@@ -30,6 +29,7 @@ import {
   FIX_BUTTON_TEXT,
   fixButtonText,
   impliedVerifiedSteps,
+  initialChecksReady,
   installStatusMessage,
   isLoginAction,
   isVerifyAction,
@@ -38,6 +38,8 @@ import {
   loginWaitStep,
   manualStepGroups,
   milestoneModels,
+  prunedSkippedCards,
+  skippedListModel,
   nextCardUnlocked,
   rowRunOptions,
   runControlsState,
@@ -113,6 +115,19 @@ try {
     assert.equal(model.ariaLabel, expected.ariaLabel);
   }
   ok("規則檔三種狀態沿用環境檢查圖示與讀屏文字");
+
+  assert.deepEqual(
+    envRowModel({
+      id: "codex",
+      label: "Codex CLI",
+      status: "missing",
+      detail: "請升級至 0.146.0 以上",
+      installAction: "install-codex",
+      installLabel: "升級",
+    }).buttons.map(({ text }) => text),
+    ["升級"],
+  );
+  ok("環境檢查有 installLabel 時用它當安裝按鈕文字");
 
   const configActions = configRowModel({
     id: "claude-md",
@@ -550,6 +565,78 @@ try {
 
   const seen = (...ids) => new Set(ids);
 
+  // 修好了就自己從跳過清單裡消失——「移除」不是另一個按鈕，是同一個 cardIsComplete。
+  const skipCards = [
+    {
+      kind: "config",
+      checkId: "fixed",
+      label: "修好了",
+      check: { id: "fixed", label: "修好了", status: "ok" },
+    },
+    {
+      kind: "config",
+      checkId: "still-broken",
+      label: "還沒好",
+      check: { id: "still-broken", label: "還沒好", status: "missing" },
+    },
+  ];
+  assert.deepEqual(
+    [
+      ...prunedSkippedCards(
+        skipCards,
+        new Set(["fixed", "still-broken"]),
+        new Set(),
+      ),
+    ],
+    ["still-broken"],
+  );
+  ok("驗證通過的卡自動移出跳過清單，沒過的留著");
+
+  // 學生把工具從「兩個都要」改回只有 Claude：另一半的卡整批消失。留在清單裡就會
+  // 變成點不開的死項目——點下去要落在一張根本不存在的卡上。
+  assert.deepEqual(
+    [
+      ...prunedSkippedCards(
+        skipCards,
+        new Set(["still-broken", "ghost"]),
+        new Set(),
+      ),
+    ],
+    ["still-broken"],
+  );
+  ok("卡片不見了就從跳過清單清掉，不留點不開的死項目");
+
+  // 底部那條清單跨段落列，而且帶著「哪一段的第幾張」——點下去畫面整個換掉，沒有
+  // 這兩個數字學生不知道自己被帶到哪裡了。
+  assert.deepEqual(
+    skippedListModel(
+      [
+        { sectionId: "env", cards: [{ checkId: "a" }, { checkId: "b", label: "乙", detail: "說明" }] },
+        { sectionId: "rules", cards: [{ checkId: "c", label: "丙", detail: "另一句" }] },
+      ],
+      new Set(["b", "c"]),
+    ),
+    [
+      {
+        checkId: "b",
+        label: "乙",
+        detail: "說明",
+        sectionId: "env",
+        sectionTitle: "讓 AI 能跑起來",
+        index: 1,
+      },
+      {
+        checkId: "c",
+        label: "丙",
+        detail: "另一句",
+        sectionId: "rules",
+        sectionTitle: "讓它照你的規矩回話",
+        index: 0,
+      },
+    ],
+  );
+  ok("跳過清單跨段落，每筆帶著段落標題與第幾張");
+
   const milestones = milestoneModels(
     cards,
     new Set(["one"]),
@@ -624,6 +711,50 @@ try {
     [true, false, false, true, true],
   );
   ok("中間插入新卡後，已完成的舊卡不會因為位移而變灰");
+
+  // 略過的卡「不擋路，但不算完成」——同一組資料要同時說出這兩句話。
+  //
+  // 第一張沒完成、學生按了略過：第二、三站要開得了（不然那顆按鈕等於沒做），
+  // 而第一顆圓點仍然是暗的（不然畫面會說一件沒發生的事）。
+  const skippedFirst = milestoneModels(
+    cards,
+    new Set(),
+    0,
+    seen("one", "two", "three"),
+    new Set(["one"]),
+  );
+  // 第三站仍然鎖著：擋它的是第二張（沒完成也沒被略過）。放行只跟著那顆按鈕走，
+  // 略過一張不會順手把整段都開了。
+  assert.deepEqual(
+    skippedFirst.map(({ unlocked }) => unlocked),
+    [true, true, false],
+  );
+  assert.deepEqual(
+    skippedFirst.map(({ reached }) => reached),
+    [false, false, false],
+  );
+  assert.deepEqual(
+    skippedFirst.map(({ skipped }) => skipped),
+    [true, false, false],
+  );
+  ok("按過略過的卡放行下一站，但圓點不亮，也沒有順手開掉整段");
+
+  // 沒按略過的話，第一張沒完成就照舊擋住後面——放行只跟著那顆按鈕走，不是普遍鬆綁。
+  assert.deepEqual(
+    milestoneModels(cards, new Set(), 0, seen("one", "two", "three")).map(
+      ({ unlocked }) => unlocked,
+    ),
+    [true, false, false],
+  );
+  ok("沒按略過就照舊擋著");
+
+  // 略過的卡後來自己過了：那時它同時在 completed 與 skipped 裡，標記要讓給完成
+  // ——畫成虛線的「已跳過」會蓋掉一個真的做完的綠點。
+  assert.equal(
+    milestoneModels(cards, allIds, 0, seen("one"), new Set(["one"]))[0].skipped,
+    false,
+  );
+  ok("已完成的卡不再標成已跳過");
 
   // 卡片往哪邊展開要看落在條上的哪半邊。用「第幾顆」判的話，只有一站時那顆
   // （percent 100、貼最右）會被判成往右開，直接溢出畫面。
@@ -1679,24 +1810,34 @@ try {
   }
   ok("每一列送出的參數都覆蓋且符合該 action 宣告的 schema");
 
-  assert.deepEqual(configSummary([]), {
-    done: 0,
-    total: 0,
-    allOk: false,
-    text: "尚未檢查",
-  });
-  ok("空的規則檔檢查顯示尚未檢查");
+  // ⚠️ 這裡以前有兩條 configSummary 的測試（「尚未檢查」與「2 項中 1 項就緒」）。
+  // 那一行整個拿掉了（Reed 指定），函式也跟著刪——上面那條里程碑進度條講的是同一
+  // 件事，而且講得更清楚：它看得出還剩幾張、走到哪，不用學生自己換算比例。
+  //
+  // 它還有一個實際的毛病：分母會隨著退役那幾列出現與否而變（同一台機器按完移除
+  // 之後從 31 變 30），看起來像壞掉。
 
-  assert.deepEqual(
-    configSummary([{ status: "ok" }, { status: "warn" }]),
-    {
-      done: 1,
-      total: 2,
-      allOk: false,
-      text: "2 項中 1 項就緒",
-    },
-  );
-  ok("規則檔摘要算出部分完成數量");
+  const readyInitialChecks = {
+    envCheckInProgress: false,
+    configCheckInProgress: false,
+    envCheckQueued: null,
+    configCheckQueued: false,
+    envChecks: [{ id: "node" }],
+    configChecks: [{ id: "rules" }],
+  };
+  assert.equal(initialChecksReady(readyInitialChecks), true);
+
+  for (const patch of [
+    { envCheckInProgress: true },
+    { configCheckInProgress: true },
+    { envCheckQueued: { manual: false } },
+    { configCheckQueued: true },
+    { envChecks: [] },
+    { configChecks: [] },
+  ]) {
+    assert.equal(initialChecksReady({ ...readyInitialChecks, ...patch }), false);
+  }
+  ok("第一張只在環境與規則檢查都完成且有結果時標記完成");
 
   assert.deepEqual(extractLoginHints("請開 https://example.com/device 並輸入"), {
     url: "https://example.com/device",

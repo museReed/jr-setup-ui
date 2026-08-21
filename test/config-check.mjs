@@ -15,21 +15,33 @@ import {
   checkAgentHooks,
   checkAllowlist,
   checkCopyStep,
+  checkRetired,
   checkTabSync,
   missingSourceLines,
   probeHook,
   resolveBash,
+  withActions as withConfigActions,
   wiredToScript,
 } from "../src/config-check.js";
 import {
   describeStep,
   expandAllowRules,
   mergeAgentHookRegistrations,
+  transformStepSource,
   upsertBlock,
 } from "../src/config-install.js";
 import { materialsDir } from "../src/paths.js";
 
 const MATERIALS = materialsDir();
+
+for (const id of ["codex-config", "codex-namer"]) {
+  const posix = withConfigActions({ id, status: "ok" }, "darwin");
+  const windows = withConfigActions({ id, status: "ok" }, "win32");
+  assert.match(posix.eyeCheck, /app-server|原生/);
+  assert.match(windows.eyeCheck, /app-server|原生/);
+  assert.doesNotMatch(windows.eyeCheck, /SQLite|tab-sync/);
+}
+ok("Codex config 與 namer 在 POSIX／Windows 都驗證原生 app-server 路徑");
 
 // 裝進去的內容必須跟 materials 逐字相同，否則會被判成舊版——所以測試也要照真的裝。
 function installFrom(source, target) {
@@ -94,31 +106,65 @@ process.stdin.on("end", () => {
   assert.equal(resolveBash(() => false, "win32"), "bash");
   ok("Windows 上會去常見位置找 Git Bash，找不到才退回 PATH");
 
+  // POSIX 這一步只剩 rc 區塊：watcher 拿掉之後沒有檔案要裝，所以「沒裝」的唯一
+  // 判準就是 rc 檔裡沒有那個區塊。
   const tabStep = describeStep("tab-sync", {
     lang: "zh-TW",
     home: dir,
     platform: "linux",
   });
-  mkdirSync(path.dirname(tabStep.target), { recursive: true });
-  writeFileSync(tabStep.target, "watcher");
+  assert.equal(tabStep.target, undefined);
   // 標題是文案，會跟著改。這裡要驗的是「檢查結果對不對」，所以照 step 自己的
   // label 比，不要把當下的字釘進測試。
   assert.deepEqual(await checkTabSync(tabStep, MATERIALS), {
     id: "tab-sync",
     label: tabStep.label,
-    status: "warn",
-    detail: "檔案在，但 shell function 沒寫進去",
+    status: "missing",
+    detail: "尚未安裝",
   });
+  ok("POSIX 沒有 rc 區塊時回報尚未安裝，不會因為缺檔案而爆掉");
+
+  // 舊版的區塊：標記在、函式也在，但它會起 watcher 每秒重寫標題——只看「標記在
+  // 不在」會給綠燈，於是學生留著舊行為卻以為已經更新（看背景 agent 時標題照閃）。
+  writeFileSync(
+    tabStep.rcTarget,
+    upsertBlock(
+      "",
+      tabStep.rcMarker,
+      'claude() {\n  AI_TAB_SYNC_FILE=/tmp/x command claude "$@"\n}',
+    ),
+  );
+  const staleBlock = await checkTabSync(tabStep, MATERIALS);
+  assert.equal(staleBlock.status, "warn");
+  assert.match(staleBlock.detail, /舊版/);
+  ok("rc 區塊是舊版（還在起 watcher）時不給綠燈");
+
   writeFileSync(
     tabStep.rcTarget,
     upsertBlock("", tabStep.rcMarker, tabStep.rcBlock),
   );
-  // 這裡的 watcher 還是那個假的 "watcher" 字串——內容跟 materials 不同，
-  // 舊版就長這樣：檔案在、標記在，但標題不會變。
-  const staleWatcher = await checkTabSync(tabStep, MATERIALS);
-  assert.equal(staleWatcher.status, "warn");
-  assert.match(staleWatcher.detail, /舊版/);
-  ok("watcher 是舊版時不給綠燈——只看檔案在不在會漏掉");
+  const freshBlock = await checkTabSync(tabStep, MATERIALS);
+  assert.equal(freshBlock.status, "ok");
+  ok("rc 區塊是新版時給綠燈");
+
+  // Windows 那條路沒有跟著改：仍然要有 watcher 檔，而且內容要跟 materials 一致。
+  const winTabStep = describeStep("tab-sync", {
+    lang: "zh-TW",
+    home: dir,
+    platform: "win32",
+  });
+  assert.notEqual(winTabStep.target, undefined);
+  assert.deepEqual(await checkTabSync(winTabStep, MATERIALS), {
+    id: "tab-sync",
+    label: winTabStep.label,
+    status: "missing",
+    detail: "尚未安裝",
+  });
+  mkdirSync(path.dirname(winTabStep.target), { recursive: true });
+  writeFileSync(winTabStep.target, "watcher");
+  const winStale = await checkTabSync(winTabStep, MATERIALS);
+  assert.equal(winStale.status, "warn");
+  ok("Windows 仍然檢查 watcher 檔在不在、是不是舊版");
 
   // protectExisting 的列不能用逐字相同當作完成：那些檔案的正常狀態就是「工作坊的
   // 內容 + 學生自己的內容」。實測踩到——學生按了「用 AI 合併」，工作坊那段確實整段
@@ -150,6 +196,45 @@ process.stdin.on("end", () => {
   assert.equal(mergedRow.needsMerge, undefined);
   assert.match(mergedRow.detail, /你自己的內容也還在/);
   ok("併過工作坊設定、又有自己的區塊時算完成，不再要求重複合併");
+
+  const wrongStatusSection = [
+    template.replace("[tui]", "[profiles.wrong]"),
+    "[tui]",
+    'status_line = ["context-used"]',
+    'terminal_title = ["thread"]',
+    "",
+  ].join("\n");
+  writeFileSync(codexStep.target, wrongStatusSection);
+  const misplacedStatus = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(misplacedStatus.status, "warn");
+  assert.match(misplacedStatus.detail, /status_line.*thread-title/);
+  ok("thread-title 只出現在其他 section 時不給綠燈");
+
+  const wrongTerminalArray = [
+    template.replace("[tui]", "[profiles.wrong]"),
+    "[tui]",
+    'status_line = ["thread-title", "context-used"]',
+    'terminal_title = ["thread", "model"]',
+    "",
+  ].join("\n");
+  writeFileSync(codexStep.target, wrongTerminalArray);
+  const wrongTerminal = await checkCopyStep(MATERIALS, codexStep);
+  assert.equal(wrongTerminal.status, "warn");
+  assert.match(wrongTerminal.detail, /terminal_title.*\["thread"\]/);
+  ok("[tui] terminal_title 是錯誤 array 時不給綠燈");
+
+  const windowsCodexStep = describeStep("codex-config", {
+    lang: "zh-TW",
+    home: path.join(dir, "windows"),
+    platform: "win32",
+  });
+  mkdirSync(path.dirname(windowsCodexStep.target), { recursive: true });
+  const windowsTemplate = transformStepSource(template, windowsCodexStep);
+  writeFileSync(windowsCodexStep.target, windowsTemplate);
+  assert.equal((await checkCopyStep(MATERIALS, windowsCodexStep)).status, "ok");
+  assert.match(windowsTemplate, /"thread-title"/);
+  assert.match(windowsTemplate, /^terminal_title\s*=\s*\["thread"\]/m);
+  ok("Windows config 也要求原生 thread-title 與 terminal_title");
 
   // 「用 AI 合併」那條路最容易壞的地方：整段內容都併進去了（所以檔案層算完成），
   // 但被放在某個 [section] 後面——TOML 的最上層到第一個 [section] 為止，於是那三個
@@ -232,9 +317,14 @@ process.stdin.on("end", () => {
   assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "warn");
   ok("AGENTS.md 也受保護，且 Markdown 標題算實質內容");
 
-  installFrom(tabStep.watcherSource, tabStep.target);
-  assert.equal((await checkTabSync(tabStep, MATERIALS)).status, "ok");
-  ok("tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
+  installFrom(winTabStep.watcherSource, winTabStep.target);
+  mkdirSync(path.dirname(winTabStep.rcTarget), { recursive: true });
+  writeFileSync(
+    winTabStep.rcTarget,
+    upsertBlock("", winTabStep.rcMarker, winTabStep.rcBlock),
+  );
+  assert.equal((await checkTabSync(winTabStep, MATERIALS)).status, "ok");
+  ok("Windows 的 tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
 
   const agentStep = describeStep("claude-namer", {
     lang: "zh-TW",
@@ -275,6 +365,74 @@ process.stdin.on("end", () => {
   );
   assert.equal((await checkAgentHooks(agentStep, MATERIALS)).status, "ok");
   ok("檔案、註冊、白名單三者都在才算生效");
+
+  const windowsAgentStep = describeStep("codex-namer", {
+    lang: "zh-TW",
+    home: path.join(dir, "windows-agent"),
+    platform: "win32",
+  });
+  for (const file of windowsAgentStep.hookFiles) {
+    installFrom(file.source, file.target);
+  }
+  const windowsSettings = mergeAgentHookRegistrations(
+    {},
+    {
+      registrations: windowsAgentStep.registrations,
+      hookMarkers: windowsAgentStep.hookFiles.map((file) => file.base),
+    },
+  );
+  mkdirSync(path.dirname(windowsAgentStep.settingsTarget), { recursive: true });
+  writeFileSync(windowsAgentStep.settingsTarget, JSON.stringify(windowsSettings));
+  const missingProfile = await checkAgentHooks(windowsAgentStep, MATERIALS);
+  assert.equal(missingProfile.status, "warn");
+  assert.match(missingProfile.detail, /PowerShell profile/);
+  mkdirSync(path.dirname(windowsAgentStep.windowsCodexProfile.target), {
+    recursive: true,
+  });
+  writeFileSync(
+    windowsAgentStep.windowsCodexProfile.target,
+    upsertBlock(
+      "",
+      windowsAgentStep.windowsCodexProfile.marker,
+      windowsAgentStep.windowsCodexProfile.block,
+    ),
+  );
+  assert.equal(
+    (await checkAgentHooks(windowsAgentStep, MATERIALS)).status,
+    "ok",
+  );
+  ok("Windows Codex 命名要有共用 app-server profile 才給綠燈");
+
+  const macAgentStep = describeStep("codex-namer", {
+    lang: "zh-TW",
+    home: path.join(dir, "mac-agent"),
+    platform: "darwin",
+  });
+  for (const file of macAgentStep.hookFiles) {
+    installFrom(file.source, file.target);
+  }
+  const macSettings = mergeAgentHookRegistrations(
+    {},
+    {
+      registrations: macAgentStep.registrations,
+      hookMarkers: macAgentStep.hookFiles.map((file) => file.base),
+    },
+  );
+  mkdirSync(path.dirname(macAgentStep.settingsTarget), { recursive: true });
+  writeFileSync(macAgentStep.settingsTarget, JSON.stringify(macSettings));
+  const missingMacProfile = await checkAgentHooks(macAgentStep, MATERIALS);
+  assert.equal(missingMacProfile.status, "warn");
+  assert.match(missingMacProfile.detail, /shell profile/);
+  writeFileSync(
+    macAgentStep.posixCodexProfile.target,
+    upsertBlock(
+      "",
+      macAgentStep.posixCodexProfile.marker,
+      macAgentStep.posixCodexProfile.block,
+    ),
+  );
+  assert.equal((await checkAgentHooks(macAgentStep, MATERIALS)).status, "ok");
+  ok("macOS Codex 命名要有 core daemon profile 才給綠燈");
 
   // 舊版 hook 檔案：三項全綠，但模型每次命名還是會被權限層擋下。
   writeFileSync(agentStep.hookFiles[0].target, "舊版內容");
@@ -455,10 +613,16 @@ process.stdin.on("end", () => {
         }),
       );
 
+    // auto 現在是我們自己寫進去的值，所以是正常的綠燈。
     writeSettings("auto");
+    const expected = await checkAllowlist(MATERIALS, allowStep);
+    assert.equal(expected.status, "ok", expected.detail);
+
+    // 學生自己挑了別的模式：仍然是綠燈，說明講清楚跟我們預期的不同。
+    writeSettings("plan");
     const studentChose = await checkAllowlist(MATERIALS, allowStep);
     assert.equal(studentChose.status, "ok", studentChose.detail);
-    assert.match(studentChose.detail, /你自己設的 auto/);
+    assert.match(studentChose.detail, /你自己設的 plan/);
 
     // 但「根本沒設」仍然是黃燈——那一種重跑安裝真的會補上，按鈕有用。
     writeSettings(null);
@@ -466,10 +630,76 @@ process.stdin.on("end", () => {
     assert.equal(notSet.status, "warn");
     assert.match(notSet.detail, /重跑安裝/);
     assert.ok(notSet.detail.length <= 40, notSet.detail);
-    ok("學生自己設過預設模式是綠燈，沒設才是黃燈（黃燈會讓驗證那格永遠打不了勾）");
+
+    // 上一輪嚮導寫進去的 acceptEdits 也是黃燈，同一個理由：重跑安裝會把它換掉。
+    // 判成綠燈的話已經裝過的人永遠停在舊模式，畫面上還沒有任何按鈕可按。
+    writeSettings("acceptEdits");
+    const superseded = await checkAllowlist(MATERIALS, allowStep);
+    assert.equal(superseded.status, "warn", superseded.detail);
+    assert.match(superseded.detail, /換成 auto/);
+    assert.ok(superseded.detail.length <= 40, superseded.detail);
+    ok("預設模式：auto 綠、學生自選綠、沒設與上一輪的 acceptEdits 都是黃燈");
   } finally {
     rmSync(path.join(MATERIALS, sourceRel), { force: true });
     rmSync(missDir, { recursive: true, force: true });
+  }
+
+  // 退役那一列的三態。
+  //
+  // ⚠️ 第三態（移除完了還留著打勾）是 Reed 實測指出的：判準本來只有「還有沒有
+  // 殘留」，於是學生按下移除的當下整張卡就消失了。他不會覺得做完了，他會覺得自己
+  // 剛剛弄壞了什麼。leftovers.js 的隔離區那一列早就寫過同一條。
+  const retireDir = path.join(tmpdir(), `jr-retire-${process.pid}`);
+
+  try {
+    const retireStep = describeStep("hook", {
+      lang: "zh-TW",
+      home: retireDir,
+      platform: "darwin",
+    });
+
+    // ① 沒裝過：整列不出現。新學生不該看到一列「已移除你沒裝過的東西」。
+    assert.equal(await checkRetired(retireStep, []), null);
+
+    // ② 有殘留：黃燈，按鈕的字是「移除」不是「安裝」——它做的事正好相反。
+    mkdirSync(path.dirname(retireStep.files[0]), { recursive: true });
+    writeFileSync(retireStep.files[0], "// 舊的\n");
+    const leftover = await checkRetired(retireStep, []);
+    assert.equal(leftover.status, "warn");
+    assert.equal(leftover.installLabel, "移除");
+    assert.equal(leftover.retired, true);
+
+    // 只剩註冊、檔案已經被學生自己刪掉，也要算殘留：那條註冊指向一個不存在的
+    // 檔案，每次事件失敗一次，而畫面上看不出來。
+    rmSync(retireStep.files[0], { force: true });
+    mkdirSync(path.dirname(retireStep.settingsTarget), { recursive: true });
+    writeFileSync(
+      retireStep.settingsTarget,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "node /x/block-chained-bash.js" }],
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal((await checkRetired(retireStep, [])).status, "warn");
+
+    // ③ 移除完了：綠燈、留在畫面上、沒有按鈕。
+    rmSync(retireStep.settingsTarget, { force: true });
+    const done = await checkRetired(retireStep, ["hook"]);
+    assert.notEqual(done, null, "按過移除之後這一列不可以消失");
+    assert.equal(done.status, "ok");
+    assert.equal(done.noInstall, true, "沒有東西可裝也沒有東西可驗，按鈕要收掉");
+
+    // 記錄只認自己那一步：別人被移除過不會讓這一列冒出來。
+    assert.equal(await checkRetired(retireStep, ["codex-monitor"]), null);
+    ok("退役三態：沒裝過不出現、有殘留給移除鍵、移除完留著打勾不消失");
+  } finally {
+    rmSync(retireDir, { recursive: true, force: true });
   }
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);

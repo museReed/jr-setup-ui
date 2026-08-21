@@ -9,19 +9,21 @@ import path from "node:path";
 import {
   applySubstitutions,
   CLAUDE_DEFAULT_MODE,
+  SUPERSEDED_CLAUDE_MODE,
   CLAUDE_HUD,
   OBSIDIAN_GIT,
   CODEX_MODE_EXPECTATIONS,
   countInstalledRules,
   describeStep,
   expandAllowRules,
-  findHookRegistration,
   hasAgentHookRegistrations,
+  hasHookRegistrations,
   hasMarkedBlock,
   readCodexModes,
   readDefaultMode,
   readRetiredCodexKeys,
   stepsForTools,
+  transformStepSource,
 } from "./config-install.js";
 import { spawnEnv } from "./env-path.js";
 import {
@@ -29,6 +31,7 @@ import {
   mergeGroupFor,
   mergeLeaderFor,
 } from "./merge-backup.js";
+import { loadRetiredSteps } from "./progress-state.js";
 import { materialsDir } from "./paths.js";
 
 const HOME = homedir();
@@ -89,7 +92,7 @@ async function sameAsSource(materials, step) {
     readFile(source, "utf8"),
     readFile(step.target, "utf8"),
   ]);
-  return a === b;
+  return transformStepSource(a, step) === b;
 }
 
 // protectExisting 的列（CLAUDE.md、config.toml）不能用逐字相同當作「完成」。
@@ -117,10 +120,11 @@ export async function missingSourceLines(materials, step) {
     return null;
   }
 
-  const [sourceText, targetText] = await Promise.all([
+  const [rawSourceText, targetText] = await Promise.all([
     readFile(source, "utf8"),
     readFile(step.target, "utf8"),
   ]);
+  const sourceText = transformStepSource(rawSourceText, step);
   const isToml = step.target.endsWith(".toml");
   const required = sourceText
     .split("\n")
@@ -199,7 +203,93 @@ async function codexModeIssues(step) {
     }
   }
 
-  return { missing, differs, stale };
+  return {
+    missing,
+    differs,
+    stale,
+    native:
+      step.sourceTransform === "omit-codex-native-title"
+        ? []
+        : codexNativeTitleIssues(content),
+  };
+}
+
+function stripTomlComment(line) {
+  let quote = null;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (quote === null && (char === '"' || char === "'")) {
+      quote = char;
+    } else if (quote === char && line[index - 1] !== "\\") {
+      quote = null;
+    } else if (quote === null && char === "#") {
+      return line.slice(0, index);
+    }
+  }
+
+  return line;
+}
+
+function tomlSection(content, name) {
+  const lines = (content ?? "").split("\n");
+  const pattern = new RegExp(`^\\s*\\[\\s*${name}\\s*\\]\\s*(?:#.*)?$`);
+  const starts = lines
+    .map((line, index) => (pattern.test(line) ? index : -1))
+    .filter((index) => index !== -1);
+
+  if (starts.length !== 1) {
+    return null;
+  }
+
+  const start = starts[0] + 1;
+  const relativeEnd = lines
+    .slice(start)
+    .findIndex((line) => /^\s*\[/.test(stripTomlComment(line)));
+  const end = relativeEnd === -1 ? lines.length : start + relativeEnd;
+  return lines.slice(start, end).map(stripTomlComment).join("\n");
+}
+
+function tomlStringArray(section, key) {
+  if (section === null) {
+    return null;
+  }
+
+  const pattern = new RegExp(
+    `^\\s*${key}\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*$`,
+    "gm",
+  );
+  const matches = [...section.matchAll(pattern)];
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  const raw = matches[0][1];
+  const strings = /"((?:\\.|[^"\\])*)"|'([^']*)'/g;
+  const values = [...raw.matchAll(strings)].map((match) => match[1] ?? match[2]);
+  const skeleton = raw.replace(strings, "__STRING__");
+  return /^\[\s*(?:__STRING__(?:\s*,\s*__STRING__)*\s*,?)?\s*\]$/.test(
+    skeleton,
+  )
+    ? values
+    : null;
+}
+
+function codexNativeTitleIssues(content) {
+  const tui = tomlSection(content, "tui");
+  const statusLine = tomlStringArray(tui, "status_line");
+  const terminalTitle = tomlStringArray(tui, "terminal_title");
+  const issues = [];
+
+  if (!statusLine?.includes("thread-title")) {
+    issues.push('[tui] status_line 必須包含 "thread-title"');
+  }
+  if (terminalTitle?.length !== 1 || terminalTitle[0] !== "thread") {
+    issues.push('[tui] terminal_title 必須是 ["thread"]');
+  }
+
+  return issues;
 }
 
 // 模式檢查只降級、不搶話：檔案層先講完（沒裝、需要合併、內容是舊版），都通過了才
@@ -212,7 +302,7 @@ export async function checkCopyStep(materials, step) {
     return result;
   }
 
-  const { missing, differs, stale } = await codexModeIssues(step);
+  const { missing, differs, stale, native } = await codexModeIssues(step);
 
   // 舊 key 排在最前面：它在的時候，底下那兩種判斷得到的結論都不算數——新的那個
   // key 就算值是對的也沒生效。
@@ -224,6 +314,14 @@ export async function checkCopyStep(materials, step) {
       ...result,
       status: "warn",
       detail: `${result.detail}，但舊的 ${stale.join("、")} 還在，會讓新設定失效——按這一列的安裝鍵會把它停用`,
+    };
+  }
+
+  if (native.length > 0) {
+    return {
+      ...result,
+      status: "warn",
+      detail: `${result.detail}，但 ${native.join("；")}`,
     };
   }
 
@@ -323,16 +421,19 @@ export const VERIFICATION = {
   "codex-config": {
     behavior: "verify-behavior",
     options: { tools: "codex" },
-    eye: "Codex 視窗最下面那一條有四段：用掉多少、哪個模型、哪個資料夾、這週還剩多少",
+    eye: "POSIX 的 Codex 視窗最下面有五段，分頁標題也用原生 session 名稱",
+    eyeWindows: "Windows 的 Codex status line 與分頁標題都顯示原生 session 名稱",
   },
-  // 有副產物可抓的情境不給勾選框：程式判定得了就不該問學生。
-  hook: { terminal: { case: "chained", agent: "claude" } },
-  // 同一張卡的另一半。這兩格方向相反但驗的是同一套規矩：危險的指令一定擋下來，
-  // 安全的指令一定不再問。
+  // ⚠️ 2026-08-21：擋串接那支 hook 退役了，這裡的驗證跟著拿掉——退役那一列要做的
+  // 是移除，「驗證它會擋」正好是相反的期望。
+  // 這一格驗的是「安全的指令一定不再問」。
   //
-  // 先前只有「擋」有實測。「不問」那半的結構檢查只數得出「39 條規則、defaultMode
-  // 是 acceptEdits」——那證明得了檔案寫對，證明不了 Claude Code 真的照著做。今天
-  // 才踩過同一種：Codex 的三個模式 key 值全對，行為卻不是我們要的。
+  // ⚠️ 以前這裡還有另一半（擋串接那支 hook 的實測），所以這段註解原本寫「兩格方向
+  // 相反」。那支退役了，現在整張卡只剩這一格。
+  //
+  // 結構檢查只數得出「39 條規則、defaultMode 是 auto」——那證明得了檔案寫對，證明
+  // 不了 Claude Code 真的照著做。踩過同一種：Codex 的三個模式 key 值全對，行為卻
+  // 不是我們要的。
   //
   // 原本配一格眼睛（「指令直接跑掉，沒有跳出詢問」）。拿掉了（Reed 拍板）：那一格
   // 問的事情，行為驗證的題目裡本來就要模型自己回報一次，學生等於被問了兩遍同一題。
@@ -376,7 +477,11 @@ export const VERIFICATION = {
     terminal: { case: "statusline", agent: "claude" },
     eye: "輸入框下面多出一行，裡面有模型名、一條進度條、專案名",
   },
-  // 這一格不叫 AI：要驗的是 watcher 有沒有把名字放上分頁標題，跟模型無關。
+  // 這一格不叫 AI：要驗的是名字有沒有上到分頁標題，跟模型無關。
+  //
+  // POSIX 上已經沒有 watcher 了——標題由命名 hook 自己寫 OSC 進 tty，而這一步只負責
+  // 那個 shell function（設 CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1，不然 Claude Code
+  // 自己的標題會蓋掉 hook 寫的名字）。要看的畫面兩邊一樣，所以文案不分平台。
   "tab-sync": {
     terminal: { case: "title", agent: "claude" },
     eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
@@ -392,7 +497,8 @@ export const VERIFICATION = {
   "claude-monitor": { terminal: { case: "context", agent: "claude" } },
   "codex-namer": {
     terminal: { case: "naming", agent: "codex" },
-    eye: "那個視窗的分頁標題變成命名（第一次會問你要不要信任 hook，要接受）",
+    eye: "POSIX 的 Codex sidebar 與原生分頁標題都透過 app-server 變成命名",
+    eyeWindows: "Windows 的 Codex sidebar、status line 與分頁標題都透過 app-server 變成命名",
   },
   // codex-monitor 的行為驗證加回來了（Reed 決定），跟 claude-monitor 對稱。
   //
@@ -408,7 +514,10 @@ export const VERIFICATION = {
   // Claude 那張要驗、Codex 這張不用，然後懷疑是不是壞了（Reed 實測就是這樣問的）。
   //
   // 如果它又開始誤判，先查上面那兩個對不上，不要直接再拿掉一次。
-  "codex-monitor": { terminal: { case: "context", agent: "codex" } },
+  //
+  // ⚠️ 2026-08-21：這支 hook 整個退役了，所以驗證也一起拿掉——退役那一列要做的是
+  // 移除，沒有東西可以「驗證它有效」。上面整段留著是因為它記的是「為什麼加回來」，
+  // 而如果哪天 Codex 那邊又需要一支監控 hook，這些踩過的坑仍然有效。
   //
   // 沒有 behavior 也沒有 terminal 的列不寫進這張表（白名單也是），結構對了就直接
   // 綠燈——留一個空物件會讓它仍被當成「要按 verify-in-terminal」，參數卻是空的。
@@ -591,92 +700,51 @@ async function checkOutputStyle(materials, step) {
   };
 }
 
-async function checkHook(step, materials) {
-  const fileExists = existsSync(step.target);
+// 退役的那幾步，三態：
+//
+//   沒裝過        回 null，整列不出現
+//   還有殘留      黃燈 ＋ 一顆「移除」
+//   移除完了      綠燈打勾，留在畫面上
+//
+// 第一態要消失：從沒裝過的新學生根本不知道那是什麼，一列「✅ 已移除你沒裝過的
+// 東西」只會讓他停下來想自己是不是漏了什麼。
+//
+// ⚠️ 第三態要留著，這是 Reed 實測指出的：判準本來只有「還有沒有殘留」，於是移除
+// 成功的當下這一列就沒有理由出現——學生按下按鈕、整張卡當場不見。他不會覺得做完
+// 了，他會覺得自己剛剛弄壞了什麼。leftovers.js 的隔離區那一列早就寫過同一條
+//（「按完整張卡消失的話，學生會以為自己做錯了什麼」），這輪沒照著走。
+//
+// 分得開兩態靠的是 state.json 記的那一筆（markStepRetired）：沒有那一筆就是從來
+// 沒裝過，有那一筆就是他自己按掉的。
+export async function checkRetired(step, retiredSteps = []) {
+  const leftoverFiles = step.files.filter((file) => existsSync(file));
   const settings = await readJsonOrNull(step.settingsTarget);
-  const registration = findHookRegistration(settings ?? {});
+  const registered = hasHookRegistrations(settings ?? {}, step.markers);
 
-  if (fileExists && (await staleTargets(materials, [step])).length > 0) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "裝的是舊版——重跑安裝",
-    };
+  if (leftoverFiles.length === 0 && !registered) {
+    return retiredSteps.includes(step.id)
+      ? {
+          id: step.id,
+          label: step.label,
+          status: "ok",
+          detail: "已經移除了，這一列不用再做什麼",
+          retired: true,
+          // 沒有東西可以再裝，也沒有東西可以驗——按鈕整顆收掉。
+          noInstall: true,
+        }
+      : null;
   }
 
-  if (fileExists && registration !== null) {
-    // 跑註冊的那條指令，不是自己拼路徑去跑腳本。腳本幾乎永遠是好的，壞的是它被
-    // 怎麼叫——Windows 上就是註冊路徑沒加引號，這一格卻一直給綠燈。
-    const probe = await probeRegisteredHook(
-      registration.command,
-      "echo a && echo b",
-      await spawnEnv(),
-    );
-
-    // 逾時要跟「找不到 bash」分開處理：兩者的 exitCode 都是 null，但逾時再退回去
-    // 跑腳本只會再等一輪，而且會給出「這台沒有 bash」這種假原因。
-    if (probe.timedOut === true) {
-      return {
-        id: step.id,
-        label: step.label,
-        status: "warn",
-        detail: "已註冊，但實測探測逾時——這台機器上 hook 跑不完",
-      };
-    }
-
-    // 真的一台 bash 都找不到時，退回直接跑腳本本身。那比不上「跑註冊的那條指令」
-    // ——路徑寫壞就抓不到了——但總比把一句學生修不了的錯誤丟在畫面上好。
-    if (probe.exitCode === null) {
-      const fallback = await probeHook(step.target, "echo a && echo b");
-
-      return fallback.exitCode === 2
-        ? {
-            id: step.id,
-            label: step.label,
-            status: "ok",
-            detail: "已註冊，實測會擋（這台機器沒有 bash，改驗腳本本身）",
-          }
-        : {
-            id: step.id,
-            label: step.label,
-            status: "warn",
-            detail: `已註冊，但實測沒擋下來（exit ${fallback.exitCode}）`,
-          };
-    }
-
-    if (probe.exitCode !== 2) {
-      return {
-        id: step.id,
-        label: step.label,
-        status: "warn",
-        detail: `已註冊，但實測沒擋下來（exit ${probe.exitCode}）`,
-      };
-    }
-
-    return {
-      id: step.id,
-      label: step.label,
-      status: "ok",
-      detail: "已註冊，實測會擋",
-    };
-  }
-
-  // 複製成功但沒註冊是最危險的狀態：hook 不會擋，也不會報錯。
-  if (fileExists) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "檔案在，但 settings.json 沒註冊——不會擋",
-    };
-  }
-
+  // 黃燈不是綠燈：不移除的話它還在跑。但它也不是「壞掉」——所以說明裡直接寫做這件
+  // 事的理由，而不是一句「檢查失敗」。
   return {
     id: step.id,
     label: step.label,
-    status: "missing",
-    detail: registration === null ? "尚未安裝" : "已註冊但檔案不見了",
+    status: "warn",
+    detail: step.detail,
+    retired: true,
+    // 這一列沒有「驗證」可言，按鈕的字也不能是「安裝」——它做的事正好相反。
+    installLabel: "移除",
   };
 }
 
@@ -706,7 +774,11 @@ export async function checkAllowlist(materials, step) {
       id: step.id,
       label: step.label,
       status: "ok",
-      detail: `${installed} 條規則，改檔案不再逐次詢問`,
+      // 兩層各講一句，順序跟卡片說明一致：先是誰在判斷，再是哪些不用等判斷。
+      //
+      // 這句以前寫「改檔案不再逐次詢問」——那是 acceptEdits 的效果，模式換成 auto
+      // 之後就對不上了。
+      detail: `auto mode 判斷每條指令，另有 ${installed} 條不用等判斷`,
     };
   }
 
@@ -719,6 +791,18 @@ export async function checkAllowlist(materials, step) {
         label: step.label,
         status: "warn",
         detail: `${installed} 條規則，但預設模式沒設，重跑安裝會補上`,
+      };
+    }
+
+    // 上一輪嚮導寫進去的舊模式。這也是黃燈＋按鈕，理由跟「沒設」同一條：重跑安裝
+    // 真的會把它換成 auto（見 mergeAllowRules）。判成綠燈的話已經裝過的人永遠停在
+    // 舊模式，而畫面上完全看不出來有東西可以做。
+    if (mode === SUPERSEDED_CLAUDE_MODE) {
+      return {
+        id: step.id,
+        label: step.label,
+        status: "warn",
+        detail: `${installed} 條規則，預設模式還是舊的，重跑安裝會換成 auto`,
       };
     }
 
@@ -750,7 +834,11 @@ export async function checkAllowlist(materials, step) {
 }
 
 export async function checkTabSync(step, materials) {
-  if (!existsSync(step.target)) {
+  // POSIX 拿掉 watcher 之後這一步沒有要安裝的檔案，step.target 是 undefined——
+  // 只有 rc 區塊要驗。有 target 的（Windows）才走下面「檔案在不在、是不是舊版」。
+  const hasWatcher = step.target !== undefined;
+
+  if (hasWatcher && !existsSync(step.target)) {
     return {
       id: step.id,
       label: step.label,
@@ -764,19 +852,24 @@ export async function checkTabSync(step, materials) {
     : "";
 
   if (!hasMarkedBlock(rcContent, step.rcMarker)) {
+    // 有 watcher 檔的（Windows）是「裝一半」——檔案已經在了，缺的是 shell function，
+    // 所以是 warn。POSIX 這一步除了 rc 區塊什麼都沒有，缺了就是整步沒裝。
     return {
       id: step.id,
       label: step.label,
-      status: "warn",
-      detail: "檔案在，但 shell function 沒寫進去",
+      status: hasWatcher ? "warn" : "missing",
+      detail: hasWatcher ? "檔案在，但 shell function 沒寫進去" : "尚未安裝",
     };
   }
 
-  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow）。
-  // 舊版兩者都是「檔案在、標記在」，只看存在與否會給綠燈，但標題不會變。
-  const staleWatcher = await staleTargets(materials, [
-    { source: step.watcherSource, target: step.target },
-  ]);
+  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow、
+  // POSIX 整個不再起 watcher）。舊版一樣是「檔案在、標記在」，只看存在與否會給綠燈，
+  // 但標題不會變——POSIX 的舊區塊還會每秒把 agent 的名字蓋掉。所以要比對內容。
+  const staleWatcher = hasWatcher
+    ? await staleTargets(materials, [
+        { source: step.watcherSource, target: step.target },
+      ])
+    : [];
 
   if (staleWatcher.length > 0 || !rcContent.includes(step.rcBlock.trim())) {
     return {
@@ -818,12 +911,58 @@ export async function checkAgentHooks(step, materials) {
     !allowRuleNeeded ||
     (settings?.permissions?.allow ?? []).includes(step.namingAllowRule);
 
-  if (filesExist && registered && allowRuleInstalled) {
+  let windowsCodexProfileInstalled = true;
+  if (step.windowsCodexProfile !== undefined) {
+    const profile = step.windowsCodexProfile;
+    const content = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    windowsCodexProfileInstalled =
+      hasMarkedBlock(content, profile.marker) &&
+      content.includes(profile.block.trim());
+  }
+
+  let posixCodexProfileInstalled = true;
+  if (step.posixCodexProfile !== undefined) {
+    const profile = step.posixCodexProfile;
+    const content = existsSync(profile.target)
+      ? await readFile(profile.target, "utf8")
+      : "";
+    posixCodexProfileInstalled =
+      hasMarkedBlock(content, profile.marker) &&
+      content.includes(profile.block.trim());
+  }
+
+  if (
+    filesExist &&
+    registered &&
+    allowRuleInstalled &&
+    windowsCodexProfileInstalled &&
+    posixCodexProfileInstalled
+  ) {
     return {
       id: step.id,
       label: step.label,
       status: "ok",
       detail: "hook 檔案與 3 筆註冊都已生效",
+    };
+  }
+
+  if (filesExist && registered && !windowsCodexProfileInstalled) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "hook 已註冊，但 PowerShell profile 還沒接上共用 app-server",
+    };
+  }
+
+  if (filesExist && registered && !posixCodexProfileInstalled) {
+    return {
+      id: step.id,
+      label: step.label,
+      status: "warn",
+      detail: "hook 已註冊，但 shell profile 還沒接上 Codex core daemon",
     };
   }
 
@@ -1142,7 +1281,10 @@ export function checkDemo(step) {
 
 export async function runConfigCheck({ tools, lang }) {
   const materials = materialsDir();
-  const ids = stepsForTools(tools);
+  const ids = stepsForTools(tools, process.platform);
+  // 哪幾步已經被按過「移除」。讀一次就好，下面每一列共用——退役那幾列靠它分辨
+  // 「從來沒裝過」與「他自己按掉的」。
+  const retiredSteps = await loadRetiredSteps();
 
   // 併行，跟 runEnvCheck 的 Promise.all 一致。序列跑的話 31 項裡那幾個會 spawn
   // 子行程的（hook 探測是 bash 一支、node 一支、還有 spawnEnv）成本是相加的，
@@ -1155,8 +1297,8 @@ export async function runConfigCheck({ tools, lang }) {
 
       if (step.kind === "output-style") {
         return await checkOutputStyle(materials, step);
-      } else if (step.kind === "hook") {
-        return await checkHook(step, materials);
+      } else if (step.kind === "retire") {
+        return await checkRetired(step, retiredSteps);
       } else if (step.kind === "allowlist") {
         return await checkAllowlist(materials, step);
       } else if (step.kind === "tab-sync") {
@@ -1183,7 +1325,15 @@ export async function runConfigCheck({ tools, lang }) {
     }),
   );
 
-  return { lang, tools, checks: checks.map(withActions) };
+  return {
+    lang,
+    tools,
+    // null 是退役那幾列在說「這台機器上沒有這個東西」——整列不出現。ids 與 checks
+    // 的對齊在這一步之前就結束了（上面用的是 ids.map），所以濾掉不會打亂順序。
+    checks: checks
+      .filter((check) => check !== null)
+      .map((check) => withActions(check, process.platform)),
+  };
 }
 
 // 一列檢查結果 → 那一列該掛哪幾顆按鈕。抽出來是為了測得到：ViewModel 吃的是這個
@@ -1202,7 +1352,7 @@ function hasMergeSnapshot(id) {
   }
 }
 
-export function withActions(check) {
+export function withActions(check, platform = process.platform) {
   const spec = VERIFICATION[check.id];
 
   return {
@@ -1228,6 +1378,9 @@ export function withActions(check) {
       spec?.behavior ?? (spec?.terminal === undefined ? null : "verify-in-terminal"),
     verifyKind: spec?.terminal === undefined ? "page" : "terminal",
     verifyOptions: spec?.terminal ?? spec?.options ?? null,
-    eyeCheck: spec?.eye ?? null,
+    eyeCheck:
+      platform === "win32"
+        ? (spec?.eyeWindows ?? spec?.eye ?? null)
+        : (spec?.eye ?? null),
   };
 }
