@@ -442,7 +442,6 @@ Object.assign(actions, {
         "chained",
         "allowlist",
         "context",
-        "wrapper",
         "skill-rename",
         "skill-handoff",
         "skill-questions",

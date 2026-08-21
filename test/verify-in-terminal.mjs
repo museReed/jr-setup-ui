@@ -268,18 +268,47 @@ for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
 }
 console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
 
-// 標題那一格寫進去的字，要活得過這支 launcher 自己後面跑的東西。
+// 標題要活得過這支 launcher 自己後面跑的東西。
 //
 // launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也跟著載入。
 // oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在裝了 powerlevel10k
 // 的機器上，學生看到的標題是 `echo`，也就是腳本最後一個指令。
 //
-// ⚠️ 2026-08-21：那支 launcher 不在了，所以這三條也拿掉。
+// ⚠️ 這兩道保險在 d474acf 隨著舊的標題 launcher 一起被拿掉過。它們回來了，但成立的
+// 理由換了一個，所以判準也換了地方——照舊的形狀搬回來會守到不存在的東西：
 //
-// 「分頁自己報上名字」那一格改成只驗它自己裝的東西（wrapper 有沒有載入），不再自己
-// 寫一次標題——原因是寫標題要用下一張卡才裝的命名腳本，每位學生走到這張都會撞到
-// 「找不到命名腳本」（見 wrapperScript 的註解）。
+//   以前  launcher 自己呼叫命名腳本寫標題 → 防的是「我們寫的標題被後面的指令蓋掉」
+//   現在  launcher 只叫 claude，標題是 hook / watcher 寫的 → 防的是兩件事：
+//         ① macOS：claude 結束後 shell 主題的 precmd 把標題改掉，而學生正是在那
+//            之後才低頭看（合併卡的成果判定有一半是人眼）
+//         ② Windows：讀回標題那一行必須緊接在 claude 之後，中間插任何東西，讀到的
+//            就是那個東西留下的字
 //
-// ⚠️ 上面那段理由**沒有過期**：哪天有人再做一個「我們自己寫標題」的 launcher，
-// DISABLE_AUTO_TITLE 與「改標題排最後」這兩道保險都要跟著回來，而且要重新釘住。
-// 兩者缺一不可，實測過的症狀是：學生看到的標題是 `echo`（腳本最後一個指令）。
+// 兩者缺一不可。
+{
+  assert.match(
+    source,
+    /naming: \{[\s\S]*?env: \(\) => \(\{ DISABLE_AUTO_TITLE: "true" \}\)/,
+    "命名那一格要關掉 shell 主題的自動標題，不然 claude 結束後標題會被蓋掉",
+  );
+
+  // 讀回那一行是「附加在 body 之後」，而 body 的最後一件事就是叫 claude。
+  // 這條守的是那個順序：writeLauncher 的 win32 分支裡，titleReadback() 必須排在
+  // ${body} 後面，而且後面不能再接別的東西。
+  assert.match(
+    source,
+    /writeLauncher[\s\S]*?\$\{body\}\\n\$\{titleReadback\(\)\}`/,
+    "讀回標題那一行要緊接在 claude 之後，中間不能插東西",
+  );
+
+  const readbackAt = source.indexOf("[Console]::Title, (New-Object");
+  assert(readbackAt >= 0, "找不到讀回標題那一行");
+  assert(
+    source.slice(readbackAt).includes("UTF8Encoding $false"),
+    "名字檔是 UTF-8 不帶 BOM，讀回來的標題要用同一種編碼寫，否則字串比對永遠不相等",
+  );
+
+  console.log(
+    "ok - macOS 關掉主題自動標題、Windows 的讀回排在 claude 正後面",
+  );
+}

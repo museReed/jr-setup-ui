@@ -477,25 +477,26 @@ export const VERIFICATION = {
     terminal: { case: "statusline", agent: "claude" },
     eye: "輸入框下面多出一行，裡面有模型名、一條進度條、專案名",
   },
-  // 這一格不叫 AI：要驗的是名字有沒有上到分頁標題，跟模型無關。
+  // ⚠️ tab-sync 沒有自己的驗證，這不是漏寫。它跟 claude-namer 合成一張卡了
+  //（public/model.js 的 MERGE_ORDER），而合併卡的驗證掛在最後那一格身上——底下
+  // 那一列。
   //
-  // POSIX 上已經沒有 watcher 了——標題由命名 hook 自己寫 OSC 進 tty，而這一步只負責
-  // 那個 shell function（設 CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1，不然 Claude Code
-  // 自己的標題會蓋掉 hook 寫的名字）。要看的畫面兩邊一樣，所以文案不分平台。
-  // ⚠️ 這一列只驗它自己裝的東西：rc 檔那段 wrapper 有沒有載進新終端。標題那一半
-  // 交給下一列（claude-namer），因為真正寫標題的腳本是那一列裝的。
+  // 它曾經有過兩種驗證，兩種都驗不到學生在意的事：
   //
-  // 原本這裡驗的是標題，於是它需要一個下一張卡才會出現的檔案——每一位學生走到這張
-  // 都會撞到「找不到命名腳本」（2026-08-21 macOS VM 實測）。那個相依是 8/20 拿掉
-  // POSIX watcher 時長出來的，見 verify-in-terminal 的 wrapperScript。
-  "tab-sync": {
-    terminal: { case: "wrapper", agent: "claude" },
-    eye: "那個視窗印出「✓ wrapper 已載入」",
-  },
+  //   ~8/20   驗標題 → 要用下一張卡才裝的命名腳本，每個人必撞「找不到命名腳本」
+  //   8/21    只驗 wrapper 有沒有載入 → 講得出口的只有一句中間狀態
+  //
+  // 兩張卡合起來之後，這兩半本來就該一起驗：wrapper 讓標題留得住，hook 決定標題
+  // 寫什麼，而學生要看的是「標題真的變成這次在做的事」。
+  //
   // 程式驗得到的是「名字有沒有被產生」（hook 會寫檔），不是「標題有沒有變」。
   // 這兩件事會分岔——VM 實測：名字寫出來了，但 watcher 沒掛上，標題一直是預設值。
-  // 卡片對學生的承諾是「你的分頁會自動命名」，所以標題那一半要有人看。
-  // 驗收文件的「眼睛的」那節本來就要求看這個，是嚮導漏了問。
+  // 卡片對學生的承諾是「你的分頁會自動命名」，所以標題那一半也要驗。
+  //
+  // Windows 那一半 2026-08-21 起改成程式判定（見 verify-in-terminal 的 naming case）：
+  // watcher 用 SetConsoleTitle 改的是共用 console 的狀態，claude 結束之後同一個
+  // console 裡讀得回來。macOS 讀不回來（OSC 寫進 tty 裝置，沒有對應的讀取 API），
+  // 所以那一半仍然是人眼。兩個平台不對稱是機制決定的，不是還沒做完。
   "claude-namer": {
     terminal: { case: "naming", agent: "claude" },
     eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",

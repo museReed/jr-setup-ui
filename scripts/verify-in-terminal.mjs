@@ -54,7 +54,18 @@ const ALLOWLIST_TOKEN = "allowlist-ok-9d4b71";
 const CASES = {
   naming: {
     label: "自動命名",
-    env: () => ({}),
+    // ⚠️ DISABLE_AUTO_TITLE 不是可有可無的：oh-my-zsh 會在每個指令執行前把標題改成
+    // 那個指令的名字——實測在裝了 powerlevel10k 的機器上，學生看到的標題是腳本最後
+    // 一個指令的名字，不是 hook 寫的名字。
+    //
+    // 這一格是合併卡（分頁報上名字 + 對話自己取名字）唯一的驗證，而它的成果判定
+    // 有一半是人眼：claude 結束之後學生才低頭看標題，而那正是 oh-my-zsh 的 precmd
+    // 重新畫標題的時機。少了這個，畫面會在他看之前就被蓋掉。
+    //
+    // 這條規則在 d474acf 隨著舊的標題 launcher 一起被拿掉過，理由是「那支 launcher
+    // 不在了」——但規則本身沒過期，只是換了個成立的理由：以前防的是我們自己寫的
+    // 標題被後面的指令蓋掉，現在防的是 hook 寫的標題被 shell 主題蓋掉。
+    env: () => ({ DISABLE_AUTO_TITLE: "true" }),
     prompt: ({ agent, resultFile }) =>
       agent === "codex"
         ? // codex 的命名是兩段式：模型先把名字寫到中繼檔，hook 要在「下一次 hook
@@ -69,26 +80,18 @@ const CASES = {
     expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
     watchFor: "分頁標題變成「{emoji} 中文敘述」，emoji 是規定的那 8 個之一",
   },
-  // 標題那格不該叫 AI——要驗的是「watcher 有沒有把名字放上分頁標題」，跟模型
-  // 一點關係都沒有。這裡直接起裝好的 watcher、餵它一個名字，學生看標題就好：
-  // 不花 API 額度、不受模型心情影響，而且失敗時只剩兩個可能（watcher 壞了 /
-  // 終端不吃標題），比夾著一個 AI 好查太多。
-  // ⚠️ 這一格只驗「這張卡自己裝的東西」——rc 檔裡那段 wrapper 有沒有載進新的
-  // 終端。標題那一半交給下一張（對話自己取名字），因為真正寫標題的腳本是那張裝的。
+  // ⚠️ 這裡曾經有一格 wrapper：只驗「rc 檔那段 wrapper 有沒有載進新終端」，畫面上
+  // 印一句「✓ wrapper 已載入」。它是 d474acf 的止血——在那之前這一格驗的是標題，
+  // 而寫標題要用下一張卡才裝的命名腳本，每位學生走到第 6 張都會撞到「找不到命名
+  // 腳本」。
   //
-  // 原本這一格是驗標題的，於是它需要一個下一張卡才會出現的檔案：每一位學生走到
-  // 第 6 張都會看到「找不到命名腳本——請先把『對話自己取名字』那張卡裝好再回來」。
-  // 訊息是對的，但那不是邊界情況，是必經之路（2026-08-21 在 macOS VM 上撞到）。
+  // 兩張卡合併之後（model.js 的 MERGE_ORDER）它沒有存在的理由了：wrapper 與命名
+  // hook 現在是同一張卡的兩格，一起裝、一起驗，而學生要看的成果是「標題真的變成
+  // 這次在做的事」——那是底下 naming 那一格的事。留著等於讓學生為了一句他不懂的
+  // 中間狀態多開一次終端。
   //
-  // 那個相依是 8/20 拿掉 POSIX watcher 時長出來的：驗證從「跑起 watcher 看標題變
-  // 不變」改成「叫命名腳本寫標題」，而命名腳本在下一張才裝（見 dd53880）。
-  wrapper: {
-    label: "終端機的 claude 指令包過了",
-    env: () => ({}),
-    prompt: () => "",
-    expect: () => null,
-    watchFor: "畫面出現「✓ wrapper 已載入」",
-  },
+  // wrapper 沒載入仍然驗得出來，只是換了個說法：naming 那一格會失敗，而失敗指引
+  // （model.js 的 GUIDANCE）第一條就是「關掉所有終端視窗再開一個新的」。
   // 底部狀態列那一格：不驗任何東西，只負責把 Codex 開起來讓學生看一眼。
   // 那一條是純畫面（設定寫對了但沒重開 Codex，它還是舊的），程式抓不到。
   // 整段筆記的收尾：叫 AI 真的寫一篇進去並存上去。
@@ -415,8 +418,13 @@ if (testCase === undefined) {
 
 mkdirSync(RESULT_DIR, { recursive: true });
 const resultFile = path.join(RESULT_DIR, `${caseName}-${agent}.txt`);
+// Windows 專用：claude 結束之後，把那個 console 當下的標題寫進來。
+// 為什麼另開一個檔而不共用 resultFile：那一個是「模型寫給我們看的」，這一個是
+// 「終端自己的狀態」，混在一起的話判定要先猜裡面躺的是哪一種。
+const titleFile = path.join(RESULT_DIR, `${caseName}-${agent}-title.txt`);
 // 上一輪的副產物留著的話，這一輪不管跑不跑都會「通過」。
 rmSync(resultFile, { force: true });
+rmSync(titleFile, { force: true });
 
 const expect = testCase.expect({ agent });
 const namesDir = path.join(homedir(), ".claude", "session-names");
@@ -493,54 +501,49 @@ function vaultScript() {
   return [`open '${url}'`, `echo '${done}'`].join("\n");
 }
 
-// 「分頁自己報上名字」那張卡的驗證。
+// ⚠️ 這裡曾經有 wrapperScript()：只在新終端裡問一句「claude 是不是 function」，
+// 印「✓ wrapper 已載入」。兩張卡合併之後那一格不存在了，見上面 CASES 裡的註解。
 //
-// ⚠️ 它只驗**這張卡自己裝的東西**：rc 檔裡那段 wrapper 有沒有載進新開的終端。
-// 標題那一半交給下一張（對話自己取名字），因為真正把名字寫上標題的腳本是那張裝的。
+// ⚠️ 拿掉的只是那個**中間狀態的驗證**，不是判準本身。哪天又需要單獨查 wrapper
+// 有沒有載入（診斷用），判準原樣記在這裡，不必再推一次：
 //
-// 為什麼要分開：原本這一格叫命名腳本去寫一次標題，而那支腳本在下一張才裝——於是
-// 每一位學生走到第 6 張都會看到「找不到命名腳本——請先把『對話自己取名字』那張卡
-// 裝好再回來」。那句話是對的，但它不是邊界情況，是必經之路（2026-08-21 macOS VM
-// 實測）。順序不能對調：wrapper 必須先裝，後面幾張才看得到標題變化。
+//   POSIX    whence -w claude 要回 "claude: function"；回 "claude: command"
+//            表示 .zshrc 那段沒載到，多半是改完沒開新視窗
+//   Windows  Get-Command claude 的 CommandType 要是 Function；回 Application
+//            表示 profile 沒讀到，學生拿到的是原生的 claude，標題永遠不會動
 //
-// ⚠️ 不要退回「在背景啟動 ai-tab-sync.sh」的更舊寫法。那支 POSIX 上已經不裝了，
-// 但上一輪安裝留下的殘檔會讓它照樣跑起來——這一格於是給出假的綠燈（2026-08-20
+// ⚠️ 也不要退回更舊的「在背景啟動 ai-tab-sync.sh」寫法。那支 POSIX 上已經不裝了，
+// 但上一輪安裝留下的殘檔會讓它照樣跑起來——驗證於是給出假的綠燈（2026-08-20
 // 在 macOS VM 上實測踩到：機器先裝過 main，再裝分支，驗證仍然過）。
-function wrapperScript() {
-  if (process.platform === "win32") {
-    // Windows 的 wrapper 是 profile 裡的一個 function。`Get-Command claude` 回
-    // Function 才算載入了；回 Application 表示 profile 沒讀到，學生拿到的是原生的
-    // claude，標題永遠不會動。
-    return [
-      "$c = Get-Command claude -ErrorAction SilentlyContinue",
-      "if ($c -and $c.CommandType -eq 'Function') {",
-      "  Write-Host '✓ wrapper 已載入' -ForegroundColor Green",
-      "} else {",
-      "  Write-Host '✗ wrapper 沒載入——關掉所有 PowerShell 視窗再開一個新的，還是不行就重跑這一步的安裝' -ForegroundColor Red",
-      "}",
-      "Write-Host ''",
-      "Write-Host '看完可以關掉這個視窗。'",
-    ].join("\n");
+
+// Windows 專用：claude 結束之後，把那個 console 當下的標題寫進檔案，讓輪詢那邊
+// 用字串比對判定「標題真的變成 hook 寫的名字」，不必只靠學生的眼睛。
+//
+// 為什麼 Windows 讀得回來、macOS 讀不回來——那是機制決定的，不是還沒做完：
+//
+//   Windows  watcher 用 SetConsoleTitle 改的是「共用 console 的狀態」，同一個
+//            console 裡的行程讀得回真值（watcher 自己每輪就在讀，見 ai-tab-sync.ps1）
+//   macOS    標題是 OSC 逃逸序列寫進 tty 裝置，沒有對應的讀取 API
+//
+// 2026-08-21 在 Windows VM 上用 scripts/probe-title-readback.ps1 實測過三件事，
+// 三件都成立才有這一段：讀回來的值對得上、分頁上顯示的就是那一串（沒被 WT 的
+// suppressApplicationTitle 鎖住）、watcher 被 wrapper 的 finally 殺掉之後標題還留著。
+//
+// ⚠️ 這一行必須**緊接在 claude 之後**，中間不能插任何東西。它讀的是「當下」的標題，
+// 前面多一個會改標題的指令，讀到的就是那個指令留下的字（macOS 上實測過同型的症狀：
+// 學生看到的標題是 echo，因為那是腳本最後一個指令）。
+function titleReadback() {
+  // 只有 Claude 的命名那一格有這個落點：Codex 的命名走原生 app-server，它自己
+  // 決定標題，我們沒有一個「該等於什麼」的名字可以比對。
+  if (process.platform !== "win32" || caseName !== "naming" || agent !== "claude") {
+    return "";
   }
 
-  // POSIX 的 wrapper 也是一個 function（.zshrc 裡那段）。這支 launcher 是 zsh -i，
-  // 會讀 .zshrc，所以這裡看到的就是學生開新終端時看到的。
-  //
-  // `whence -w claude` 回 "claude: function" 才算數；回 "claude: command" 表示那段
-  // 沒載到——多半是 .zshrc 改完之後沒開新視窗。
-  return [
-    'kind="$(whence -w claude 2>/dev/null)"',
-    'case "$kind" in',
-    "  *function*)",
-    '    echo "✓ wrapper 已載入"',
-    "    ;;",
-    "  *)",
-    '    echo "✗ wrapper 沒載入（$kind）——關掉所有終端視窗再開一個新的，還是不行就重跑這一步的安裝"',
-    "    ;;",
-    "esac",
-    'echo ""',
-    'echo "看完可以關掉這個視窗。"',
-  ].join("\n");
+  const quoted = titleFile.replaceAll("'", "''");
+
+  // UTF8Encoding $false = 不寫 BOM，跟 hook 寫名字檔的編碼一致——兩邊要拿來字串
+  // 比對，其中一邊多三個位元組就永遠不相等。
+  return `[System.IO.File]::WriteAllText('${quoted}', [Console]::Title, (New-Object System.Text.UTF8Encoding $false))\n`;
 }
 
 function writeLauncher(prompt) {
@@ -553,8 +556,6 @@ function writeLauncher(prompt) {
       ? `${agent} '${prompt}'\n${browseVaultRepo()}`
       : caseName === "open-vault"
       ? vaultScript()
-      : caseName === "wrapper"
-      ? wrapperScript()
       : caseName === "statusline"
         ? agent
         : `${agent} '${prompt}'`;
@@ -565,7 +566,7 @@ function writeLauncher(prompt) {
       .map(([name, value]) => `$env:${name} = '${value}'`)
       .join("\n");
     // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    writeFileSync(file, `\ufeff${setEnv}\n${body}\n`, "utf8");
+    writeFileSync(file, `\ufeff${setEnv}\n${body}\n${titleReadback()}`, "utf8");
     return file;
   }
 
@@ -644,13 +645,51 @@ function collectEvidence() {
     try {
       if (statSync(file).mtimeMs < startedAt) continue;
       const value = readFileSync(file, "utf8").trim();
-      if (value) return { detail: `hook 寫下了名字：${value}` };
+      if (value) return titleEvidence(value);
     } catch {
       // 剛好被改寫到一半，下一輪再看。
     }
   }
 
   return null;
+}
+
+// 名字寫出來了，標題呢？
+//
+// 這兩件事會分岔，而且實測分岔過：名字寫進檔案了，watcher 卻沒掛上，標題一直是
+// 預設值。卡片對學生的承諾是「你的分頁會自動命名」，所以名字落地只算證據的一半。
+//
+// Windows 補得起另一半（見 titleReadback 的註解）：等 claude 結束後寫出來的那個
+// 檔，跟這一輪 hook 寫的名字做字串比對。macOS 補不起來——標題寫進 tty 裝置，讀不
+// 回來——所以那邊仍然是「程式驗名字、學生看標題」。
+function titleEvidence(value) {
+  const wrote = `hook 寫下了名字：${value}`;
+
+  if (process.platform !== "win32" || caseName !== "naming" || agent !== "claude") {
+    return { detail: wrote };
+  }
+
+  let title = "";
+
+  try {
+    title = readFileSync(titleFile, "utf8").trim();
+  } catch {
+    // claude 還沒結束，讀回那一行還沒跑到。下一輪再看。
+    return null;
+  }
+
+  // 對不上不能回 null——那會讓它繼續等到逾時，而學生看到的是「驗證卡住」而不是
+  // 「標題沒變」。這是一個確定的失敗，要當場說清楚。
+  if (title !== value) {
+    return {
+      failed: true,
+      detail:
+        `名字寫出來了（${value}），但分頁標題是「${title || "空的"}」——` +
+        "wrapper 沒載入，或 watcher 沒掛上",
+    };
+  }
+
+  return { detail: `${wrote}，而且分頁標題就是它` };
 }
 
 // 每一題只要提到結果檔，就一定要附上這句。
@@ -709,6 +748,19 @@ const timeoutMs = testCase.timeoutMs ?? TIMEOUT_MS;
 
 while (Date.now() - startedAt < timeoutMs) {
   const evidence = collectEvidence();
+
+  // 確定的失敗，不是「還沒等到」。繼續輪詢的話學生會等到逾時，然後看到一句
+  // 「沒等到證據，去看模型說了什麼」——而這裡已經知道原因了。
+  if (evidence !== null && evidence.failed === true) {
+    console.log("");
+    console.log(`FAIL  ${evidence.detail}`);
+    emitJr({
+      kind: "result",
+      ok: false,
+      summary: `驗證失敗：${evidence.detail}`,
+    });
+    process.exit(1);
+  }
 
   if (evidence !== null) {
     console.log("");

@@ -283,11 +283,13 @@ try {
       checks: checks.map(({ id }) => id),
     })),
     [
+      // tab-sync 在 Claude 這組，不是「兩邊共用」：它只有選了 claude 才會發，
+      // 而且要跟 claude-namer 合成一張卡——分屬兩張卡的話合不起來。
       {
         agent: "claude",
         label: "Claude",
         logo: "logo-claude",
-        checks: ["claude-md", "hook"],
+        checks: ["claude-md", "tab-sync", "hook"],
       },
       {
         agent: "codex",
@@ -295,19 +297,16 @@ try {
         logo: "logo-openai",
         checks: ["codex-config", "codex-agents"],
       },
-      {
-        agent: "shared",
-        label: "兩邊共用",
-        logo: "logo-terminal",
-        checks: ["tab-sync"],
-      },
     ],
   );
 
-  // 終端機標題同步得排第一張：它把 watcher 裝進 shell profile，之後開的終端才有人
-  // 把名字放上分頁標題。命名 hook 那幾張要學生「看標題有沒有變」，沒先裝這個就永遠
-  // 看不到——VM 實測：PowerShell profile 檔案根本不存在，標題一直是預設值，學生被
-  // 推進一個必然失敗的驗證。
+  // 分頁報上名字那張得排第一：它把 wrapper 寫進 shell profile，之後開的終端標題
+  // 才留得住。後面 auto-rename、handoff 那幾張 skill 要學生「看標題有沒有變」，
+  // 沒先裝這張就永遠看不到——VM 實測：PowerShell profile 檔案根本不存在，標題一直
+  // 是預設值，學生被推進一個必然失敗的驗證。
+  //
+  // ⚠️ tab-sync 與 claude-namer 現在是同一張卡的兩格，主 check 是後者，所以這裡
+  // 比對的 checkId 是 claude-namer——setupOrder 查的正是那個 id。
   const rulesSequence = section(
     flattenCheckCards(
       groupChecks([
@@ -320,13 +319,19 @@ try {
     ),
     "rules",
   );
-  assert.equal(rulesSequence.cards[0].checkId, "tab-sync");
+  assert.equal(rulesSequence.cards[0].checkId, "claude-namer");
   assert.deepEqual(
     rulesSequence.cards.map(({ checkId }) => checkId),
-    ["tab-sync", "claude-md", "claude-namer", "codex-namer"],
+    ["claude-namer", "claude-md", "codex-namer"],
+  );
+  // 合併成不成立看的是「那張卡身上有沒有兩格」——只比對 checkId 的話，合併壞掉
+  // 退回兩張單卡時第一張仍然叫 claude-namer，這條守衛會照樣綠。
+  assert.deepEqual(
+    rulesSequence.cards[0].checks.map(({ id }) => id),
+    ["tab-sync", "claude-namer"],
   );
   console.log(
-    "ok - 終端機標題同步排在命名 hook 前面，後面那幾張要靠它才看得到標題變化",
+    "ok - 分頁報上名字是合併卡（wrapper + 命名 hook），而且排在後面那幾張之前",
   );
 
   const claudeOnly = groupChecks([
@@ -398,8 +403,11 @@ try {
       agent,
     })),
     [
-      // tab-sync 提到最前面：後面幾張的驗證要靠它裝的 watcher 才看得到標題變化。
-      { checkId: "tab-sync", agent: "shared" },
+      // 這一輪沒有 claude-namer（伺服器沒回那一列），所以 tab-sync 照 mergeCardChecks
+      // 的規矩單獨出現，不會整張卡消失。單獨出現時它排不到最前面——setupOrder 查的
+      // 是合併卡的主 check（claude-namer），這裡查不到就跟其他張同分、維持原序。
+      // 那是可以接受的：合不起來的時候，順序已經不是最要緊的事。
+      { checkId: "tab-sync", agent: "claude" },
       { checkId: "claude-md", agent: "claude" },
       { checkId: "codex-config", agent: "codex" },
       { checkId: "future-config-step", agent: "other" },
