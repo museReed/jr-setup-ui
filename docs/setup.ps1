@@ -27,9 +27,46 @@ $zipUrl = "https://codeload.github.com/museReed/jr-setup-ui/zip/refs/heads/$bran
 # GitHub 的 zip 解出來會多包一層 {repo}-{branch}，分支名裡的 / 會換成 -。
 $extractedName = "jr-setup-ui-" + ($branch -replace "/", "-")
 
-function Say($text) {
+# 卡在這裡的學生手上什麼都沒有：嚮導還沒下載，所以那顆「這一頁卡住了」根本不存在，
+# gh 也還沒裝。唯一還走得通的管道是信。
+#
+# ⚠️ 主旨跟站內那顆按鈕刻意用不同的詞。「這一頁卡住了」開的是 GitHub issue，代表
+# 嚮導跑得起來；信件是「裝不起來」，代表連嚮導都沒起來。收件匣一眼分得出哪一種急。
+$FeedbackEmail = "devlab20230424@gmail.com"
+
+# 目前跑到哪一步。Say 每次更新它，失敗時就有話可說——學生不必自己判斷「我是卡在
+# 下載還是安裝」，那正是他現在最沒有餘裕做的事。
+$script:Step = "剛開始"
+
+# 第二個參數是給主旨用的短名。省略就用標題本身——但標題常常帶括號說明，整串放進
+# 主旨會又臭又長，而學生是用手抄的。
+function Say($text, $step) {
+  if ($step) { $script:Step = $step } else { $script:Step = $text }
   Write-Host ""
   Write-Host "▸ $text" -ForegroundColor Cyan
+}
+
+# $ErrorActionPreference = "Stop"（檔頭設的）會讓任何一步出錯就丟例外並中斷。
+# 學生原本看到的只有一段紅字，沒有人告訴他下一步該做什麼。
+function Show-Failure($message) {
+  Write-Host ""
+  Write-Host "──────────────────────────────────────────" -ForegroundColor Yellow
+  Write-Host "裝不起來了。這不是你的錯，我們來看一下。"
+  Write-Host ""
+  Write-Host $message -ForegroundColor Red
+  Write-Host ""
+  Write-Host "請把這個視窗的文字全部反白複製，寄到："
+  Write-Host "  $FeedbackEmail" -ForegroundColor White
+  Write-Host ""
+  Write-Host "主旨請寫（照抄就好）："
+  Write-Host "  jr-setup 裝不起來｜windows｜$script:Step" -ForegroundColor White
+  Write-Host "──────────────────────────────────────────" -ForegroundColor Yellow
+  # ⚠️ 這一句的措辭很重要：底下的 exit 會**關掉整個 PowerShell 視窗**（irm | iex
+  # 是在目前這個 session 裡跑的），連同他要複製的那些文字一起帶走。
+  #
+  # 所以不能寫「看完之後按 Enter」——那會讓他按完才發現東西不見了。要先複製、再按。
+  Write-Host ""
+  Read-Host "複製完上面的文字之後，再按 Enter 關閉"
 }
 
 # 剛裝好的東西寫進登錄檔的 PATH，但目前這個 PowerShell 拿的是啟動當下的快照。
@@ -41,7 +78,7 @@ function Update-PathFromRegistry {
 }
 
 function Install-Node {
-  Say "安裝 Node.js LTS"
+  Say "安裝 Node.js LTS" "安裝 Node.js"
 
   if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     throw "這台電腦沒有 winget。請到 https://nodejs.org/en/download 下載 Windows Installer (.msi) 手動安裝後再跑一次。"
@@ -58,7 +95,16 @@ function Install-Node {
   }
 }
 
-Say "jr-setup-ui 安裝嚮導"
+# 從這裡開始，任何一個中斷性錯誤都先講清楚下一步再退出。
+#
+# 用 trap 而不是把整段包進 try/catch：包起來要把底下六十幾行全部縮排，而那種 diff
+# 讀不出「這一輪到底改了什麼」。trap 放在流程開始之前，效果一樣、改動看得清。
+trap {
+  Show-Failure $_
+  exit 1
+}
+
+Say "jr-setup-ui 安裝嚮導" "剛開始"
 
 Update-PathFromRegistry
 
@@ -85,7 +131,7 @@ if ($ours.Count -gt 0) {
   Start-Sleep -Milliseconds 500
 }
 
-Say "下載嚮導（$branch）"
+Say "下載嚮導（$branch）" "下載嚮導"
 $zipPath = Join-Path $env:TEMP "jr-setup-ui.zip"
 $extractDir = Join-Path $env:TEMP "jr-setup-ui-extract"
 
@@ -121,5 +167,5 @@ Set-Content -LiteralPath (Join-Path $appDir ".jr-source") -Value $branch -Encodi
 Remove-Item -Recurse -Force $extractDir
 Remove-Item -Force $zipPath
 
-Say "啟動嚮導（關掉這個視窗就會結束）"
+Say "啟動嚮導（關掉這個視窗就會結束）" "啟動嚮導"
 node (Join-Path $appDir "bin\jr-setup-ui.js")
