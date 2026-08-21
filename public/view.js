@@ -19,7 +19,6 @@ const elements = {
   configLang: document.querySelector("#config-lang"),
   configChoicePanel: document.querySelector("#config-choice-panel"),
   recheckConfigs: document.querySelector("#recheck-configs"),
-  configSummary: document.querySelector("#config-summary"),
   configResults: document.querySelector("#config-results"),
   sectionNav: document.querySelector("#section-nav"),
   sectionButtons: [...document.querySelectorAll("[data-section-target]")],
@@ -2108,9 +2107,10 @@ export function renderFailureGuidance({ guidance, explanation = null }) {
   if (explanation !== null) addLine(`白話說明：${explanation}`, "agent-status");
 }
 
-export function renderConfigSummary(summary) {
-  elements.configSummary.textContent = summary.text;
-}
+// 「N 項中 M 項就緒」那一行拿掉了（見 index.html 的註解）。函式留成空殼而不是刪掉
+// ——app.js 那邊的呼叫點是「檢查跑完了」這件事的落點，之後要往那裡掛別的東西時
+// 還找得到位置。elements.configSummary 現在是 null，所以這裡不能再去碰它。
+export function renderConfigSummary() {}
 
 export function renderConfigLoading() {
   elements.currentCard.setAttribute("aria-busy", "true");

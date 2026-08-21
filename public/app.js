@@ -43,7 +43,6 @@ import {
   checklistGroups,
   checklistRowIds,
   configRowModel,
-  configSummary,
   currentCardIndex,
   envButtonState,
   envCardRowModel,
@@ -1659,9 +1658,6 @@ async function checkConfigs() {
       ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
     ]);
     renderWizard();
-    view.renderConfigSummary(
-      configSummary(result.checks, state.verifiedSteps),
-    );
   } catch (error) {
     view.renderConfigFailure(error.message);
   } finally {

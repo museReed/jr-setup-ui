@@ -1398,32 +1398,6 @@ export function terminalOutcomeLines({
   ];
 }
 
-export function configSummary(checks, verifiedSteps = new Set()) {
-  const total = checks.length;
-
-  if (total === 0) {
-    return {
-      done: 0,
-      total: 0,
-      allOk: false,
-      text: "尚未檢查",
-    };
-  }
-
-  // 「就緒」的門檻跟列上的綠燈同一條：結構齊全，而且該驗的行為也驗過了。
-  const done = checks.filter(
-    (check) =>
-      configRowModel(check, verifiedSteps.has(check.id)).status === "ok",
-  ).length;
-
-  return {
-    done,
-    total,
-    allOk: done === total,
-    text: `${total} 項中 ${done} 項就緒`,
-  };
-}
-
 export function initialChecksReady({
   envCheckInProgress,
   configCheckInProgress,

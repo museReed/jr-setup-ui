@@ -21,7 +21,6 @@ import {
   checklistGroups,
   currentCardIndex,
   configRowModel,
-  configSummary,
   envButtonState,
   envCardRowModel,
   envRowModel,
@@ -1811,24 +1810,12 @@ try {
   }
   ok("每一列送出的參數都覆蓋且符合該 action 宣告的 schema");
 
-  assert.deepEqual(configSummary([]), {
-    done: 0,
-    total: 0,
-    allOk: false,
-    text: "尚未檢查",
-  });
-  ok("空的規則檔檢查顯示尚未檢查");
-
-  assert.deepEqual(
-    configSummary([{ status: "ok" }, { status: "warn" }]),
-    {
-      done: 1,
-      total: 2,
-      allOk: false,
-      text: "2 項中 1 項就緒",
-    },
-  );
-  ok("規則檔摘要算出部分完成數量");
+  // ⚠️ 這裡以前有兩條 configSummary 的測試（「尚未檢查」與「2 項中 1 項就緒」）。
+  // 那一行整個拿掉了（Reed 指定），函式也跟著刪——上面那條里程碑進度條講的是同一
+  // 件事，而且講得更清楚：它看得出還剩幾張、走到哪，不用學生自己換算比例。
+  //
+  // 它還有一個實際的毛病：分母會隨著退役那幾列出現與否而變（同一台機器按完移除
+  // 之後從 31 變 30），看起來像壞掉。
 
   const readyInitialChecks = {
     envCheckInProgress: false,
