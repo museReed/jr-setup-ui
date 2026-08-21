@@ -95,7 +95,7 @@ function Test-JrManagedState([object]$State) {
   if ($null -eq $State) { return $false }
   $listenerPid = Get-JrListenerPid ([string]$State.endpoint)
   if ($null -eq $listenerPid -or $listenerPid -ne [int]$State.pid) { return $false }
-  if (-not (Test-JrCodexServerProcess ([int]$State.pid)) { return $false }
+  if (-not (Test-JrCodexServerProcess ([int]$State.pid))) { return $false }
   return Test-JrAppServerReady ([string]$State.endpoint)
 }
 

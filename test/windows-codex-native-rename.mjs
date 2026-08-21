@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,32 @@ try {
   assert.match(common, /Start-Process[\s\S]*app-server', '--listen'/);
   assert.match(common, /Local\\jr-setup-ui-codex-app-server/);
   assert.match(common, /codexVersion = \$CodexVersion/);
+  assert.match(
+    common,
+    /if \(-not \(Test-JrCodexServerProcess \(\[int\]\$State\.pid\)\)\) \{ return \$false \}/,
+  );
+  if (process.platform === "win32") {
+    const parseScript = String.raw`
+$tokens = $null
+$errors = $null
+[System.Management.Automation.Language.Parser]::ParseInput(
+  [Console]::In.ReadToEnd(),
+  [ref]$tokens,
+  [ref]$errors
+) | Out-Null
+if ($errors.Count -gt 0) {
+  $errors | ForEach-Object { [Console]::Error.WriteLine($_.Message) }
+  exit 1
+}
+`;
+    const parsed = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", parseScript],
+      { input: common, encoding: "utf8" },
+    );
+    assert.equal(parsed.status, 0, parsed.stderr);
+  }
+  ok("Windows app-server 共用腳本可由 PowerShell 5.1 解析");
 
   const launcher = read("codex-shared-app-server.ps1");
   assert.match(launcher, /Get-JrAppServer/);

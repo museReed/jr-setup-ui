@@ -19,7 +19,8 @@ $ErrorActionPreference = "Stop"
 # 為什麼不做成 docs/setup-pr.ps1：那會變成第二份要跟著改的 bootstrap，而 bootstrap
 # 的踩雷點（編碼、PATH 快照、多一層資料夾）都只在真的跑 irm | iex 時才現形——
 # 兩份就是兩倍的沒被驗到。
-$branch = if ($JrBranch) { $JrBranch } else { "main" }
+$branch = Get-Variable -Name JrBranch -ValueOnly -ErrorAction SilentlyContinue
+if (-not $branch) { $branch = "main" }
 
 $appDir = Join-Path $HOME ".jr-setup\app"
 $zipUrl = "https://codeload.github.com/museReed/jr-setup-ui/zip/refs/heads/$branch"
