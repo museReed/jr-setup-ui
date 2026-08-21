@@ -75,11 +75,30 @@ export function blockedSummary(blocked) {
   return `${names.slice(0, 2).join("、")} 等 ${names.length} 樣不是你的`;
 }
 
-// 回 null＝這一列不要出現。多數學生的家目錄是好的，長一列「權限正常」出來只是多
-// 一列要讀（跟 quarantineRow 同一個判準）。
-export function homePermsRow(blocked) {
+// 三態：
+//
+//   從來沒事      回 null，這一列不出現。多數學生的家目錄是好的，長一列「權限正常」
+//                 出來只是多一列要讀（跟 quarantineRow 同一個判準）
+//   還鎖著        黃燈 ＋ 一顆修復鍵
+//   修好了        綠燈，留在畫面上
+//
+// ⚠️ 第三態是 Reed 實測指出的：判準本來只有「現在還有沒有被鎖住的東西」，於是學生
+// 按下修復鍵、chown 跑完之後這一列就沒有理由出現——卡片當場消失。他不會覺得做完
+// 了，他會覺得自己剛剛弄壞了什麼。退役那幾列早就踩過同一條（見 config-check 的
+// checkRetired），這裡照同一個形狀做。
+//
+// 分得開第一態與第三態靠的是 state.json 記的那一筆（progress-state 的 markStepFixed）：
+// 沒有那一筆就是從來沒事，有那一筆就是他自己按掉的。
+export function homePermsRow(blocked, { fixed = false } = {}) {
   if (blocked.length === 0) {
-    return null;
+    return fixed
+      ? {
+          status: "ok",
+          installable: false,
+          detail: "已經改回你的了，這一列不用再做什麼",
+          blocked: [],
+        }
+      : null;
   }
 
   return {

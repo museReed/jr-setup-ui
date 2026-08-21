@@ -43,6 +43,7 @@ import {
   ghConfigBlocked,
   homePermsRow,
 } from "./home-perms.js";
+import { loadFixedSteps } from "./progress-state.js";
 import {
   quarantineHome,
   quarantineRow,
@@ -1242,10 +1243,10 @@ function homePermsState() {
   }
 }
 
-function checkHomePerms(blocked) {
+function checkHomePerms(blocked, fixed) {
   const id = "home-perms";
   const label = "家目錄裡的設定檔是你的";
-  const row = homePermsRow(blocked);
+  const row = homePermsRow(blocked, { fixed });
 
   return row === null ? null : { id, label, ...row };
 }
@@ -1337,6 +1338,9 @@ export async function runEnvCheck(tools = []) {
   try {
     // 先算這一項：gh 那一列要看它才知道「登入失敗」是哪一種。同步的，不花時間。
     const homeBlocked = homePermsState();
+    // 修好之後那一列要留著打勾，而修好的機器跟從來沒事的機器長得一模一樣——
+    // 只有這一筆分得開（見 home-perms.js 的三態）。
+    const homeFixed = (await loadFixedSteps()).includes("home-perms");
     const git = checkVersion("git", "Git", "git", ["--version"]);
     const gh = checkVersion("gh", "GitHub CLI", "gh", ["--version"]);
     const node = checkVersion("node", "Node.js", "node", ["--version"]);
@@ -1413,7 +1417,9 @@ export async function runEnvCheck(tools = []) {
     // 家目錄裡那幾樣不是學生的時候，下面每一顆按鈕都會撞到同一件事。排在後面的話
     // 學生會照順序一路按下去，每一張卡各噴一次 permission denied——實際回報裡就是
     // 這樣按了三次分頁標題那一步，家目錄裡多了六個沒用的 .bak。
-    const head = [checkHomePerms(homeBlocked)].filter((row) => row !== null);
+    const head = [checkHomePerms(homeBlocked, homeFixed)].filter(
+      (row) => row !== null,
+    );
 
     return {
       os: { platform: process.platform, arch: process.arch, home: homedir() },

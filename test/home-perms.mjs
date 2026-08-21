@@ -99,6 +99,25 @@ try {
   assert.equal(homePermsRow([]), null);
   ok("沒有東西被鎖住時這一列不出現");
 
+  // ⚠️ 但「修好了」跟「從來沒事」不一樣，那一列要留著打勾（Reed 實測指出）。
+  //
+  // 判準本來只有「現在還有沒有被鎖住的東西」，於是學生按下修復鍵、chown 跑完之後
+  // 這一列就沒有理由出現——卡片當場消失。他不會覺得做完了，他會覺得自己剛剛弄壞了
+  // 什麼。退役那幾列早就踩過同一條（config-check 的 checkRetired）。
+  const fixedRow = homePermsRow([], { fixed: true });
+  assert.notEqual(fixedRow, null, "修好之後這一列不可以消失");
+  assert.equal(fixedRow.status, "ok");
+  assert.equal(fixedRow.installable, false, "修好了就沒有東西可按");
+  assert.deepEqual(fixedRow.blocked, []);
+  // 沒修過的機器不受影響：那一筆記錄只有真的按過的人才有。
+  assert.equal(homePermsRow([], { fixed: false }), null);
+  ok("修好之後留著打勾，沒修過的機器仍然不出現");
+
+  // 還鎖著的時候，那一筆記錄不能把黃燈蓋成綠燈——修過一次不代表現在是好的
+  // （學生可能又跑了一次帶 sudo 的指令）。
+  assert.equal(homePermsRow(both, { fixed: true }).status, "warn");
+  ok("又被鎖住時照樣是黃燈，不會因為修過就永遠綠著");
+
   const row = homePermsRow(both);
   assert.equal(row.status, "warn");
   // 這一列沒有東西可以「安裝」，補一顆安裝鍵只會讓學生問安裝什麼。

@@ -258,6 +258,43 @@ export async function markStepRetired(id, options = {}) {
   return retired;
 }
 
+// 學生按過修復鍵、而且真的修好了的那幾件。
+//
+// ⚠️ 跟 retired 是兩本，因為講的不是同一件事：retired 是「我們的東西該從你機器上
+// 拿掉」，fixed 是「你機器上本來就壞的東西被修好了」。混在一起的話，之後想問
+// 「這台修過家目錄權限嗎」會查到一堆退役紀錄。
+//
+// 存在的唯一理由跟 retired 同一條：修好之後那一列不可以直接消失。判準本來是「現在
+// 還有沒有被鎖住的東西」，修好就沒有理由出現了——學生按下按鈕、卡片當場不見，他
+// 不會覺得做完了，他會覺得自己剛剛弄壞了什麼（Reed 實測指出）。
+export async function loadFixedSteps(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.fixed)
+    ? state.fixed.filter((id) => typeof id === "string")
+    : [];
+}
+
+// 逐筆新增，不整份覆蓋：修過就是修過，沒有「取消修好」這回事。
+export async function markStepFixed(id, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+  const fixed = Array.isArray(state.fixed)
+    ? state.fixed.filter((entry) => typeof entry === "string")
+    : [];
+
+  if (!fixed.includes(id)) {
+    fixed.push(id);
+  }
+
+  state.version = VERSION;
+  state.fixed = fixed;
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return fixed;
+}
+
 // 學生按「先略過這張」的卡。跟 manual 一樣不受指紋管轄：它記的是「我現在過不了，
 // 先往下走」，不是「裝過而且還有效」——重裝檔案不該讓他重新卡一次。
 //

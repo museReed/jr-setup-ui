@@ -21,6 +21,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import { blockedWriteTargets } from "../src/home-perms.js";
+import { markStepFixed } from "../src/progress-state.js";
 import { terminalCommand } from "../src/terminal-window.js";
 
 const APPLY = process.argv.includes("--apply");
@@ -175,5 +176,11 @@ while (blocked().length > 0) {
   await new Promise((resolve) => setTimeout(resolve, POLL_MS));
 }
 
+// 記一筆「這台修過了」。不記的話這一列會在修好的當下整個消失——判準本來就是
+// 「現在還有沒有被鎖住的東西」，鎖沒了它就沒有理由出現。學生按下按鈕、卡片不見，
+// 他不會覺得做完了，他會覺得自己剛剛弄壞了什麼（見 progress-state 的 markStepFixed）。
+await markStepFixed("home-perms");
+
 console.log("");
 console.log("✓ 家目錄裡那幾樣已經是你的了。那個終端視窗可以關掉。");
+console.log("  這一列會留著打勾，不會消失。");
