@@ -1597,7 +1597,7 @@ export function renderConfigChoices(toolChoices, languages) {
       button.type = "button";
       button.className = "ds-pill";
       button.dataset.tool = choice.value;
-      button.textContent = `#${choice.label}`;
+      button.textContent = choice.label;
       button.setAttribute("aria-pressed", "false");
       return button;
     });
@@ -1606,7 +1606,7 @@ export function renderConfigChoices(toolChoices, languages) {
     button.type = "button";
     button.className = "ds-pill";
     button.dataset.lang = language;
-    button.textContent = `#${language}`;
+    button.textContent = language;
     button.setAttribute("aria-pressed", "false");
     return button;
   });

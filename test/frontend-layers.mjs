@@ -322,6 +322,39 @@ try {
   assert(files.app.includes("環境檢查完成，狀態已更新。"));
   ok("學生按的環境重掃會在終端說開始與結束");
 
+  // 開頁時環境與規則檔會平行檢查。兩邊都回來後，第一張卡與右側終端要一起收尾；
+  // 兩個 finally 都要接 finalizer，因為無法預先知道哪一邊最後完成。
+  assert.equal(
+    (files.app.match(/finishInitialChecks\(\);/g) ?? []).length,
+    2,
+  );
+  assert(
+    files.app.includes("環境與規則檢查完成，狀態已更新。"),
+  );
+  assert(files.app.includes("state.setupCompleted = true"));
+  ok("首次環境與規則檢查完成後，第一張卡與終端一起收尾");
+
+  assert.equal(
+    (files.app.match(/restartInitialChecks\(\);/g) ?? []).length,
+    2,
+  );
+  assert(files.app.includes("state.setupCompleted = false"));
+  assert(
+    files.app.includes("選項已變更，正在重新檢查目前環境與規則。"),
+  );
+  assert(files.app.includes("state.configCheckQueued = true"));
+  assert(files.app.includes("void checkConfigs()"));
+  ok("切換工具或語言會退回待驗證，且忙碌中的規則檢查會用最新選項補跑");
+
+  assert(files.view.includes("button.textContent = choice.label"));
+  assert(files.view.includes("button.textContent = language"));
+  assert(
+    !files.view.includes(
+      "button.textContent = " + String.fromCharCode(96) + "#",
+    ),
+  );
+  ok("工具與語言選項不再顯示井字號");
+
   // 終端是「現在正在做什麼」，學生的每個動作都要在裡面留下一句話。勾一格卻什麼都
   // 沒發生的話，學生不知道那一勾有沒有被記住。
   for (const [snippet, what] of [

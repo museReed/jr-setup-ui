@@ -1422,6 +1422,26 @@ export function configSummary(checks, verifiedSteps = new Set()) {
   };
 }
 
+export function initialChecksReady({
+  envCheckInProgress,
+  configCheckInProgress,
+  envCheckQueued,
+  configCheckQueued,
+  envChecks,
+  configChecks,
+}) {
+  return (
+    !envCheckInProgress &&
+    !configCheckInProgress &&
+    envCheckQueued === null &&
+    configCheckQueued === false &&
+    Array.isArray(envChecks) &&
+    envChecks.length > 0 &&
+    Array.isArray(configChecks) &&
+    configChecks.length > 0
+  );
+}
+
 export function progressSummary(
   envChecks,
   configChecks,
