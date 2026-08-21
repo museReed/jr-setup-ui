@@ -202,16 +202,28 @@ console.log("ok - 白名單那題覆蓋四種規則形狀，按了允許不會�
 // 白名單裡，那 39 條全是 Bash(...) 的名字）。學生按了拒絕，整條驗證斷在那裡，結果檔
 // 永遠不會出現。跑串接那題時就是這樣斷的，而且它影響的是每一題，不只那一題。
 assert(
-  source.includes("const RESULT_DIR_NOTE ="),
+  source.includes("function resultDirNote()"),
   "提到結果檔的題目都要附「資料夾已經存在」，否則模型會先去建目錄然後撞權限",
 );
 assert(
-  /text\.includes\(resultFile\) \? `\$\{text\}\$\{RESULT_DIR_NOTE\}` : text/.test(
+  /text\.includes\(resultFile\) \? `\$\{text\}\$\{resultDirNote\(\)\}` : text/.test(
     source,
   ),
   "那句話要自動接在每一題後面，不能靠各題自己記得寫",
 );
-console.log("ok - 會寫結果檔的題目都被告知資料夾已經存在");
+
+// ⚠️ 那句話要**指名是哪一個資料夾**。泛稱的「不要先建立目錄」會被模型套用到別的
+// 路徑上——Codex 的 handoff skill 要寫進 /tmp/codex-session-namer/，模型回「依你
+// 『不要先建立目錄』的明確要求，我不會自行建立它」，改名整段踩空（macOS VM 實測）。
+assert(
+  /path\.dirname\(resultFile\)/.test(source),
+  "那句話要指名資料夾路徑，不能寫成泛稱的「不要先建立目錄」",
+);
+assert(
+  /其他路徑不受這句話限制/.test(source),
+  "要明講範圍只到那一個資料夾，否則模型會連別人的自救路徑一起擋掉",
+);
+console.log("ok - 會寫結果檔的題目被告知那一個資料夾已存在，且範圍不外溢");
 
 // 兩邊的記憶體提醒要對稱。codex 那張曾經被拿掉（理由是重疊、而且它兩次實測都誤判），
 // 於是畫面上 Claude 那張要驗、Codex 這張直接綠燈——學生看到的是「這張是不是壞了」

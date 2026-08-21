@@ -89,8 +89,12 @@ Commit 到當前 branch，不要切換 branch。
 改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`。唯一步驟＝寫 relay 檔：
 
 ```bash
-printf '%s\n' '📦 {topic}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
+mkdir -p /tmp/codex-session-namer && printf '%s\n' '📦 {topic}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
 ```
+
+那個目錄不保證存在，所以 `mkdir -p` 不能省：它是 hook 跑起來時建的，而 `/tmp` 隨時
+可能被系統清掉。skill 比 hook 先被叫到的那一次（例如 hook 那張卡還沒裝），沒有它就
+會收到 `no such file or directory`，而畫面上只看得到「標題沒變」。
 
 hook 會在下一個事件呼叫共用 app-server 的 `thread/name/set`；macOS、Linux 與
 Windows 都由 Codex 原生更新 sidebar、status line 與分頁標題。

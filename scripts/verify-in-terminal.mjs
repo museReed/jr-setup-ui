@@ -740,13 +740,24 @@ function lastSampledTitle() {
 // 時，模型的第一個動作是 New-Item -ItemType Directory，被擋之後就沒有下文了）。
 //
 // 而那一步本來就是多的：上面第 353 行已經 mkdirSync 過了。
-const RESULT_DIR_NOTE =
-  "（那個檔案的資料夾已經存在，直接寫檔就好，不要先建立目錄。）";
+//
+// ⚠️ 這句話一定要**指名是哪一個資料夾**，不能寫成泛稱的「不要先建立目錄」。
+//
+// 泛稱版寫出去之後，模型把它套用到了另一個資料夾上：Codex 的 handoff skill 要把
+// 名字寫進 /tmp/codex-session-namer/，而那個目錄不存在時本來該自己 mkdir——模型卻
+// 回「依你『不要先建立目錄』的明確要求，我不會自行建立它」，於是改名整段踩空
+// （2026-08-21 macOS VM 實測）。
+//
+// 我們想擋的只有「重建一個我們已經建好的資料夾」這一件事。話講寬了，就會連別人
+// 的自救路徑一起擋掉。
+function resultDirNote() {
+  return `（${path.dirname(resultFile)} 這個資料夾已經存在，直接寫檔就好，不用先建立它。其他路徑不受這句話限制。）`;
+}
 
 function buildPrompt(spec) {
   const text = spec.prompt({ agent, resultFile });
 
-  return text.includes(resultFile) ? `${text}${RESULT_DIR_NOTE}` : text;
+  return text.includes(resultFile) ? `${text}${resultDirNote()}` : text;
 }
 
 // 開終端之前先問一句：那個指令在不在。

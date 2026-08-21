@@ -22,8 +22,18 @@ Hook 注入的訊息已經包含這個 session 的精確 relay 路徑；直接�
 
 | Shell | 指令 |
 |---|---|
-| Bash / zsh | `printf '%s\n' '📦 新名稱' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending` |
-| PowerShell | `Set-Content -LiteralPath (Join-Path $env:TEMP "codex-session-namer\$env:CODEX_THREAD_ID.pending") -Value '📦 新名稱' -Encoding utf8` |
+| Bash / zsh | `mkdir -p /tmp/codex-session-namer && printf '%s\n' '📦 新名稱' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending` |
+| PowerShell | `$d = Join-Path $env:TEMP "codex-session-namer"; [System.IO.Directory]::CreateDirectory($d) > $null; Set-Content -LiteralPath (Join-Path $d "$env:CODEX_THREAD_ID.pending") -Value '📦 新名稱' -Encoding utf8` |
+
+⚠️ 建目錄那一半不能省。那個目錄是 hook 跑起來時建的（`codex-session-namer.sh` 的
+`mkdir -p`），而 `/tmp` 隨時可能被系統清掉——macOS 有定期清理。所以它不是既有狀態，
+每一個要寫進去的人都得自己確保它在。
+
+漏掉的話症狀是 `no such file or directory`，而學生看到的只有「標題沒變」（2026-08-21
+macOS VM 實測：skill 那張卡比 hook 那張先裝，改名整段踩空）。
+
+PowerShell 這邊用 `[System.IO.Directory]::CreateDirectory` 而不是 `New-Item`：後者不在
+白名單裡，會跳出「要不要允許」，學生按了拒絕就整條斷掉。
 
 這次寫入會觸發 PostToolUse，hook 通常會立刻套用名稱。若 app-server 暫時連不上，relay
 檔會保留，下一次 hook 事件自動重試。
