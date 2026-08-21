@@ -443,6 +443,79 @@ try {
   assert.equal(bothInstalled.hooks.PostToolUse.length, 3);
   ok("命名與監控分兩次裝可重跑，彼此不覆蓋，也不動使用者原本的 hook");
 
+  // ⚠️ hook 的檔名是**回訪學生的升級路徑**，改名等於在他機器上留一條孤兒註冊。
+  //
+  // 重裝時清舊註冊的判準是「命令列裡有沒有提到這幾個檔名」（見上面
+  // mergeAgentHookRegistrations 的 hookMarkers）。檔名一改，舊那條就對不上——
+  // 它會靜靜留在 settings.json 裡，指向一個已經不存在的檔案，每次事件失敗一次，
+  // 而畫面上完全看不出來：新的裝好了、是綠的，舊的在背景一直報錯。
+  //
+  // 2026-08-21 查過整個 materials/skills/hooks 的 git 歷史：只有 A 與 M，一筆 D
+  // 或 R 都沒有——所以這條保證到目前為止是成立的，只是沒有人守著它。
+  //
+  // 這條測試就是那個守門人。改名時它會紅，逼你順便想清楚舊的那份怎麼收
+  //（現成的做法在 describeStep 的 kind: "retire"）。
+  const HOOK_BASES = {
+    darwin: {
+      "claude-namer": ["set-session-name", "session-auto-namer"],
+      "claude-monitor": ["context-monitor"],
+      "codex-namer": [
+        "codex-session-namer",
+        "codex-session-name-set",
+        "codex-server-restart",
+        "codex-version-guard",
+      ],
+    },
+    linux: {
+      "claude-namer": ["set-session-name", "session-auto-namer"],
+      "claude-monitor": ["context-monitor"],
+      "codex-namer": [
+        "codex-session-namer",
+        "codex-session-name-set",
+        "codex-server-restart",
+      ],
+    },
+    win32: {
+      "claude-namer": [
+        "set-session-name",
+        "session-auto-namer",
+        // Windows 的命名指令不能直接叫 powershell（白名單驗不過巢狀直譯器），
+        // 所以多一支 bash 薄殼。它落地時**蓋掉 set-session-name.sh 這個檔名**，
+        // 所以清舊註冊靠的仍然是 set-session-name 這個 marker。
+        "set-session-name-shim",
+      ],
+      "claude-monitor": ["context-monitor"],
+      "codex-namer": [
+        "codex-session-namer",
+        "codex-session-name-set",
+        "codex-app-server-common",
+        "codex-shared-app-server",
+        "codex-server-restart",
+      ],
+    },
+  };
+
+  for (const [platform, byStep] of Object.entries(HOOK_BASES)) {
+    for (const [id, bases] of Object.entries(byStep)) {
+      assert.deepEqual(
+        describeStep(id, { ...AT, platform }).hookFiles.map(
+          (file) => file.base,
+        ),
+        bases,
+        `${platform} 的 ${id} 動到 hook 檔名了——舊學生的註冊會變成孤兒，` +
+          `請一起做退役（kind: "retire"）再更新這張表`,
+      );
+    }
+  }
+
+  // 退役那一列認的字串也一起釘住，理由同上：它是「認得出舊機器裝過什麼」的判準，
+  // 改了就等於認不出來，那一列從此不會出現，而東西還在學生機器上。
+  assert.deepEqual(
+    describeStep("codex-monitor", { ...AT, platform: "darwin" }).markers,
+    ["codex-context-monitor"],
+  );
+  ok("hook 檔名與退役 marker 都釘住了，改名時測試會紅");
+
   const allow = mergeAllowRules(
     { permissions: { allow: ["Bash(ls)"], deny: ["Bash(rm)"] } },
     { allowRules: ["Bash(ls)", "Bash(git status)"] },
