@@ -2450,14 +2450,21 @@ view.onReportModal(
 );
 // 收件人與主旨那兩顆複製鍵。寫得進剪貼簿才回 true——view 靠這個決定要不要把按鈕的
 // 字換成「已複製」。擋掉的話什麼都不做：那兩行本來就選得起來，不需要跳錯誤訊息嚇人。
-view.onMailCopy(async (text) => {
+async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
     return false;
   }
-});
+}
+
+view.onMailCopy(copyToClipboard);
+// 預覽區那顆複製鍵。重新組一次內容，不複製畫面上那份——預覽是開框當下產生的，
+// 學生之後才打的那段描述不在裡面。
+view.onPreviewCopy(() =>
+  copyToClipboard(buildIssue(currentReportInput(view.reportDescription())).body),
+);
 // 安裝失敗時要貼給助教的就是這一段。原本只能用滑鼠圈——那個面板會邊跑邊長，圈到
 // 一半又冒出新的一行，學生很難剛好圈完整（Reed 實測貼回來的都是殘缺的）。
 view.elements.copyRawOutput.addEventListener("click", async () => {

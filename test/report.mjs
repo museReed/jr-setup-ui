@@ -91,7 +91,14 @@ try {
 
   // GitHub 那條要帶提示，否則學生看到空表單會以為按鈕壞了。
   assert.match(newIssueUrl(longTitle), /[?&]body=/);
-  assert.match(decodeURIComponent(newIssueUrl(longTitle)), /貼在這裡/);
+
+  const hint = decodeURIComponent(newIssueUrl(longTitle)).split("body=")[1];
+  assert.match(hint, /貼在這裡/);
+  // ⚠️ 提示要包在 HTML 註解裡：那樣它在編輯框看得到、送出之後渲染不出來，行為就是
+  // 一個 placeholder。忘了刪也不會在 issue 開頭掛一句對助教沒有意義的話。
+  assert.match(hint, /^<!--[\s\S]*-->/);
+  // 所以也不准再叫學生「刪掉這一行」——那是它不必存在的那一步。
+  assert.doesNotMatch(hint, /刪掉/);
   // mailto 不帶內文：信件程式對 body 的處理各家不同，而學生本來就要貼上。
   assert.ok(!/[?&]body=/.test(mailtoUrl(longTitle)));
 

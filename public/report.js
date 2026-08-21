@@ -63,7 +63,15 @@ export function mailtoUrl(title) {
 //
 // 提示要跟著他走，所以放進表單本身。一行字編碼後仍然很短，跟檔頭那段講的「把 log
 // 塞進網址」是兩回事——那個坑是長度，這裡沒有長度問題（下面的測試釘住 500 字元）。
-const PASTE_HINT = "把剛才複製的內容貼在這裡（Ctrl+V／⌘V），再刪掉這一行。";
+//
+// 寫成 Markdown 的 HTML 註解：在編輯框裡看得到，送出之後**渲染不出來**。所以不必
+// 叫學生「再刪掉這一行」——那是多的一步，而且忘了刪的話 issue 開頭就掛著一句對助教
+// 沒有意義的話。它的行為就是一個 placeholder，只是 GitHub 的 placeholder 沒辦法從
+// 網址設定，只能用這個方式做到同一件事。
+//
+// 尾巴留兩個換行：學生點進框通常是點到最後，游標就已經在下一行，貼上去不會跟提示
+// 黏成一行。
+const PASTE_HINT = "<!-- 把剛才複製的內容貼在這裡（Ctrl+V／⌘V） -->\n\n";
 
 export function newIssueUrl(title) {
   const params = new URLSearchParams({ body: PASTE_HINT });

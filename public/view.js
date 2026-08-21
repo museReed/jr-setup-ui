@@ -35,6 +35,7 @@ const elements = {
   reportSave: document.querySelector("#report-modal-save"),
   reportCancel: document.querySelector("#report-modal-cancel"),
   reportStatus: document.querySelector("#report-modal-status"),
+  reportPreviewCopy: document.querySelector("#report-preview-copy"),
   reportMailDetails: document.querySelector("#report-mail-details"),
   reportMailTo: document.querySelector("#report-mail-to"),
   reportMailSubject: document.querySelector("#report-mail-subject"),
@@ -2341,23 +2342,35 @@ export function showMailDetails({ to, subject }) {
   elements.reportMailDetails.hidden = false;
 }
 
-// 兩顆複製鍵共用一個處理器：它把那一格的文字交出去，真正寫剪貼簿的動作在 app 那層
-// ——view 只碰 DOM。按完把字換成「已複製」兩秒，不然學生不知道到底有沒有按到。
+// 按完把字換成「已複製」兩秒，不然學生不知道到底有沒有按到。寫剪貼簿失敗（瀏覽器
+// 擋掉）就什麼都不做：那幾格本來就選得起來，不需要為此跳一個錯誤訊息嚇人。
+function flashCopied(button, done) {
+  if (!done) return;
+
+  const original = button.textContent;
+  button.textContent = "已複製";
+  window.setTimeout(() => {
+    button.textContent = original;
+  }, 2000);
+}
+
+// 收件人與主旨那兩顆。它把那一格的文字交出去，真正寫剪貼簿的動作在 app 那層——
+// view 只碰 DOM。
 export function onMailCopy(copy) {
   for (const button of elements.reportMailDetails.querySelectorAll("[data-copy]")) {
     button.addEventListener("click", async () => {
       const target = document.querySelector(`#${button.dataset.copy}`);
-      const done = await copy(target.textContent);
-
-      if (!done) return;
-
-      const original = button.textContent;
-      button.textContent = "已複製";
-      window.setTimeout(() => {
-        button.textContent = original;
-      }, 2000);
+      flashCopied(button, await copy(target.textContent));
     });
   }
+}
+
+// 預覽區那顆。⚠️ 它不複製畫面上那份，而是叫 app 重新組一次——預覽是開框當下產生的，
+// 學生之後才打的那段描述不在裡面。複製到一份少了他自己的話的內容，正是最沒用的那種。
+export function onPreviewCopy(copy) {
+  elements.reportPreviewCopy.addEventListener("click", async () => {
+    flashCopied(elements.reportPreviewCopy, await copy());
+  });
 }
 
 // 把這一份診斷資料存成檔案。給「連 GitHub 帳號都沒有」的人——他至少交得出東西，

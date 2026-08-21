@@ -187,7 +187,12 @@
         <label class="report-label" for="report-description">發生什麼事？（選填，但寫一句話會快很多）</label>
         <textarea id="report-description" class="report-description" rows="3" placeholder="例如：按了安裝之後就一直轉圈，等了五分鐘"></textarea>
         <p class="report-hint">下面是會一起送出的內容——家目錄已經換成 ~。送出之後那則 issue 會自動打開，要附截圖就直接拖進去。</p>
-        <pre id="report-preview" class="report-preview"></pre>
+        <!-- 這一塊很長而且會捲，用滑鼠圈選很難圈得完整（圈到一半就捲走了）。
+             一顆複製鍵比什麼都實在——四條退路的第一步全都是「把這份內容複製起來」。 -->
+        <div class="report-preview-wrap">
+          <button type="button" id="report-preview-copy" class="mail-copy">複製</button>
+          <pre id="report-preview" class="report-preview"></pre>
+        </div>
         <div>
           <button type="button" id="report-modal-send" class="ds-btn ds-btn-primary">送出</button>
           <!-- gh 還沒登入時的退路。瀏覽器的 GitHub 登入多數人早就有了，比 CLI 登入

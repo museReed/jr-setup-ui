@@ -1486,6 +1486,18 @@ body.wt-locked {
   resize: vertical;
 }
 
+/* 預覽區的複製鍵。浮在右上角，不佔內容的寬度。 */
+.report-preview-wrap {
+  position: relative;
+}
+
+.report-preview-wrap .mail-copy {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+}
+
 /* 寄信那條路的收件人與主旨。mailto 打不開時，這兩行是他唯一的線索。 */
 .mail-details {
   display: flex;
