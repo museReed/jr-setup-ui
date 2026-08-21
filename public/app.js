@@ -50,6 +50,7 @@ import {
   failureReason,
   guidanceModel,
   impliedVerifiedSteps,
+  initialChecksReady,
   installVerificationFollowUp,
   installStatusMessage,
   isLoginAction,
@@ -123,6 +124,8 @@ const state = {
   // 索引會位移，已完成的卡會被推到高水位之後而重新變灰。
   seenCardIds: new Set(),
   setupCompleted: false,
+  // 第一張卡的兩份初始檢查都收完後，只在終端報一次完成。
+  initialChecksAnnounced: false,
   installedSteps: new Set(),
   verificationAttempted: new Set(),
   failedVerificationSteps: new Set(),
@@ -1463,6 +1466,32 @@ function finishLoginWait(step) {
   view.finishLoginWaiting(step.text, step.failed);
 }
 
+function finishInitialChecks() {
+  if (
+    !initialChecksReady({
+      envCheckInProgress: state.envCheckInProgress,
+      configCheckInProgress: state.configCheckInProgress,
+      envCheckQueued: state.envCheckQueued,
+      envChecks: state.envChecks,
+      configChecks: state.lastChecks,
+    })
+  ) {
+    return;
+  }
+
+  const cardChanged = !state.setupCompleted;
+  state.setupCompleted = true;
+
+  if (cardChanged) {
+    renderWizard();
+  }
+
+  if (!state.initialChecksAnnounced) {
+    state.initialChecksAnnounced = true;
+    view.addLine("環境與規則檢查完成，狀態已更新。", "succeeded");
+  }
+}
+
 async function checkEnvironment(showLoading = true, { manual = false } = {}) {
   if (state.envCheckInProgress) {
     // 這一次不能直接丟掉。安裝完成後的重查若撞上還在跑的那次，畫面就永遠停在
@@ -1557,6 +1586,8 @@ async function checkEnvironment(showLoading = true, { manual = false } = {}) {
     view.elements.recheckEnv.disabled = state.runInProgress;
     renderCheckingLoader();
 
+    finishInitialChecks();
+
     // 排在後面那次補跑。一次只留一筆，所以不會無限接力。
     const queued = state.envCheckQueued;
 
@@ -1597,6 +1628,7 @@ async function checkConfigs() {
     state.configCheckInProgress = false;
     renderControls();
     renderCheckingLoader();
+    finishInitialChecks();
   }
 }
 

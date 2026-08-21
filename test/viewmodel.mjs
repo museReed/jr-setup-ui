@@ -30,6 +30,7 @@ import {
   FIX_BUTTON_TEXT,
   fixButtonText,
   impliedVerifiedSteps,
+  initialChecksReady,
   installStatusMessage,
   isLoginAction,
   isVerifyAction,
@@ -1828,6 +1829,26 @@ try {
     },
   );
   ok("規則檔摘要算出部分完成數量");
+
+  const readyInitialChecks = {
+    envCheckInProgress: false,
+    configCheckInProgress: false,
+    envCheckQueued: null,
+    envChecks: [{ id: "node" }],
+    configChecks: [{ id: "rules" }],
+  };
+  assert.equal(initialChecksReady(readyInitialChecks), true);
+
+  for (const patch of [
+    { envCheckInProgress: true },
+    { configCheckInProgress: true },
+    { envCheckQueued: { manual: false } },
+    { envChecks: [] },
+    { configChecks: [] },
+  ]) {
+    assert.equal(initialChecksReady({ ...readyInitialChecks, ...patch }), false);
+  }
+  ok("第一張只在環境與規則檢查都完成且有結果時標記完成");
 
   assert.deepEqual(extractLoginHints("請開 https://example.com/device 並輸入"), {
     url: "https://example.com/device",

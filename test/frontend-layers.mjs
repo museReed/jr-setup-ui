@@ -322,6 +322,18 @@ try {
   assert(files.app.includes("環境檢查完成，狀態已更新。"));
   ok("學生按的環境重掃會在終端說開始與結束");
 
+  // 開頁時環境與規則檔會平行檢查。兩邊都回來後，第一張卡與右側終端要一起收尾；
+  // 兩個 finally 都要接 finalizer，因為無法預先知道哪一邊最後完成。
+  assert.equal(
+    (files.app.match(/finishInitialChecks\(\);/g) ?? []).length,
+    2,
+  );
+  assert(
+    files.app.includes("環境與規則檢查完成，狀態已更新。"),
+  );
+  assert(files.app.includes("state.setupCompleted = true"));
+  ok("首次環境與規則檢查完成後，第一張卡與終端一起收尾");
+
   // 終端是「現在正在做什麼」，學生的每個動作都要在裡面留下一句話。勾一格卻什麼都
   // 沒發生的話，學生不知道那一勾有沒有被記住。
   for (const [snippet, what] of [
