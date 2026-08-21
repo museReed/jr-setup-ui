@@ -482,9 +482,15 @@ export const VERIFICATION = {
   // POSIX 上已經沒有 watcher 了——標題由命名 hook 自己寫 OSC 進 tty，而這一步只負責
   // 那個 shell function（設 CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1，不然 Claude Code
   // 自己的標題會蓋掉 hook 寫的名字）。要看的畫面兩邊一樣，所以文案不分平台。
+  // ⚠️ 這一列只驗它自己裝的東西：rc 檔那段 wrapper 有沒有載進新終端。標題那一半
+  // 交給下一列（claude-namer），因為真正寫標題的腳本是那一列裝的。
+  //
+  // 原本這裡驗的是標題，於是它需要一個下一張卡才會出現的檔案——每一位學生走到這張
+  // 都會撞到「找不到命名腳本」（2026-08-21 macOS VM 實測）。那個相依是 8/20 拿掉
+  // POSIX watcher 時長出來的，見 verify-in-terminal 的 wrapperScript。
   "tab-sync": {
-    terminal: { case: "title", agent: "claude" },
-    eye: "那個視窗的分頁標題變成「🔍 標題同步測試」",
+    terminal: { case: "wrapper", agent: "claude" },
+    eye: "那個視窗印出「✓ wrapper 已載入」",
   },
   // 程式驗得到的是「名字有沒有被產生」（hook 會寫檔），不是「標題有沒有變」。
   // 這兩件事會分岔——VM 實測：名字寫出來了，但 watcher 沒掛上，標題一直是預設值。

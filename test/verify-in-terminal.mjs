@@ -18,15 +18,21 @@ const source = readFileSync(
   "utf8",
 );
 
-assert(
-  source.includes("-ArgumentList @("),
-  "Start-Process 的參數要用 @(...) 陣列傳",
-);
+// ⚠️ 這裡原本還有一條「-ArgumentList 要用 @(...) 陣列傳」。那一條盯的是舊版標題
+// 驗證裡啟動 watcher 的那行 Start-Process，而那段已經不在了（2026-08-21：那一格改成
+// 只驗 wrapper 有沒有載入，見 wrapperScript）。
+//
+// 沒有跟著拿掉的話它會變成一條永遠紅的假守衛——這個檔案裡剩下的兩個 Start-Process
+// 都只帶一個參數（網址或 -FilePath），本來就沒有 -ArgumentList。
+//
+// 那條規則本身仍然有效，只是守錯了地方：現在真正拼參數的是 config-install.js 的
+// Windows watcher 區塊，由 test/config-install.mjs 盯著。下面這條留著，防的是有人
+// 把字串拼法搬回這個檔案。
 assert(
   !source.includes('-ArgumentList "'),
   "不能把 Start-Process 的參數拼成一個字串——引號會被 PowerShell 再解讀一次",
 );
-console.log("ok - 終端啟動腳本用陣列傳參數，不靠引號");
+console.log("ok - 終端啟動腳本不把 PowerShell 參數拼成字串");
 
 // 我們自己寫出來的臨時腳本，不該看機器的執行原則臉色。
 //
@@ -52,10 +58,12 @@ assert.deepEqual(
   "自己寫出來的臨時腳本一律帶 Bypass",
 );
 assert.ok(windowsArgs.includes("-NoExit"), "跑完要留著視窗給學生看");
-assert.match(
-  source,
-  /Start-Process powershell\.exe -ArgumentList @\('-NoProfile','-ExecutionPolicy','Bypass','-File'/,
-);
+// ⚠️ 這裡原本還比對 source 裡那行 Start-Process 也帶 Bypass。那行是舊版標題驗證
+// 啟動 watcher 用的，2026-08-21 隨著那一格改成只驗 wrapper 一起拿掉了。
+//
+// 真正要守的判準是上面那一段——terminalCommand() **產出**的參數帶 Bypass，那是實際
+// 被 spawn 的東西。掃原始碼文字只是它的影子，而影子還在的時候我們有兩條，現在只
+// 剩真的那一條。
 console.log("ok - 自己 spawn 的 PowerShell 腳本一律帶 Bypass，不依賴機器設定");
 
 // zsh 的特殊變數不能拿來當一般變數名。
@@ -266,20 +274,12 @@ console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
 // oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在裝了 powerlevel10k
 // 的機器上，學生看到的標題是 `echo`，也就是腳本最後一個指令。
 //
-// 兩道保險缺一不可，所以兩個都釘住。
-{
-  const disableAt = source.indexOf("DISABLE_AUTO_TITLE=true");
-  assert(disableAt >= 0, "標題 launcher 要關掉主題的自動標題");
-
-  const echoAt = source.indexOf("標題測試結束——這個視窗的分頁標題現在是");
-  const namerAt = source.indexOf('CLAUDE_PROJECT_DIR="$HOME" ${namer}');
-
-  assert(echoAt >= 0, "找不到標題那一格的提示字");
-  assert(namerAt >= 0, "找不到標題那一格呼叫命名腳本的那一行");
-  assert(
-    namerAt > echoAt,
-    "命名腳本要放在最後一行——先印字後改標題，才沒有下一個指令能蓋掉標題",
-  );
-
-  console.log("ok - 標題 launcher 關掉主題自動標題，而且把改標題排在最後");
-}
+// ⚠️ 2026-08-21：那支 launcher 不在了，所以這三條也拿掉。
+//
+// 「分頁自己報上名字」那一格改成只驗它自己裝的東西（wrapper 有沒有載入），不再自己
+// 寫一次標題——原因是寫標題要用下一張卡才裝的命名腳本，每位學生走到這張都會撞到
+// 「找不到命名腳本」（見 wrapperScript 的註解）。
+//
+// ⚠️ 上面那段理由**沒有過期**：哪天有人再做一個「我們自己寫標題」的 launcher，
+// DISABLE_AUTO_TITLE 與「改標題排最後」這兩道保險都要跟著回來，而且要重新釘住。
+// 兩者缺一不可，實測過的症狀是：學生看到的標題是 `echo`（腳本最後一個指令）。

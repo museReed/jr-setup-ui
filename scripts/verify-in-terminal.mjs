@@ -73,12 +73,21 @@ const CASES = {
   // 一點關係都沒有。這裡直接起裝好的 watcher、餵它一個名字，學生看標題就好：
   // 不花 API 額度、不受模型心情影響，而且失敗時只剩兩個可能（watcher 壞了 /
   // 終端不吃標題），比夾著一個 AI 好查太多。
-  title: {
-    label: "終端機標題同步",
+  // ⚠️ 這一格只驗「這張卡自己裝的東西」——rc 檔裡那段 wrapper 有沒有載進新的
+  // 終端。標題那一半交給下一張（對話自己取名字），因為真正寫標題的腳本是那張裝的。
+  //
+  // 原本這一格是驗標題的，於是它需要一個下一張卡才會出現的檔案：每一位學生走到
+  // 第 6 張都會看到「找不到命名腳本——請先把『對話自己取名字』那張卡裝好再回來」。
+  // 訊息是對的，但那不是邊界情況，是必經之路（2026-08-21 在 macOS VM 上撞到）。
+  //
+  // 那個相依是 8/20 拿掉 POSIX watcher 時長出來的：驗證從「跑起 watcher 看標題變
+  // 不變」改成「叫命名腳本寫標題」，而命名腳本在下一張才裝（見 dd53880）。
+  wrapper: {
+    label: "終端機的 claude 指令包過了",
     env: () => ({}),
     prompt: () => "",
     expect: () => null,
-    watchFor: "分頁標題變成「🔍 標題同步測試」，五秒後自己還原",
+    watchFor: "畫面出現「✓ wrapper 已載入」",
   },
   // 底部狀態列那一格：不驗任何東西，只負責把 Codex 開起來讓學生看一眼。
   // 那一條是純畫面（設定寫對了但沒重開 Codex，它還是舊的），程式抓不到。
@@ -484,62 +493,53 @@ function vaultScript() {
   return [`open '${url}'`, `echo '${done}'`].join("\n");
 }
 
-function titleScript() {
-  const name = "🔍 標題同步測試";
-
+// 「分頁自己報上名字」那張卡的驗證。
+//
+// ⚠️ 它只驗**這張卡自己裝的東西**：rc 檔裡那段 wrapper 有沒有載進新開的終端。
+// 標題那一半交給下一張（對話自己取名字），因為真正把名字寫上標題的腳本是那張裝的。
+//
+// 為什麼要分開：原本這一格叫命名腳本去寫一次標題，而那支腳本在下一張才裝——於是
+// 每一位學生走到第 6 張都會看到「找不到命名腳本——請先把『對話自己取名字』那張卡
+// 裝好再回來」。那句話是對的，但它不是邊界情況，是必經之路（2026-08-21 macOS VM
+// 實測）。順序不能對調：wrapper 必須先裝，後面幾張才看得到標題變化。
+//
+// ⚠️ 不要退回「在背景啟動 ai-tab-sync.sh」的更舊寫法。那支 POSIX 上已經不裝了，
+// 但上一輪安裝留下的殘檔會讓它照樣跑起來——這一格於是給出假的綠燈（2026-08-20
+// 在 macOS VM 上實測踩到：機器先裝過 main，再裝分支，驗證仍然過）。
+function wrapperScript() {
   if (process.platform === "win32") {
-    // 參數用陣列傳，不要拼成一個字串。拼字串的話 PowerShell 會再解讀一次引號，
-    // 而 JS 的 \" 在 .ps1 檔裡是「反斜線加引號」不是跳脫（PowerShell 用反引號）——
-    // 字串提早結束，路徑全變成位置參數（VM 實測：Start-Process 直接報錯）。
+    // Windows 的 wrapper 是 profile 裡的一個 function。`Get-Command claude` 回
+    // Function 才算載入了；回 Application 表示 profile 沒讀到，學生拿到的是原生的
+    // claude，標題永遠不會動。
     return [
-      "$watcher = Join-Path $HOME '.jr-setup\\bin\\ai-tab-sync.ps1'",
-      "$sync = Join-Path $env:TEMP \"jr-title-$PID.txt\"",
-      `Set-Content -Path $sync -Value '${name}' -Encoding UTF8`,
-      "$w = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$watcher,$sync,\"$PID\") -NoNewWindow -PassThru",
-      "Start-Sleep -Seconds 5",
-      "if ($w) { Stop-Process -Id $w.Id -Force -ErrorAction SilentlyContinue }",
-      "Remove-Item $sync -Force -ErrorAction SilentlyContinue",
-      "Write-Host '標題測試結束——剛才那五秒分頁標題有變嗎？'",
+      "$c = Get-Command claude -ErrorAction SilentlyContinue",
+      "if ($c -and $c.CommandType -eq 'Function') {",
+      "  Write-Host '✓ wrapper 已載入' -ForegroundColor Green",
+      "} else {",
+      "  Write-Host '✗ wrapper 沒載入——關掉所有 PowerShell 視窗再開一個新的，還是不行就重跑這一步的安裝' -ForegroundColor Red",
+      "}",
+      "Write-Host ''",
+      "Write-Host '看完可以關掉這個視窗。'",
     ].join("\n");
   }
 
-  // POSIX 這一格改成直接叫命名腳本，因為 watcher 已經不再安裝了（見
-  // docs/windows-tab-title-why-watcher.md）。標題現在是 set-session-name.sh 自己把
-  // OSC 寫進 /dev/ttysNNN——那才是學生真正會走的路徑，這一格就該驗它。
+  // POSIX 的 wrapper 也是一個 function（.zshrc 裡那段）。這支 launcher 是 zsh -i，
+  // 會讀 .zshrc，所以這裡看到的就是學生開新終端時看到的。
   //
-  // ⚠️ 不要退回「在背景啟動 ai-tab-sync.sh」的舊寫法。那支腳本 POSIX 上已經不裝了，
-  // 但上一輪安裝留下的殘檔會讓它照樣跑起來、標題照樣變——這一格於是給出假的綠燈
-  // （2026-08-20 在 macOS VM 上實測踩到：機器先裝過 main，再裝分支，驗證仍然過）。
-  //
-  // CLAUDE_PROJECT_DIR 指到家目錄：命名腳本會依工作目錄加上 [專案] 前綴，指到家目錄
-  // 就不加，學生看到的字才跟卡片上寫的那句話一模一樣。
-  //
-  // 第二個參數要傳這個 shell 自己的 pid：腳本是用它去查 tty 的。
-  const namer = '"$HOME/.claude/hooks/set-session-name.sh"';
-
-  // ⚠️ 兩件事都是為了「寫進去的標題活得過這支腳本」，缺一不可：
-  //
-  // 1. DISABLE_AUTO_TITLE=true
-  //    這支 launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也
-  //    跟著載入。oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在
-  //    裝了 powerlevel10k 的機器上，學生看到的標題是 `echo`（腳本最後一個指令）。
-  //    omz 是在 runtime 檢查這個變數的，所以在這裡關掉就能讓後面的寫入活下來。
-  //    這是拋棄式的 launcher，關掉不影響使用者自己的 shell。
-  //
-  // 2. 命名腳本放在最後一行
-  //    就算遇到我們沒認出來的主題，只要標題是最後一件事，就沒有下一個指令能蓋掉它。
-  //    所以先印字、後改標題——順序不能對調。
-  //
-  // 這個坑只打得到有裝主題的開發機。學生的 .zshrc 只有嚮導寫的那一段，沒有人來搶。
+  // `whence -w claude` 回 "claude: function" 才算數；回 "claude: command" 表示那段
+  // 沒載到——多半是 .zshrc 改完之後沒開新視窗。
   return [
-    "DISABLE_AUTO_TITLE=true",
-    `if [ ! -x ${namer} ]; then`,
-    '  echo "找不到命名腳本——請先把「對話自己取名字」那張卡裝好再回來。"',
-    "  exit 0",
-    "fi",
-    "unset AI_TAB_SYNC_FILE",
-    `echo "標題測試結束——這個視窗的分頁標題現在是「${name}」嗎？"`,
-    `CLAUDE_PROJECT_DIR="$HOME" ${namer} '${name}' "$$"`,
+    'kind="$(whence -w claude 2>/dev/null)"',
+    'case "$kind" in',
+    "  *function*)",
+    '    echo "✓ wrapper 已載入"',
+    "    ;;",
+    "  *)",
+    '    echo "✗ wrapper 沒載入（$kind）——關掉所有終端視窗再開一個新的，還是不行就重跑這一步的安裝"',
+    "    ;;",
+    "esac",
+    'echo ""',
+    'echo "看完可以關掉這個視窗。"',
   ].join("\n");
 }
 
@@ -553,8 +553,8 @@ function writeLauncher(prompt) {
       ? `${agent} '${prompt}'\n${browseVaultRepo()}`
       : caseName === "open-vault"
       ? vaultScript()
-      : caseName === "title"
-      ? titleScript()
+      : caseName === "wrapper"
+      ? wrapperScript()
       : caseName === "statusline"
         ? agent
         : `${agent} '${prompt}'`;
