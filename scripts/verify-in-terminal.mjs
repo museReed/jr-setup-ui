@@ -516,8 +516,8 @@ function vaultScript() {
 // 但上一輪安裝留下的殘檔會讓它照樣跑起來——驗證於是給出假的綠燈（2026-08-20
 // 在 macOS VM 上實測踩到：機器先裝過 main，再裝分支，驗證仍然過）。
 
-// Windows 專用：claude 結束之後，把那個 console 當下的標題寫進檔案，讓輪詢那邊
-// 用字串比對判定「標題真的變成 hook 寫的名字」，不必只靠學生的眼睛。
+// Windows 專用：claude **還在跑的時候**，持續把那個 console 當下的標題寫進檔案，
+// 讓輪詢那邊用字串比對判定「標題真的變成 hook 寫的名字」，不必只靠學生的眼睛。
 //
 // 為什麼 Windows 讀得回來、macOS 讀不回來——那是機制決定的，不是還沒做完：
 //
@@ -525,25 +525,54 @@ function vaultScript() {
 //            console 裡的行程讀得回真值（watcher 自己每輪就在讀，見 ai-tab-sync.ps1）
 //   macOS    標題是 OSC 逃逸序列寫進 tty 裝置，沒有對應的讀取 API
 //
-// 2026-08-21 在 Windows VM 上用 scripts/probe-title-readback.ps1 實測過三件事，
-// 三件都成立才有這一段：讀回來的值對得上、分頁上顯示的就是那一串（沒被 WT 的
-// suppressApplicationTitle 鎖住）、watcher 被 wrapper 的 finally 殺掉之後標題還留著。
+// 2026-08-21 在 Windows VM 上用 scripts/probe-title-readback.ps1 實測過：讀回來的值
+// 對得上、分頁上顯示的就是那一串（沒被 WT 的 suppressApplicationTitle 鎖住）。
 //
-// ⚠️ 這一行必須**緊接在 claude 之後**，中間不能插任何東西。它讀的是「當下」的標題，
-// 前面多一個會改標題的指令，讀到的就是那個指令留下的字（macOS 上實測過同型的症狀：
-// 學生看到的標題是 echo，因為那是腳本最後一個指令）。
-function titleReadback() {
+// ⚠️ 取樣要在**背景**跑，不能等 claude 結束之後才讀一次。
+//
+// 第一版就是寫成「claude 那一行的下一行」，而 `claude '一句話'` 是**互動式**的：
+// 模型回答完，那個 session 還停在提示字元等下一句，腳本永遠走不到下一行。於是檔案
+// 不會出現、驗證一路等到逾時——而在那之前，名字檔早就寫出來了，標題也早就變了
+//（2026-08-21 Reed 在 Windows VM 上實測，畫面全對，那一列卻卡在驗證中）。
+//
+// 這一格原本就是「跑到一半就過」：名字檔一出現就 PASS，視窗留著讓學生看標題。
+// 要加的那一半必須維持同一個節奏，不能把通過條件改成「學生要先退出 claude」。
+//
+// -NoNewWindow 是關鍵：取樣的行程要跟 claude 共用同一個 console，[Console]::Title
+// 才讀得到學生看到的那一串。開新視窗的話它讀到的是自己那個 console 的標題
+//（config-install.js 的 watcher 區塊為了同一件事踩過一次）。
+function titleSamplerScript() {
   // 只有 Claude 的命名那一格有這個落點：Codex 的命名走原生 app-server，它自己
   // 決定標題，我們沒有一個「該等於什麼」的名字可以比對。
   if (process.platform !== "win32" || caseName !== "naming" || agent !== "claude") {
-    return "";
+    return null;
   }
 
+  const file = path.join(tmpdir(), `jr-verify-title-${process.pid}-${Date.now()}.ps1`);
   const quoted = titleFile.replaceAll("'", "''");
 
-  // UTF8Encoding $false = 不寫 BOM，跟 hook 寫名字檔的編碼一致——兩邊要拿來字串
-  // 比對，其中一邊多三個位元組就永遠不相等。
-  return `[System.IO.File]::WriteAllText('${quoted}', [Console]::Title, (New-Object System.Text.UTF8Encoding $false))\n`;
+  writeFileSync(
+    file,
+    // UTF8Encoding $false = 不寫 BOM，跟 hook 寫名字檔的編碼一致——兩邊要拿來字串
+    // 比對，其中一邊多三個位元組就永遠不相等。
+    //
+    // 跟著父行程收攤：Start-Process 生出來的孩子在 Windows 上會活過父行程，不自己
+    // 收的話學生每跑一次驗證就多留一支背景 PowerShell（watcher 那支為了同一件事
+    // 也帶了 ParentPid）。
+    `\ufeff` +
+      [
+        "param([int]$ParentPid)",
+        "while ($true) {",
+        "  if (-not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { break }",
+        `  try { [System.IO.File]::WriteAllText('${quoted}', [Console]::Title, (New-Object System.Text.UTF8Encoding $false)) } catch {}`,
+        "  Start-Sleep -Seconds 1",
+        "}",
+      ].join("\n") +
+      "\n",
+    "utf8",
+  );
+
+  return file;
 }
 
 function writeLauncher(prompt) {
@@ -566,7 +595,15 @@ function writeLauncher(prompt) {
       .map(([name, value]) => `$env:${name} = '${value}'`)
       .join("\n");
     // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    writeFileSync(file, `\ufeff${setEnv}\n${body}\n${titleReadback()}`, "utf8");
+    // 取樣那支排在 body **之前**：claude 一路占著這個 console，排在後面的話永遠
+    // 輪不到（那正是第一版寫壞的地方，見 titleSamplerScript 的註解）。
+    const sampler = titleSamplerScript();
+    const startSampler =
+      sampler === null
+        ? ""
+        : `Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','${sampler.replaceAll("'", "''")}',$PID) -NoNewWindow | Out-Null\n`;
+
+    writeFileSync(file, `\ufeff${setEnv}\n${startSampler}${body}\n`, "utf8");
     return file;
   }
 
@@ -659,37 +696,40 @@ function collectEvidence() {
 // 這兩件事會分岔，而且實測分岔過：名字寫進檔案了，watcher 卻沒掛上，標題一直是
 // 預設值。卡片對學生的承諾是「你的分頁會自動命名」，所以名字落地只算證據的一半。
 //
-// Windows 補得起另一半（見 titleReadback 的註解）：等 claude 結束後寫出來的那個
-// 檔，跟這一輪 hook 寫的名字做字串比對。macOS 補不起來——標題寫進 tty 裝置，讀不
-// 回來——所以那邊仍然是「程式驗名字、學生看標題」。
+// Windows 補得起另一半（見 titleSamplerScript）：背景取樣持續寫下當下的標題，
+// 這裡拿它跟這一輪 hook 寫的名字做字串比對。macOS 補不起來——標題寫進 tty 裝置，
+// 讀不回來——所以那邊仍然是「程式驗名字、學生看標題」。
+//
+// ⚠️ 對不上就繼續等，不當場判失敗。取樣是每秒一次，而 hook 寫名字檔與 watcher 把
+// 名字放上標題之間本來就有時間差——當場判失敗會在那個空隙裡誤判。真的到最後都沒
+// 對上，逾時那段會把最後一次讀到的標題印出來，話一樣講得清楚。
 function titleEvidence(value) {
   const wrote = `hook 寫下了名字：${value}`;
 
-  if (process.platform !== "win32" || caseName !== "naming" || agent !== "claude") {
+  if (!samplesTitle()) {
     return { detail: wrote };
   }
 
-  let title = "";
+  return lastSampledTitle() === value
+    ? { detail: `${wrote}，而且分頁標題就是它` }
+    : null;
+}
 
+// 這一輪有沒有在取樣標題。判準跟 titleSamplerScript 一模一樣，寫成一支免得兩邊
+// 各改各的——分岔的話會變成「取樣了但沒人比對」或「沒取樣卻等一個不會出現的檔」。
+function samplesTitle() {
+  return (
+    process.platform === "win32" && caseName === "naming" && agent === "claude"
+  );
+}
+
+function lastSampledTitle() {
   try {
-    title = readFileSync(titleFile, "utf8").trim();
+    return readFileSync(titleFile, "utf8").trim();
   } catch {
-    // claude 還沒結束，讀回那一行還沒跑到。下一輪再看。
-    return null;
+    // 取樣那支還沒寫第一筆。
+    return "";
   }
-
-  // 對不上不能回 null——那會讓它繼續等到逾時，而學生看到的是「驗證卡住」而不是
-  // 「標題沒變」。這是一個確定的失敗，要當場說清楚。
-  if (title !== value) {
-    return {
-      failed: true,
-      detail:
-        `名字寫出來了（${value}），但分頁標題是「${title || "空的"}」——` +
-        "wrapper 沒載入，或 watcher 沒掛上",
-    };
-  }
-
-  return { detail: `${wrote}，而且分頁標題就是它` };
 }
 
 // 每一題只要提到結果檔，就一定要附上這句。
@@ -749,19 +789,6 @@ const timeoutMs = testCase.timeoutMs ?? TIMEOUT_MS;
 while (Date.now() - startedAt < timeoutMs) {
   const evidence = collectEvidence();
 
-  // 確定的失敗，不是「還沒等到」。繼續輪詢的話學生會等到逾時，然後看到一句
-  // 「沒等到證據，去看模型說了什麼」——而這裡已經知道原因了。
-  if (evidence !== null && evidence.failed === true) {
-    console.log("");
-    console.log(`FAIL  ${evidence.detail}`);
-    emitJr({
-      kind: "result",
-      ok: false,
-      summary: `驗證失敗：${evidence.detail}`,
-    });
-    process.exit(1);
-  }
-
   if (evidence !== null) {
     console.log("");
     console.log(`PASS  ${evidence.detail}`);
@@ -786,6 +813,18 @@ console.log(
       : `      應該要有新檔案出現在：${namesDir}`,
 );
 console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
+
+// 標題那一半有取樣的話，把最後讀到的那一串印出來——名字寫出來了、標題卻沒跟上，
+// 跟「名字根本沒寫出來」是兩種完全不同的壞法，而上面那句話只講得出後者。
+if (samplesTitle()) {
+  const title = lastSampledTitle();
+  console.log(
+    title === ""
+      ? "      分頁標題一次都沒讀到——取樣那支沒起來，或那個視窗根本沒開成"
+      : `      最後讀到的分頁標題是「${title}」。跟上面那個名字對不上的話，` +
+        "是 wrapper 沒載入或 watcher 沒掛上，不是命名沒跑",
+  );
+}
 emitJr({
   kind: "result",
   ok: false,

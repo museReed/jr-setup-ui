@@ -949,7 +949,11 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         platform === "win32" ? `${home}/.jr-setup/bin/${file}` : undefined;
       return {
         id,
-        label: "分頁自己報上名字",
+        // ⚠️ 這是「合併卡上的一列」的名字，不是那張卡的名字。卡片叫「分頁與對話
+        // 自己取名字」（model.js 的 MERGED_CARDS），這一列講的是它負責的那一半：
+        // 讓終端留得住標題。兩邊寫同一句的話，畫面上會是卡片標題底下再抄一次自己
+        // （Reed 在 VM 上看到的）。
+        label: "終端記得住標題",
         kind: "tab-sync",
         ...(platform === "win32"
           ? { watcherSource: `skills/bin/${file}`, target }

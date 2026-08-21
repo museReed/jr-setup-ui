@@ -292,23 +292,32 @@ console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
     "命名那一格要關掉 shell 主題的自動標題，不然 claude 結束後標題會被蓋掉",
   );
 
-  // 讀回那一行是「附加在 body 之後」，而 body 的最後一件事就是叫 claude。
-  // 這條守的是那個順序：writeLauncher 的 win32 分支裡，titleReadback() 必須排在
-  // ${body} 後面，而且後面不能再接別的東西。
-  assert.match(
-    source,
-    /writeLauncher[\s\S]*?\$\{body\}\\n\$\{titleReadback\(\)\}`/,
-    "讀回標題那一行要緊接在 claude 之後，中間不能插東西",
+  // ⚠️ 取樣那支必須排在 ${body} **之前**。`claude '一句話'` 是互動式的，模型答完
+  // 那個 session 還停在提示字元——排在後面的東西永遠輪不到（第一版就是這樣寫的，
+  // Windows VM 上實測：畫面全對，那一列卻卡在驗證中直到逾時）。
+  const samplerAt = source.indexOf("${startSampler}${body}");
+  assert(
+    samplerAt >= 0,
+    "取樣那支要排在 claude 之前——排在後面的話 claude 不結束就永遠輪不到",
+  );
+
+  // -NoNewWindow：取樣的行程要跟 claude 共用同一個 console，才讀得到學生看到的
+  // 那一串。開新視窗的話它讀到的是自己那個 console 的標題，永遠對不上。
+  const startAt = source.indexOf("Start-Process powershell.exe -ArgumentList");
+  assert(startAt >= 0, "找不到啟動取樣那一行");
+  assert(
+    source.slice(startAt, startAt + 400).includes("-NoNewWindow"),
+    "取樣要用 -NoNewWindow 共用 console，開新視窗讀到的是別人的標題",
   );
 
   const readbackAt = source.indexOf("[Console]::Title, (New-Object");
-  assert(readbackAt >= 0, "找不到讀回標題那一行");
+  assert(readbackAt >= 0, "找不到取樣讀標題那一行");
   assert(
     source.slice(readbackAt).includes("UTF8Encoding $false"),
-    "名字檔是 UTF-8 不帶 BOM，讀回來的標題要用同一種編碼寫，否則字串比對永遠不相等",
+    "名字檔是 UTF-8 不帶 BOM，取樣寫下的標題要用同一種編碼，否則字串比對永遠不相等",
   );
 
   console.log(
-    "ok - macOS 關掉主題自動標題、Windows 的讀回排在 claude 正後面",
+    "ok - macOS 關掉主題自動標題、Windows 的標題取樣排在 claude 之前且共用 console",
   );
 }
