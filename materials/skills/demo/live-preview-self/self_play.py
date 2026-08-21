@@ -52,9 +52,35 @@ with open(SRC_PAGE, encoding="utf-8") as f:
 with open(TEMPLATE, encoding="utf-8") as f:
     template = f.read()
 
-# 來源內容整個變成 JS 字串常數。裡面的 </script> 會提早關掉外層的 <script>——
-# HTML parser 只認字面上的 `</script`，不管它在不在 JS 字串裡，所以要把 `</` 拆開。
-embedded = json.dumps(source, ensure_ascii=False).replace("</", "<\\/")
+# 來源內容整個變成 JS 字串常數。裡面**每一個** `<` 都要換成 <，不能只處理 `</`。
+#
+# ⚠️ 只拆 `</` 是不夠的，而且錯得很難看（Windows VM 實測：整頁變成一堆 \n 與 <\/span>
+# 的文字）。HTML parser 讀 <script> 內容時有三種狀態，換狀態的關鍵字不只 `</script`：
+#
+#   看到 <!--     → 進入 script data escaped
+#   接著看到 <script → 進入 script data double escaped
+#   在那個狀態下，`</script>` **關不掉** script，要先出現 -->
+#
+# 而 json.dumps 不會動 `<!--` 也不會動 `<script`。AI 產出的示範頁通常兩樣都有
+# （它會寫註解，也常放一小段 script），於是樣板自己的 </script> 關不掉，整段 JS
+# 變成畫面上的文字——那正是學生看到的畫面。
+#
+# 換成 < 就一次擋掉三種：`</script`、`<!--`、`<script` 都不再是字面上的 `<`。
+# JS 字串裡的 < 解出來仍然是 `<`，內容一個字都沒變。
+embedded = json.dumps(source, ensure_ascii=False).replace("<", "\\u003C")
+
+# 佔位符只准出現一次。
+#
+# ⚠️ 這一條是實測撞出來的：樣板開頭的說明註解裡也寫了 __SOURCE__ 的字面，於是整份
+# 來源被塞進那段註解，而來源自己的 `-->` 把註解提早收掉——畫面左上角冒出一堆
+# <script>… 的亂碼，而下面的動畫看起來又是好的，完全看不出關聯。
+#
+# 靠「記得不要在註解裡寫」守不住，所以在這裡擋。
+if template.count("__SOURCE__") != 1:
+    sys.exit(
+        f"樣板裡的 __SOURCE__ 出現了 {template.count('__SOURCE__')} 次，只能有一次"
+        "——說明文字裡不要寫出它的字面（見 live_editor_self.html 開頭的註解）。"
+    )
 
 page = (
     template.replace("__SOURCE__", embedded)
