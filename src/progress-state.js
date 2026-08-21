@@ -216,6 +216,34 @@ export async function saveManualChecked(ids, options = {}) {
   return state.manual;
 }
 
+// 學生按「先略過這張」的卡。跟 manual 一樣不受指紋管轄：它記的是「我現在過不了，
+// 先往下走」，不是「裝過而且還有效」——重裝檔案不該讓他重新卡一次。
+//
+// 存在伺服器而不是瀏覽器，理由跟 selection 同一條：port 每次啟動都變，localStorage
+// 綁 origin 等於存不住。跳過清單重整就消失的話，這顆按鈕等於沒做——學生卡住的那幾
+// 張正是他最需要之後找得回來的。
+export async function loadSkippedCards(options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  return Array.isArray(state.skipped)
+    ? state.skipped.filter((id) => typeof id === "string")
+    : [];
+}
+
+// 整份覆蓋，跟 saveManualChecked 同一個理由：卡片驗過之後要從清單裡消失，逐筆
+// 新增做不到。
+export async function saveSkippedCards(ids, options = {}) {
+  const resolved = locations(options);
+  const state = await readStoredState(resolved.stateFile);
+
+  state.version = VERSION;
+  state.skipped = ids.filter((id) => typeof id === "string");
+  await mkdir(path.dirname(resolved.stateFile), { recursive: true });
+  await writeFile(resolved.stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  return state.skipped;
+}
+
 export async function saveSelection(selection, options = {}) {
   const resolved = locations(options);
   const state = await readStoredState(resolved.stateFile);

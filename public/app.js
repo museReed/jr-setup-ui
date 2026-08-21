@@ -67,6 +67,8 @@ import {
   sectionStatus,
   systemRowChecked,
   milestoneModels,
+  prunedSkippedCards,
+  skippedListModel,
   nextCardUnlocked,
   terminalOutcomeLines,
   toggleToolSelection,
@@ -206,7 +208,9 @@ function forgetVerification(stepId, manualIds = []) {
   state.verificationAttempted.delete(stepId);
   state.deferredVerificationSteps.delete(stepId);
   // 重驗＝他回來把這張卡做完了，那顆「先跳過」的通行證跟著上一輪的結論一起作廢。
-  state.skippedCards.delete(stepId);
+  if (state.skippedCards.delete(stepId)) {
+    persistSkippedCards();
+  }
 
   forgetManualChecked([`eye-${stepId}`, ...manualIds]);
 
@@ -269,6 +273,7 @@ async function loadVerifiedSteps() {
     state.behaviorVerifiedSteps = new Set(result.behavior ?? []);
     state.changedSteps = new Set(result.changed ?? []);
     state.manualCheckedIds = new Set(result.manual ?? []);
+    state.skippedCards = new Set(result.skipped ?? []);
 
     for (const id of state.manualCheckedIds) {
       state.completedGateIds.add(id);
@@ -287,7 +292,20 @@ async function loadVerifiedSteps() {
     state.behaviorVerifiedSteps = new Set();
     state.changedSteps = new Set();
     state.manualCheckedIds = new Set();
+    state.skippedCards = new Set();
   }
+}
+
+// 「先略過這張」按下去／自動移除都走這裡，記憶體與伺服器一起改。
+//
+// 存不進去只講一句話、不回滾：學生現在就在等這張卡放行，為了一次寫入失敗把他關
+// 回去沒有意義——最壞的情況是重整之後要再按一次。
+function persistSkippedCards() {
+  api
+    .saveSkippedCards([...state.skippedCards])
+    .catch((error) =>
+      view.addLine(`無法保存跳過清單：${error.message}`, "failed"),
+    );
 }
 
 function effectiveVerifiedSteps() {
@@ -395,7 +413,52 @@ function stopAutoVerifyChain() {
   state.autoVerifyTotal = 0;
 }
 
+// 修好了就自己從跳過清單裡消失。每次重畫都算一次，因為「修好了」可能發生在任何
+// 地方：驗證跑完、環境重掃、人工項勾完——挨個去記得清除的話，總有一條路會漏掉。
+function pruneSkippedCards() {
+  if (state.skippedCards.size === 0) {
+    return;
+  }
+
+  // ⚠️ 檢查結果還沒回來的時候什麼都不要動。
+  //
+  // 開頁有一段空窗：跳過清單已經從 /state 讀回來了，環境與規則的檢查還在跑，於是
+  // allCardSections() 只生得出第一張 setup 卡。這時候跑下面那條「卡片不見了就清掉」，
+  // 會把整份清單當成死項目刪光，還順手寫回伺服器——學生重整一次，跳過的紀錄全沒了
+  // （實測：重整後清單歸零，state.json 的 skipped 變成空陣列）。
+  if (state.lastChecks.length === 0 || state.envChecks.length === 0) {
+    return;
+  }
+
+  const verified = effectiveVerifiedSteps();
+  const cards = allCardSections().flatMap((section) => section.cards);
+  const remaining = prunedSkippedCards(
+    cards,
+    state.skippedCards,
+    verified,
+    state.manualCheckedIds,
+  );
+
+  if (remaining.size === state.skippedCards.size) {
+    return;
+  }
+
+  for (const id of state.skippedCards) {
+    if (remaining.has(id)) continue;
+    const card = cards.find((candidate) => candidate.checkId === id);
+    // 只在卡片還在時報喜。整批消失的那種（換工具選項）不是「修好了」，講出來會
+    // 讓學生以為自己剛完成了一張根本看不到的卡。
+    if (card !== undefined) {
+      view.addLine(`「${card.label}」已經過了，從跳過清單移除。`, "succeeded");
+    }
+  }
+
+  state.skippedCards = remaining;
+  persistSkippedCards();
+}
+
 function renderWizard() {
+  pruneSkippedCards();
   const section = SECTIONS.find(({ id }) => id === state.activeSectionId);
   const cardSection = allCardSections().find(
     ({ sectionId }) => sectionId === state.activeSectionId,
@@ -546,28 +609,32 @@ function renderWizard() {
         (state.verificationAttempted.has(check.id) &&
           !state.failedVerificationSteps.has(check.id)),
     );
-  // 驗證失敗鎖住往前的路，但不能把人關死：環境真的過不了的學生要有一條出口。
-  // 那條出口是一顆寫明白的「先跳過這張」，不是把箭頭留在那裡假裝一切正常。
-  const verificationFailedHere = verifyRequiredChecks.some((check) =>
-    state.failedVerificationSteps.has(check.id),
-  );
+  // 略過是常駐的（見 skipAvailable），所以每一種卡都要認它，不只規則卡。原本只有
+  // config 那條 OR 吃 skippedCards——環境卡按了略過，箭頭照樣是暗的，按鈕變成一顆
+  // 按了沒反應的東西。
+  const cardSkipped = state.skippedCards.has(card.checkId);
   const nextUnlocked =
     card.kind === "setup"
       ? true
-      : card.kind === "env"
-        ? cardIsComplete(card, verified, state.manualCheckedIds) &&
-          groups.manual.every((item) => item.checked)
-        : state.skippedCards.has(card.checkId) ||
-          nextCardUnlocked({
-            installed,
-            verificationRequired,
-            verificationAttempted,
-            manualItems: groups.manual,
-          });
-  // 只在「真的被鎖住、而且鎖住的原因是驗證失敗」時給出口。人工項沒勾、還沒安裝
-  // 那種不給——那些他自己按得動，給了只是繞過去。
-  const canSkip =
-    card.kind === "config" && !nextUnlocked && verificationFailedHere;
+      : cardSkipped ||
+        (card.kind === "env"
+          ? cardIsComplete(card, verified, state.manualCheckedIds) &&
+            groups.manual.every((item) => item.checked)
+          : nextCardUnlocked({
+              installed,
+              verificationRequired,
+              verificationAttempted,
+              manualItems: groups.manual,
+            }));
+  // 略過鍵常駐，不再只在「驗證失敗而且被鎖住」時才出現。
+  //
+  // 原本那個條件（config 卡 + 驗證失敗）看起來很嚴謹，實際上把最需要它的人擋在
+  // 外面：卡在環境段裝不起來 gh、卡在一個按下去沒反應的安裝鍵、卡在人工項看不懂
+  // 該勾什麼——這些都不是「驗證失敗」，於是畫面上連一條出路都沒有。
+  //
+  // 只有第一張 setup 卡不給：那張選的是工具與語言，跳過它後面每一張卡都不知道要
+  // 長什麼樣，等於跳過整個嚮導。
+  const skipAvailable = card.kind !== "setup";
   // 「這張卡完成了嗎」全站只有一個答案：cardIsComplete。
   //
   // 這裡原本另外收三條路：
@@ -590,6 +657,7 @@ function renderWizard() {
     completedIds,
     currentIndex,
     state.seenCardIds,
+    state.skippedCards,
   );
   // 合併的卡有兩份設定。按鈕要對著「還沒好的那一份」——兩份都好了才回到主 check，
   // 因為驗證掛在它身上。
@@ -974,6 +1042,36 @@ function renderWizard() {
       state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
       renderWizard();
     },
+    // 卡片標題列上那顆常駐的「先略過這張」。它不是「下一張」的替身——按了之後這張
+    // 卡照樣是沒完成的，只是不再擋路，而且會被記進底下那條跳過清單。
+    //
+    // 再按一次就是取消：學生自己回來看了一眼發現沒問題，總得有辦法把它撤掉，而不用
+    // 去跑一次驗證。
+    skip: {
+      // 已經做完的卡不給——按下去只會被 pruneSkippedCards 立刻移除，變成一顆
+      // 「按了什麼都沒發生」的按鈕（環境段有幾張 optional 的卡天生就是完成狀態）。
+      show: skipAvailable && !cardDone,
+      skipped: cardSkipped,
+      onToggle: () => {
+        if (cardSkipped) {
+          state.skippedCards.delete(card.checkId);
+          persistSkippedCards();
+          view.addLine(`把「${card.label}」從跳過清單移除。`, "agent-status");
+          renderWizard();
+          return;
+        }
+
+        state.skippedCards.add(card.checkId);
+        persistSkippedCards();
+        view.addLine(
+          `先略過「${card.label}」，之後可以從底下的清單回來。`,
+          "agent-status",
+        );
+        // 按下去就往下走：卡住的人要的是繼續，不是站在原地看它變灰。最後一張就
+        // 換段——留在原地的話「略過」看起來像沒有作用。
+        advancePastCard(cardSection, currentIndex);
+      },
+    },
   };
   view.renderWizard({
     section,
@@ -990,6 +1088,7 @@ function renderWizard() {
       renderWizard();
     },
   });
+  renderSkippedTray();
   renderControls();
   // 分頁的鎖跟著一起更新。原本只有勾選、換工具、點分頁才會重算，於是「最後一張
   // 卡驗過了」的當下沒有人去看鎖狀態——下一段其實已經開了，畫面上還鎖著，等學生
@@ -999,8 +1098,6 @@ function renderWizard() {
     cardSection,
     currentIndex,
     nextUnlocked,
-    canSkip,
-    cardId: card.checkId,
     lockStates,
     onNext: cardModel.onNext,
   });
@@ -1048,34 +1145,12 @@ function maybeRecheckAtSectionEnd(sectionId, currentIndex, cardCount) {
 }
 
 // 兩顆翻頁按鈕：位置固定在畫面兩側，內容跟著現在這張卡變。
-//
-// 驗證失敗時那一顆逃生按鈕。跟「下一張」共用同一個位置，但講的是別件事，所以字要
-// 不一樣、不放解鎖特效（慶祝一件沒做成的事很怪），也不畫成主要動作。
-//
-// 按下去先把這張卡登記成「跳過」——下次回到這張，那顆按鈕就是正常的「下一張」，
-// 不用再按一次逃生。完成與否仍然由 cardIsComplete 說了算，跳過的卡照樣是失敗。
-function skipNavSpec(cardId, label, onSkip) {
-  return {
-    show: true,
-    label,
-    secondary: true,
-    celebrate: false,
-    onClick: () => {
-      if (cardId !== null) state.skippedCards.add(cardId);
-      view.addLine(`先跳過這一張，之後可以回來再驗一次。`, "agent-status");
-      onSkip();
-    },
-  };
-}
-
 // 走到一段的最後一張時，「下一張」換成「下一段：⋯」——那一段做完了，下一步是換段，
 // 不是回頭去點上面的分頁。點下去落在新那段的第一張。
 function renderWizardNav({
   cardSection,
   currentIndex,
   nextUnlocked,
-  canSkip = false,
-  cardId = null,
   lockStates,
   onNext,
 }) {
@@ -1103,23 +1178,66 @@ function renderWizardNav({
         goToSection(previousSection.id, "last");
       },
     },
-    // 驗證失敗被鎖住時，那個位置換成一顆說實話的「先跳過這張」：它不慶祝、也不
-    // 把卡片記成完成，只是承認學生現在過不了、讓他先往下走。原本這裡是「失敗也
-    // 照樣顯示下一張」，箭頭跟旁邊那顆紅色的「失敗」徽章互相打架（Reed 截圖）。
+    // 逃生口不再借用這顆按鈕。它以前在驗證失敗時會變成「先跳過這張」——那顆只在
+    // 「config 卡 + 驗證失敗 + 被鎖住」三個條件同時成立時才出現，而學生卡住的樣子
+    // 遠不只那一種。現在略過鍵常駐在卡片標題列上（見 skipAvailable），這裡回到單純
+    // 的「能不能往前」，不再一顆按鈕講兩件事。
     next: atLast
-      ? canSkip && !nextSectionOpen
-        ? skipNavSpec(cardId, `先跳過，${nextSection === undefined ? "留在這一段" : `往下一段：${nextSection.title}`}`, () => {
-            if (nextSection !== undefined) goToSection(nextSection.id, "first");
-          })
-        : {
-            show: nextSectionOpen,
-            label: `下一段：${nextSection?.title ?? ""}`,
-            onClick: () => goToSection(nextSection.id, "first"),
-          }
-      : canSkip
-        ? skipNavSpec(cardId, "先跳過這張", onNext)
-        : { show: nextUnlocked, label: "下一張", onClick: onNext },
+      ? {
+          show: nextSectionOpen,
+          label: `下一段：${nextSection?.title ?? ""}`,
+          onClick: () => goToSection(nextSection.id, "first"),
+        }
+      : { show: nextUnlocked, label: "下一張", onClick: onNext },
   });
+}
+
+// 底部那條「已跳過 N 張」。跨段落列，因為卡住的那幾張不會剛好都在同一段——只列
+// 當前這一段的話，翻到下一段清單就空了，看起來像紀錄不見了。
+function renderSkippedTray() {
+  view.renderSkippedTray({
+    items: skippedListModel(allCardSections(), state.skippedCards),
+    onSelect: (entry) => {
+      // 直接落在那張卡上。段落的鎖不擋這一條路：那是他自己按過略過的卡，已經看過
+      // 一次了，回頭修的時候再要求他「先把前面做完」等於把出口也鎖上。
+      state.activeSectionId = entry.sectionId;
+      state.viewingCardIndex[entry.sectionId] = entry.index;
+      view.hideSectionLockMessage();
+      view.addLine(`回到「${entry.label}」。`, "agent-status");
+      renderWizard();
+    },
+  });
+}
+
+// 略過之後往哪走：同一段還有下一張就翻頁，已經是最後一張就換段。下一段還鎖著
+// （前面另有沒做完的卡）就留在原地重畫——那張卡這時已經變成「已跳過」的樣子，
+// 學生看得出按鈕生效了。
+function advancePastCard(cardSection, currentIndex) {
+  if (currentIndex < cardSection.cards.length - 1) {
+    state.viewingCardIndex[state.activeSectionId] = currentIndex + 1;
+    renderWizard();
+    return;
+  }
+
+  const sectionIndex = SECTIONS.findIndex(
+    (section) => section.id === state.activeSectionId,
+  );
+  const nextSection = SECTIONS[sectionIndex + 1];
+
+  if (nextSection === undefined) {
+    renderWizard();
+    return;
+  }
+
+  // 鎖狀態要用剛剛加進 skippedCards 之後的結果算，所以在這裡重新問一次。
+  const lockStates = renderNavigation();
+
+  if (lockStates[nextSection.id]?.locked === true) {
+    renderWizard();
+    return;
+  }
+
+  goToSection(nextSection.id, "first");
 }
 
 function goToSection(sectionId, landing) {
@@ -1171,6 +1289,21 @@ function incompleteCards(cards, verified) {
     .map(({ card, index }) => ({ label: card.label, index }));
 }
 
+// 「還擋著人的卡」＝沒完成、而且學生也沒按過略過。
+//
+// 跟 incompleteCards 分成兩支，是因為它們回答兩個不同的問題，而合成一支就得二選一：
+//
+//   incompleteCards  這一段真的做完了嗎 —— 進度、綠色打勾、「這一段已完成。」
+//   blockingCards    還可以往下走嗎     —— 段落的鎖、擋人時要點名哪幾張
+//
+// 略過的卡在前者裡照樣是沒做完（不假裝），在後者裡放行（不把人關死）。這正是
+// milestoneModels 裡 done / passable 那一組的段落版本。
+function blockingCards(cards, verified) {
+  return incompleteCards(cards, verified).filter(
+    ({ index }) => !state.skippedCards.has(cards[index].checkId),
+  );
+}
+
 // 每一段是不是真的做完了——不是問學生，是看每張卡的實際狀態。
 // 資料還沒回來時回 undefined，讓閘門知道「還不確定」而不是「沒做完」，
 // 免得載入中把人鎖在外面。
@@ -1199,7 +1332,16 @@ function renderNavigation() {
   const blockers = Object.fromEntries(
     sections.map(({ sectionId, cards }) => [
       sectionId,
-      incompleteCards(cards, verified),
+      blockingCards(cards, verified),
+    ]),
+  );
+  // 鎖看的是「還擋著人的卡」，綠色打勾看的仍然是「真的做完了」。同一個 done 餵給
+  // 兩邊的話，略過一張就會讓那一段打上完成的勾——畫面說做完了，而學生手上還有一張
+  // 卡是灰的。
+  const passable = Object.fromEntries(
+    Object.entries(blockers).map(([sectionId, cards]) => [
+      sectionId,
+      done[sectionId] === undefined ? undefined : cards.length === 0,
     ]),
   );
   const lockStates = Object.fromEntries(
@@ -1209,7 +1351,7 @@ function renderNavigation() {
         section.id,
         state.completedGateIds,
         tools,
-        done,
+        passable,
         blockers,
       ),
     ]),

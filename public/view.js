@@ -48,6 +48,10 @@ const elements = {
   behaviorChecklist: document.querySelector("#behavior-checklist"),
   copyBehaviorQuestion: document.querySelector("#copy-behavior-question"),
   terminalMascot: document.querySelector("#terminal-mascot"),
+  skippedTray: document.querySelector("#skipped-tray"),
+  skippedTrayToggle: document.querySelector("#skipped-tray-toggle"),
+  skippedTrayCount: document.querySelector("#skipped-tray-count"),
+  skippedTrayList: document.querySelector("#skipped-tray-list"),
   verifyModal: document.querySelector("#verify-modal"),
   verifyModalConfirm: document.querySelector("#verify-modal-confirm"),
   verifyModalLater: document.querySelector("#verify-modal-later"),
@@ -373,6 +377,8 @@ function renderMilestones(sectionId, milestones, onSelect) {
     point.dataset.cardIndex = String(station.index);
     point.classList.toggle("is-reached", station.reached);
     point.classList.toggle("is-locked", !station.unlocked);
+    // 跳過的站點自己一種樣子：不是綠的（沒做完），也不是鎖著的（走得過去）。
+    point.classList.toggle("is-skipped", station.skipped === true);
     point.setAttribute("aria-hidden", "true");
 
     point.classList.add(station.edgeClass);
@@ -916,7 +922,25 @@ function renderCard(model) {
   pill.textContent = model.status.text;
   pill.dataset.cardStatus = model.status.status;
   header.append(copy, pill);
+
+  // 略過鍵常駐在標題列右邊，跟徽章同一列。畫成一顆安靜的次要按鈕：它是退路，不是
+  // 這張卡上該按的動作，長得跟「安裝」「驗證」一樣顯眼的話學生會以為那是正常流程。
+  if (model.skip?.show === true) {
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "card-skip";
+    skip.dataset.skipped = String(model.skip.skipped === true);
+    skip.textContent = model.skip.skipped === true ? "已跳過，點此還原" : "先略過這張";
+    skip.title =
+      model.skip.skipped === true
+        ? "把這張卡從跳過清單移除"
+        : "現在過不了就先往下走，這張卡會記在畫面底下的跳過清單裡";
+    skip.addEventListener("click", model.skip.onToggle);
+    header.append(skip);
+  }
+
   article.append(header);
+  article.dataset.skipped = String(model.skip?.skipped === true);
 
   if (model.card.kind === "setup") {
     const body = document.createElement("div");
@@ -1083,17 +1107,11 @@ function renderNavButton(button, spec, key) {
   }
 
   button.hidden = !show;
-  // 「先跳過這張」跟「下一張」共用同一顆按鈕，但它不是成就——畫成次要的，讓學生
-  // 看得出這是退路不是進度。
-  button.classList.toggle("is-skip", show && spec.secondary === true);
 
   // 解鎖那一刻放一段施法特效。回頭的那顆不用——它出現不是成就，只是「你可以往回看」。
-  // 逃生那顆也不用：慶祝一件沒做成的事只會讓學生以為自己過了。
-  if (spec.celebrate === false) {
-    shownNav[key] = show;
-    return;
-  }
-
+  //
+  // 逃生口以前也走這顆按鈕，所以這裡曾經有一條「不慶祝」的分支。略過鍵搬到
+  // 卡片標題列之後那條路沒有人走了，留著只會讓下一個人以為這顆按鈕還有第二種身分。
   if (show && !shownNav[key] && key === "next" && !reducedMotion.matches) {
     playUnlockSpell(button);
   }
@@ -1179,6 +1197,61 @@ function playUnlockSpell(button) {
 
     wizardAnimation.play();
   });
+}
+
+// 展開狀態記在模組裡：renderWizard 跑得很勤，每次重畫都收合的話，學生點開清單、
+// 背景某個檢查回來，它就自己關上了。
+let skippedTrayOpen = false;
+
+export function renderSkippedTray({ items, onSelect }) {
+  const tray = elements.skippedTray;
+
+  if (tray === null) return;
+
+  // 一張都沒跳過就整塊收掉，不留一條寫著「已跳過 0 張」的空列。
+  if (items.length === 0) {
+    tray.hidden = true;
+    skippedTrayOpen = false;
+    elements.skippedTrayList.hidden = true;
+    elements.skippedTrayToggle.setAttribute("aria-expanded", "false");
+    return;
+  }
+
+  tray.hidden = false;
+  elements.skippedTrayCount.textContent = `已跳過 ${items.length} 張`;
+  elements.skippedTrayToggle.onclick = () => {
+    skippedTrayOpen = !skippedTrayOpen;
+    elements.skippedTrayList.hidden = !skippedTrayOpen;
+    elements.skippedTrayToggle.setAttribute(
+      "aria-expanded",
+      String(skippedTrayOpen),
+    );
+  };
+  elements.skippedTrayToggle.setAttribute(
+    "aria-expanded",
+    String(skippedTrayOpen),
+  );
+  elements.skippedTrayList.hidden = !skippedTrayOpen;
+
+  elements.skippedTrayList.replaceChildren(
+    ...items.map((entry) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "skipped-tray-item";
+      const name = document.createElement("strong");
+      name.textContent = entry.label;
+      const where = document.createElement("span");
+      // 跨段落列，所以要講清楚那張卡在哪一段的第幾張——不然點下去畫面整個換掉，
+      // 學生不知道自己被帶到哪裡了。
+      where.className = "skipped-tray-where";
+      where.textContent = `${entry.sectionTitle}．第 ${entry.index + 1} 張`;
+      button.append(name, where);
+      button.addEventListener("click", () => onSelect(entry));
+      item.append(button);
+      return item;
+    }),
+  );
 }
 
 export function renderWizardNav({ prev, next }) {

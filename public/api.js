@@ -84,6 +84,12 @@ export async function saveManualChecked(ids) {
   return response.json();
 }
 
+// 跳過清單整份覆蓋：卡片驗過之後要從清單裡消失，逐筆新增做不到（跟 manual 同理）。
+export async function saveSkippedCards(ids) {
+  const response = await postJson("/state", { skipped: ids });
+  return response.json();
+}
+
 // 程式那半驗過了。有眼睛勾選框的列也送這一筆——整列綠不綠是 saveVerifiedStep 的事。
 export async function saveBehaviorVerified(step) {
   const response = await postJson("/state", { step, kind: "behavior" });
