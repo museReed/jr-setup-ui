@@ -796,7 +796,10 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
     case "allowlist":
       return {
         id,
-        label: "常用指令不用每次問你",
+        // 標題講兩件事的主角：讓 Claude 自己判斷，加上一份「不用等判斷」的清單。
+        // 只寫「常用指令不用每次問你」的話，學生會以為這一步的全部就是那份清單，
+        // 而真正改變他體感的是模式——那才是「危險的會擋、安全的直接跑」的來源。
+        label: "讓它自己判斷安全的操作",
         kind: "allowlist",
         source: "claude-code/starter-allowlist.json",
         settingsTarget: `${claudeDir}/settings.json`,

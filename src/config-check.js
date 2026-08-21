@@ -753,9 +753,11 @@ export async function checkAllowlist(materials, step) {
       id: step.id,
       label: step.label,
       status: "ok",
+      // 兩層各講一句，順序跟卡片說明一致：先是誰在判斷，再是哪些不用等判斷。
+      //
       // 這句以前寫「改檔案不再逐次詢問」——那是 acceptEdits 的效果，模式換成 auto
-      // 之後就對不上了。現在講的是 auto mode 實際做的事：指令逐一審查。
-      detail: `${installed} 條規則，auto mode 逐一審查每條指令`,
+      // 之後就對不上了。
+      detail: `auto mode 判斷每條指令，另有 ${installed} 條不用等判斷`,
     };
   }
 
