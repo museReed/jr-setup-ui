@@ -46,7 +46,21 @@ const FEEDBACK_REPO = "museReed/jr-setup-feedback";
 // ⚠️ mailto 只帶主旨，**不帶內文**——理由跟檔頭那段預填網址完全一樣：網址有長度
 // 上限，而中文 percent-encoding 一個字變九個字元。學生最需要回報的時候正是 log 最
 // 長的時候，硬塞進去的那份反而缺了關鍵段落。內文一律走剪貼簿。
-export const FEEDBACK_EMAIL = "devlab20230424@gmail.com";
+// 三個收件人一起收，不是只寄給一個人。
+//
+// 這條退路的使用者是「前面兩條都走不到底」的學生——最需要有人回他的那個。寄給單一
+// 信箱的話，那個人沒空看就沒有第二個人知道；課堂當下等不到回音，學生就卡在那裡。
+//
+// ⚠️ 用逗號串、**中間不留空白**。mailto 的多收件人以逗號分隔（RFC 6068），而空白
+// 在網址裡必須 percent-encode——留了空白就得多一層編碼，而這個字串同時還要當成
+// 「畫面上給學生手抄／複製的那一行」。不留空白，兩種用途共用同一份就都對。
+export const FEEDBACK_EMAILS = [
+  "devlab20230424@gmail.com",
+  "jimbo.90015@gmail.com",
+  "muse.reed.hsin@gmail.com",
+];
+
+export const FEEDBACK_EMAIL = FEEDBACK_EMAILS.join(",");
 
 export function mailtoUrl(title) {
   const subject =

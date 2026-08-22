@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+
 import {
   buildIssue,
   FEEDBACK_EMAIL,
+  FEEDBACK_EMAILS,
   issueBody,
   issueTitle,
   mailtoUrl,
@@ -106,6 +109,29 @@ try {
   // 沒有標題時也要送得出去——空主旨的信很容易被當成垃圾信。
   assert.match(mailtoUrl(""), /subject=jr-setup/);
   ok("兩條退路的網址都不帶 log；GitHub 那條帶一行貼上提示");
+
+  // 同一份收件人清單寫在三個地方：站內那顆按鈕、mac 的 bootstrap、Windows 的
+  // bootstrap。三處各自維護的話，改了一處另外兩處會靜靜地繼續寄給舊的收件人——
+  // 而那種錯只有在真的有學生寄信、卻沒人收到的時候才看得出來。
+  for (const file of ["docs/setup.sh", "docs/setup.ps1"]) {
+    const content = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+
+    for (const address of FEEDBACK_EMAILS) {
+      assert.ok(
+        content.includes(address),
+        `${file} 少了收件人 ${address}——三處清單要一致`,
+      );
+    }
+  }
+
+  // ⚠️ 逗號中間不能有空白。這個字串同時當兩種用途：mailto 的多收件人（RFC 6068，
+  // 空白在網址裡得再編碼一層），以及畫面上給學生手抄／貼進收件人欄的那一行。
+  assert.ok(
+    !FEEDBACK_EMAIL.includes(" "),
+    "收件人之間不能有空白——它同時要當網址與可貼上的一行",
+  );
+  assert.equal(FEEDBACK_EMAILS.length, 3);
+  ok("三個收件人在站內與兩支 bootstrap 一致，而且串成不帶空白的一行");
 } catch (error) {
   console.error(error);
   process.exit(1);
