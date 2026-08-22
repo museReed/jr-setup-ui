@@ -68,6 +68,10 @@ const fixHomePermsScript = moduleFile(
   "../scripts/fix-home-perms.mjs",
   import.meta.url,
 );
+const fixGhosttyConfigScript = moduleFile(
+  "../scripts/fix-ghostty-config.mjs",
+  import.meta.url,
+);
 const fixLegacySkillsScript = moduleFile(
   "../scripts/fix-legacy-skills.mjs",
   import.meta.url,
@@ -250,6 +254,17 @@ if (process.platform === "win32") {
 
 Object.assign(actions, {
   // 兩個平台都要有：POSIX 那邊 .zshrc 一樣塞得進一個指向舊 npm 路徑的函式。
+  // 只有 macOS 有這一顆：Ghostty 是 mac 專屬，auto_cd 也是 zsh 的東西。
+  // Windows 那邊的對應項在 Windows Terminal 與 PowerShell，那是另一件事。
+  "fix-ghostty-config": {
+    kind: "fixed",
+    label: "打開終端機設定",
+    cmd: process.execPath,
+    args: [fixGhosttyConfigScript, "--apply"],
+    description:
+      "把 Ghostty 與 zsh 那幾個開關打開：最大化取代全螢幕、關掉 Ghostty 自己的" +
+      "標題（不然會蓋掉分頁名字）、指令跑完跳通知、拖資料夾進來按 Enter 就跳過去。",
+  },
   "fix-shell-wrapper": {
     kind: "fixed",
     // 畫面上那顆的文字由 env-check 的 fixLabel 決定（要指名壞掉的是哪一支）。

@@ -173,11 +173,11 @@ try {
   assert.equal(typeof env.os, "object");
   // 共通十一列（含 Python 3——demo 那段的 self_play.py 要它，Windows 上沒有內建——
   // shell 設定檔裡的死路徑 wrapper，以及 codex 舊 skill 落點那兩列）。
-  // 其餘依平台而定：macOS 多一列 Ghostty，Windows 多六列——執行原則、三列
+  // 其餘依平台而定：macOS 多兩列（Ghostty 本身與它的設定），Windows 多六列——執行原則、三列
   // PowerShell、Store 版判斷，再加 Codex 沙箱（junction / MSIX 都是 Windows 專屬）。
   // 再加一列兩平台共通的選用項（Typeless 語音輸入）。
   const expectedChecks =
-    13 + (process.platform === "darwin" ? 1 : 0) +
+    13 + (process.platform === "darwin" ? 2 : 0) +
     (process.platform === "win32" ? 6 : 0);
   // npm-leftover / brew-leftover / quarantine 是條件列，出不出現取決於這台機器有沒有隔離區殘留
   // （見 test/env.mjs 的同一段說明）。不濾掉的話有殘留的機器會多兩列而無故變紅。

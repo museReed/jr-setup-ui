@@ -251,6 +251,9 @@ export const FIX_BUTTON_TEXT = {
   // 先講的話，畫面上突然多一個問密碼的視窗，第一個反應是關掉它（沙箱那顆
   // setup-codex-sandbox 就是這樣寫在標籤裡的）。
   "fix-home-perms": "修好檔案權限（開終端）",
+  // 沒設過與設過但是舊版共用這一顆——兩種要做的事一樣，就是把那兩個區塊寫成最新的。
+  // 文字講的是結果（打開那幾個開關），不是手段（寫兩個設定檔）。
+  "fix-ghostty-config": "打開終端機設定",
 };
 
 export function fixButtonText(check) {

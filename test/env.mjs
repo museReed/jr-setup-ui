@@ -335,7 +335,8 @@ if (process.platform === "win32") {
 }
 
 if (process.platform === "darwin") {
-  expectedIds.push("ghostty");
+  // 兩列合成一張卡：裝 app 是一半，把那幾個開關打開是另一半。
+  expectedIds.push("ghostty", "ghostty-config");
 }
 
 // 兩個平台都有的選用列，排在平台專屬那幾列之後（跟 checksForPlatform 一致）。

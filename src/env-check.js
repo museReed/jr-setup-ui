@@ -4,6 +4,7 @@ import {
   accessSync,
   constants,
   existsSync,
+  readFileSync,
   readdirSync,
   readlinkSync,
   realpathSync,
@@ -67,6 +68,11 @@ import {
   resolveSpawn,
 } from "./spawn-command.js";
 import { ghosttyAppPaths } from "./terminal-window.js";
+import {
+  ghosttyConfigPath,
+  ghosttyConfigRow,
+  zshrcPath,
+} from "./ghostty-config.js";
 
 // 實測（Windows VM，全部進過快取之後）最慢一項 529ms、九項併行 1.5 秒。
 // 但同學撞到的是「剛裝完的第一次啟動」——npm 剛寫完檔案、Defender 正在掃、
@@ -157,7 +163,13 @@ export function checksForPlatform(platform) {
   }
 
   if (platform === "darwin") {
-    checks.push({ id: "ghostty", label: "Ghostty 終端機" });
+    checks.push(
+      { id: "ghostty", label: "Ghostty 終端機" },
+      // 跟上一列合成同一張卡（見 model.js 的 ENV_CARD_META）。裝好 app 只是一半，
+      // 那幾個開關沒打開的話，後面每一步都會踩到：標題列消失、分頁名字被蓋掉、
+      // 指令跑完沒有通知。
+      { id: "ghostty-config", label: "終端機的設定" },
+    );
   }
 
   // 兩個平台都有：mac 走 Homebrew cask，Windows 走 winget。
@@ -402,6 +414,10 @@ export const FIX_ACTIONS = {
     status === "warn" && check?.fixable !== false
       ? "fix-shell-wrapper"
       : null,
+  // 沒設過（missing）與設過但是舊版（warn）都給同一顆按鈕——兩種要做的事一樣，
+  // 就是把那兩個區塊寫成最新的。差別只在按鈕上的字（見 actions.js 的 FIX_LABELS）。
+  "ghostty-config": (status) =>
+    status === "ok" ? null : "fix-ghostty-config",
   // 2026-08-12 接上了。8/11 不接的理由是「Store 版底下沙箱完全正常」——那次的
   // 測試無效（沙箱根本沒設定起來，見 codex-sandbox.js）。真的設定起來之後，
   // 市集版的 pwsh 在沙箱裡 20/20 失敗（上游 openai/codex#35871 量的）。
@@ -551,6 +567,26 @@ async function checkTypeless() {
     result.code === 0 &&
     /SimplyCA\.Typeless/i.test(result.stdout ?? "");
   return { id, label, ...typelessStatus(installed) };
+}
+
+// ⚠️ 只讀檔案，不去問 Ghostty。`ghostty +show-config` 讀得到「合併後」的值，聽起來
+// 更準——但它同時把預設值也算進去，於是「學生自己設過」與「Ghostty 剛好預設成這樣」
+// 分不開，而我們要判的是前者。何況那要 spawn 一個 GUI app 的 CLI，慢而且不一定在
+// PATH 上。
+function checkGhosttyConfig() {
+  const home = homedir();
+  const read = (target) => {
+    try {
+      return readFileSync(target, "utf8");
+    } catch {
+      return "";
+    }
+  };
+
+  return ghosttyConfigRow({
+    configText: read(ghosttyConfigPath(home)),
+    zshrcText: read(zshrcPath(home)),
+  });
 }
 
 function checkGhostty() {
@@ -1396,7 +1432,7 @@ export async function runEnvCheck(tools = []) {
     }
 
     if (process.platform === "darwin") {
-      checksToRun.push(checkGhostty());
+      checksToRun.push(checkGhostty(), checkGhosttyConfig());
     }
 
     checksToRun.push(checkTypeless());

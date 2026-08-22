@@ -874,11 +874,18 @@ const ENV_CARD_META = {
   // 提前的理由本身也成立：它是「後面每一步都在這個視窗裡做」的東西，排最後等於學生
   // 做完七張才被告知該換終端機。不過要誠實說，它比 Windows 那張弱：Windows Terminal
   // 那列會看 WT_SESSION（沒用它開就是紅的），Ghostty 只檢查檔案在不在。
+  // 兩列一張卡：裝 app 只是一半。那幾個開關沒打開的話，後面每一步都會踩到——
+  // 按到全螢幕標題列就消失、Ghostty 自己會把分頁名字蓋掉、指令跑完沒有通知。
+  // ⚠️ 這一筆的 key 是 checkIds 的第一個（ghostty），跟 brew 收尾那張同一條規矩。
   ghostty: {
     agent: "other",
     label: "換上課堂用的終端機",
     logo: "logo-terminal",
-    description: "後面每一步都在終端機視窗裡做，先換成跟講師一樣的那個",
+    checkIds: ["ghostty", "ghostty-config"],
+    description:
+      "後面每一步都在終端機視窗裡做，先換成跟講師一樣的那個，" +
+      "再把幾個開關打開：視窗一開就滿版而且分頁列不會消失、" +
+      "指令跑完會通知你、拖一個資料夾進去按 Enter 就直接跳過去",
   },
   terminal: {
     agent: "other",
