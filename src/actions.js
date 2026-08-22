@@ -465,6 +465,7 @@ Object.assign(actions, {
         "fullscreen-proof",
         "statusline",
         "open-vault",
+        "notify-permission",
         "vault-note",
         "mcp-playwright",
       ],

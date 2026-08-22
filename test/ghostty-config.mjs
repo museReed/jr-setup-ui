@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { actions } from "../src/actions.js";
+import { CARD_GATES, MANUAL_STEPS } from "../public/model.js";
 
 import {
   applyGhosttyBlock,
@@ -117,6 +121,37 @@ try {
 
   assert.equal(ghosttyConfigRow({ configText: "", zshrcText: "" }).id, "ghostty-config");
   ok("那一列的 id 跟 env-check 與 FIX_ACTIONS 對得上");
+
+  // 通知那一格是人工項：macOS 的通知權限是 TCC 保護的，程式點不動。它要三個東西
+  // 對得起來才畫得出按鈕——少任何一個都是「勾選框在、按鈕不見了」，而學生會以為
+  // 自己要憑空找到系統設定。
+  const gate = CARD_GATES.ghostty;
+  assert.equal(gate.length, 1);
+  assert.equal(gate[0].id, "ghostty-notify");
+
+  const step = MANUAL_STEPS[gate[0].stepId];
+  assert.ok(step, `${gate[0].stepId} 沒有登記在 MANUAL_STEPS，那一步不會有按鈕`);
+  assert.equal(typeof step.buttonText, "string");
+
+  // 那顆按鈕走的是 verify-in-terminal（app.js 的 onOpenStep 寫死的），所以 case
+  // 名字必須在白名單裡，否則按下去會被 action 層擋掉。
+  assert.ok(
+    actions["verify-in-terminal"].options.case.includes(step.action),
+    `${step.action} 不在 verify-in-terminal 的 case 白名單裡`,
+  );
+
+  // ⚠️ 它不叫 agent。沒登記進 NO_AGENT_CASES 的話，「還沒裝 Codex」的學生會被那支
+  // 探測擋在一個根本不需要 Codex 的步驟前面。
+  const verifySource = readFileSync(
+    new URL("../scripts/verify-in-terminal.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    verifySource,
+    new RegExp(`NO_AGENT_CASES = new Set\\([^)]*"${step.action}"`),
+    `${step.action} 要登記進 NO_AGENT_CASES`,
+  );
+  ok("通知那一格：人工項、按鈕、case 白名單、不叫 agent，四邊對得上");
 } catch (error) {
   console.error(error);
   process.exit(1);

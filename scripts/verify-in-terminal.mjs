@@ -107,6 +107,23 @@ const CASES = {
     expect: () => null,
     watchFor: "它寫出一篇「測試筆記」，然後自己 commit 並推上去",
   },
+  // macOS 的通知權限是系統管的，程式改不到（TCC 保護）。設定檔讓 Ghostty「想要」
+  // 發通知，但這一關沒開的話它永遠發不出來——而學生看到的是「設定都綠了、通知還是
+  // 沒出現」，合理的結論是嚮導壞了。
+  //
+  // 所以幫他把那一頁開起來，剩下的交給他點。跟 open-vault 同一個形狀：不叫 AI、
+  // 不驗任何東西，只負責把視窗開到他面前。
+  //
+  // ⚠️ 只開得到「通知」總頁，跳不到 Ghostty 那一列——macOS 沒有給每個 app 的深連結。
+  // 所以要看的那句話一定要寫「在清單裡找到 Ghostty」，不能只說「按這顆」。
+  "notify-permission": {
+    label: "終端機的通知權限",
+    env: () => ({}),
+    prompt: () => "",
+    expect: () => null,
+    watchFor:
+      "系統設定的「通知」頁打開了，在下面那串 app 清單裡找到 Ghostty，把「允許通知」打開",
+  },
   // 這一格也不叫 AI：要看的是 Obsidian 把 vault 打開之後左邊那排有沒有同步圖示。
   // 幫學生把 app 開起來就好，剩下的交給眼睛。
   "open-vault": {
@@ -475,6 +492,17 @@ function browseVaultRepo() {
 
 // 用 obsidian:// 這個網址開，不是直接叫 Obsidian.app：它認得「打開哪一個 vault」，
 // 學生機器上如果還有別的 vault，直接開 app 會停在上一次那個。
+// 只有 macOS 走得到（Ghostty 是 mac 專屬，這張卡在 Windows 不存在），所以不分平台。
+function notifySettingsScript() {
+  return [
+    'open "x-apple.systempreferences:com.apple.preference.notifications"',
+    'echo "系統設定的「通知」頁開好了。"',
+    'echo "在下面那串 app 清單裡找到 Ghostty，點進去把「允許通知」打開。"',
+    'echo ""',
+    'echo "設定完可以關掉這個視窗。"',
+  ].join("\n");
+}
+
 function vaultScript() {
   const url = "obsidian://open?vault=jr-workshop-vault";
   const done = "Obsidian 應該打開了——看左邊那排有沒有同步圖示，看完關掉這個視窗";
@@ -585,6 +613,8 @@ function writeLauncher(prompt) {
       ? `${agent} '${prompt}'\n${browseVaultRepo()}`
       : caseName === "open-vault"
       ? vaultScript()
+      : caseName === "notify-permission"
+      ? notifySettingsScript()
       : caseName === "statusline"
         ? agent
         : `${agent} '${prompt}'`;
@@ -781,6 +811,10 @@ function buildPrompt(spec) {
 // 問到的是另一件事。
 const PROBE_TIMEOUT_MS = 10_000;
 
+// 這幾格的 body 裡沒有 agent。加新的這種格子時要記得補進來，否則「還沒裝 Codex」
+// 的學生會被擋在一個根本不需要 Codex 的步驟前面。
+const NO_AGENT_CASES = new Set(["open-vault", "notify-permission"]);
+
 function agentProbe() {
   return process.platform === "win32"
     ? {
@@ -798,8 +832,8 @@ function agentProbe() {
 // 這一支的價值是把一種**確定**的失敗提前講出來，不是多一道關卡。探測本身不穩就
 // 擋人的話，會用一個我們不確定的判斷去擋一件可能好好的事——那比晚四分鐘更糟。
 function agentMissing() {
-  // 這一格不叫 agent（只是把 Obsidian 開起來），沒有指令要問。
-  if (caseName === "open-vault") {
+  // 這幾格不叫 agent（只是把某個 app 或設定頁開起來），沒有指令要問。
+  if (NO_AGENT_CASES.has(caseName)) {
     return Promise.resolve(false);
   }
 

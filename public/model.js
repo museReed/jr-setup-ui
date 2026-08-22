@@ -103,6 +103,11 @@ export function matchesFullscreenProof(pasted) {
 // 一行代碼才圈選得到）。原本畫成「三格 + 兩顆不知道對應誰的按鈕」，學生要自己
 // 配對哪顆按鈕帶他做哪一格（Reed 實測）。stepId 把它們綁回去。
 export const MANUAL_STEPS = {
+  "notify-permission": {
+    title: "把 Ghostty 的通知權限打開",
+    action: "notify-permission",
+    buttonText: "開啟通知設定",
+  },
   "fullscreen-open": {
     title: "第一步：開一個視窗，把這兩件做完",
     action: "fullscreen-open",
@@ -114,6 +119,20 @@ export const MANUAL_STEPS = {
     buttonText: "開啟並送出測試句",
   },
 };
+
+// macOS 的通知權限只有使用者點得動（TCC 保護），所以它是一個人工項，不是一顆
+// 修復鍵。按鈕只負責把那一頁開到他面前。
+export const GHOSTTY_ITEMS = [
+  {
+    id: "ghostty-notify",
+    stepId: "notify-permission",
+    title: "在清單裡找到 Ghostty，把「允許通知」打開",
+    // ⚠️ 一定要寫「在清單裡找到」。那顆按鈕只開得到「通知」總頁，跳不到 Ghostty
+    // 那一列——macOS 沒有給每個 app 的深連結。只寫「按這顆」的話學生會盯著一頁
+    // 陌生的設定，不知道要往下捲。
+    detail: "設定裡預設是關的，沒開的話指令跑完不會有通知",
+  },
+];
 
 export const FULLSCREEN_ITEMS = [
   {
@@ -198,6 +217,9 @@ export const EYE_ONLY_VERIFY = new Set([
 ]);
 
 export const CARD_GATES = {
+  // 設定檔讓 Ghostty「想要」發通知，但 macOS 那一關程式改不到。少了這一格，學生會
+  // 走到「設定都綠了、通知還是沒出現」，而畫面上沒有任何東西告訴他要去哪裡開。
+  ghostty: GHOSTTY_ITEMS,
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
   claude: FULLSCREEN_ITEMS,
