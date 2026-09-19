@@ -7,6 +7,10 @@
 
 ## 一、四個斷點，一個共同形狀
 
+> ⚠️ 這一節是 2026-07-29 的實測紀錄，留著是因為那個**形狀**仍然成立。其中兩個斷點
+> 屬於自動命名，而那整套已經下架（見 `archive/auto-rename/RESTORE.md`）——復原時
+> 這兩條就是現成的迴歸清單。
+
 | 斷點 | 症狀 | 真正的原因 |
 |---|---|---|
 | `block-chained-bash` 沒攔到串接指令 | 檔案在、註冊在，`echo a && echo b` 照過 | 註冊的路徑沒加引號，bash 把 `C:\Users\Reed` 的 `\U` `\R` 當跳脫吃掉 → node 找不到檔案 → exit 1 → PreToolUse 把 exit 1 當「hook 出錯，放行」 |
@@ -47,15 +51,16 @@
 | 關卡 | 出現在 | 不做會怎樣 |
 |---|---|---|
 | Codex 的 hook 信任提示 | 第一次開 codex session | `[hooks.state]` 是空的，整組 hook 不跑 |
-| PowerShell profile 重載 | 改完 `tab-sync` 之後 | wrapper 沒載入，標題永遠不會變 |
+| PowerShell profile 重載 | 改完任何寫進 profile 的那幾步之後 | 新的 function 沒載入，行為停在舊的 |
 | Claude Code 新 session | 改完 `settings.json` 之後 | 舊 session 用的是舊設定 |
 
 UI 要在**裝完當下**講，不是等學生撞到。
 
 ### 4. 驗不到的就明說驗不到
 
-`headless` 沒有終端可以改標題，所以「標題有沒有變」這件事嚮導**永遠**驗不到。
-與其讓它看起來像驗過了，不如直接說「回你的終端看分頁標題」，並附上看什麼。
+`headless` 跑出來的東西沒有畫面，所以「畫面上長什麼樣」這件事嚮導**永遠**驗不到
+——底部狀態列有沒有出現、結構化提問有沒有跳出可以上下選的選單、demo 的網頁有沒有
+真的自己演。與其讓它看起來像驗過了，不如直接說「回你的終端看什麼」，並附上看什麼。
 
 ## 三、驗證分三層，UI 也照這樣分
 
@@ -63,7 +68,7 @@ UI 要在**裝完當下**講，不是等學生撞到。
 |---|---|---|
 | **結構** | 程式，自動 | 檔案在不在、註冊在不在、白名單規則對不對 |
 | **行為** | 程式，自動 | 餵一條串接指令看 hook 擋不擋、跑註冊的那條指令 |
-| **眼睛** | 學生勾選 | 分頁標題有沒有變成命名 |
+| **眼睛** | 學生勾選 | 底部狀態列有沒有出現、提問有沒有跳出選單 |
 
 ⛔ **前兩層絕不能降級成學生勾選。** 能自動判定的就自動判定，勾選欄位越少，學生
 越不會一排全勾。
@@ -77,15 +82,17 @@ UI 要在**裝完當下**講，不是等學生撞到。
 | `claude-md` / `output-style` / `codex-config` / `codex-agents` | 檔案內容逐字相同 | 問一題看回覆格式 | — |
 | `hook`（block-chained-bash） | 檔案 + 註冊 | **跑註冊的那條指令**，餵串接指令看擋不擋 | — |
 | `allowlist` | 規則在不在 | — | — |
-| `claude-hooks` | 檔案 + 註冊 + 命名白名單 | 開一個 session 看名字有沒有寫進檔案 | — |
-| `codex-hooks`（macOS / Linux） | hook + app-server helper + 註冊 | app-server 透過 control socket 更新 thread | **原生標題有沒有變** |
-| `codex-hooks`（Windows） | hook + WebSocket helper + PowerShell app-server wrapper + 註冊 | 共用 app-server 的 `thread/name/set` 更新 thread | **原生標題有沒有變** |
-| `tab-sync` | watcher + rc 標記（只服務 Claude） | — | **分頁標題有沒有變** |
+| `claude-monitor` | 檔案 + 註冊 | 開一個長對話看提醒有沒有出現 | — |
+| `naming-retire` | 殘留檔案 / 兩邊註冊 / shell 區塊 / 白名單都清掉了沒 | — | — |
+
+⚠️ 這張表原本還有三列（`claude-hooks`、`codex-hooks`、`tab-sync`），驗的是「分頁
+標題有沒有變成命名」。自動命名下架後那三列換成上面那一列 `naming-retire`——它做的
+事跟安裝相反，所以只有結構那一層，沒有行為也沒有眼睛。
 
 ## 五、未定案
 
-**「需重開視窗」在 UI 上怎麼表達。** 現在九列是「按了就裝好」的心智模型，但
-`tab-sync` 改 profile、hooks 改 settings，都要重開才算數。
+**「需重開視窗」在 UI 上怎麼表達。** 現在每一列都是「按了就裝好」的心智模型，但
+改 profile 或改 settings 的那幾步都要重開才算數。
 
 目前採用：**裝完直接在那一列標記，並且不給綠燈**（歸類為「裝了但沒驗過生效」），
 逼學生走完驗證才會變綠。理由是提示條會被忽略，而列上的狀態學生非看不可。
