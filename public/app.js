@@ -117,7 +117,7 @@ const state = {
   completedGateIds: new Set(),
   // handleDone 要知道被按的那一列是不是「程式抓得到證據」的那種。
   lastChecks: [],
-  availableActions: new Set(["diagnose-naming-block"]),
+  availableActions: new Set(),
   envChecks: [],
   // 撞上「還在跑」而被擋下來的那次重查，等當前那次收尾再補跑。null 代表沒有排隊。
   envCheckQueued: null,
@@ -1653,10 +1653,7 @@ async function checkConfigs() {
     const result = await api.fetchConfigs({ tools, lang });
     state.lastChecks = result.checks;
     forgetStaleInstalls(result.checks);
-    state.availableActions = new Set([
-      "diagnose-naming-block",
-      ...(result.platform === "win32" ? ["diagnose-title-path"] : []),
-    ]);
+    state.availableActions = new Set();
     renderWizard();
   } catch (error) {
     view.renderConfigFailure(error.message);

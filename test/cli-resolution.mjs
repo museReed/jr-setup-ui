@@ -140,30 +140,10 @@ try {
   assert.equal(launch.cmd, "C:\\second\\codex.EXE");
   ok("嚮導啟動路徑會跨 PATH 優先選真正的 exe");
 
-  const powershellBlock = describeStep("tab-sync", {
-    lang: "zh-TW",
-    home: "C:/Users/jr",
-    platform: "win32",
-  }).rcBlock;
-
-  // 只取第一筆會再次鎖定壞 shim，所以產生的 profile 不能留下舊選法。
-  assert.equal(powershellBlock.includes("Select-Object -First 1"), false);
-  // 沒有 -All 就看不到 PATH 後面的官方 exe，排序規則也無從生效。
-  assert.match(
-    powershellBlock,
-    /Get-Command claude -CommandType Application -All/,
-  );
-  // 挑出的路徑若只用在一條分支，互動式或非互動式其中一種仍會叫到錯的檔案。
-  assert.equal(
-    powershellBlock.match(/& \$realCommandPath @InvocationArgs/g)?.length,
-    2,
-  );
-  // 所有候選都失效時若沒有可讀訊息，每開一個視窗仍只會看到難懂的 PowerShell 錯誤。
-  assert.match(
-    powershellBlock,
-    /找不到可執行的 claude，請重新安裝後再試。/,
-  );
-  ok("Claude PowerShell wrapper 會列出全部候選並共用挑出的有效路徑");
+  // ⚠️ 這裡原本還驗一段 PowerShell wrapper（tab-sync 寫進 profile 的那個 function）：
+  // 它要用 -All 列出全部候選、挑出真正的 .exe，否則會鎖定 PATH 前面的壞 shim。
+  // 那個 wrapper 隨自動命名一起下架了（archive/auto-rename/），所以這段測試也跟著
+  // 收起來。復原 wrapper 時記得把它一起接回來——選錯 exe 的坑在 VM 上踩過。
 } catch (error) {
   console.error(`not ok - ${error.stack ?? error.message}`);
   process.exit(1);

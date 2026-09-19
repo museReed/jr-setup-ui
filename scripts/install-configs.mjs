@@ -23,6 +23,8 @@ import {
   hasHookRegistrations,
   removeHookRegistrations,
   removeLegacyCodexTabSyncBlock,
+  removeMarkedBlock,
+  retireTargets,
   transformStepSource,
   upsertBlock,
 } from "../src/config-install.js";
@@ -187,16 +189,55 @@ async function retireStep(step) {
 
   // 註冊要跟著拿掉。只刪檔案的話 settings 裡會留一條指向不存在檔案的 hook——
   // 每次 PostToolUse 都失敗一次，而畫面上完全看不出來。
-  const before = await readSettings(step.settingsTarget);
+  //
+  // targets 是複數形（一步要清兩個工具的註冊檔時用），單一 settingsTarget 的舊
+  // 形狀照樣吃。
+  for (const target of retireTargets(step)) {
+    const before = await readSettings(target.settingsTarget);
 
-  if (hasHookRegistrations(before, step.markers)) {
-    await writeSettings(
-      step.settingsTarget,
-      removeHookRegistrations(before, step.markers),
+    if (hasHookRegistrations(before, target.markers)) {
+      await writeSettings(
+        target.settingsTarget,
+        removeHookRegistrations(before, target.markers),
+      );
+      logProgress(`已從 ${target.settingsTarget} 移除註冊`);
+    } else {
+      logProgress(`${target.settingsTarget} 裡沒有它的註冊，不用動`);
+    }
+  }
+
+  // shell 設定檔裡的 wrapper 區塊。檔案不在就跳過——學生可能只用其中一個平台。
+  for (const rc of step.rcBlocks ?? []) {
+    if (!existsSync(rc.target)) {
+      continue;
+    }
+
+    const current = await readFile(rc.target, "utf8");
+    const next = rc.markers.reduce(
+      (content, marker) => removeMarkedBlock(content, marker),
+      current,
     );
-    logProgress(`已從 ${step.settingsTarget} 移除註冊`);
-  } else {
-    logProgress("設定檔裡沒有它的註冊，不用動");
+
+    if (next !== current) {
+      await backup(rc.target);
+      await writeFile(rc.target, next);
+      logProgress(`已從 ${rc.target} 移除 shell 區塊`);
+    }
+  }
+
+  // 白名單那條放行的腳本已經不在了，留著只是一條指向空氣的規則。
+  if (step.allowRuleMarker !== undefined) {
+    const settings = await readSettings(step.allowRuleTarget);
+    const allow = settings?.permissions?.allow ?? [];
+    const kept = allow.filter((rule) => !rule.includes(step.allowRuleMarker));
+
+    if (kept.length !== allow.length) {
+      await writeSettings(step.allowRuleTarget, {
+        ...settings,
+        permissions: { ...settings.permissions, allow: kept },
+      });
+      logProgress(`已從 ${step.allowRuleTarget} 移除白名單那一條`);
+    }
   }
 
   // 記一筆「這台機器按過移除」。不記的話這一列會在按完的當下整個消失——判準本來

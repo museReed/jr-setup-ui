@@ -34,12 +34,6 @@ function installedTargets(step) {
     return [];
   }
 
-  if (step.kind === "tab-sync") {
-    // POSIX 沒有 watcher 檔可以看，只剩 rc 區塊。filter 掉 undefined，否則進度會
-    // 去 stat 一個 "undefined" 路徑，永遠算成沒裝好。
-    return [step.target, step.rcTarget].filter(Boolean);
-  }
-
   if (step.kind === "agent-hooks") {
     return [
       ...step.hookFiles.map((file) => file.target),
@@ -107,15 +101,7 @@ function settingsSlice(step, settings) {
 
   if (step.kind === "hook" || step.kind === "agent-hooks") {
     const names = ownFileNames(step);
-    const slice = { hooks: pickRegistrations(settings.hooks ?? null, names) };
-
-    if (step.namingAllowRule !== undefined) {
-      slice.allow = (settings.permissions?.allow ?? []).filter(
-        (rule) => rule === step.namingAllowRule,
-      );
-    }
-
-    return slice;
+    return { hooks: pickRegistrations(settings.hooks ?? null, names) };
   }
 
   // Playwright（Claude）的落點是 ~/.claude.json 裡的一段 MCP 設定。那個檔是 Claude

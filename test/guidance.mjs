@@ -33,31 +33,21 @@ try {
   );
   ok("剛執行失敗的已登記 step 仍會產出引導");
 
-  const withDiagnose = guidanceModel({
-    step: "claude-namer",
-    status: "warn",
-    availableActions: new Set(["diagnose-naming-block"]),
-  });
-  assert.deepEqual(withDiagnose.diagnoseButton, {
-    action: "diagnose-naming-block",
-    text: "一鍵診斷",
-    step: "claude-namer",
-  });
+  // 一鍵診斷那顆按鈕的機制還在，但目前沒有任何一列掛得上——唯一掛過的是自動命名
+  // 那幾列，已經隨 archive/auto-rename/ 下架。這裡守著「沒有人掛時不會冒出按鈕」。
   assert.equal(
     guidanceModel({ step: "hook", status: "warn" }).diagnoseButton,
     null,
   );
-  ok("有 diagnose 的 step 掛診斷按鈕，沒有的 step 不掛");
-
   assert.equal(
     guidanceModel({
-      step: "tab-sync",
+      step: "shell-wrapper",
       status: "warn",
-      availableActions: new Set(["diagnose-naming-block"]),
-    }).diagnoseButton,
+      availableActions: new Set(["fix-shell-wrapper"]),
+    })?.diagnoseButton ?? null,
     null,
   );
-  ok("目前平台沒註冊的診斷 action 不會出現在列上");
+  ok("沒有 step 掛診斷按鈕時，列上也不會冒出那顆")
 
   for (const step of [
     "ext-frontend-design-claude",
@@ -108,18 +98,18 @@ try {
   );
   ok("只翻譯失敗的環境安裝與 ext-* 第三方 action");
 
-  assert.equal(actions["diagnose-naming-block"].kind, "fixed");
-  assert.deepEqual(actions["diagnose-naming-block"].options.step, [
-    "claude-namer",
-    "skill-claude-handoff",
-  ]);
+  // 自動命名下架後，這兩顆診斷鍵跟著封存（archive/auto-rename/）。守著它們沒有
+  // 被留下來——留著的話按下去會執行一支不存在的腳本。
+  assert.equal(actions["diagnose-naming-block"], undefined);
+  assert.equal(actions["diagnose-title-path"], undefined);
 
+  // Windows 專屬 action 仍然只在 win32 註冊。
   if (process.platform === "win32") {
-    assert.equal(actions["diagnose-title-path"].kind, "fixed");
+    assert.equal(actions["fix-execution-policy"].kind, "fixed");
   } else {
-    assert.equal(actions["diagnose-title-path"], undefined);
+    assert.equal(actions["fix-execution-policy"], undefined);
   }
-  ok("診斷 action 使用固定指令，Windows 專屬 action 只在 win32 註冊");
+  ok("已下架的診斷鍵不再註冊，Windows 專屬 action 只在 win32 註冊");
 
   // ⚠️ 自救說明是給學生照著做的，不是給他讀的診斷報告。pwsh-store 那段原本八條，
   // 攤在卡片上是一整面字——而學生只需要「按那顆鍵 → 確認 → 按鈕失敗就下載 .msi」。

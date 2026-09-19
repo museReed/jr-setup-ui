@@ -22,6 +22,7 @@ import {
   readCodexModes,
   readDefaultMode,
   readRetiredCodexKeys,
+  retireTargets,
   stepsForTools,
   transformStepSource,
 } from "./config-install.js";
@@ -497,16 +498,7 @@ export const VERIFICATION = {
   // watcher 用 SetConsoleTitle 改的是共用 console 的狀態，claude 結束之後同一個
   // console 裡讀得回來。macOS 讀不回來（OSC 寫進 tty 裝置，沒有對應的讀取 API），
   // 所以那一半仍然是人眼。兩個平台不對稱是機制決定的，不是還沒做完。
-  "claude-namer": {
-    terminal: { case: "naming", agent: "claude" },
-    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
-  },
   "claude-monitor": { terminal: { case: "context", agent: "claude" } },
-  "codex-namer": {
-    terminal: { case: "naming", agent: "codex" },
-    eye: "POSIX 的 Codex sidebar 與原生分頁標題都透過 app-server 變成命名",
-    eyeWindows: "Windows 的 Codex sidebar、status line 與分頁標題都透過 app-server 變成命名",
-  },
   // codex-monitor 的行為驗證加回來了（Reed 決定），跟 claude-monitor 對稱。
   //
   // 它曾經被拿掉，理由記在這裡免得又被同一條路說服：一是重疊——這一格唯一抓得到的
@@ -530,20 +522,10 @@ export const VERIFICATION = {
   // 綠燈——留一個空物件會讓它仍被當成「要按 verify-in-terminal」，參數卻是空的。
   // skill 的行為驗證跟 hook 同一個判準：要嘛留下只有 skill 跑過才會有的副產物，
   // 要嘛就老實承認驗不到、交給學生看。
-  // 同上：這支 skill 的成果就是「標題變了」，程式只驗得到名字有沒有落地。
-  "skill-claude-auto-rename": {
-    terminal: { case: "skill-rename", agent: "claude" },
-    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
-  },
-  "skill-codex-auto-rename": {
-    terminal: { case: "skill-rename", agent: "codex" },
-    eye: "那個視窗的分頁標題變成「{emoji} 中文敘述」",
-  },
-  // 文件本身自動判定得了（章節名比對），但收尾的改名只有終端看得到——那一步是
-  // 整支 skill 最容易靜靜失敗的地方（指令被 hook 擋下也不會有人說），所以配一格眼睛。
+  // 文件本身自動判定得了（章節名比對），交接檔有沒有生出來也看得到，所以這一列
+  // 不再配眼睛——改名那一步已經隨 auto-rename 下架（archive/auto-rename/）。
   "skill-claude-handoff": {
     terminal: { case: "skill-handoff", agent: "claude" },
-    eye: "那個視窗的分頁標題最後變成「📦 ...」",
   },
   "skill-codex-handoff": {
     terminal: { case: "skill-handoff", agent: "codex" },
@@ -725,10 +707,40 @@ async function checkOutputStyle(materials, step) {
 // 沒裝過，有那一筆就是他自己按掉的。
 export async function checkRetired(step, retiredSteps = []) {
   const leftoverFiles = step.files.filter((file) => existsSync(file));
-  const settings = await readJsonOrNull(step.settingsTarget);
-  const registered = hasHookRegistrations(settings ?? {}, step.markers);
 
-  if (leftoverFiles.length === 0 && !registered) {
+  let registered = false;
+  for (const target of retireTargets(step)) {
+    const settings = await readJsonOrNull(target.settingsTarget);
+
+    if (hasHookRegistrations(settings ?? {}, target.markers)) {
+      registered = true;
+    }
+  }
+
+  // shell 設定檔裡的 wrapper 區塊也是殘留：檔案刪了但區塊還在的話，學生每開一個
+  // 新分頁都會執行一個指向空氣的 function。
+  let blockLeft = false;
+  for (const rc of step.rcBlocks ?? []) {
+    if (!existsSync(rc.target)) {
+      continue;
+    }
+
+    const content = await readFile(rc.target, "utf8");
+
+    if (rc.markers.some((marker) => hasMarkedBlock(content, marker))) {
+      blockLeft = true;
+    }
+  }
+
+  let allowRuleLeft = false;
+  if (step.allowRuleMarker !== undefined) {
+    const settings = await readJsonOrNull(step.allowRuleTarget);
+    allowRuleLeft = (settings?.permissions?.allow ?? []).some((rule) =>
+      rule.includes(step.allowRuleMarker),
+    );
+  }
+
+  if (leftoverFiles.length === 0 && !registered && !blockLeft && !allowRuleLeft) {
     return retiredSteps.includes(step.id)
       ? {
           id: step.id,
@@ -840,56 +852,6 @@ export async function checkAllowlist(materials, step) {
   };
 }
 
-export async function checkTabSync(step, materials) {
-  // POSIX 拿掉 watcher 之後這一步沒有要安裝的檔案，step.target 是 undefined——
-  // 只有 rc 區塊要驗。有 target 的（Windows）才走下面「檔案在不在、是不是舊版」。
-  const hasWatcher = step.target !== undefined;
-
-  if (hasWatcher && !existsSync(step.target)) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "missing",
-      detail: "尚未安裝",
-    };
-  }
-
-  const rcContent = existsSync(step.rcTarget)
-    ? await readFile(step.rcTarget, "utf8")
-    : "";
-
-  if (!hasMarkedBlock(rcContent, step.rcMarker)) {
-    // 有 watcher 檔的（Windows）是「裝一半」——檔案已經在了，缺的是 shell function，
-    // 所以是 warn。POSIX 這一步除了 rc 區塊什麼都沒有，缺了就是整步沒裝。
-    return {
-      id: step.id,
-      label: step.label,
-      status: hasWatcher ? "warn" : "missing",
-      detail: hasWatcher ? "檔案在，但 shell function 沒寫進去" : "尚未安裝",
-    };
-  }
-
-  // watcher 與 shell function 都改過（watcher 每輪重寫、Windows 換 -NoNewWindow、
-  // POSIX 整個不再起 watcher）。舊版一樣是「檔案在、標記在」，只看存在與否會給綠燈，
-  // 但標題不會變——POSIX 的舊區塊還會每秒把 agent 的名字蓋掉。所以要比對內容。
-  const staleWatcher = hasWatcher
-    ? await staleTargets(materials, [
-        { source: step.watcherSource, target: step.target },
-      ])
-    : [];
-
-  if (staleWatcher.length > 0 || !rcContent.includes(step.rcBlock.trim())) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "裝的是舊版——重跑安裝，然後開新的終端分頁",
-    };
-  }
-
-  return { id: step.id, label: step.label, status: "ok", detail: "已啟用" };
-}
-
 export async function checkAgentHooks(step, materials) {
   const filesExist = step.hookFiles.every((file) => existsSync(file.target));
 
@@ -910,75 +872,12 @@ export async function checkAgentHooks(step, materials) {
     step.registrations,
   );
 
-  // 命名指令沒進白名單的話，模型每次要命名都會被權限層擋下——檔案在、註冊也在，
-  // 但功能是死的。只驗前兩項的話這一列會給假綠燈，而且綠燈就沒有安裝按鈕，
-  // 學生連重跑的機會都沒有（實測就是卡在這）。
-  const allowRuleNeeded = step.namingAllowRule !== undefined;
-  const allowRuleInstalled =
-    !allowRuleNeeded ||
-    (settings?.permissions?.allow ?? []).includes(step.namingAllowRule);
-
-  let windowsCodexProfileInstalled = true;
-  if (step.windowsCodexProfile !== undefined) {
-    const profile = step.windowsCodexProfile;
-    const content = existsSync(profile.target)
-      ? await readFile(profile.target, "utf8")
-      : "";
-    windowsCodexProfileInstalled =
-      hasMarkedBlock(content, profile.marker) &&
-      content.includes(profile.block.trim());
-  }
-
-  let posixCodexProfileInstalled = true;
-  if (step.posixCodexProfile !== undefined) {
-    const profile = step.posixCodexProfile;
-    const content = existsSync(profile.target)
-      ? await readFile(profile.target, "utf8")
-      : "";
-    posixCodexProfileInstalled =
-      hasMarkedBlock(content, profile.marker) &&
-      content.includes(profile.block.trim());
-  }
-
-  if (
-    filesExist &&
-    registered &&
-    allowRuleInstalled &&
-    windowsCodexProfileInstalled &&
-    posixCodexProfileInstalled
-  ) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "ok",
-      detail: "hook 檔案與 3 筆註冊都已生效",
-    };
-  }
-
-  if (filesExist && registered && !windowsCodexProfileInstalled) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "hook 已註冊，但 PowerShell profile 還沒接上共用 app-server",
-    };
-  }
-
-  if (filesExist && registered && !posixCodexProfileInstalled) {
-    return {
-      id: step.id,
-      label: step.label,
-      status: "warn",
-      detail: "hook 已註冊，但 shell profile 還沒接上 Codex core daemon",
-    };
-  }
-
   if (filesExist && registered) {
     return {
       id: step.id,
       label: step.label,
-      status: "warn",
-      detail: "已註冊，但命名指令不在白名單——模型會被權限層擋下",
+      status: "ok",
+      detail: `hook 檔案與 ${step.registrations.length} 筆註冊都已生效`,
     };
   }
 
@@ -999,9 +898,9 @@ export async function checkAgentHooks(step, materials) {
   };
 }
 
-// skill 只有一個檔案，但「檔案在」照樣不等於「是這一版」——auto-rename 的 SKILL.md
-// 還要把 $HOME 換成絕對路徑才叫得動命名腳本，換錯或沒換都是安裝完看起來正常、
-// 用起來被權限層擋下。所以比對的是「套過代換的原始素材」。
+// skill 只有一個檔案，但「檔案在」照樣不等於「是這一版」——vault-sync 的 SKILL.md
+// 還要把 vault 路徑換成絕對路徑才叫得動，換錯或沒換都是安裝完看起來正常、用起來
+// 找不到檔案。所以比對的是「套過代換的原始素材」。
 export async function checkSkill(step, materials) {
   const missing = step.files.filter((file) => !existsSync(file.target));
 
@@ -1308,8 +1207,6 @@ export async function runConfigCheck({ tools, lang }) {
         return await checkRetired(step, retiredSteps);
       } else if (step.kind === "allowlist") {
         return await checkAllowlist(materials, step);
-      } else if (step.kind === "tab-sync") {
-        return await checkTabSync(step, materials);
       } else if (step.kind === "agent-hooks") {
         return await checkAgentHooks(step, materials);
       } else if (step.kind === "skill") {

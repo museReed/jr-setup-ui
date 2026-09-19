@@ -223,10 +223,6 @@ export const CARD_GATES = {
   // 掛在 Claude Code 那張卡上：那張已經是「裝 CLI + 登入」，接上全螢幕選擇之後
   // 順序就是裝 → 登入 → 第一次跑起來選畫面模式，完整是一條線。
   claude: FULLSCREEN_ITEMS,
-  // codex-namer 原本有一格「第一次跑 codex 要接受 hook 信任提示」。拿掉了：
-  // 那兩題在「怎麼做」彈窗裡各有一步（含畫面與要選哪一個），勾選框
-  // 只是把同一件事再講一次，而且講得比較差——它沒說畫面長什麼樣、也沒提第二題。
-  "codex-namer": [],
 };
 
 export const GUIDANCE = {
@@ -341,60 +337,22 @@ export const GUIDANCE = {
     diagnose: null,
   },
   // 這是合併卡唯一的驗證，所以它的失敗有兩種來源，指引要同時涵蓋：
-  // 標題留不住（同卡上一格的 wrapper 沒載入）、名字沒寫出來（這一格的 hook 沒跑）。
-  //
-  // ⚠️ 第一條講的是 wrapper。它排第一不是隨口——兩種失敗在畫面上長得一模一樣
-  //（標題就是沒變），而 wrapper 那條的自救最簡單也最常中。
-  "claude-namer": {
-    symptom: "送出第一句話後，終端分頁標題沒有變",
-    expected: "分頁標題會變成「emoji + 中文名稱」",
+  // 改名那一步隨 auto-rename 一起下架了，所以症狀只剩「檔案沒生出來」。
+  "skill-claude-handoff": {
+    symptom: "叫了 handoff，但 docs/handoff/ 底下沒有新檔案",
+    expected: "會產出 docs/handoff/{日期}-{主題}.md，並 commit 到當前 branch",
     checks: [
-      "有沒有在**新開的**終端視窗啟動 Claude Code——舊視窗載不到這張卡寫進設定檔的那一段，標題留不住",
-      "命名時如果跳出執行權限提示，有沒有允許那條指令",
-    ],
-    diagnose: "diagnose-naming-block",
-  },
-  "codex-namer": {
-    symptom: "送出第一句話後，終端分頁標題沒有變",
-    expected: "分頁標題會變成「emoji + 中文名稱」",
-    checks: [
-      "安裝後有沒有關掉舊分頁，再開一個新分頁",
-      "第一次使用 Codex 時，有沒有接受 hook 信任提示",
-      "macOS / Linux：Codex 的 config.toml 有沒有設定 `terminal_title = [\"thread\"]`，app-server control socket 是否可連",
-      "Windows：PowerShell profile 有沒有載入 Codex 共用 app-server wrapper，背景 app-server 是否在 127.0.0.1:4500",
+      "有沒有在一個 git repo 裡叫 handoff——不在 repo 裡它沒有地方 commit",
+      "這個對話有沒有足夠的內容可以交接（剛開的空對話寫不出東西）",
     ],
     diagnose: null,
   },
-  // ⚠️ 這一段以前寫的是「名字已經寫進同步檔，但終端分頁標題沒有動」——那是這一格
-  // 觀察不到的症狀。它現在既不驗標題也不產生名字（標題那一半在同一張卡的下一格），
-  // 講一個它看不到的現象，只會把學生推去查一條死路。
-  //
-  // 這一格自己的失敗只有一種形狀：那段設定寫進 rc 檔了，但新開的終端沒有載入它。
-  "tab-sync": {
-    symptom: "設定已經寫進 shell 設定檔，但新開的終端沒有載入它",
-    expected: "新開的終端裡，claude 是一個 shell function（那段設定載進來了）",
-    checks: [
-      "有沒有關掉**所有**終端視窗再開一個新的——舊視窗不會重讀設定檔",
-      "shell 設定檔裡那段 tab-sync 區塊還在不在",
-    ],
-    diagnose: "diagnose-title-path",
-  },
-  "skill-claude-handoff": {
-    symptom: "交接檔已經寫出來，分頁標題卻沒有變成 📦",
-    expected: "交接檔完成後，分頁標題會改成「📦 + 交接主題」",
-    checks: [
-      "有沒有在新終端分頁啟動 Claude Code",
-      "執行改名指令時如果跳出權限提示，有沒有允許",
-    ],
-    diagnose: "diagnose-naming-block",
-  },
   "skill-codex-handoff": {
-    symptom: "交接檔已經寫出來，分頁標題卻沒有變成 📦",
-    expected: "交接檔完成後，分頁標題會改成「📦 + 交接主題」",
+    symptom: "叫了 $handoff，但 docs/handoff/ 底下沒有新檔案",
+    expected: "會產出 docs/handoff/{日期}-{主題}.md，並 commit 到當前 branch",
     checks: [
-      "有沒有在新終端分頁啟動 Codex",
-      "第一次使用 Codex 時，有沒有接受 hook 信任提示",
-      "macOS / Linux 與 Windows 都看 Codex 原生 terminal title；Windows 另確認背景 app-server 已啟動",
+      "有沒有在一個 git repo 裡叫 handoff",
+      "這個對話有沒有足夠的內容可以交接",
     ],
     diagnose: null,
   },
@@ -555,22 +513,14 @@ const RULE_CHECK_IDS = {
     "hook",
     "allowlist",
     "claude-hud",
-    "claude-namer",
     "claude-monitor",
-    // ⚠️ tab-sync 從 shared 搬過來（2026-08-21）。它從來就不是共用的：
-    // stepsForTools 只在選了 claude 的時候才發這一步（config-install.js:285），
-    // Codex 的命名走原生 app-server，根本沒有這張卡。
-    //
-    // 掛在 shared 有兩個實際後果：一是 agentForCheck 回 null，合併按鈕只能靠
-    // viewmodel 那段 fallback 猜是誰在跑；二是它被分到「兩邊共用」那張卡，而
-    // mergeCardChecks 是在**同一張卡的 checks 裡**合併——不搬過來，它跟
-    // claude-namer 永遠碰不到彼此，合併卡就成立不了。
-    "tab-sync",
+    // 自動命名下架後留下的那一列（把舊殘留清掉）。它同時清兩個工具的東西，
+    // 但畫面上要有個家，就跟著 Claude 那組走。
+    "naming-retire",
   ]),
   codex: new Set([
     "codex-config",
     "codex-agents",
-    "codex-namer",
     "codex-monitor",
   ]),
 };
@@ -953,23 +903,20 @@ export const CARD_DESCRIPTIONS = {
     "輸入框下面多一行，隨時看得到現在用哪個模型、對話塞多滿、額度還剩多少",
   "codex-config": "Codex 這邊也照同一套規矩回話",
   "codex-agents": "同上，這一份是 Codex 會讀的規矩",
-  "tab-sync": "開十個終端視窗也認得出哪個在做什麼",
-  "claude-namer": "你講第一句話之後，分頁標題就變成這次在做的事",
-  // 這兩張的驗證要跑一分多鐘（每次兩趟 LLM）。不寫的話畫面看起來像當掉了，
-  // 學生會去按取消——這是唯一「慢到需要先講」的兩張，所以寫在描述裡而不是跳泡泡。
+  // 已下架。這張卡只有「以前裝過的人」看得到，做的事是移除。
+  "naming-retire":
+    "「對話自己取名字」這套已經下架了：它要跨兩個工具、三個平台、四個顯示位置才" +
+    "成立，維護不過來。留著的話 hook 會指向不存在的腳本，每次都靜靜失敗。按一下把它清掉",
+  // 這張的驗證要跑一分多鐘（每次兩趟 LLM）。不寫的話畫面看起來像當掉了，
+  // 學生會去按取消——這是唯一「慢到需要先講」的一張，所以寫在描述裡而不是跳泡泡。
   "claude-monitor":
     "對話太長它快忘記前面講過什麼時會提早叫你收尾，這張的驗證要跑一分多鐘",
-  "codex-namer": "Codex 這邊也一樣，講完第一句話標題就自己換掉",
   // 已退役。這張卡只有「以前裝過的人」看得到，做的事是移除。
   "codex-monitor":
     "這支已經退役了：它會在對話快滿時叫你收尾、去開新的一輪。但 Codex 現在把可用的" +
     "容量收小，快滿時在同一個對話裡壓縮一下就能接著做——照它說的去開新對話，反而是" +
     "把還用得到的脈絡丟掉。按一下把它移除",
   // skill 的描述要回答「這支是拿來做什麼的」——標題已經是它的名字了。
-  "skill-claude-auto-rename":
-    "幫這次對話重新取名，前面那張是它自己取，這一支是你不滿意時可以叫它重取",
-  "skill-codex-auto-rename":
-    "幫這次對話重新取名，前面那張是它自己取，這一支是你不滿意時可以叫它重取",
   "skill-claude-handoff":
     "把這次做到哪、卡在哪寫成一份交接文件，下次開新對話貼給它就接得回來",
   "skill-codex-handoff":
@@ -1025,21 +972,14 @@ function checkCard(sectionId, card, check) {
 // 有些卡片是後面所有卡的前提，必須排到最前面。
 //
 // 目前只有一張：分頁自己報上名字（wrapper + 命名 hook 的合併卡）。它把那段
-// wrapper 寫進 shell profile，之後每個新開的終端標題才留得住。後面 auto-rename、
-// handoff 那幾張 skill 都要學生「看標題有沒有變」，沒先裝這張就永遠看不到——
-// 不是 skill 壞了，是根本沒人在聽（VM 實測：PowerShell profile 檔案不存在，
-// 標題自然一直是預設值）。
+// 有些卡是「後面全靠它」，要排在自己那一段的最前面。
 //
 // 舊版一頁攤開所有列，靠驗收文件提醒順序；改成強制線性流程之後，順序錯了就是
 // 把學生推進一個必然失敗的驗證。
 //
-// 筆記那段的三張也在這裡：那張「接到 GitHub 的筆記庫」的操作步驟第三步要學生
+// 筆記那段的三張在這裡：那張「接到 GitHub 的筆記庫」的操作步驟第三步要學生
 // 叫 AI 存一次，skill 沒先裝好的話那一步叫不動。
 const SETUP_FIRST = [
-  // ⚠️ 這裡寫的是**合併卡的主 check**，也就是 MERGE_ORDER 的最後一個。
-  // setupOrder 查的是 card.checkId，而合併之後那個 id 從 tab-sync 變成 claude-namer
-  // ——沒跟著換的話查不到，整張卡靜靜掉到這一段的最後面。
-  "claude-namer",
   "obsidian",
   "skill-claude-vault-sync",
   "skill-codex-vault-sync",
@@ -1128,41 +1068,16 @@ const MERGED_CARDS = {
       "跟上一張同一件事，這是 Codex 這邊的兩份，裝好會真的問它一題來驗，" +
       "一樣要跑一分多鐘",
   },
-  // ⚠️ key 是 claude-namer，跟著 MERGE_ORDER 的最後一個走。改順序沒跟著換的話，
-  // 整張卡的標題與說明會靜靜退回單列的預設值（上面那條註解警告過兩次的坑）。
-  //
-  // 標題講成果，不講 wrapper：學生要的答案是「我怎麼認得出哪個視窗在做什麼」。
-  // 兩格裝的東西不同，但對他來說是一件事，所以說明也只講一件事。
-  "claude-namer": {
-    // ⚠️ 不要跟任何一列同名。合併卡的慣例是「卡片標題講合起來的成果，每一列講
-    // 自己裝什麼」——照抄其中一列的名字，畫面上就變成標題底下再抄一次自己。
-    label: "分頁與對話自己取名字",
-    detail:
-      "兩份一起裝：一份讓終端的分頁標題留得住，一份決定標題寫什麼。" +
-      "裝好之後你講第一句話，分頁標題就變成這次在做的事——開十個視窗也認得出" +
-      "哪個在做什麼。最後會開一個真的終端驗給你看，要跑一分多鐘",
-  },
 };
 
 // 合併之後，同一張卡的 checks 依「安裝順序」排，最後那個帶驗證。
 const MERGE_ORDER = {
   "output-style": ["claude-md", "output-style"],
   "codex-config": ["codex-agents", "codex-config"],
-  // 分頁報上名字（rc 檔那段 wrapper）與對話自己取名字（命名 hook）是同一件事的
-  // 兩半：wrapper 讓標題留得住，hook 決定標題寫什麼。少一半，學生看到的都是
-  // 「標題沒動」。
-  //
-  // 分兩張卡的代價是一個繞不開的順序相依，而它換過方向兩次都沒消失：
-  //
-  //   ~8/20   tab-sync 驗標題 → 需要下一張才裝的命名腳本（每個人必撞，d474acf 止血）
-  //   8/21 後 tab-sync 只驗 wrapper → claude-namer 的人眼判定反過來需要前一張的 wrapper
-  //
-  // 合併之後那個相依不再是相依，是同一張卡的兩格；驗證也終於驗得到學生在意的
-  // 成果（標題真的變成這次在做的事），而不是「wrapper 載入了」這種中間狀態。
-  //
-  // ⚠️ 這是第一張跨 kind 的合併卡：tab-sync 的 kind 是 "tab-sync"（Windows 還要
-  // 複製一支 watcher），claude-namer 是 hook。mergeCardChecks 只看 id 不看 kind。
-  "claude-namer": ["tab-sync", "claude-namer"],
+  // ⚠️ 2026-09-19：這裡曾經有一張「分頁與對話自己取名字」（tab-sync + claude-namer）。
+  // 整套自動命名下架之後兩個成員都不存在了（見 archive/auto-rename/RESTORE.md），
+  // 合併卡也跟著撤掉。復原時記得**連 MERGED_CARDS 的 key 一起加回來**——它跟著
+  // MERGE_ORDER 的最後一個走，忘了換的話整張卡會靜靜退回單列的預設值。
   // 白名單與擋串接寫的是同一個檔案（~/.claude/settings.json），講的也是同一件事：
   // 它什麼時候該停下來問你。分兩張卡的話學生會以為是兩個無關的設定，而其中一張
   // （白名單）的實際效果——連改檔案都不再問——根本沒出現在標題上（Reed 拍板合併）。

@@ -28,10 +28,6 @@ const verifyBehaviorScript = moduleFile(
   "../scripts/verify-behavior.mjs",
   import.meta.url,
 );
-const verifyHooksLiveScript = moduleFile(
-  "../scripts/verify-hooks-live.mjs",
-  import.meta.url,
-);
 const verifyHookLiveScript = moduleFile(
   "../scripts/verify-hook-live.mjs",
   import.meta.url,
@@ -42,14 +38,6 @@ const verifyInTerminalScript = moduleFile(
 );
 const openVaultRepoScript = moduleFile(
   "../scripts/open-vault-repo.mjs",
-  import.meta.url,
-);
-const diagnoseNamingBlockScript = moduleFile(
-  "../scripts/diagnose-naming-block.mjs",
-  import.meta.url,
-);
-const diagnoseTitlePathScript = moduleFile(
-  "../scripts/diagnose-title-path.ps1",
   import.meta.url,
 );
 const fixShellWrapperScript = moduleFile(
@@ -230,26 +218,6 @@ if (process.platform === "win32") {
     args: EXECUTION_POLICY_FIX.args,
     description: "將目前使用者的 PowerShell 執行原則改為 RemoteSigned。",
   };
-  actions["diagnose-title-path"] = {
-    kind: "fixed",
-    label: "診斷終端標題",
-    cmd: "cmd.exe",
-    options: { step: ["tab-sync"] },
-    args: [
-      "/c",
-      "start",
-      "",
-      "wt.exe",
-      "powershell.exe",
-      "-NoExit",
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      diagnoseTitlePathScript,
-    ],
-    description: "開啟 Windows Terminal，逐段檢查標題同步路徑。",
-  };
 }
 
 Object.assign(actions, {
@@ -395,16 +363,6 @@ Object.assign(actions, {
     description:
       "把先前搬進 ~/.jr-setup/quarantine 的舊 skill 與舊 CLI 刪掉。合併的還原點與 .bak 不動。",
   },
-  "diagnose-naming-block": {
-    kind: "fixed",
-    label: "診斷命名白名單",
-    cmd: process.execPath,
-    options: {
-      step: ["claude-namer", "skill-claude-handoff"],
-    },
-    args: [diagnoseNamingBlockScript],
-    description: "檢查命名指令卡在白名單、hook 或 Claude Code 內建防護。",
-  },
   "install-config-step": {
     kind: "fixed",
     label: "安裝這一步",
@@ -453,11 +411,9 @@ Object.assign(actions, {
     cmd: process.execPath,
     options: {
       case: [
-        "naming",
         "chained",
         "allowlist",
         "context",
-        "skill-rename",
         "skill-handoff",
         "skill-questions",
         "demo",
@@ -484,15 +440,6 @@ Object.assign(actions, {
     cmd: process.execPath,
     args: [openVaultRepoScript],
     description: "把筆記庫的 commit 歷史在瀏覽器開起來，證據在遠端不在本機。",
-  },
-  "verify-hooks-live": {
-    kind: "fixed",
-    label: "驗證自動命名",
-    cmd: process.execPath,
-    args: [verifyHooksLiveScript],
-    description:
-      "叫真的 Claude 跑一次，確認命名 hook 有被觸發、名字有寫進檔案。" +
-      "終端標題那一格 headless 驗不到，輸出會請學生回自己的終端看一眼。",
   },
   "login-claude": {
     kind: "fixed",

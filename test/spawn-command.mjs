@@ -137,7 +137,6 @@ try {
     "scripts/install-configs.mjs",
     "scripts/verify-behavior.mjs",
     "scripts/verify-hook-live.mjs",
-    "scripts/verify-hooks-live.mjs",
   ];
 
   for (const file of callers) {

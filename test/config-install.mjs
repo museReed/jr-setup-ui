@@ -19,6 +19,7 @@ import {
   mergeAgentHookRegistrations,
   hasHookRegistrations,
   removeHookRegistrations,
+  retireTargets,
   stepsForTools,
   transformStepSource,
 } from "../src/config-install.js";
@@ -39,10 +40,8 @@ try {
     // 退役那一列排在權限卡後面：先講「現在是怎麼設定的」，再處理「以前那個要移掉」。
     "hook",
     "claude-hud",
-    "tab-sync",
-    "claude-namer",
+    "naming-retire",
     "claude-monitor",
-    "skill-claude-auto-rename",
     "skill-claude-handoff",
     "skill-claude-structured-questions",
     "ext-frontend-design-claude",
@@ -57,9 +56,8 @@ try {
   assert.deepEqual(stepsForTools(["codex"], "darwin"), [
     "codex-config",
     "codex-agents",
-    "codex-namer",
+    "naming-retire",
     "codex-monitor",
-    "skill-codex-auto-rename",
     "skill-codex-handoff",
     "skill-codex-structured-questions",
     "ext-frontend-design-codex",
@@ -79,15 +77,11 @@ try {
     "claude-hud",
     "codex-config",
     "codex-agents",
-    "tab-sync",
-    "claude-namer",
+    "naming-retire",
     "claude-monitor",
-    "codex-namer",
     "codex-monitor",
-    "skill-claude-auto-rename",
     "skill-claude-handoff",
     "skill-claude-structured-questions",
-    "skill-codex-auto-rename",
     "skill-codex-handoff",
     "skill-codex-structured-questions",
     "ext-frontend-design-claude",
@@ -106,19 +100,22 @@ try {
   ]);
   assert.throws(() => stepsForTools([]));
   assert.throws(() => stepsForTools(["vim"]));
-  assert.equal(stepsForTools(["codex"], "darwin").includes("tab-sync"), false);
-  assert.equal(stepsForTools(["codex"], "linux").includes("tab-sync"), false);
-  assert.equal(stepsForTools(["codex"], "win32").includes("tab-sync"), false);
-  assert.equal(stepsForTools(["claude"], "darwin").includes("tab-sync"), true);
-  assert.equal(
-    stepsForTools(["claude", "codex"], "linux").includes("tab-sync"),
-    true,
-  );
+  // 清理那一列不分工具也不分平台：它要清的東西橫跨 Claude 與 Codex 兩邊，而且
+  // 只有「以前裝過的人」看得到（checkRetired 回 null 就整列消失）。
+  for (const tools of [["claude"], ["codex"], ["claude", "codex"]]) {
+    for (const platform of ["darwin", "linux", "win32"]) {
+      assert.equal(
+        stepsForTools(tools, platform).filter((id) => id === "naming-retire")
+          .length,
+        1,
+      );
+    }
+  }
   assert.deepEqual(
     stepsForTools(["claude"]),
     stepsForTools(["claude"], process.platform),
   );
-  ok("Codex-only 在所有平台都不裝 tab sync；只有 Claude 需要 watcher");
+  ok("自動命名的清理列每種組合都剛好出現一次");
 
   assert.equal(hookFileName("context-monitor", "linux"), "context-monitor.sh");
   assert.equal(hookFileName("context-monitor", "darwin"), "context-monitor.sh");
@@ -167,44 +164,33 @@ try {
   assert.equal(windowsCodexTemplate, codexTemplate);
   ok("Windows 與 POSIX 都保留 Codex 原生 thread title 設定");
 
-  // POSIX 這一步沒有要安裝的檔案了：分頁標題改由命名 hook 自己寫 OSC，watcher
-  // 整支不再啟動，所以 watcherSource / target 都是 undefined，只剩 rc 區塊。
-  const tabSync = describeStep("tab-sync", { ...AT, platform: "linux" });
-  assert.equal(tabSync.kind, "tab-sync");
-  assert.equal(tabSync.watcherSource, undefined);
-  assert.equal(tabSync.target, undefined);
-  assert.equal(tabSync.rcTarget, `${HOME}/.zshrc`);
-  assert.match(tabSync.rcBlock, /command claude "\$@"/);
-  assert.doesNotMatch(tabSync.rcBlock, /command codex "\$@"/);
-
-  // 少了這一行，Claude Code 自己寫的標題會蓋掉 hook 寫的名字，而事件驅動的頻率
-  // 搶不回來（macOS 實測）。它是這個做法的必要條件，不是可有可無的裝飾。
-  assert.match(
-    tabSync.rcBlock,
-    /CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command claude/,
+  // 自動命名下架之後，這一列做的事跟安裝相反：把以前裝過的殘留清掉。
+  // 兩個工具的 hook 註冊、兩個平台的 shell 區塊、白名單那一條，都要在清單裡——
+  // 漏掉哪一項，學生機器上就留著一個指向不存在檔案的 hook，每次靜靜失敗。
+  const retire = describeStep("naming-retire", { ...AT, platform: "linux" });
+  assert.equal(retire.kind, "retire");
+  assert(retire.files.includes(`${HOME}/.claude/hooks/set-session-name.sh`));
+  assert(retire.files.includes(`${HOME}/.codex/hooks/codex-session-namer.sh`));
+  assert(retire.files.includes(`${HOME}/.jr-setup/bin/ai-tab-sync.ps1`));
+  assert(retire.files.includes(`${HOME}/.local/bin/ai-tab-sync.sh`));
+  assert.deepEqual(
+    retire.targets.map((target) => target.settingsTarget),
+    [`${HOME}/.claude/settings.json`, `${HOME}/.codex/hooks.json`],
   );
-  // watcher 的痕跡要全部消失：sync 檔、背景執行、kill。留著任何一個都代表
-  // 「每秒無條件重寫」還在，看背景 agent 時標題又會被蓋回去。
-  assert.doesNotMatch(tabSync.rcBlock, /AI_TAB_SYNC_FILE/);
-  assert.doesNotMatch(tabSync.rcBlock, /ai-tab-sync/);
-  assert.doesNotMatch(tabSync.rcBlock, /kill /);
-
-  const windowsTabSync = describeStep("tab-sync", {
-    ...AT,
-    platform: "win32",
-  });
-  assert.equal(windowsTabSync.watcherSource, "skills/bin/ai-tab-sync.ps1");
-  assert.equal(windowsTabSync.target, `${HOME}/.jr-setup/bin/ai-tab-sync.ps1`);
-  assert.match(windowsTabSync.rcBlock, /Get-Command claude -CommandType Application/);
-  assert.doesNotMatch(windowsTabSync.rcBlock, /Get-Command codex -CommandType Application/);
-  // Windows 仍然走 watcher：那邊的 hook 是子行程，寫進去的標題一退出就被還原，只有
-  // 長壽的 watcher 留得住（見 docs/windows-tab-title-why-watcher.md）。這裡守著
-  // 「POSIX 拿掉不會順手把 Windows 也拿掉」。
-  //
-  // 這個區塊現在只包 claude——codex 改用 app-server 原生命名之後就搬出去了，所以直接
-  // 對整塊比對就是在驗 claude 那一段。
-  assert.match(windowsTabSync.rcBlock, /AI_TAB_SYNC_FILE/);
-  ok("POSIX 只剩 rc 區塊；Windows 只包 Claude，且仍走 watcher");
+  assert.deepEqual(
+    retire.rcBlocks.map((rc) => rc.target),
+    [
+      `${HOME}/.zshrc`,
+      `${HOME}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
+    ],
+  );
+  assert.equal(retire.allowRuleMarker, "set-session-name");
+  // 平台不影響清單：學生可能兩種都裝過（換機、重灌），少列一個平台就清不乾淨。
+  assert.deepEqual(
+    describeStep("naming-retire", { ...AT, platform: "win32" }).files,
+    retire.files,
+  );
+  ok("自動命名的清理列涵蓋兩個工具、兩個平台與白名單");
 
   for (const lang of ["zh-TW", "zh-CN", "en"]) {
     const template = readFileSync(
@@ -215,16 +201,6 @@ try {
     assert.match(template, /terminal_title = \["thread"\]/);
   }
   ok("三種語言的 Codex template 都顯示 thread 名稱與原生 terminal title");
-
-  // watcher 用 [Console]::Title 改標題，那個 API 只作用在自己所在的 console。
-  // -WindowStyle Hidden 會開一個新的 console，watcher 就改到自己的標題、碰不到
-  // 學生的分頁——全綠但標題不動（VM 實測）。共用 console 的是 -NoNewWindow。
-  assert(
-    !windowsTabSync.rcBlock.includes("-WindowStyle Hidden"),
-    "watcher 不能用 -WindowStyle Hidden 起，那會開新的 console",
-  );
-  assert.match(windowsTabSync.rcBlock, /-NoNewWindow/);
-  ok("Windows watcher 用 -NoNewWindow 起，跟終端共用同一個 console");
 
   // Windows 的狀態列走了兩輪才到位（VM 實測，兩次都是安靜地不出現）：
   //
@@ -249,49 +225,20 @@ try {
   assert.equal(hudMac.scriptTarget, null, "mac 那條照舊直接寫進 settings.json");
   ok("Windows 的狀態列由 node 當入口，mac 維持一行 bash");
 
-  const claudeHooks = describeStep("claude-namer", { ...AT, platform: "linux" });
   const claudeMonitor = describeStep("claude-monitor", {
     ...AT,
     platform: "linux",
   });
-  const codexHooks = describeStep("codex-namer", { ...AT, platform: "win32" });
   const codexMonitor = describeStep("codex-monitor", {
     ...AT,
     platform: "win32",
   });
 
-  // 命名 hook：兩支檔案（寫入腳本 + namer），兩筆註冊（工具跑完 + 送出訊息）。
-  assert.equal(claudeHooks.hookFiles.length, 2);
-  assert.equal(claudeHooks.registrations.length, 2);
-  assert.equal(claudeHooks.settingsTarget, `${HOME}/.claude/settings.json`);
-  assert(claudeHooks.namingAllowRule !== undefined);
-
-  // 監控 hook：一支檔案、一筆註冊，而且不需要白名單——它不叫模型執行任何東西。
+  // 監控 hook：一支檔案、一筆註冊，不需要白名單——它不叫模型執行任何東西。
   assert.equal(claudeMonitor.hookFiles.length, 1);
   assert.equal(claudeMonitor.registrations.length, 1);
-  assert.equal(claudeMonitor.namingAllowRule, undefined);
   assert.equal(claudeMonitor.supportFiles.length, 1);
 
-  assert.equal(codexHooks.settingsTarget, `${HOME}/.codex/hooks.json`);
-  assert.equal(codexHooks.namingAllowRule, undefined);
-  assert.equal(codexHooks.hookFiles.length, 5);
-  assert(codexHooks.hookFiles.every((file) => file.target.endsWith(".ps1")));
-  assert.equal(
-    codexHooks.windowsCodexProfile.target,
-    `${HOME}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
-  );
-  assert.match(codexHooks.windowsCodexProfile.block, /function codex/);
-  assert.match(codexHooks.windowsCodexProfile.block, /codex-shared-app-server\.ps1/);
-  assert.match(codexHooks.windowsCodexProfile.block, /function codex-server-restart/);
-  assert.match(codexHooks.windowsCodexProfile.block, /codex-server-restart\.ps1/);
-  assert.match(codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock, /AI_TAB_SYNC_FILE/);
-  const legacyProfile = `${windowsTabSync.rcBlock}\n\n${codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock}`;
-  const migratedProfile = removeLegacyCodexTabSyncBlock(
-    legacyProfile,
-    codexHooks.windowsCodexProfile.legacyCodexTabSyncBlock,
-  );
-  assert.match(migratedProfile, /Get-Command claude/);
-  assert.doesNotMatch(migratedProfile, /Get-Command codex/);
   // codex 的監控 hook 退役了：這一步現在描述的是「怎麼把它移除」，不是怎麼裝。
   assert.equal(codexMonitor.kind, "retire");
   assert.deepEqual(codexMonitor.files, [
@@ -304,18 +251,16 @@ try {
     describeStep("codex-monitor", { ...AT, platform: "darwin" }).files,
     [`${HOME}/.codex/hooks/codex-context-monitor.sh`],
   );
-  ok("命名帶自己的檔案與註冊；監控已退役，兩個平台各刪各的副檔名");
-
-  // 兩列共用同一個 settings 檔，靠檔名分辨。重裝其中一列不能掃掉另一列的註冊——
-  // 綁在一起時這件事不存在，拆開之後它是最容易靜默壞掉的地方。
-  const markers = new Set(claudeHooks.hookFiles.map((file) => file.base));
-  for (const file of claudeMonitor.hookFiles) {
-    assert(
-      !markers.has(file.base),
-      `${file.base} 同時屬於兩列，重裝會互相掃掉註冊`,
-    );
-  }
-  ok("命名與監控的檔名沒有交集，重裝不會互相掃掉");
+  // 單一 settingsTarget（舊形狀）與 targets 陣列（新形狀）都要讀得到，否則
+  // 退役步驟只清得掉其中一種。
+  assert.deepEqual(retireTargets(codexMonitor), [
+    {
+      settingsTarget: `${HOME}/.codex/hooks.json`,
+      markers: ["codex-context-monitor"],
+    },
+  ]);
+  assert.equal(retireTargets(retire).length, 2);
+  ok("監控已退役，兩個平台各刪各的副檔名；退役目標兩種形狀都讀得到");
 
   assert.throws(() => describeStep("claude-md", { ...AT, lang: "ja" }));
   assert.throws(() => describeStep("不存在的步驟", AT));
@@ -410,38 +355,30 @@ try {
       model: "opus",
     },
     {
-      registrations: claudeHooks.registrations,
-      hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
+      registrations: claudeMonitor.registrations,
+      hookMarkers: claudeMonitor.hookFiles.map((file) => file.base),
     },
   );
-  assert.equal(hasAgentHookRegistrations(agentRegistered, claudeHooks.registrations), true);
-  // 別人的那筆 + 命名 hook 的一筆
+  assert.equal(
+    hasAgentHookRegistrations(agentRegistered, claudeMonitor.registrations),
+    true,
+  );
+  // 別人的那筆 + 監控 hook 的一筆
   assert.equal(agentRegistered.hooks.PostToolUse.length, 2);
   assert.equal(agentRegistered.hooks.Stop.length, 1);
   assert.equal(agentRegistered.model, "opus");
 
+  // 重跑一次不能變成兩筆：學生重按安裝是常態。
   const agentRerun = mergeAgentHookRegistrations(agentRegistered, {
-    registrations: claudeHooks.registrations,
-    hookMarkers: claudeHooks.hookFiles.map((file) => file.base),
-  });
-  assert.equal(agentRerun.hooks.PostToolUse.length, 2);
-  assert.equal(agentRerun.hooks.UserPromptSubmit.length, 1);
-
-  // 接著裝監控那列：它不能把命名那筆掃掉，兩者要並存。
-  const bothInstalled = mergeAgentHookRegistrations(agentRerun, {
     registrations: claudeMonitor.registrations,
     hookMarkers: claudeMonitor.hookFiles.map((file) => file.base),
   });
+  assert.equal(agentRerun.hooks.PostToolUse.length, 2);
   assert.equal(
-    hasAgentHookRegistrations(bothInstalled, claudeHooks.registrations),
+    hasAgentHookRegistrations(agentRerun, claudeMonitor.registrations),
     true,
   );
-  assert.equal(
-    hasAgentHookRegistrations(bothInstalled, claudeMonitor.registrations),
-    true,
-  );
-  assert.equal(bothInstalled.hooks.PostToolUse.length, 3);
-  ok("命名與監控分兩次裝可重跑，彼此不覆蓋，也不動使用者原本的 hook");
+  ok("hook 安裝可重跑，不會變成兩筆，也不動使用者原本的 hook");
 
   // ⚠️ hook 的檔名是**回訪學生的升級路徑**，改名等於在他機器上留一條孤兒註冊。
   //
@@ -457,41 +394,13 @@ try {
   //（現成的做法在 describeStep 的 kind: "retire"）。
   const HOOK_BASES = {
     darwin: {
-      "claude-namer": ["set-session-name", "session-auto-namer"],
       "claude-monitor": ["context-monitor"],
-      "codex-namer": [
-        "codex-session-namer",
-        "codex-session-name-set",
-        "codex-server-restart",
-        "codex-version-guard",
-      ],
     },
     linux: {
-      "claude-namer": ["set-session-name", "session-auto-namer"],
       "claude-monitor": ["context-monitor"],
-      "codex-namer": [
-        "codex-session-namer",
-        "codex-session-name-set",
-        "codex-server-restart",
-      ],
     },
     win32: {
-      "claude-namer": [
-        "set-session-name",
-        "session-auto-namer",
-        // Windows 的命名指令不能直接叫 powershell（白名單驗不過巢狀直譯器），
-        // 所以多一支 bash 薄殼。它落地時**蓋掉 set-session-name.sh 這個檔名**，
-        // 所以清舊註冊靠的仍然是 set-session-name 這個 marker。
-        "set-session-name-shim",
-      ],
       "claude-monitor": ["context-monitor"],
-      "codex-namer": [
-        "codex-session-namer",
-        "codex-session-name-set",
-        "codex-app-server-common",
-        "codex-shared-app-server",
-        "codex-server-restart",
-      ],
     },
   };
 
@@ -513,6 +422,12 @@ try {
   assert.deepEqual(
     describeStep("codex-monitor", { ...AT, platform: "darwin" }).markers,
     ["codex-context-monitor"],
+  );
+  assert.deepEqual(
+    retireTargets(describeStep("naming-retire", { ...AT, platform: "darwin" })).map(
+      (target) => target.markers,
+    ),
+    [["set-session-name", "session-auto-namer"], ["codex-session-namer"]],
   );
   ok("hook 檔名與退役 marker 都釘住了，改名時測試會紅");
 
