@@ -477,14 +477,9 @@ function skillStep(id, home, lang) {
     });
   }
 
-  // Codex 的 handoff 會叫模型去 Read _shared/codex-session-rename.md。那個檔案沒
-  // 跟著裝的話，skill 讀得到、改名那半段卻是死的——附屬檔案跟著用得到它的那一列走。
-  if (agent === "codex" && name === "handoff") {
-    files.push({
-      source: "skills/skill-files/codex/_shared/codex-session-rename.md",
-      target: `${root}/_shared/codex-session-rename.md`,
-    });
-  }
+  // ⚠️ Codex 的 handoff 原本還要帶一份 _shared/codex-session-rename.md（改名那半段
+  // 的作法寫在那裡）。改名隨自動命名一起下架，那個檔案封存在 archive/auto-rename/
+  // ——留著這段的話安裝會去找一個不存在的素材，整列 exit 1（VM 實測撞到）。
 
   // vault-sync 那支 SKILL.md 裡的每一條指令都指著筆記庫。留成 VAULT_PATH 的話
   // 模型會照字面打出 `git -C VAULT_PATH status`——那是一個不存在的資料夾。

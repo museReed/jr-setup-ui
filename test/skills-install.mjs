@@ -79,13 +79,27 @@ assert.equal(
   codexHandoff.files[0].target,
   `${HOME}/.agents/skills/handoff/SKILL.md`,
 );
-// handoff 的 SKILL.md 會叫模型去 Read _shared，沒跟著裝的話改名那半段是死的。
-assert(
-  codexHandoff.files.some((file) =>
-    file.target.endsWith("/_shared/codex-session-rename.md"),
-  ),
-  "Codex 的 handoff 要一起帶 _shared",
-);
+// ⚠️ 迴歸：安裝清單裡的每個素材都要真的存在。
+//
+// handoff 原本會多帶一份 _shared/codex-session-rename.md（改名那半段的作法）。那個
+// 檔案隨自動命名封存到 archive/auto-rename/，而清單忘了跟著改——結果是嚮導按下去
+// 直接 exit 1，畫面上寫「嚮導內建的素材少了 …，請重新下載嚮導再試一次」，學生會
+// 以為是自己下載壞了（2026-09-20 mac VM 實測撞到）。
+for (const name of SKILL_NAMES) {
+  for (const agent of ["claude", "codex"]) {
+    const step = describeStep(skillStepId(agent, name), {
+      lang: "zh-TW",
+      home: HOME,
+    });
+
+    for (const file of step.files) {
+      assert(
+        existsSync(new URL(`../materials/${file.source}`, import.meta.url)),
+        `${agent} 的 ${name} 要裝一個不存在的素材：${file.source}`,
+      );
+    }
+  }
+}
 console.log("ok - Claude 與 Codex 的 skill 各自裝到自己的目錄");
 
 // --- $HOME 代換 ---

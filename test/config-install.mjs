@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  STEP_IDS,
   countInstalledRules,
   describeStep,
   expandAllowRules,
@@ -261,6 +262,42 @@ try {
   ]);
   assert.equal(retireTargets(retire).length, 2);
   ok("監控已退役，兩個平台各刪各的副檔名；退役目標兩種形狀都讀得到");
+
+  // ⚠️ 迴歸：每一步要複製的素材都得真的存在。
+  //
+  // 下架 auto-rename 時，Codex 的 handoff 還帶著一份已經被封存的
+  // _shared/codex-session-rename.md。安裝當場 exit 1，畫面上寫「嚮導內建的素材少了
+  // …，請重新下載嚮導再試一次」——學生會以為是自己下載壞了（2026-09-20 mac VM 實測）。
+  //
+  // 三個平台都掃：有些步驟的素材是按平台挑的（.sh / .ps1）。
+  const materialsRoot = path.join(REPO_ROOT, "materials");
+  const missingSources = [];
+
+  for (const id of STEP_IDS) {
+    for (const platform of ["darwin", "linux", "win32"]) {
+      const step = describeStep(id, { ...AT, platform });
+      const sources = [
+        step.source,
+        step.watcherSource,
+        ...(step.files ?? []).map((file) => file.source),
+        ...(step.hookFiles ?? []).map((file) => file.source),
+        ...(step.supportFiles ?? []).map((file) => file.source),
+      ].filter(Boolean);
+
+      for (const source of sources) {
+        if (!existsSync(path.join(materialsRoot, source))) {
+          missingSources.push(`${id}（${platform}）→ ${source}`);
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(
+    missingSources,
+    [],
+    `這些步驟要裝一個不存在的素材，學生按下去會 exit 1：\n${missingSources.join("\n")}`,
+  );
+  ok("每一步要複製的素材在三個平台都真的存在");
 
   assert.throws(() => describeStep("claude-md", { ...AT, lang: "ja" }));
   assert.throws(() => describeStep("不存在的步驟", AT));
