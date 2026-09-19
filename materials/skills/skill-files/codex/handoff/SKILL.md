@@ -17,8 +17,7 @@ user-invocable: true
 2. 判斷 handoff 類型（continuation / investigation / reference）
 3. 產出交接文件，包含：已完成、進行中、下一步、必讀檔案
 4. Commit handoff 文件到當前 branch
-5. 改 session name 為 📦 前綴（標記已交接）
-6. 回報結尾輸出單行起始 prompt（絕對路徑），給新 session 直接複製
+5. 回報結尾輸出單行起始 prompt（絕對路徑），給新 session 直接複製
 
 Key rules:
 - 「已完成的工作」≤ 10 行，細節指向「必讀檔案」
@@ -82,25 +81,7 @@ git commit -m "docs: add session handoff — {topic}"
 
 Commit 到當前 branch，不要切換 branch。
 
-### Step 5: 改 Session Name + 回報
-
-#### 5a: 改 session name（📦 前綴標記已交接）
-
-改名方法 → Read `~/.agents/skills/_shared/codex-session-rename.md`。唯一步驟＝寫 relay 檔：
-
-```bash
-mkdir -p /tmp/codex-session-namer && printf '%s\n' '📦 {topic}' > /tmp/codex-session-namer/${CODEX_THREAD_ID:-$PPID}.pending
-```
-
-那個目錄不保證存在，所以 `mkdir -p` 不能省：它是 hook 跑起來時建的，而 `/tmp` 隨時
-可能被系統清掉。skill 比 hook 先被叫到的那一次（例如 hook 那張卡還沒裝），沒有它就
-會收到 `no such file or directory`，而畫面上只看得到「標題沒變」。
-
-hook 會在下一個事件呼叫共用 app-server 的 `thread/name/set`；macOS、Linux 與
-Windows 都由 Codex 原生更新 sidebar、status line 與分頁標題。
-不要直接改 SQLite 或寫 tab-sync 檔。
-
-#### 5b: 回報
+### Step 5: 回報
 
 回報格式（最後一行必須是可直接複製的單行起始 prompt，路徑用絕對路徑）：
 
@@ -119,7 +100,5 @@ Branch: {current_branch}
 | 已完成的工作寫成長篇報告 | 新 session 花大量 context 讀 | ≤ 10 行，detail 指向必讀檔案 |
 | 缺「下一步」 | 新 session 不知道做什麼 | 必填，寫具體動作 |
 | 必讀檔案只列路徑 | 新 session 不知道為什麼要讀 | 每項附原因 |
-| 自行 sqlite3 UPDATE 改名 | 繞過平台對應的 hook 流程，sidebar 與分頁可能不同步 | Step 5a 寫 relay 檔 |
-| 用 ORDER BY updated_at_ms 找 session | 多 session 同時開會改錯 | relay 檔用 `${CODEX_THREAD_ID}` key，hook 自己定位 |
 | 起始 prompt 重述整份交接內容 | 浪費輸出，新 session 讀檔就有 | 只給 `讀 {絕對路徑}` 一行 |
 | 起始 prompt 用相對路徑 | 新 session cwd 不同會 404 | 一律絕對路徑 |
