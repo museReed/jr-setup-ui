@@ -309,7 +309,6 @@ process.stdin.on("end", () => {
     "claude-hud",
     // 底部狀態列：設定檔寫對了但 Codex 沒重開，那條還是舊的，而檔案比對一路都綠。
     "codex-config",
-    "skill-codex-handoff",
     "skill-claude-structured-questions",
     "skill-codex-structured-questions",
     "demo-claude",

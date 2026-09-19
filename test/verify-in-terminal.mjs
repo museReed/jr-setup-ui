@@ -257,22 +257,32 @@ for (const agent of ["claude", "codex"]) {
 }
 console.log("ok - handoff 判定用的章節名真的在 SKILL.md 裡");
 
-// Codex 的改名是兩段式：模型先寫中繼檔，要等「下一次 hook 事件」才套上標題。所以
-// 每個會改名的情境都得叫它改完再做一次工具呼叫。漏掉的那一格會長成「檔案寫得出來、
-// 標題不動」，看起來像 skill 壞掉（naming 與 skill-rename 早就補了，skill-handoff
-// 漏掉，VM 實測才發現）。
-const RENAME_CASES = ["naming", "skill-rename", "skill-handoff"];
-assert.equal(
-  source.split("讓 hook 有機會把名字套用上去").length - 1,
-  RENAME_CASES.length,
-  `會改名的 ${RENAME_CASES.length} 個情境都要補 Codex 的第二次工具呼叫`,
+// ⚠️ 這裡原本守著「每個會改名的情境都要補 Codex 的第二次工具呼叫」：Codex 的改名
+// 是兩段式，模型先寫中繼檔、要等下一次 hook 事件才套上標題，漏掉那一步就會長成
+// 「檔案寫得出來、標題不動」。自動命名下架之後沒有情境會改名了，所以改成反向守衛
+// ——沒有人該再叫模型去跑那條指令（archive/auto-rename/）。
+assert(
+  !source.includes("讓 hook 有機會把名字套用上去"),
+  "自動命名已下架，驗證情境不該再等 hook 套用名字",
 );
-console.log("ok - 每個會改名的情境都給 Codex 補了第二次工具呼叫");
+// 盯的是「叫模型去做」的那些句子，不是註解——註解裡提到當初為什麼踩空是史料，
+// 留著有用（見 resultDirNote 上面那段）。
+for (const instruction of [
+  "把這個 session 改名",
+  "那條改名指令",
+  "幫這個 session 命名",
+]) {
+  assert(
+    !source.includes(instruction),
+    `驗證情境不該再叫模型「${instruction}」——自動命名已下架`,
+  );
+}
+console.log("ok - 驗證情境不再依賴已下架的自動命名");
 
 // Codex 的 SKILL.md 標了 user-invocable，要用 `$名字` 才會真的載入。只寫「請使用
 // handoff skill」的話它當成一般描述，自己憑印象寫一份交出來——文件長得像、SKILL.md
 // 裡的步驟一個都沒跑（mac VM 實測：交接檔有、改名整段沒提，/tmp 沒有任何 relay 檔）。
-for (const skill of ["auto-rename", "handoff", "structured-questions"]) {
+for (const skill of ["handoff", "structured-questions"]) {
   assert(
     source.includes(`$${skill} `),
     `Codex 那一路要用 $${skill} 呼叫，不能只寫「請使用 ${skill} skill」`,
@@ -310,56 +320,8 @@ console.log("ok - Codex 用 $ 形式呼叫 skill，不是自然語言描述");
   console.log("ok - 開終端之前先用同一種 shell 確認 agent 指令在不在");
 }
 
-// 標題要活得過這支 launcher 自己後面跑的東西。
-//
-// launcher 是 `zsh -i`（要讀 .zshrc 才有 wrapper），於是使用者的主題也跟著載入。
-// oh-my-zsh 會在每個指令執行前把標題改成那個指令的名字——實測在裝了 powerlevel10k
-// 的機器上，學生看到的標題是 `echo`，也就是腳本最後一個指令。
-//
-// ⚠️ 這兩道保險在 d474acf 隨著舊的標題 launcher 一起被拿掉過。它們回來了，但成立的
-// 理由換了一個，所以判準也換了地方——照舊的形狀搬回來會守到不存在的東西：
-//
-//   以前  launcher 自己呼叫命名腳本寫標題 → 防的是「我們寫的標題被後面的指令蓋掉」
-//   現在  launcher 只叫 claude，標題是 hook / watcher 寫的 → 防的是兩件事：
-//         ① macOS：claude 結束後 shell 主題的 precmd 把標題改掉，而學生正是在那
-//            之後才低頭看（合併卡的成果判定有一半是人眼）
-//         ② Windows：讀回標題那一行必須緊接在 claude 之後，中間插任何東西，讀到的
-//            就是那個東西留下的字
-//
-// 兩者缺一不可。
-{
-  assert.match(
-    source,
-    /naming: \{[\s\S]*?env: \(\) => \(\{ DISABLE_AUTO_TITLE: "true" \}\)/,
-    "命名那一格要關掉 shell 主題的自動標題，不然 claude 結束後標題會被蓋掉",
-  );
-
-  // ⚠️ 取樣那支必須排在 ${body} **之前**。`claude '一句話'` 是互動式的，模型答完
-  // 那個 session 還停在提示字元——排在後面的東西永遠輪不到（第一版就是這樣寫的，
-  // Windows VM 上實測：畫面全對，那一列卻卡在驗證中直到逾時）。
-  const samplerAt = source.indexOf("${startSampler}${body}");
-  assert(
-    samplerAt >= 0,
-    "取樣那支要排在 claude 之前——排在後面的話 claude 不結束就永遠輪不到",
-  );
-
-  // -NoNewWindow：取樣的行程要跟 claude 共用同一個 console，才讀得到學生看到的
-  // 那一串。開新視窗的話它讀到的是自己那個 console 的標題，永遠對不上。
-  const startAt = source.indexOf("Start-Process powershell.exe -ArgumentList");
-  assert(startAt >= 0, "找不到啟動取樣那一行");
-  assert(
-    source.slice(startAt, startAt + 400).includes("-NoNewWindow"),
-    "取樣要用 -NoNewWindow 共用 console，開新視窗讀到的是別人的標題",
-  );
-
-  const readbackAt = source.indexOf("[Console]::Title, (New-Object");
-  assert(readbackAt >= 0, "找不到取樣讀標題那一行");
-  assert(
-    source.slice(readbackAt).includes("UTF8Encoding $false"),
-    "名字檔是 UTF-8 不帶 BOM，取樣寫下的標題要用同一種編碼，否則字串比對永遠不相等",
-  );
-
-  console.log(
-    "ok - macOS 關掉主題自動標題、Windows 的標題取樣排在 claude 之前且共用 console",
-  );
-}
+// ⚠️ 這裡原本有一整組「標題活得過 launcher」的守衛：macOS 要關掉 shell 主題的
+// 自動標題（DISABLE_AUTO_TITLE）、Windows 的標題取樣要排在 claude 之前並共用
+// console。那兩件事只為自動命名那一格存在，隨它一起下架（archive/auto-rename/）。
+// 復原時要一起接回來——兩者都是 VM 上實測出來的，缺一格就會變成「畫面全對、
+// 驗證卡到逾時」。

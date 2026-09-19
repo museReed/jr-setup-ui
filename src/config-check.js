@@ -529,7 +529,6 @@ export const VERIFICATION = {
   },
   "skill-codex-handoff": {
     terminal: { case: "skill-handoff", agent: "codex" },
-    eye: "那個視窗的分頁標題最後變成「📦 ...」",
   },
   // 這一支的效果是「跳出選項讓人選」，副產物是一個要人回答的 UI——程式抓不到，
   // headless 更是連 UI 都沒有。所以它是唯一走人眼判定的 skill。
