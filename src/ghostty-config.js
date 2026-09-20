@@ -46,14 +46,16 @@ export function ghosttyBlock() {
     "notify-on-command-finish-after = 5s",
     "notify-on-command-finish-action = bell,notify",
     "",
-    "# ⚠️ 關掉 Ghostty 自己的標題功能（預設清單裡有 title）。",
+    "# shell integration 的功能清單。",
     "#",
-    "# 它會在每一次 prompt 把標題改成目前的指令或目錄，而那正好會蓋掉「分頁自己報上",
-    "# 名字」那張卡裝的東西——命名 hook 寫進去的名字撐不過下一個 prompt。",
+    "# ⚠️ title 留著：它讓 Ghostty 在每個 prompt 把分頁標題改成目前的指令或目錄，",
+    "# 是學生唯一「分頁上看得出這格在幹嘛」的東西。",
     "#",
-    "# 這裡把整份清單寫出來、只把 title 換成 no-title，不是只寫一個 no-title：那樣",
-    "# 其他幾項算不算保留沒有明確定義，寫全比較不會出意外。",
-    "shell-integration-features = cursor,no-sudo,no-title,no-ssh-env,no-ssh-terminfo,path",
+    "# 曾經改成 no-title，那是為了讓位給自動命名寫進去的名字；自動命名下架之後",
+    "# （見 jr-setup-ui 的 archive/auto-rename/），關掉它只會讓學生什麼都看不到。",
+    "#",
+    "# 這裡把整份清單寫出來，不是只寫一項：那樣其他幾項算不算保留沒有明確定義。",
+    "shell-integration-features = cursor,no-sudo,title,no-ssh-env,no-ssh-terminfo,path",
   ].join("\n");
 }
 

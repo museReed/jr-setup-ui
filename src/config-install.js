@@ -8,8 +8,9 @@
 export const LANGUAGES = ["zh-TW", "zh-CN", "en"];
 export const TOOLS = ["claude", "codex"];
 
-// 核心三件套。一個 skill 一列：壞了看得出來是哪一支，重裝也只重裝那一支。
-export const SKILL_NAMES = ["auto-rename", "handoff", "structured-questions"];
+// 一個 skill 一列：壞了看得出來是哪一支，重裝也只重裝那一支。
+// auto-rename 已下架（封存在 archive/auto-rename/，復原看那裡的 RESTORE.md）。
+export const SKILL_NAMES = ["handoff", "structured-questions"];
 
 // skill 的卡片標題就是 skill 的名字。
 //
@@ -17,7 +18,6 @@ export const SKILL_NAMES = ["auto-rename", "handoff", "structured-questions"];
 // skill 不一樣：他要打那個名字才叫得動（Codex 那邊是 $handoff），標題不寫名字的話
 // 學生知道有這個功能卻不知道怎麼呼叫。做什麼用的移到描述裡。
 const SKILL_LABELS = {
-  "auto-rename": "auto-rename",
   "vault-sync": "vault-sync",
   handoff: "handoff",
   "structured-questions": "structured-questions",
@@ -227,10 +227,8 @@ export const STEP_IDS = [
   "claude-hud",
   "codex-config",
   "codex-agents",
-  "tab-sync",
-  "claude-namer",
+  "naming-retire",
   "claude-monitor",
-  "codex-namer",
   "codex-monitor",
   ...CLAUDE_SKILL_STEPS,
   ...CODEX_SKILL_STEPS,
@@ -282,13 +280,12 @@ export function stepsForTools(tools, platform = process.platform) {
   return [
     ...(selected.includes("claude") ? CLAUDE_STEPS : []),
     ...(selected.includes("codex") ? CODEX_STEPS : []),
-    ...(selected.includes("claude") ? ["tab-sync"] : []),
-    // 命名與 context 監控拆開：兩者的檔案、註冊、驗證方式都不一樣，綁在一起的話
-    // 其中一個壞掉會拖著另一個一起變黃，學生也不知道要重裝哪個。
-    ...(selected.includes("claude") ? ["claude-namer", "claude-monitor"] : []),
-    ...(selected.includes("codex") ? ["codex-namer", "codex-monitor"] : []),
-    // skill 排在 hook 後面：auto-rename 那支手動叫的是命名 hook 的腳本，hook 沒裝
-    // 好的話 skill 裝了也叫不動。
+    // 自動命名整套下架（見 archive/auto-rename/RESTORE.md）。這一列只對以前裝過
+    // 的人出現，做的事是把殘留清掉；沒裝過的人看不到它。不分工具，因為它要清的
+    // 東西橫跨 Claude 與 Codex 兩邊。
+    "naming-retire",
+    ...(selected.includes("claude") ? ["claude-monitor"] : []),
+    ...(selected.includes("codex") ? ["codex-monitor"] : []),
     ...(selected.includes("claude") ? CLAUDE_SKILL_STEPS : []),
     ...(selected.includes("codex") ? CODEX_SKILL_STEPS : []),
     ...(selected.includes("claude") ? externalStepsFor("claude") : []),
@@ -332,6 +329,27 @@ export function hasMarkedBlock(content, marker) {
   return startAt !== -1 && endAt > startAt;
 }
 
+// 退役用的反向操作：把整段標記區塊連同標記一起拿掉。標記不成對就原樣回傳——
+// 退役是善後，不該因為學生手動編輯過 rc 檔就中斷。
+export function removeMarkedBlock(content, marker) {
+  const { start, end } = blockMarkers(marker);
+  const startAt = content.indexOf(start);
+  const endAt = content.indexOf(end);
+
+  if (startAt === -1 || endAt < startAt) {
+    return content;
+  }
+
+  const before = content.slice(0, startAt).replace(/\s*$/, "");
+  const after = content.slice(endAt + end.length).replace(/^\s*/, "");
+
+  if (before.length === 0) {
+    return after.length === 0 ? "" : `${after}\n`;
+  }
+
+  return after.length === 0 ? `${before}\n` : `${before}\n\n${after}\n`;
+}
+
 export function removeLegacyCodexTabSyncBlock(content, legacyBlock) {
   return content.replace(legacyBlock, "");
 }
@@ -364,105 +382,6 @@ export function isInteractiveInvocation(args) {
   return !args.some((arg) => NON_INTERACTIVE_ARGS.has(arg));
 }
 
-// POSIX 不再需要 watcher。分頁標題由命名 hook 自己寫 OSC 進 /dev/ttysNNN——
-// set-session-name.sh 在命名的當下寫一次，session-auto-namer.sh 每個 hook 事件再
-// 寫一次，跟 watcher 用的是同一招。
-//
-// 差別在頻率，而那正是重點：watcher 每秒無條件重寫，所以在這個分頁裡看背景 agent
-// 時，Claude Code 剛寫進去的 agent 名字會在一秒內被蓋回本分頁的名字（畫面上就是
-// 「閃一下正確名字又跳回去」）。改成事件驅動之後，看 agent 期間本 session 沒有 hook
-// 事件，也就沒人去蓋，agent 的名字留得住——而那個名字本來就是 auto-rename 寫進
-// job state 的名字。
-//
-// CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 是必要條件，不是可選的：少了它，Claude Code
-// 自己寫的標題會蓋掉 hook 寫的名字，而事件驅動的頻率搶不回來（macOS 實測 2026-08-19，
-// 有設才穩定）。
-//
-// ⚠️ 用指令前綴而不是 export：export 會讓這個 shell 之後開的每個程序都拿到。前綴仍
-// 會被 claude 的子程序繼承（包含它可能生出來的 daemon），這一點擋不掉——萬一 daemon
-// 拿到，底下的背景 agent 就不再寫標題，看 agent 時分頁會停在本分頁的名字。那等於改動
-// 前的結果（只是不閃），不會更糟，所以沒有為它多做防護。
-//
-// Windows 不能照做，而且理由是結構性的：那邊改標題靠 SetConsoleTitle，那是 console 的
-// 行程狀態，而 hook 是被 `powershell.exe -File` 叫起來的子行程——host 一退出標題就被
-// 還原，等於沒寫。標題要留得住，只能靠一個長壽的、待在同一個 console 裡的行程，那就是
-// watcher 本身。2026-08-20 在 Windows 上實測過三種情境，記在
-// docs/windows-tab-title-why-watcher.md，不要再推導一次。
-function posixTabSyncFunction(command) {
-  return `${command}() {
-  CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 command ${command} "$@"
-}`;
-}
-
-// watcher 改標題用的是 [Console]::Title，那個 API 作用在「自己所在的 console」。
-// -WindowStyle Hidden 會開一個新的 console，watcher 於是改到自己的標題、碰不到
-// 學生的分頁——安裝看起來全綠、名字也寫進檔案了，就是標題不動（VM 實測 A 無效
-// B 有效）。-NoNewWindow 共用同一個 console，而且一樣不會冒出黑框。
-function powershellTabSyncFunction(command, watcherTarget) {
-  return `function ${command} {
-  param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
-  $commandCandidates = @(Get-Command ${command} -CommandType Application -All -ErrorAction SilentlyContinue | Where-Object { Test-Path -LiteralPath $_.Source -PathType Leaf })
-  $realCommandPath = @($commandCandidates | Where-Object { [System.IO.Path]::GetExtension($_.Source) -in @('.exe', '.com') } | ForEach-Object { $_.Source })[0]
-  if ($null -eq $realCommandPath) {
-    $realCommandPath = @($commandCandidates | ForEach-Object { $_.Source })[0]
-  }
-  if ($null -eq $realCommandPath) {
-    Write-Host "找不到可執行的 ${command}，請重新安裝後再試。"
-    return
-  }
-  if ($InvocationArgs | Where-Object { $_ -in @('-p', 'exec', '--version', '--help') }) {
-    & $realCommandPath @InvocationArgs
-    return
-  }
-
-  $syncFile = Join-Path ([System.IO.Path]::GetTempPath()) "jr-tab-sync-${command}-$PID-$([Guid]::NewGuid().ToString('N')).txt"
-  [System.IO.File]::WriteAllText($syncFile, '(等待命名)', [System.Text.Encoding]::UTF8)
-  $previousSyncFile = $env:AI_TAB_SYNC_FILE
-  $env:AI_TAB_SYNC_FILE = $syncFile
-  $watcher = Start-Process powershell.exe -ArgumentList "-NoProfile -File \`"${watcherTarget}\`" \`"$syncFile\`" $PID" -NoNewWindow -PassThru
-
-  try {
-    & $realCommandPath @InvocationArgs
-    $commandExitCode = $LASTEXITCODE
-  } finally {
-    Stop-Process -Id $watcher.Id -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $syncFile -Force -ErrorAction SilentlyContinue
-    $env:AI_TAB_SYNC_FILE = $previousSyncFile
-  }
-  $global:LASTEXITCODE = $commandExitCode
-}`;
-}
-
-function tabSyncBlock(platform, watcherTarget) {
-  if (platform !== "win32") {
-    return posixTabSyncFunction("claude");
-  }
-
-  return powershellTabSyncFunction("claude", watcherTarget);
-}
-
-function windowsCodexAppServerBlock(launcherTarget, restartTarget) {
-  const quotedTarget = launcherTarget.replaceAll("'", "''");
-  const quotedRestart = restartTarget.replaceAll("'", "''");
-  return `function codex {
-  param([Parameter(ValueFromRemainingArguments = $true)][object[]]$InvocationArgs)
-  & '${quotedTarget}' @InvocationArgs
-  $global:LASTEXITCODE = $LASTEXITCODE
-}
-
-function codex-server-restart {
-  & '${quotedRestart}'
-  $global:LASTEXITCODE = $LASTEXITCODE
-}`;
-}
-
-function posixCodexVersionGuardBlock(guardTarget) {
-  const quotedTarget = guardTarget.replaceAll("'", "'\"'\"'");
-  return `codex() {
-  '${quotedTarget}' "$@"
-}`;
-}
-
 function hookCommand(target, platform, args = []) {
   const command =
     platform === "win32"
@@ -474,34 +393,12 @@ function hookCommand(target, platform, args = []) {
 // 命名 hook 與 context 監控 hook 各自一列。共用同一個 settings 檔，靠 hookMarkers
 // 分辨誰是誰——兩邊的檔名沒有交集，所以重裝其中一個不會掃掉另一個的註冊。
 const AGENT_HOOK_STEPS = {
-  "claude-namer": {
-    label: "對話自己取名字",
-    agent: "claude",
-    bases: ["set-session-name", "session-auto-namer"],
-    events: [
-      { event: "PostToolUse", base: "session-auto-namer", args: [] },
-      { event: "UserPromptSubmit", base: "session-auto-namer", args: ["prompt"] },
-    ],
-  },
   "claude-monitor": {
     label: "快記不住前面時提醒你",
     agent: "claude",
     bases: ["context-monitor"],
     events: [{ event: "PostToolUse", base: "context-monitor", args: [] }],
     supportFiles: ["skills/model-context-windows-cache.json"],
-  },
-  "codex-namer": {
-    label: "Codex 對話自己取名字",
-    agent: "codex",
-    bases: ["codex-session-namer"],
-    events: [
-      { event: "PostToolUse", base: "codex-session-namer", args: [] },
-      {
-        event: "UserPromptSubmit",
-        base: "codex-session-namer",
-        args: ["prompt"],
-      },
-    ],
   },
   "codex-monitor": {
     label: "Codex 快記不住前面時提醒你",
@@ -524,95 +421,7 @@ function agentHooks(id, home, platform) {
       target: `${agentDir}/hooks/${file}`,
     };
   });
-  if (id === "codex-namer") {
-    if (platform === "win32") {
-      hookFiles.push(
-        {
-          base: "codex-session-name-set",
-          source: "skills/hooks/codex-session-name-set.ps1",
-          target: `${agentDir}/hooks/codex-session-name-set.ps1`,
-        },
-        {
-          base: "codex-app-server-common",
-          source: "skills/hooks/codex-app-server-common.ps1",
-          target: `${agentDir}/hooks/codex-app-server-common.ps1`,
-        },
-        {
-          base: "codex-shared-app-server",
-          source: "skills/hooks/codex-shared-app-server.ps1",
-          target: `${agentDir}/hooks/codex-shared-app-server.ps1`,
-        },
-        {
-          base: "codex-server-restart",
-          source: "skills/hooks/codex-server-restart.ps1",
-          target: `${agentDir}/hooks/codex-server-restart.ps1`,
-        },
-      );
-    } else {
-      hookFiles.push(
-        {
-          base: "codex-session-name-set",
-          source: "skills/hooks/codex-session-name-set.py",
-          target: `${agentDir}/hooks/codex-session-name-set.py`,
-        },
-        {
-          base: "codex-server-restart",
-          source: "skills/hooks/codex-server-restart.sh",
-          target: `${home}/.local/bin/codex-server-restart`,
-        },
-        ...(platform === "darwin"
-          ? [
-              {
-                base: "codex-version-guard",
-                source: "skills/hooks/codex-version-guard.sh",
-                target: `${agentDir}/hooks/codex-version-guard.sh`,
-              },
-            ]
-          : []),
-      );
-    }
-  }
-  // Windows 的命名指令若直接叫 powershell，Claude Code 會拒絕用白名單放行
-  // （原文：Command spawns a nested PowerShell process which cannot be validated），
-  // 而「以後不要再問」寫下的規則含 session id，下次必失效。多裝一支 bash 薄殼把
-  // powershell 藏進去，模型看到的就只是「執行一支腳本」，跟 macOS 同形狀。
-  if (isClaude && platform === "win32" && bases.includes("set-session-name")) {
-    hookFiles.push({
-      base: "set-session-name-shim",
-      source: "skills/hooks/set-session-name-shim.sh",
-      target: `${agentDir}/hooks/set-session-name.sh`,
-    });
-  }
-
   const byBase = Object.fromEntries(hookFiles.map((file) => [file.base, file]));
-  // 白名單放行的是模型真正會跑的那支：Windows 是薄殼，其他平台就是腳本本身。
-  const namingTarget = (byBase["set-session-name-shim"] ?? byBase["set-session-name"])
-    ?.target;
-  const windowsCodexProfile =
-    id === "codex-namer" && platform === "win32"
-      ? {
-          target: `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
-          marker: CODEX_APP_SERVER_MARKER,
-          block: windowsCodexAppServerBlock(
-            byBase["codex-shared-app-server"].target,
-            byBase["codex-server-restart"].target,
-          ),
-          legacyCodexTabSyncBlock: powershellTabSyncFunction(
-            "codex",
-            `${home}/.jr-setup/bin/ai-tab-sync.ps1`,
-          ),
-        }
-      : undefined;
-  const posixCodexProfile =
-    id === "codex-namer" && platform === "darwin"
-      ? {
-          target: `${home}/.zshrc`,
-          marker: CODEX_VERSION_GUARD_MARKER,
-          block: posixCodexVersionGuardBlock(
-            byBase["codex-version-guard"].target,
-          ),
-        }
-      : undefined;
   const registrations = spec.events.map((entry) => ({
     event: entry.event,
     command: hookCommand(byBase[entry.base].target, platform, entry.args),
@@ -627,16 +436,11 @@ function agentHooks(id, home, platform) {
     settingsTarget: isClaude
       ? `${agentDir}/settings.json`
       : `${agentDir}/hooks.json`,
-    // 只有 Claude 的命名指令要進白名單；Codex 沒有對應的權限層，監控 hook 也不
-    // 需要模型去執行任何東西。
-    namingAllowRule: namingTarget === undefined ? undefined : namingAllowRule(namingTarget),
     // 附屬檔案跟著用得到它的那一列走：模型 context 上限的快取只有監控 hook 在讀。
     supportFiles: (spec.supportFiles ?? []).map((source) => ({
       source,
       target: `${agentDir}/${source.split("/").pop()}`,
     })),
-    windowsCodexProfile,
-    posixCodexProfile,
   };
 }
 
@@ -673,14 +477,9 @@ function skillStep(id, home, lang) {
     });
   }
 
-  // Codex 的 handoff 會叫模型去 Read _shared/codex-session-rename.md。那個檔案沒
-  // 跟著裝的話，skill 讀得到、改名那半段卻是死的——附屬檔案跟著用得到它的那一列走。
-  if (agent === "codex" && name === "handoff") {
-    files.push({
-      source: "skills/skill-files/codex/_shared/codex-session-rename.md",
-      target: `${root}/_shared/codex-session-rename.md`,
-    });
-  }
+  // ⚠️ Codex 的 handoff 原本還要帶一份 _shared/codex-session-rename.md（改名那半段
+  // 的作法寫在那裡）。改名隨自動命名一起下架，那個檔案封存在 archive/auto-rename/
+  // ——留著這段的話安裝會去找一個不存在的素材，整列 exit 1（VM 實測撞到）。
 
   // vault-sync 那支 SKILL.md 裡的每一條指令都指著筆記庫。留成 VAULT_PATH 的話
   // 模型會照字面打出 `git -C VAULT_PATH status`——那是一個不存在的資料夾。
@@ -694,22 +493,8 @@ function skillStep(id, home, lang) {
     agent,
     name,
     files,
-    // SKILL.md 裡寫的是 $HOME/...，但 Bash() 白名單是字面比對、不展開變數：模型照
-    // SKILL.md 打出來的那條指令會對不上白名單而被擋（跟 hook 那邊同一個坑）。
-    // 安裝時就換成這台機器的絕對路徑，形狀跟 namingAllowRule 一致。
-    // 代換套在所有 Claude skill 上，不挑名字：會叫命名腳本的不只 auto-rename，
-    // handoff 收尾也要改名。沒有那段字串的 skill 代換不到東西，等於不動。
-    substitutions: [
-      ...(agent === "claude"
-        ? [
-            {
-              from: "$HOME/.claude/hooks/set-session-name.sh",
-              to: `${home.replaceAll("\\", "/")}/.claude/hooks/set-session-name.sh`,
-            },
-          ]
-        : []),
-      ...(name === "vault-sync" ? [vaultPath] : []),
-    ],
+    // vault-sync 的 SKILL.md 裡有 vault 路徑，要換成這台機器的絕對路徑。
+    substitutions: name === "vault-sync" ? [vaultPath] : [],
   };
 }
 
@@ -940,36 +725,75 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
         protectExisting: true,
       };
 
-    case "tab-sync": {
-      // POSIX 只剩 rc 區塊，沒有要安裝的檔案——watcher 拿掉之後 watcherSource /
-      // target 就都是 undefined。下游要能吃這個：安裝時不複製檔案、檢查時不比對
-      // 版本、進度只看 rc 檔。Windows 維持原樣。
-      const file = hookFileName("ai-tab-sync", platform);
-      const target =
-        platform === "win32" ? `${home}/.jr-setup/bin/${file}` : undefined;
+    // 自動命名整套已下架（skill / hook / 分頁標題 watcher，封存在
+    // archive/auto-rename/）。這一列做的事跟安裝相反：把以前裝過的殘留收掉。
+    //
+    // 為什麼要清乾淨而不是放著：settings 裡留一條指向不存在檔案的 hook，每次
+    // PostToolUse 都失敗一次，而畫面上完全看不出來——學生只會覺得「怪怪的」。
+    //
+    // 沒裝過的人這一列不會出現（checkRetired 回 null）。
+    case "naming-retire": {
+      const claudeDir = `${home}/.claude`;
+      const codexDir = `${home}/.codex`;
       return {
         id,
-        // ⚠️ 這是「合併卡上的一列」的名字，不是那張卡的名字。卡片叫「分頁與對話
-        // 自己取名字」（model.js 的 MERGED_CARDS），這一列講的是它負責的那一半：
-        // 讓終端留得住標題。兩邊寫同一句的話，畫面上會是卡片標題底下再抄一次自己
-        // （Reed 在 VM 上看到的）。
-        label: "終端記得住標題",
-        kind: "tab-sync",
-        ...(platform === "win32"
-          ? { watcherSource: `skills/bin/${file}`, target }
-          : {}),
-        rcTarget:
-          platform === "win32"
-            ? `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`
-            : `${home}/.zshrc`,
-        rcMarker: TAB_SYNC_MARKER,
-        rcBlock: tabSyncBlock(platform, target),
+        label: "移除已下架的「對話自己取名字」",
+        kind: "retire",
+        files: [
+          `${claudeDir}/hooks/set-session-name.sh`,
+          `${claudeDir}/hooks/set-session-name.ps1`,
+          `${claudeDir}/hooks/session-auto-namer.sh`,
+          `${claudeDir}/hooks/session-auto-namer.ps1`,
+          `${claudeDir}/skills/auto-rename/SKILL.md`,
+          `${codexDir}/hooks/codex-session-namer.sh`,
+          `${codexDir}/hooks/codex-session-namer.ps1`,
+          `${codexDir}/hooks/codex-session-name-set.py`,
+          `${codexDir}/hooks/codex-session-name-set.ps1`,
+          `${codexDir}/hooks/codex-app-server-common.ps1`,
+          `${codexDir}/hooks/codex-shared-app-server.ps1`,
+          `${codexDir}/hooks/codex-server-restart.ps1`,
+          `${codexDir}/hooks/codex-version-guard.sh`,
+          `${home}/.agents/skills/auto-rename/SKILL.md`,
+          `${home}/.agents/skills/_shared/codex-session-rename.md`,
+          `${home}/.local/bin/codex-server-restart`,
+          // 分頁標題 watcher：Windows 裝在 .jr-setup，舊版 POSIX 裝在 .local/bin。
+          `${home}/.jr-setup/bin/ai-tab-sync.ps1`,
+          `${home}/.local/bin/ai-tab-sync.sh`,
+        ],
+        // 兩個工具的註冊檔都要掃。單一 settingsTarget 的舊形狀仍然支援
+        // （codex-monitor 還在用），這裡用複數的那個。
+        targets: [
+          {
+            settingsTarget: `${claudeDir}/settings.json`,
+            markers: ["set-session-name", "session-auto-namer"],
+          },
+          {
+            settingsTarget: `${codexDir}/hooks.json`,
+            markers: ["codex-session-namer"],
+          },
+        ],
+        // shell 設定檔裡的 wrapper 區塊：POSIX 與 Windows 各自的 profile。
+        // 檔案不在就跳過，所以兩個平台的路徑都列著不會有事。
+        rcBlocks: [
+          {
+            target: `${home}/.zshrc`,
+            markers: [TAB_SYNC_MARKER, CODEX_VERSION_GUARD_MARKER],
+          },
+          {
+            target: `${home}/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`,
+            markers: [TAB_SYNC_MARKER, CODEX_APP_SERVER_MARKER],
+          },
+        ],
+        // 白名單那條也要收：它放行的腳本已經不在了。
+        allowRuleTarget: `${claudeDir}/settings.json`,
+        allowRuleMarker: "set-session-name",
+        detail:
+          "自動命名（對話自己取名字、分頁標題同步）已經下架。留著的話 hook 會指向" +
+          "不存在的腳本，每次都靜靜失敗；按一下把它清乾淨",
       };
     }
 
-    case "claude-namer":
     case "claude-monitor":
-    case "codex-namer":
       return agentHooks(id, home, platform);
 
     // 已退役。這支 hook 的前提沒有了：它假設「context 快滿＝這次對話要收尾了」，
@@ -1020,19 +844,6 @@ export function describeStep(id, { lang, home, platform = process.platform }) {
   }
 }
 
-// Bash() 白名單是字面比對，不會展開 ~ 或 $HOME——安裝時就要換成這台機器的絕對路徑。
-// 命名 hook 會叫模型去執行寫入指令，那條指令必須在白名單裡，否則每次命名都跳
-// 權限詢問——在 claude -p 這種沒人能按同意的情境下直接被拒。
-//
-// ⚠️ starter-allowlist.json 只有 .sh 那條規則（`Bash(~/.claude/hooks/
-// set-session-name.sh:*)`），Windows 上實際要跑的是一段 powershell 指令，
-// 比對不到。實測模型自己回報：「要求開一個巢狀 PowerShell 程序，被權限規則擋下」。
-// 兩個平台同一個形狀：直接執行一支腳本。Windows 那支是薄殼（見 agentHooks），
-// powershell 藏在腳本內部，權限層看不到巢狀直譯器。路徑一律正斜線——session-auto-namer
-// 組指令時也轉，兩邊不一致的話前綴永遠對不上，這條規則就等於沒加。
-export function namingAllowRule(hookTarget) {
-  return `Bash(${quoteIfSpaced(hookTarget.replaceAll("\\", "/"))}:*)`;
-}
 
 // 家目錄含空白（C:\Users\Reed Chen）時不加引號，bash 會把路徑斷成兩段，命名指令
 // 直接跑不起來。沒空白就不加：那是 macOS 已經證實白名單放行得了的形狀，能不動就
@@ -1104,6 +915,16 @@ export function hasHookRegistrations(settings, markers) {
       ),
     ),
   );
+}
+
+// 退役步驟的註冊檔可能有一個或多個。兩種形狀都吃：單一 settingsTarget（舊）與
+// targets 陣列（一步要清兩個工具時用）。
+export function retireTargets(step) {
+  if (step.targets !== undefined) {
+    return step.targets;
+  }
+
+  return [{ settingsTarget: step.settingsTarget, markers: step.markers }];
 }
 
 export function mergeAgentHookRegistrations(

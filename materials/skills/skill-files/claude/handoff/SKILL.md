@@ -17,8 +17,7 @@ user-invocable: true
 2. 判斷 handoff 類型（continuation / investigation / reference）
 3. 產出交接文件，包含：已完成、進行中、下一步、必讀檔案
 4. Commit handoff 文件到當前 branch
-5. 改 session name 為 📦 前綴（標記已交接）
-6. 回報結尾輸出單行起始 prompt（絕對路徑），給新 session 直接複製
+5. 回報結尾輸出單行起始 prompt（絕對路徑），給新 session 直接複製
 
 Key rules:
 - 「已完成的工作」≤ 10 行，細節指向「必讀檔案」
@@ -86,19 +85,7 @@ git commit -m "docs: add session handoff — {topic}"
 
 Commit 到當前 branch，不要切換 branch。
 
-### Step 5: 改 Session Name + 回報
-
-改名為 `📦 {topic}`（topic 轉中文敘述，≤ 30 字元）。一個 Bash call 呼叫包裝腳本即可
-（跟 auto-rename 走同一支）：
-
-```bash
-$HOME/.claude/hooks/set-session-name.sh '📦 {topic}' $PPID
-```
-
-⚠️ 不要自己拼 `ps` + `echo` + `printf` 的串接指令：那種寫法含 `&&` 與 `;`，會被
-block-chained-bash hook 擋下（exit 2），結果是交接檔寫得出來、分頁標題完全不動，
-而且畫面上不會有人告訴你為什麼。腳本內部已經做完 PID 定位、寫 session-name 檔、
-寫 tab-sync file（或 OSC 到 tty）、清 default marker，而且只需要白名單放行這一支。
+### Step 5: 回報
 
 回報格式（最後一行必須是可直接複製的單行起始 prompt，路徑用絕對路徑）：
 
@@ -117,8 +104,6 @@ Branch: {current_branch}
 | 已完成的工作寫成長篇報告 | 新 session 花大量 context 讀 | ≤ 10 行，detail 指向必讀檔案 |
 | 缺「下一步」 | 新 session 不知道做什麼 | 必填，寫具體動作 |
 | 必讀檔案只列路徑 | 新 session 不知道為什麼要讀 | 每項附原因 |
-| 忘記改 terminal name | 無法辨識哪個 session 已交接 | Step 5 必做，📦 前綴 |
-| OSC 印到 stdout | Claude Code 2.1+ 過濾 ESC，永遠到不了 terminal | 寫 `$AI_TAB_SYNC_FILE` 或 tty device |
 | 路徑帶 .worktrees/ 前綴 | 新 session 不在同一個 worktree 就 404 | 一律 repo-relative |
 | 起始 prompt 重述整份交接內容 | 浪費輸出，新 session 讀檔就有 | 只給 `讀 {絕對路徑}` 一行 |
 | 起始 prompt 用相對路徑 | 新 session cwd 不同會 404 | 一律絕對路徑 |

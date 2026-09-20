@@ -50,13 +50,13 @@ for (const name of SKILL_NAMES) {
 }
 console.log("ok - skill 步驟跟著選到的工具走，一個 skill 一列");
 
-// hook 沒裝好的話 auto-rename skill 叫的那條指令也不會動，所以順序要在後面。
+// skill 排在規則檔之後：CLAUDE.md 那幾張先寫好，skill 叫起來才照同一套規矩做事。
 assert(
-  claudeOnly.indexOf(skillStepId("claude", "auto-rename")) >
-    claudeOnly.indexOf("claude-namer"),
-  "skill 要排在命名 hook 後面",
+  claudeOnly.indexOf(skillStepId("claude", "handoff")) >
+    claudeOnly.indexOf("claude-md"),
+  "skill 要排在規則檔後面",
 );
-console.log("ok - skill 排在對應的 hook 之後");
+console.log("ok - skill 排在規則檔之後");
 
 // --- 落點 ---
 
@@ -79,55 +79,62 @@ assert.equal(
   codexHandoff.files[0].target,
   `${HOME}/.agents/skills/handoff/SKILL.md`,
 );
-// handoff 的 SKILL.md 會叫模型去 Read _shared，沒跟著裝的話改名那半段是死的。
-assert(
-  codexHandoff.files.some((file) =>
-    file.target.endsWith("/_shared/codex-session-rename.md"),
-  ),
-  "Codex 的 handoff 要一起帶 _shared",
-);
+// ⚠️ 迴歸：安裝清單裡的每個素材都要真的存在。
+//
+// handoff 原本會多帶一份 _shared/codex-session-rename.md（改名那半段的作法）。那個
+// 檔案隨自動命名封存到 archive/auto-rename/，而清單忘了跟著改——結果是嚮導按下去
+// 直接 exit 1，畫面上寫「嚮導內建的素材少了 …，請重新下載嚮導再試一次」，學生會
+// 以為是自己下載壞了（2026-09-20 mac VM 實測撞到）。
+for (const name of SKILL_NAMES) {
+  for (const agent of ["claude", "codex"]) {
+    const step = describeStep(skillStepId(agent, name), {
+      lang: "zh-TW",
+      home: HOME,
+    });
+
+    for (const file of step.files) {
+      assert(
+        existsSync(new URL(`../materials/${file.source}`, import.meta.url)),
+        `${agent} 的 ${name} 要裝一個不存在的素材：${file.source}`,
+      );
+    }
+  }
+}
 console.log("ok - Claude 與 Codex 的 skill 各自裝到自己的目錄");
 
 // --- $HOME 代換 ---
 
-const autoRename = describeStep(skillStepId("claude", "auto-rename"), {
+// 只有 vault-sync 需要代換（SKILL.md 裡有 vault 路徑）。其他 skill 不動內容——
+// 動了就等於嚮導在學生機器上改 skill 的內文，出事時很難看出是誰改的。
+const vaultSync = describeStep(skillStepId("claude", "vault-sync"), {
   lang: "zh-TW",
   home: HOME,
 });
-// Bash() 白名單是字面比對、不展開 $HOME：SKILL.md 裡的 $HOME 沒換掉的話，模型照著
-// 打出來的指令對不上白名單，每次命名都被擋（跟 hook 那邊同一個坑）。
-assert.equal(
-  applySubstitutions(
-    "$HOME/.claude/hooks/set-session-name.sh '{名稱}' $PPID",
-    autoRename.substitutions,
-  ),
-  `${HOME}/.claude/hooks/set-session-name.sh '{名稱}' $PPID`,
-);
-// handoff 收尾也會叫同一支命名腳本，所以代換套在所有 Claude skill 上。
-assert.deepEqual(claudeHandoff.substitutions, autoRename.substitutions);
-// Codex 那邊沒有這條路徑（改名走 _shared 的 relay 檔），不要亂動內容。
+assert(vaultSync.substitutions.length > 0);
+assert.deepEqual(claudeHandoff.substitutions, []);
 assert.deepEqual(codexHandoff.substitutions, []);
-console.log("ok - Claude skill 的 $HOME 換成絕對路徑，Codex 不動");
+console.log("ok - 只有 vault-sync 會做路徑代換，其他 skill 內容不動");
 
-// 改名指令不准自己拼串接：那種寫法會被 block-chained-bash hook 擋下（exit 2），
-// 結果是交接檔寫得出來、分頁標題完全不動，畫面上還不會有人說為什麼（VM 實測）。
-for (const name of ["auto-rename", "handoff"]) {
+// 交接 skill 不該再叫已經下架的命名腳本（archive/auto-rename/）。留著的話模型會
+// 去執行一個不存在的檔案，而畫面上只看得到「好像少做了一步」。
+for (const agent of ["claude", "codex"]) {
   const skill = readFileSync(
-    new URL(`../materials/skills/skill-files/claude/${name}/SKILL.md`, import.meta.url),
+    new URL(
+      `../materials/skills/skill-files/${agent}/handoff/SKILL.md`,
+      import.meta.url,
+    ),
     "utf8",
   );
   assert(
-    skill.includes("set-session-name.sh"),
-    `${name} 要透過包裝腳本改名`,
+    !skill.includes("set-session-name"),
+    `${agent} 的 handoff 還在叫已下架的命名腳本`,
   );
-  // 盯的是「串接指令」這個形狀（`&& \` 換行接下一段），不是 ps 這個字——
-  // 內文解釋腳本內部怎麼運作時提到 ps 是正常的。
   assert(
-    !/&&\s*\\/.test(skill),
-    `${name} 又自己拼串接的改名指令了——會被 block-chained-bash 擋下`,
+    !skill.includes("codex-session-namer"),
+    `${agent} 的 handoff 還在寫已下架的命名 relay 檔`,
   );
 }
-console.log("ok - Claude skill 的改名一律走包裝腳本，不拼串接指令");
+console.log("ok - handoff 不再依賴已下架的自動命名");
 
 // --- 三態判定 ---
 

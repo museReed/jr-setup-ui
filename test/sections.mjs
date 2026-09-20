@@ -269,7 +269,7 @@ try {
     groupChecks([
       check("codex-config"),
       check("claude-md"),
-      check("tab-sync"),
+      check("naming-retire"),
       check("codex-agents"),
       check("hook"),
     ]),
@@ -283,13 +283,13 @@ try {
       checks: checks.map(({ id }) => id),
     })),
     [
-      // tab-sync 在 Claude 這組，不是「兩邊共用」：它只有選了 claude 才會發，
-      // 而且要跟 claude-namer 合成一張卡——分屬兩張卡的話合不起來。
+      // 清理那一列歸在 Claude 這組：它兩邊的東西都清，但畫面上要有個家，
+      // 掛 other 的話會多冒出一張「其他」卡。
       {
         agent: "claude",
         label: "Claude",
         logo: "logo-claude",
-        checks: ["claude-md", "tab-sync", "hook"],
+        checks: ["claude-md", "naming-retire", "hook"],
       },
       {
         agent: "codex",
@@ -300,39 +300,20 @@ try {
     ],
   );
 
-  // 分頁報上名字那張得排第一：它把 wrapper 寫進 shell profile，之後開的終端標題
-  // 才留得住。後面 auto-rename、handoff 那幾張 skill 要學生「看標題有沒有變」，
-  // 沒先裝這張就永遠看不到——VM 實測：PowerShell profile 檔案根本不存在，標題一直
-  // 是預設值，學生被推進一個必然失敗的驗證。
-  //
-  // ⚠️ tab-sync 與 claude-namer 現在是同一張卡的兩格，主 check 是後者，所以這裡
-  // 比對的 checkId 是 claude-namer——setupOrder 查的正是那個 id。
+  // 筆記那張要排在它依賴的 skill 之前：那張卡的操作步驟第三步要學生叫 AI 存一次，
+  // skill 沒先裝好的話那一步叫不動。
   const rulesSequence = section(
     flattenCheckCards(
-      groupChecks([
-        check("claude-md"),
-        check("claude-namer"),
-        check("codex-namer"),
-        check("tab-sync"),
-      ]),
+      groupChecks([check("claude-md"), check("codex-agents")]),
       [],
     ),
     "rules",
   );
-  assert.equal(rulesSequence.cards[0].checkId, "claude-namer");
   assert.deepEqual(
     rulesSequence.cards.map(({ checkId }) => checkId),
-    ["claude-namer", "claude-md", "codex-namer"],
+    ["claude-md", "codex-agents"],
   );
-  // 合併成不成立看的是「那張卡身上有沒有兩格」——只比對 checkId 的話，合併壞掉
-  // 退回兩張單卡時第一張仍然叫 claude-namer，這條守衛會照樣綠。
-  assert.deepEqual(
-    rulesSequence.cards[0].checks.map(({ id }) => id),
-    ["tab-sync", "claude-namer"],
-  );
-  console.log(
-    "ok - 分頁報上名字是合併卡（wrapper + 命名 hook），而且排在後面那幾張之前",
-  );
+  console.log("ok - 規則段的卡片照 agent 分組排序");
 
   const claudeOnly = groupChecks([
     check("claude-md"),
@@ -385,7 +366,6 @@ try {
 
   const flattened = flattenCheckCards(
     groupChecks([
-      check("tab-sync"),
       check("codex-config"),
       check("claude-md"),
       check("future-config-step"),
@@ -403,11 +383,6 @@ try {
       agent,
     })),
     [
-      // 這一輪沒有 claude-namer（伺服器沒回那一列），所以 tab-sync 照 mergeCardChecks
-      // 的規矩單獨出現，不會整張卡消失。單獨出現時它排不到最前面——setupOrder 查的
-      // 是合併卡的主 check（claude-namer），這裡查不到就跟其他張同分、維持原序。
-      // 那是可以接受的：合不起來的時候，順序已經不是最要緊的事。
-      { checkId: "tab-sync", agent: "claude" },
       { checkId: "claude-md", agent: "claude" },
       { checkId: "codex-config", agent: "codex" },
       { checkId: "future-config-step", agent: "other" },
@@ -471,7 +446,7 @@ try {
   // 功能卻不知道怎麼呼叫。做什麼用的在描述裡。
   for (const [id, name] of [
     ["skill-claude-handoff", "handoff"],
-    ["skill-codex-auto-rename", "auto-rename"],
+    ["skill-codex-handoff", "handoff"],
     ["skill-claude-structured-questions", "structured-questions"],
     ["ext-frontend-design-claude", "frontend-design"],
     ["ext-skill-creator-claude", "skill-creator"],

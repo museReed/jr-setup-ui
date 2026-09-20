@@ -28,17 +28,16 @@ try {
     .filter((line) => !line.trim().startsWith("#"))
     .join("\n");
 
-  // ⚠️ 這一條守的是「auto-rename 不會被終端機自己蓋掉」。
+  // ⚠️ 這一條守的是「分頁上看得出這格在幹嘛」。
   //
-  // Ghostty 的 shell integration 預設清單裡有 title——它會在每一次 prompt 把標題改成
-  // 目前的指令或目錄，而那正好蓋掉命名 hook 寫進去的名字。沒有這一行的話，「分頁自己
-  // 報上名字」那張卡在 Ghostty 上會變成「名字閃一下就沒了」。
+  // title 是 Ghostty shell integration 的預設項：每個 prompt 把標題改成目前的指令
+  // 或目錄。曾經為了讓位給自動命名而改成 no-title，自動命名下架之後要把它放回來，
+  // 否則學生的分頁標題永遠是固定的那一串（archive/auto-rename/RESTORE.md）。
   assert.match(directives, /shell-integration-features\s*=/);
-  assert.match(directives, /no-title/);
-  assert.doesNotMatch(
+  assert.match(
     directives,
-    /shell-integration-features\s*=\s*[^\n]*[^-]\btitle\b/,
-    "清單裡不能留下沒有被 no- 否定掉的 title",
+    /shell-integration-features\s*=\s*[^\n]*(?<!no-)\btitle\b/,
+    "清單裡要留著沒有被 no- 否定掉的 title",
   );
   ok("關掉 Ghostty 自己的標題功能，命名 hook 寫的名字才留得住");
 

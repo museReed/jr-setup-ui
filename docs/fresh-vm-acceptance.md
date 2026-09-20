@@ -1,6 +1,6 @@
 # 全新 VM 驗收清單
 
-這份清單只有一個目的：**從學生真正會打的那一行指令開始，走到分頁標題變成命名為止。**
+這份清單只有一個目的：**從學生真正會打的那一行指令開始，走到每一列都綠為止。**
 
 開發機上的 `git clone` + `node scripts/…` 不算驗收——那條路徑跳過了 bootstrap，而
 bootstrap 抓的是 `main`。每次有東西進 `main`，就照這份跑一次。
@@ -78,7 +78,7 @@ cat ~/.jr-setup/app/.jr-source
 **要看到**：每一列都有明確狀態，缺的給安裝按鈕。逐項按到全綠。
 
 **特別確認**：終端機那一列。Windows 是硬性門檻（Windows Terminal），沒裝的話後面
-標題同步整段沒有意義。
+幾段要開真終端的驗證都做不了。
 
 ## 三、三個登入
 
@@ -86,19 +86,32 @@ Claude Code / Codex / GitHub 逐一登入。
 
 **要看到**：登入後那一列自己變綠，不需要手動重新整理。
 
-## 四、規則檔安裝（九列）
+## 四、規則檔安裝
 
-由上而下逐列按「安裝」。**順序有意義**：`終端機標題同步` 要在你第一次跑 `claude`
-之前裝好。
+由上而下逐列按「安裝」。
 
 **要看到**：每列裝完變成 **待驗證 ◐**，不是綠燈。綠燈要等驗證過才會出現。
 
-Codex 命名要按平台驗，不要把其中一條路徑套到另一個平台：
+### 「移除已下架的對話自己取名字」那一列
 
-| 平台 | 共用 app-server | 名稱如何更新 |
-|---|---|---|
-| **macOS / Linux** | Codex 本機 control socket | hook 呼叫 `thread/name/set`，Codex 原生更新 sidebar、status line 與分頁 |
-| **Windows** | 第一個 `codex` 由 PowerShell wrapper 背景啟動 localhost app-server，後續 TUI 共用 | hook 透過 WebSocket 呼叫 `thread/name/set`，Codex 原生更新三處名稱 |
+自動命名（skill + hook + 分頁標題同步）已經下架，封存在 `archive/auto-rename/`。
+它留下一列**清理用**的步驟，而那一列的行為分兩種機器：
+
+| 機器 | 應該看到 |
+|---|---|
+| **全新 VM**（沒裝過舊版） | **整列不出現**。出現就是 `checkRetired` 的三態判斷壞了 |
+| **裝過舊版的機器** | 黃燈 + 一顆「移除」。按完變綠，而且**留在畫面上**（整列消失代表 `markStepRetired` 沒寫進去） |
+
+要驗回鍋那一種，同一台 VM 先跑一次 `main` 走完安裝，再跑一次這個分支。
+
+按完之後手動查一遍，四種殘留都要消失、而且別人的東西要還在：
+
+```bash
+ls ~/.claude/hooks/                              # 沒有 set-session-name / session-auto-namer
+grep -c "jr-setup-ui tab sync" ~/.zshrc          # 0
+grep -c "set-session-name" ~/.claude/settings.json   # 0
+grep -c "context-monitor" ~/.claude/settings.json    # ≥ 1（監控 hook 不能被掃掉）
+```
 
 ## 五、三道人工關卡
 
@@ -106,9 +119,8 @@ Codex 命名要按平台驗，不要把其中一條路徑套到另一個平台�
 
 | # | 做什麼 | 為什麼 |
 |---|---|---|
-| 1 | **關掉終端分頁，開一個新的** | Claude 的 tab-sync wrapper 與 Windows 的 Codex app-server wrapper 都由新 shell 載入 |
+| 1 | **關掉終端分頁，開一個新的** | 規則檔與 shell 設定都由新 shell 載入，舊分頁看不到 |
 | 2 | 第一次跑 `codex` 時**接受 hook 信任提示** | 沒接受的話 `~/.codex/config.toml` 的 `[hooks.state]` 是空的，整組 hook 不跑 |
-| 3 | 最後**回終端看分頁標題** | 沒有程式驗得到這一格 |
 
 ## 六、驗證
 
@@ -130,9 +142,10 @@ claude
 
 **要看到**：
 
-- **不跳權限詢問**（跳了代表薄殼或白名單沒生效）
-- 分頁標題變成 `{emoji} 中文敘述`，emoji 來自規定的 8 個
-- 標題**持續維持**，不會被 Claude Code 自己的摘要標題蓋回去
+- 回話照 output-style 的規矩（結論先行、比較用表格）
+- **分頁標題跟著目前的指令／目錄變**。這是 Ghostty shell integration 的 `title`，
+  下架自動命名時一起放回來的——以前它被關成 `no-title`，讓位給命名 hook 寫的名字。
+  標題整個不動代表 `ghostty-config.js` 那段沒寫進去
 
 再開一個分頁：
 
@@ -140,37 +153,38 @@ claude
 codex
 ```
 
-第一次會問信任提示，接受後問一句話，同樣看標題。
+第一次會問信任提示，接受後問一句話。
 
-回嚮導把 `終端機標題同步` 和 `Codex hooks` 兩列的勾選框勾起來。
+**要看到**：Codex 自己把分頁標題與 status line 換成這次對話的名字——那是 Codex 原生的
+`[tui] terminal_title = ["thread"]`，不經過任何 hook。沒變的話查 `~/.codex/config.toml`
+的 `[tui]` 區段。
 
-**全部九列變綠才算驗收通過。**
+**全部列變綠才算驗收通過。**
 
 ## 六之二、Skills 安裝（十一列）
 
-規則檔那段全綠之後才做這段——`auto-rename` 那支 skill 叫的是命名 hook 的腳本，
-hook 沒裝好的話 skill 裝了也叫不動。
+規則檔那段全綠之後才做這段——skill 要照那些規矩做事。
 
 | 群組 | 列 | 要網路？ |
 |---|---|---|
-| 核心 | Claude / Codex × `自動命名`、`交接文件`、`結構化提問`（六列） | 否，素材內建 |
+| 核心 | Claude / Codex × `交接文件`、`結構化提問`（四列） | 否，素材內建 |
 | 第三方 | `frontend-design`（兩列）、`skill-creator`、`playwright`、`Playwright MCP` | **是**，還會下載瀏覽器 |
 
-**要看到**：核心六列裝完是 **待驗證 ◐**；第三方裝完直接綠（那是別人的 skill，
+**要看到**：核心四列裝完是 **待驗證 ◐**；第三方裝完直接綠（那是別人的 skill，
 我們只認落點在不在，不比對內容）。
 
 ### 行為驗證（開真終端）
 
 | 列 | 按下去會怎樣 | 判定 |
 |---|---|---|
-| 自動命名 | 開終端叫 agent 用 skill 命名 | Claude：等 `session-names/*.txt` 自動判定；Codex：看標題自己勾 |
 | 交接文件 | 叫 agent 用 skill 產出交接文件 | 自動判定——文件裡要出現 SKILL.md 規定的章節名「必讀檔案」 |
 | 結構化提問 | 叫 agent 用 skill 問你一題 | **人眼**：畫面要跳出可以上下選的選項，不是把選項寫成文字 |
 
 ⚠️ **skill 要開新 session 才會載入**。剛裝完的那個分頁裡驗，三列都會失敗。
 
-**常見失敗**：`自動命名` 那列跳權限詢問 → SKILL.md 裡的 `$HOME` 沒被換成絕對路徑
-（`Bash()` 白名單是字面比對、不展開變數）。列上會顯示「裝的是舊版」，重跑安裝。
+**常見失敗**：交接那列的模型說它「照 skill 最後一步改名了」→ 那一步已經隨自動命名
+下架，SKILL.md 裡沒有了。模型憑印象自己加戲代表它沒真的讀 SKILL.md，多半是沒開新
+session。
 
 ## 七、對照：哪些狀態代表哪裡壞了
 
@@ -178,17 +192,14 @@ hook 沒裝好的話 skill 裝了也叫不動。
 |---|---|
 | 列上寫「裝的是舊版」 | 檔案內容跟這一版不同，重跑安裝 |
 | skill 裝了但 agent 說「找不到這個 skill」 | 沒開新 session——skill 只在 session 啟動時掃目錄 |
-| Codex 的交接文件驗證失敗、改名那段沒動作 | `~/.agents/skills/_shared/` 沒跟著裝到 |
-| 跳出權限詢問要你同意命名指令 | 白名單沒生效，或 Windows 薄殼沒裝到 |
-| 名字寫進 `~/.claude/session-names/*.txt` 但標題不變 | watcher 沒起來、起錯方式、或被別人蓋掉 |
-| `codex` 完全沒有命名動作 | hooks.json 沒寫出來，或信任提示沒接受 |
-| 串接指令 `echo a && echo b` 沒被擋 | hook 註冊的指令路徑壞了（不是腳本壞了） |
+| 全新 VM 上出現「移除已下架的對話自己取名字」 | `checkRetired` 的三態判斷壞了——沒裝過的機器不該看到那一列 |
+| 按完移除之後整列消失 | `markStepRetired` 沒寫進 state.json，學生會以為自己弄壞了什麼 |
+| 移除之後監控 hook 也不見了 | 退役的 marker 比對抓太寬，掃掉了同一個 settings.json 裡別人的註冊 |
+| Ghostty 的分頁標題完全不動 | `shell-integration-features` 還停在舊的 `no-title` |
+| Codex 分頁標題不變 | `~/.codex/config.toml` 的 `[tui] terminal_title` 沒寫進去 |
 
-卡住時 `scripts/` 底下有對應的診斷腳本，會直接告訴你斷在哪一格：
-
-- `diagnose-naming-block.mjs` — 命名指令被擋在白名單哪一格
-- `diagnose-title-path.ps1` — 標題為什麼沒變（Windows）
-- `probe-wt-title.ps1` / `probe-watcher-attach.ps1` — 終端與子行程的標題行為
+⚠️ 命名相關的診斷腳本（`diagnose-naming-block.mjs`、`diagnose-title-path.ps1`、
+`probe-wt-title.ps1` 等）已經隨自動命名一起封存到 `archive/auto-rename/scripts/`。
 
 ## 八、驗收紀錄
 

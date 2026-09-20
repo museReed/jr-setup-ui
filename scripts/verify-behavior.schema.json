@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "results": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "string",
+            "enum": [
+              "結論先行",
+              "比較用表格",
+              "語氣中性",
+              "長度中等",
+              "追問清單"
+            ]
+          },
+          "pass": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": ["rule", "pass", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["results"],
+  "additionalProperties": false
+}

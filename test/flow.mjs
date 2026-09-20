@@ -250,6 +250,17 @@ try {
     new URL("../scripts/verify-behavior.mjs", import.meta.url),
     "utf8",
   );
+  const behaviorSchemaText = readFileSync(
+    new URL("../scripts/verify-behavior.schema.json", import.meta.url),
+    "utf8",
+  );
+  let behaviorSchema;
+  assert.doesNotThrow(() => {
+    behaviorSchema = JSON.parse(behaviorSchemaText);
+  }, "Codex 判定用的 output schema 必須是合法 JSON");
+  assert.deepEqual(behaviorSchema.required, ["results"]);
+  assert.equal(behaviorSchema.properties.results.minItems, 5);
+  assert.equal(behaviorSchema.properties.results.maxItems, 5);
   const terminalScript = readFileSync(
     new URL("../scripts/verify-in-terminal.mjs", import.meta.url),
     "utf8",
@@ -261,6 +272,16 @@ try {
       `verify-behavior.mjs 缺少 stage 事件「${stage}」`,
     );
   }
+  assert(
+    behaviorScript.includes('"--output-schema"'),
+    "Codex 的判定步驟沒有強制結構化 JSON 輸出",
+  );
+  assert(
+    behaviorScript.includes(
+      "runEngine(engine, judgePrompt(answer.text), env, true)",
+    ),
+    "只有判定步驟需要套用 JSON schema，不能影響前一段待驗證的回答",
+  );
   for (const stage of ["waiting", "shaping"]) {
     assert(
       terminalScript.includes(`"${stage}"`),

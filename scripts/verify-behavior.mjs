@@ -9,11 +9,15 @@
 // 為什麼可以用 -p / exec：實測 claude -p 與互動 session 讀同一份 settings.json，
 // output style 一樣會套用；codex 讀的則是 ~/.codex/config.toml。
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { spawnEnv } from "../src/env-path.js";
 import { resolveLaunch } from "../src/spawn-command.js";
 
 const TIMEOUT_MS = 180_000;
+const VERDICT_SCHEMA = fileURLToPath(
+  new URL("./verify-behavior.schema.json", import.meta.url),
+);
 
 // 五條裡至少三條就算通過：判定本身有浮動（「長度中等」尤其主觀），
 // 一條誤判就整個變紅會讓學生以為自己裝壞了。
@@ -50,7 +54,7 @@ const ENGINES = {
     label: "Codex CLI",
     cmd: "codex",
     // 結尾的 "-" 是「從 stdin 讀 prompt」。
-    args: () => [
+    args: (structured = false) => [
       "exec",
       "--json",
       "--color",
@@ -58,6 +62,7 @@ const ENGINES = {
       "--skip-git-repo-check",
       "--sandbox",
       "read-only",
+      ...(structured ? ["--output-schema", VERDICT_SCHEMA] : []),
       "-",
     ],
     // codex exec --json 是一串事件，回答在 agent_message 裡。
@@ -98,10 +103,12 @@ function judgePrompt(answer) {
   ].join("");
 }
 
-function runEngine(engine, prompt, env) {
-  const { cmd, args, spawnOptions } = resolveLaunch(engine.cmd, engine.args(), {
-    env,
-  });
+function runEngine(engine, prompt, env, structured = false) {
+  const { cmd, args, spawnOptions } = resolveLaunch(
+    engine.cmd,
+    engine.args(structured),
+    { env },
+  );
 
   return new Promise((resolve) => {
     let child;
@@ -197,7 +204,9 @@ async function verifyEngine(engine, env) {
   console.log("");
   emitJr({ kind: "stage", stage: "judging" });
   console.log("正在請它對照規則判定自己的回答…");
-  const verdict = await runEngine(engine, judgePrompt(answer.text), env);
+  // Codex 的全域 instructions 正在被這一步驗證，本身可能要求 bullet，跟 JSON 衝突。
+  // 只約束判定結果的外形；前一段待驗證的回答不能套 schema，否則驗不到真實風格。
+  const verdict = await runEngine(engine, judgePrompt(answer.text), env, true);
 
   if (!verdict.ok) {
     console.log(`FAIL  判定失敗：${verdict.text}`);

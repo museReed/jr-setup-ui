@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(~/.claude/hooks/set-session-name.sh:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(head:*)",

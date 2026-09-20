@@ -145,7 +145,7 @@ Codex 那張卡有兩個檔案（`AGENTS.md` 與 `config.toml`），一次做完
 | 東西 | 重跑會不會清掉舊的 |
 |---|---|
 | hook 註冊（`settings.json`） | ✅ 會。`mergeAgentHookRegistrations` 先把「指令含我們 marker」的整批刪掉再重寫 |
-| tab-sync 的 rc 區塊 | ✅ 會。用 marker 整塊替換 |
+| shell 設定檔裡我們寫的區塊 | ✅ 會。用 marker 整塊替換；下架的功能則由退役那一列整塊移除 |
 | Codex 的 `config.toml` 舊 key | ✅ 會。`RETIRED_CODEX_KEYS` 主動註解掉 |
 | `CLAUDE.md` / output-style / hook 腳本檔 | 覆蓋同名檔 |
 | 白名單規則 | ⚠️ 只加不減。舊規則會累積，大多無害 |
@@ -210,8 +210,13 @@ Codex 那張卡有兩個檔案（`AGENTS.md` 與 `config.toml`），一次做完
 
 ## 規則二：嚮導要裝的 skill 已經在那裡了
 
-這條才是回訪學生真正會遇到的。上一輪裝的就是 `handoff`、`auto-rename`、
-`structured-questions`、`vault-sync`，這一輪嚮導要寫的是**同樣那幾個資料夾**。
+這條才是回訪學生真正會遇到的。上一輪裝的是 `handoff`、`structured-questions`、
+`vault-sync`（以及已經下架的 `auto-rename`），這一輪嚮導要寫的是**同樣那幾個資料夾**。
+
+⚠️ `auto-rename` 是特例：它不只是「這一輪不發了」，而是整套下架（見
+`archive/auto-rename/RESTORE.md`）。它留下的 skill 檔、hook、shell 區塊與白名單規則
+由規則檔那段的**「移除已下架的對話自己取名字」**那一列統一清掉——那一列只對裝過的
+機器出現。
 
 **為什麼直接覆蓋不夠**：安裝只寫我們現在發的那幾個檔案。舊版留下的其他東西——以前有、
 現在沒有的附屬檔——會留在同一個資料夾裡，而**Claude 載入 skill 時看的是整個資料夾**。
@@ -342,8 +347,8 @@ macOS 的 `npm install -g` 會寫 `/usr/local/lib/node_modules`，而官方 .pkg
 
 ⚠️ 上面那一句是有代價的：`sudo` 跑出來的東西屬於 root，而 macOS 的 sudo 預設保留
 `$HOME`，所以它建出來的檔案照樣落在學生家目錄裡、而且他自己改不動。2026-08-16 那場
-課就出現了這種機器——`~/.config` 與 `~/.zshrc` 都是 root 的，gh 登入存不進去、分頁
-標題那一步也寫不進去。嚮導現在會在環境段第一列講出來並給一顆修復鍵，來龍去脈見
+課就出現了這種機器——`~/.config` 與 `~/.zshrc` 都是 root 的，gh 登入存不進去、要寫進
+`~/.zshrc` 的那幾步也寫不進去。嚮導現在會在環境段第一列講出來並給一顆修復鍵，來龍去脈見
 [home-permissions.md](home-permissions.md)。
 
 ## 給學生的四句話

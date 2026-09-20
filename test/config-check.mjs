@@ -16,7 +16,6 @@ import {
   checkAllowlist,
   checkCopyStep,
   checkRetired,
-  checkTabSync,
   missingSourceLines,
   probeHook,
   resolveBash,
@@ -34,14 +33,14 @@ import { materialsDir } from "../src/paths.js";
 
 const MATERIALS = materialsDir();
 
-for (const id of ["codex-config", "codex-namer"]) {
+for (const id of ["codex-config"]) {
   const posix = withConfigActions({ id, status: "ok" }, "darwin");
   const windows = withConfigActions({ id, status: "ok" }, "win32");
   assert.match(posix.eyeCheck, /app-server|原生/);
   assert.match(windows.eyeCheck, /app-server|原生/);
   assert.doesNotMatch(windows.eyeCheck, /SQLite|tab-sync/);
 }
-ok("Codex config 與 namer 在 POSIX／Windows 都驗證原生 app-server 路徑");
+ok("Codex config 在 POSIX／Windows 都驗證原生 terminal title 路徑");
 
 // 裝進去的內容必須跟 materials 逐字相同，否則會被判成舊版——所以測試也要照真的裝。
 function installFrom(source, target) {
@@ -105,66 +104,6 @@ process.stdin.on("end", () => {
   );
   assert.equal(resolveBash(() => false, "win32"), "bash");
   ok("Windows 上會去常見位置找 Git Bash，找不到才退回 PATH");
-
-  // POSIX 這一步只剩 rc 區塊：watcher 拿掉之後沒有檔案要裝，所以「沒裝」的唯一
-  // 判準就是 rc 檔裡沒有那個區塊。
-  const tabStep = describeStep("tab-sync", {
-    lang: "zh-TW",
-    home: dir,
-    platform: "linux",
-  });
-  assert.equal(tabStep.target, undefined);
-  // 標題是文案，會跟著改。這裡要驗的是「檢查結果對不對」，所以照 step 自己的
-  // label 比，不要把當下的字釘進測試。
-  assert.deepEqual(await checkTabSync(tabStep, MATERIALS), {
-    id: "tab-sync",
-    label: tabStep.label,
-    status: "missing",
-    detail: "尚未安裝",
-  });
-  ok("POSIX 沒有 rc 區塊時回報尚未安裝，不會因為缺檔案而爆掉");
-
-  // 舊版的區塊：標記在、函式也在，但它會起 watcher 每秒重寫標題——只看「標記在
-  // 不在」會給綠燈，於是學生留著舊行為卻以為已經更新（看背景 agent 時標題照閃）。
-  writeFileSync(
-    tabStep.rcTarget,
-    upsertBlock(
-      "",
-      tabStep.rcMarker,
-      'claude() {\n  AI_TAB_SYNC_FILE=/tmp/x command claude "$@"\n}',
-    ),
-  );
-  const staleBlock = await checkTabSync(tabStep, MATERIALS);
-  assert.equal(staleBlock.status, "warn");
-  assert.match(staleBlock.detail, /舊版/);
-  ok("rc 區塊是舊版（還在起 watcher）時不給綠燈");
-
-  writeFileSync(
-    tabStep.rcTarget,
-    upsertBlock("", tabStep.rcMarker, tabStep.rcBlock),
-  );
-  const freshBlock = await checkTabSync(tabStep, MATERIALS);
-  assert.equal(freshBlock.status, "ok");
-  ok("rc 區塊是新版時給綠燈");
-
-  // Windows 那條路沒有跟著改：仍然要有 watcher 檔，而且內容要跟 materials 一致。
-  const winTabStep = describeStep("tab-sync", {
-    lang: "zh-TW",
-    home: dir,
-    platform: "win32",
-  });
-  assert.notEqual(winTabStep.target, undefined);
-  assert.deepEqual(await checkTabSync(winTabStep, MATERIALS), {
-    id: "tab-sync",
-    label: winTabStep.label,
-    status: "missing",
-    detail: "尚未安裝",
-  });
-  mkdirSync(path.dirname(winTabStep.target), { recursive: true });
-  writeFileSync(winTabStep.target, "watcher");
-  const winStale = await checkTabSync(winTabStep, MATERIALS);
-  assert.equal(winStale.status, "warn");
-  ok("Windows 仍然檢查 watcher 檔在不在、是不是舊版");
 
   // protectExisting 的列不能用逐字相同當作完成：那些檔案的正常狀態就是「工作坊的
   // 內容 + 學生自己的內容」。實測踩到——學生按了「用 AI 合併」，工作坊那段確實整段
@@ -317,16 +256,7 @@ process.stdin.on("end", () => {
   assert.equal((await checkCopyStep(MATERIALS, agentsStep)).status, "warn");
   ok("AGENTS.md 也受保護，且 Markdown 標題算實質內容");
 
-  installFrom(winTabStep.watcherSource, winTabStep.target);
-  mkdirSync(path.dirname(winTabStep.rcTarget), { recursive: true });
-  writeFileSync(
-    winTabStep.rcTarget,
-    upsertBlock("", winTabStep.rcMarker, winTabStep.rcBlock),
-  );
-  assert.equal((await checkTabSync(winTabStep, MATERIALS)).status, "ok");
-  ok("Windows 的 tab sync 要 watcher 內容與 rc 區塊都是這一版才算生效");
-
-  const agentStep = describeStep("claude-namer", {
+  const agentStep = describeStep("claude-monitor", {
     lang: "zh-TW",
     home: dir,
     platform: "linux",
@@ -335,7 +265,7 @@ process.stdin.on("end", () => {
     installFrom(file.source, file.target);
   }
   assert.deepEqual(await checkAgentHooks(agentStep, MATERIALS), {
-    id: "claude-namer",
+    id: "claude-monitor",
     label: agentStep.label,
     status: "warn",
     detail: "檔案在，但沒註冊——不會被觸發",
@@ -348,98 +278,15 @@ process.stdin.on("end", () => {
     },
   );
   writeFileSync(agentStep.settingsTarget, JSON.stringify(settings));
-
-  // 迴歸：白名單也要算進去。少了它模型每次命名都被權限層擋下，功能是死的；
-  // 只驗檔案與註冊的話會給假綠燈，而綠燈就沒有安裝按鈕，學生連重跑都做不到。
-  const withoutRule = await checkAgentHooks(agentStep, MATERIALS);
-  assert.equal(withoutRule.status, "warn");
-  assert.match(withoutRule.detail, /白名單/);
-  ok("命名指令沒進白名單時不給綠燈");
-
-  writeFileSync(
-    agentStep.settingsTarget,
-    JSON.stringify({
-      ...settings,
-      permissions: { allow: [agentStep.namingAllowRule] },
-    }),
-  );
   assert.equal((await checkAgentHooks(agentStep, MATERIALS)).status, "ok");
-  ok("檔案、註冊、白名單三者都在才算生效");
+  ok("檔案與註冊都在才算生效");
 
-  const windowsAgentStep = describeStep("codex-namer", {
-    lang: "zh-TW",
-    home: path.join(dir, "windows-agent"),
-    platform: "win32",
-  });
-  for (const file of windowsAgentStep.hookFiles) {
-    installFrom(file.source, file.target);
-  }
-  const windowsSettings = mergeAgentHookRegistrations(
-    {},
-    {
-      registrations: windowsAgentStep.registrations,
-      hookMarkers: windowsAgentStep.hookFiles.map((file) => file.base),
-    },
-  );
-  mkdirSync(path.dirname(windowsAgentStep.settingsTarget), { recursive: true });
-  writeFileSync(windowsAgentStep.settingsTarget, JSON.stringify(windowsSettings));
-  const missingProfile = await checkAgentHooks(windowsAgentStep, MATERIALS);
-  assert.equal(missingProfile.status, "warn");
-  assert.match(missingProfile.detail, /PowerShell profile/);
-  mkdirSync(path.dirname(windowsAgentStep.windowsCodexProfile.target), {
-    recursive: true,
-  });
-  writeFileSync(
-    windowsAgentStep.windowsCodexProfile.target,
-    upsertBlock(
-      "",
-      windowsAgentStep.windowsCodexProfile.marker,
-      windowsAgentStep.windowsCodexProfile.block,
-    ),
-  );
-  assert.equal(
-    (await checkAgentHooks(windowsAgentStep, MATERIALS)).status,
-    "ok",
-  );
-  ok("Windows Codex 命名要有共用 app-server profile 才給綠燈");
-
-  const macAgentStep = describeStep("codex-namer", {
-    lang: "zh-TW",
-    home: path.join(dir, "mac-agent"),
-    platform: "darwin",
-  });
-  for (const file of macAgentStep.hookFiles) {
-    installFrom(file.source, file.target);
-  }
-  const macSettings = mergeAgentHookRegistrations(
-    {},
-    {
-      registrations: macAgentStep.registrations,
-      hookMarkers: macAgentStep.hookFiles.map((file) => file.base),
-    },
-  );
-  mkdirSync(path.dirname(macAgentStep.settingsTarget), { recursive: true });
-  writeFileSync(macAgentStep.settingsTarget, JSON.stringify(macSettings));
-  const missingMacProfile = await checkAgentHooks(macAgentStep, MATERIALS);
-  assert.equal(missingMacProfile.status, "warn");
-  assert.match(missingMacProfile.detail, /shell profile/);
-  writeFileSync(
-    macAgentStep.posixCodexProfile.target,
-    upsertBlock(
-      "",
-      macAgentStep.posixCodexProfile.marker,
-      macAgentStep.posixCodexProfile.block,
-    ),
-  );
-  assert.equal((await checkAgentHooks(macAgentStep, MATERIALS)).status, "ok");
-  ok("macOS Codex 命名要有 core daemon profile 才給綠燈");
-
-  // 舊版 hook 檔案：三項全綠，但模型每次命名還是會被權限層擋下。
+  // 舊版 hook 檔案：兩項全綠，但跑起來的是上一版的行為。
   writeFileSync(agentStep.hookFiles[0].target, "舊版內容");
   const staleHook = await checkAgentHooks(agentStep, MATERIALS);
   assert.equal(staleHook.status, "warn");
   assert.match(staleHook.detail, /舊版/);
-  ok("hook 檔案是舊版時不給綠燈——註冊與白名單都對也一樣");
+  ok("hook 檔案是舊版時不給綠燈——註冊對也一樣");
 
   // 清單第一格「程式那半驗過了嗎」只認 behavior 那一筆。所以一列如果要學生用眼睛
   // 確認，就必須同時有程式驗得到的那半，否則第一格永遠空著、學生的 2/2 湊不齊。
@@ -458,23 +305,10 @@ process.stdin.on("end", () => {
   // 加一格或拿掉一格都會在這裡紅，逼人回來說明理由。每一格眼睛驗的都是嚮導這端看
   // 不到的東西——另一個終端視窗的分頁標題、瀏覽器裡長出來的網頁、跳出來的選單。
   const EYE_CHECKS = [
-    // ⚠️ tab-sync 從這裡拿掉了：它跟 claude-namer 合成一張卡，整張卡只剩最後那一格
-    // 有驗證。它以前那格眼睛看的是「畫面印出 ✓ wrapper 已載入」——那不是學生在意的
-    // 成果，只是一句中間狀態。
     // HUD 只在「下一次互動之後」才畫出來——設定檔全對，畫面上仍可能是空的。
     "claude-hud",
-    // ⚠️ macOS 才需要這一格眼睛。Windows 上標題讀得回來（watcher 改的是共用 console
-    // 的狀態），所以那邊是程式判定；但這張表沒有平台維度，而「有 eye 的列不會自動
-    // 變綠」是前端的規矩——留著它，Windows 的學生會多勾一次已經驗過的東西。
-    // 要拿掉的話得先讓 VERIFICATION 分得出平台，那是另一件事。
-    "claude-namer",
     // 底部狀態列：設定檔寫對了但 Codex 沒重開，那條還是舊的，而檔案比對一路都綠。
     "codex-config",
-    "codex-namer",
-    "skill-claude-auto-rename",
-    "skill-codex-auto-rename",
-    "skill-claude-handoff",
-    "skill-codex-handoff",
     "skill-claude-structured-questions",
     "skill-codex-structured-questions",
     "demo-claude",

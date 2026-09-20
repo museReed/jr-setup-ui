@@ -10,7 +10,7 @@
 //
 //   證據力的判準是「那段內容是不是只有 hook 才產得出來」。
 //   ✅ hook 的原文訊息（「一次只跑一個指令」「Context 已用」）——模型生不出來
-//   ✅ session-names/*.txt ——hook 真的跑完才會出現的檔案
+//   ✅ 只有那一格真的跑完才會出現的檔案
 //   ❌ 模型自己寫「我看到了」——那是自我回報，沒看到也可以這樣寫
 //
 // 所以副產物一律要求「一字不改貼上 hook 的原文」，再用字串比對判定。不用第二個
@@ -52,46 +52,6 @@ function emitJr(event) {
 const ALLOWLIST_TOKEN = "allowlist-ok-9d4b71";
 
 const CASES = {
-  naming: {
-    label: "自動命名",
-    // ⚠️ DISABLE_AUTO_TITLE 不是可有可無的：oh-my-zsh 會在每個指令執行前把標題改成
-    // 那個指令的名字——實測在裝了 powerlevel10k 的機器上，學生看到的標題是腳本最後
-    // 一個指令的名字，不是 hook 寫的名字。
-    //
-    // 這一格是合併卡（分頁報上名字 + 對話自己取名字）唯一的驗證，而它的成果判定
-    // 有一半是人眼：claude 結束之後學生才低頭看標題，而那正是 oh-my-zsh 的 precmd
-    // 重新畫標題的時機。少了這個，畫面會在他看之前就被蓋掉。
-    //
-    // 這條規則在 d474acf 隨著舊的標題 launcher 一起被拿掉過，理由是「那支 launcher
-    // 不在了」——但規則本身沒過期，只是換了個成立的理由：以前防的是我們自己寫的
-    // 標題被後面的指令蓋掉，現在防的是 hook 寫的標題被 shell 主題蓋掉。
-    env: () => ({ DISABLE_AUTO_TITLE: "true" }),
-    prompt: ({ agent, resultFile }) =>
-      agent === "codex"
-        ? // codex 的命名是兩段式：模型先把名字寫到中繼檔，hook 要在「下一次 hook
-          // 事件」才套用上去。只問一句話就結束的話，名字永遠卡在中繼檔（VM 實測：
-          // 命名沒改到標題，反而是工具呼叫多的 context 測試改到了）。
-          "請照 hook 的指示把這個 session 命名，執行它給你的那條指令。" +
-          "命名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。" +
-          `最後把你取的名字寫進 ${resultFile}。`
-        : "請照 hook 的指示把這個 session 命名，執行它給你的那條指令，然後用一句話告訴我你命名成什麼。",
-    // claude 的命名會留下檔案，不必靠模型回報；codex 寫的是 sqlite 與中繼檔，
-    // 沒有能穩定輪詢的落點，那一列維持人眼判定。
-    expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
-    watchFor: "分頁標題變成「{emoji} 中文敘述」，emoji 是規定的那 8 個之一",
-  },
-  // ⚠️ 這裡曾經有一格 wrapper：只驗「rc 檔那段 wrapper 有沒有載進新終端」，畫面上
-  // 印一句「✓ wrapper 已載入」。它是 d474acf 的止血——在那之前這一格驗的是標題，
-  // 而寫標題要用下一張卡才裝的命名腳本，每位學生走到第 6 張都會撞到「找不到命名
-  // 腳本」。
-  //
-  // 兩張卡合併之後（model.js 的 MERGE_ORDER）它沒有存在的理由了：wrapper 與命名
-  // hook 現在是同一張卡的兩格，一起裝、一起驗，而學生要看的成果是「標題真的變成
-  // 這次在做的事」——那是底下 naming 那一格的事。留著等於讓學生為了一句他不懂的
-  // 中間狀態多開一次終端。
-  //
-  // wrapper 沒載入仍然驗得出來，只是換了個說法：naming 那一格會失敗，而失敗指引
-  // （model.js 的 GUIDANCE）第一條就是「關掉所有終端視窗再開一個新的」。
   // 底部狀態列那一格：不驗任何東西，只負責把 Codex 開起來讓學生看一眼。
   // 那一條是純畫面（設定寫對了但沒重開 Codex，它還是舊的），程式抓不到。
   // 整段筆記的收尾：叫 AI 真的寫一篇進去並存上去。
@@ -267,47 +227,24 @@ const CASES = {
   //
   // ⚠️ 兩邊叫 skill 的方式不一樣。Codex 的 SKILL.md 標了 user-invocable，要用
   //    `$名字` 才會真的載入；只寫「請使用 handoff skill」它會當成一般描述，自己
-  //    憑印象寫一份交出來——文件長得像、SKILL.md 裡的步驟一個都沒跑（mac VM 實測：
-  //    交接檔有、改名整段沒提，/tmp 也沒有任何 relay 檔）。
-  "skill-rename": {
-    label: "Skill：自動命名",
-    env: () => ({}),
-    prompt: ({ agent, resultFile }) =>
-      agent === "codex"
-        ? "$auto-rename 請照這個 skill 的 SKILL.md 步驟幫這個 session 命名。" +
-          "命名完之後再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。" +
-          `最後把你取的名字寫進 ${resultFile}。`
-        : "請使用 auto-rename skill 幫這個 session 命名，照它 SKILL.md 裡寫的指令執行。",
-    // Claude 那支 skill 會叫模型執行寫檔指令，檔案就是證據；Codex 寫的是 sqlite
-    // 與中繼檔，沒有能穩定輪詢的落點，維持人眼判定（跟命名 hook 那列同一個理由）。
-    expect: ({ agent }) => (agent === "codex" ? null : { kind: "session-name" }),
-    watchFor: "模型說它用了 auto-rename skill，分頁標題跟著變成「{emoji} 中文敘述」",
-  },
+  //    憑印象寫一份交出來——文件長得像、SKILL.md 裡的步驟一個都沒跑（mac VM 實測）。
   "skill-handoff": {
     label: "Skill：交接文件",
     env: () => ({}),
     // 刻意不讓它走 skill 預設的 docs/handoff/ 落點：那要在 git repo 裡才成立，
     // 學生的家目錄不是。改指定檔案路徑，內容照 skill 的格式寫。
     // ⚠️ 只說「不要 commit、不要寫進 docs/」的話，模型會把整段收尾都當成「這次不用
-    //    做」一起跳過——VM 實測它自己回報「依用戶指示偏離 skill 預設流程三處」，
-    //    改名那步就這樣沒了，看起來像 skill 壞掉。要跳過的步驟逐條講，要做的也逐條講。
+    //    做」一起跳過——VM 實測它自己回報「依用戶指示偏離 skill 預設流程三處」。
+    //    要跳過的步驟逐條講，要做的也逐條講。
     prompt: ({ agent, resultFile }) =>
       (agent === "codex"
         ? "$handoff 請照這個 skill 產出這個 session 的交接文件。"
         : "請使用 handoff skill 產出這個 session 的交接文件。") +
-      `這一輪有兩件事要做完：（1）不要 commit、不要寫進 docs/，把整份文件內容寫進 ${resultFile}，章節標題照 skill 規定的寫；` +
-      "（2）照 skill 最後一步把這個 session 改名，執行它給你的那條改名指令，不要跳過。" +
-      // Codex 的改名是兩段式：模型先把名字寫進中繼檔，要等「下一次 hook 事件」才
-      // 套上去。一問一答就結束的話名字永遠卡在中繼檔——skill-rename 那格早就補了
-      // 這一步，這裡漏掉，於是 Codex 的交接檔寫得出來、標題卻不動（VM 實測）。
-      (agent === "codex"
-        ? "改名完之後，再列出目前資料夾裡的檔案——這一步是必要的，讓 hook 有機會把名字套用上去。"
-        : ""),
+      `這一輪要做的是：不要 commit、不要寫進 docs/，把整份文件內容寫進 ${resultFile}，章節標題照 skill 規定的寫。`,
     // 「必讀檔案」是 SKILL.md 規定的章節名。模型沒讀到 skill 的話不會自己想到這四個字，
     // 所以它出現＝skill 真的被載入了。
     expect: () => ({ kind: "artifact", keyword: "必讀檔案" }),
-    watchFor:
-      "模型產出一份有「狀態摘要 / 必讀檔案 / 下一步」的文件，收尾把分頁標題改成「📦 ...」",
+    watchFor: "模型產出一份有「狀態摘要 / 必讀檔案 / 下一步」的文件",
   },
   // 一條龍 demo：把三個 skill 串起來跑一次（問配色 → 生成網頁 → 逐字打 code）。
   // 它不是「驗證某一格」而是「現場展示」，但判定一樣要證據——產出的網頁檔只有三段
@@ -419,32 +356,28 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const caseName = args.case ?? "naming";
+const caseName = args.case ?? "";
 const testCase = CASES[caseName];
 const agent = args.agent === "codex" ? "codex" : "claude";
 
 if (testCase === undefined) {
-  console.log(`FAIL  不認得的驗證情境：${caseName}`);
-  emitJr({
-    kind: "result",
-    ok: false,
-    summary: `不認得的驗證情境：${caseName}`,
-  });
+  // 沒給 --case 時不默默挑一個：以前預設是命名那一格，那格下架之後預設值會變成
+  // 「隨便挑一個還活著的」，跑出來的結果跟你想驗的東西無關。
+  const summary =
+    caseName === ""
+      ? `請用 --case 指定驗證情境：${Object.keys(CASES).join("、")}`
+      : `不認得的驗證情境：${caseName}`;
+  console.log(`FAIL  ${summary}`);
+  emitJr({ kind: "result", ok: false, summary });
   process.exit(1);
 }
 
 mkdirSync(RESULT_DIR, { recursive: true });
 const resultFile = path.join(RESULT_DIR, `${caseName}-${agent}.txt`);
-// Windows 專用：claude 結束之後，把那個 console 當下的標題寫進來。
-// 為什麼另開一個檔而不共用 resultFile：那一個是「模型寫給我們看的」，這一個是
-// 「終端自己的狀態」，混在一起的話判定要先猜裡面躺的是哪一種。
-const titleFile = path.join(RESULT_DIR, `${caseName}-${agent}-title.txt`);
 // 上一輪的副產物留著的話，這一輪不管跑不跑都會「通過」。
 rmSync(resultFile, { force: true });
-rmSync(titleFile, { force: true });
 
 const expect = testCase.expect({ agent });
-const namesDir = path.join(homedir(), ".claude", "session-names");
 const startedAt = Date.now();
 
 // 腳本寫成檔案再交給終端跑：把整段指令塞進終端的參數裡，引號與換行會被各平台的
@@ -547,62 +480,6 @@ function vaultScript() {
 // Windows 專用：claude **還在跑的時候**，持續把那個 console 當下的標題寫進檔案，
 // 讓輪詢那邊用字串比對判定「標題真的變成 hook 寫的名字」，不必只靠學生的眼睛。
 //
-// 為什麼 Windows 讀得回來、macOS 讀不回來——那是機制決定的，不是還沒做完：
-//
-//   Windows  watcher 用 SetConsoleTitle 改的是「共用 console 的狀態」，同一個
-//            console 裡的行程讀得回真值（watcher 自己每輪就在讀，見 ai-tab-sync.ps1）
-//   macOS    標題是 OSC 逃逸序列寫進 tty 裝置，沒有對應的讀取 API
-//
-// 2026-08-21 在 Windows VM 上用 scripts/probe-title-readback.ps1 實測過：讀回來的值
-// 對得上、分頁上顯示的就是那一串（沒被 WT 的 suppressApplicationTitle 鎖住）。
-//
-// ⚠️ 取樣要在**背景**跑，不能等 claude 結束之後才讀一次。
-//
-// 第一版就是寫成「claude 那一行的下一行」，而 `claude '一句話'` 是**互動式**的：
-// 模型回答完，那個 session 還停在提示字元等下一句，腳本永遠走不到下一行。於是檔案
-// 不會出現、驗證一路等到逾時——而在那之前，名字檔早就寫出來了，標題也早就變了
-//（2026-08-21 Reed 在 Windows VM 上實測，畫面全對，那一列卻卡在驗證中）。
-//
-// 這一格原本就是「跑到一半就過」：名字檔一出現就 PASS，視窗留著讓學生看標題。
-// 要加的那一半必須維持同一個節奏，不能把通過條件改成「學生要先退出 claude」。
-//
-// -NoNewWindow 是關鍵：取樣的行程要跟 claude 共用同一個 console，[Console]::Title
-// 才讀得到學生看到的那一串。開新視窗的話它讀到的是自己那個 console 的標題
-//（config-install.js 的 watcher 區塊為了同一件事踩過一次）。
-function titleSamplerScript() {
-  // 只有 Claude 的命名那一格有這個落點：Codex 的命名走原生 app-server，它自己
-  // 決定標題，我們沒有一個「該等於什麼」的名字可以比對。
-  if (process.platform !== "win32" || caseName !== "naming" || agent !== "claude") {
-    return null;
-  }
-
-  const file = path.join(tmpdir(), `jr-verify-title-${process.pid}-${Date.now()}.ps1`);
-  const quoted = titleFile.replaceAll("'", "''");
-
-  writeFileSync(
-    file,
-    // UTF8Encoding $false = 不寫 BOM，跟 hook 寫名字檔的編碼一致——兩邊要拿來字串
-    // 比對，其中一邊多三個位元組就永遠不相等。
-    //
-    // 跟著父行程收攤：Start-Process 生出來的孩子在 Windows 上會活過父行程，不自己
-    // 收的話學生每跑一次驗證就多留一支背景 PowerShell（watcher 那支為了同一件事
-    // 也帶了 ParentPid）。
-    `\ufeff` +
-      [
-        "param([int]$ParentPid)",
-        "while ($true) {",
-        "  if (-not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { break }",
-        `  try { [System.IO.File]::WriteAllText('${quoted}', [Console]::Title, (New-Object System.Text.UTF8Encoding $false)) } catch {}`,
-        "  Start-Sleep -Seconds 1",
-        "}",
-      ].join("\n") +
-      "\n",
-    "utf8",
-  );
-
-  return file;
-}
-
 function writeLauncher(prompt) {
   const stamp = `${process.pid}-${Date.now()}`;
   const envLines = Object.entries(testCase.env({ agent }));
@@ -625,15 +502,7 @@ function writeLauncher(prompt) {
       .map(([name, value]) => `$env:${name} = '${value}'`)
       .join("\n");
     // 不加 -NoProfile：wrapper 就住在 profile 裡，跳過它等於沒在驗。
-    // 取樣那支排在 body **之前**：claude 一路占著這個 console，排在後面的話永遠
-    // 輪不到（那正是第一版寫壞的地方，見 titleSamplerScript 的註解）。
-    const sampler = titleSamplerScript();
-    const startSampler =
-      sampler === null
-        ? ""
-        : `Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','${sampler.replaceAll("'", "''")}',$PID) -NoNewWindow | Out-Null\n`;
-
-    writeFileSync(file, `\ufeff${setEnv}\n${startSampler}${body}\n`, "utf8");
+    writeFileSync(file, `\ufeff${setEnv}\n${body}\n`, "utf8");
     return file;
   }
 
@@ -697,82 +566,9 @@ function collectEvidence() {
     return null;
   }
 
-  // session-name：hook 真的跑完才會出現的檔案，跟模型說什麼無關。
-  let entries = [];
-
-  try {
-    entries = readdirSync(namesDir);
-  } catch {
-    return null;
-  }
-
-  for (const name of entries) {
-    const file = path.join(namesDir, name);
-
-    try {
-      if (statSync(file).mtimeMs < startedAt) continue;
-      const value = readFileSync(file, "utf8").trim();
-      if (value) return titleEvidence(value);
-    } catch {
-      // 剛好被改寫到一半，下一輪再看。
-    }
-  }
-
   return null;
 }
 
-// 名字寫出來了，標題呢？
-//
-// 這兩件事會分岔，而且實測分岔過：名字寫進檔案了，watcher 卻沒掛上，標題一直是
-// 預設值。卡片對學生的承諾是「你的分頁會自動命名」，所以名字落地只算證據的一半。
-//
-// Windows 補得起另一半（見 titleSamplerScript）：背景取樣持續寫下當下的標題，
-// 這裡拿它跟這一輪 hook 寫的名字做字串比對。macOS 補不起來——標題寫進 tty 裝置，
-// 讀不回來——所以那邊仍然是「程式驗名字、學生看標題」。
-//
-// ⚠️ 對不上就繼續等，不當場判失敗。取樣是每秒一次，而 hook 寫名字檔與 watcher 把
-// 名字放上標題之間本來就有時間差——當場判失敗會在那個空隙裡誤判。真的到最後都沒
-// 對上，逾時那段會把最後一次讀到的標題印出來，話一樣講得清楚。
-function titleEvidence(value) {
-  const wrote = `hook 寫下了名字：${value}`;
-
-  if (!samplesTitle()) {
-    return { detail: wrote };
-  }
-
-  return lastSampledTitle() === value
-    ? { detail: `${wrote}，而且分頁標題就是它` }
-    : null;
-}
-
-// 這一輪有沒有在取樣標題。判準跟 titleSamplerScript 一模一樣，寫成一支免得兩邊
-// 各改各的——分岔的話會變成「取樣了但沒人比對」或「沒取樣卻等一個不會出現的檔」。
-function samplesTitle() {
-  return (
-    process.platform === "win32" && caseName === "naming" && agent === "claude"
-  );
-}
-
-function lastSampledTitle() {
-  try {
-    return readFileSync(titleFile, "utf8").trim();
-  } catch {
-    // 取樣那支還沒寫第一筆。
-    return "";
-  }
-}
-
-// 每一題只要提到結果檔，就一定要附上這句。
-//
-// 少了它，模型會防禦性地先跑一次「建立那個資料夾」——而那一步在 Windows 上撞權限牆
-//（New-Item 不在白名單裡，白名單那 39 條全是 Bash(...) 的名字），跳出「要不要允許」。
-// 學生按了拒絕，整條驗證就斷在那裡，結果檔永遠不會出現（Windows VM 實測：跑串接那題
-// 時，模型的第一個動作是 New-Item -ItemType Directory，被擋之後就沒有下文了）。
-//
-// 而那一步本來就是多的：上面第 353 行已經 mkdirSync 過了。
-//
-// ⚠️ 這句話一定要**指名是哪一個資料夾**，不能寫成泛稱的「不要先建立目錄」。
-//
 // 泛稱版寫出去之後，模型把它套用到了另一個資料夾上：Codex 的 handoff skill 要把
 // 名字寫進 /tmp/codex-session-namer/，而那個目錄不存在時本來該自己 mkdir——模型卻
 // 回「依你『不要先建立目錄』的明確要求，我不會自行建立它」，於是改名整段踩空
@@ -938,23 +734,10 @@ console.log(`無法確認  等了 ${Math.round(timeoutMs / 60_000)} 分鐘，沒
 console.log(
   expect.kind === "artifact"
     ? `      應該要出現在：${resultFile}（而且內容含「${expect.keyword}」）`
-    : expect.kind === "file"
-      ? `      應該要產出：${[expect.file].flat().join(" 或 ")}`
-      : `      應該要有新檔案出現在：${namesDir}`,
+    : `      應該要產出：${[expect.file].flat().join(" 或 ")}`,
 );
 console.log("      看那個視窗裡模型說了什麼，判斷是 hook 沒觸發還是模型沒照做。");
 
-// 標題那一半有取樣的話，把最後讀到的那一串印出來——名字寫出來了、標題卻沒跟上，
-// 跟「名字根本沒寫出來」是兩種完全不同的壞法，而上面那句話只講得出後者。
-if (samplesTitle()) {
-  const title = lastSampledTitle();
-  console.log(
-    title === ""
-      ? "      分頁標題一次都沒讀到——取樣那支沒起來，或那個視窗根本沒開成"
-      : `      最後讀到的分頁標題是「${title}」。跟上面那個名字對不上的話，` +
-        "是 wrapper 沒載入或 watcher 沒掛上，不是命名沒跑",
-  );
-}
 emitJr({
   kind: "result",
   ok: false,
